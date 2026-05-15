@@ -1,8 +1,19 @@
-"""Phase 3: Tier 3 - GCMD "Digital Twin" with TurboQuant KV-Compression.
+"""Phase 3: Tier 3 - GCMD "Digital Twin" with Arrhenius kMC.
 
 Implements a kinetic Monte Carlo (kMC) simulation for SEI growth,
-replacing the previous logarithmic-randomness approach with
-voltage-dependent reaction rate constants.
+using physically derived rate constants from the Arrhenius equation.
+
+Reaction pathways:
+    - Solvent decomposition (EC/DMC reduction at anode surface)
+    - Salt reduction (PF6- decomposition)
+    - Polymerization (organic SEI formation)
+
+Rate constants follow: k = A * exp(-Ea / (kB * T))
+
+where A (pre-exponential factor) depends on local solvent
+concentration (mass transport limitation as SEI grows),
+Ea is the activation energy from literature values,
+and kB is the Boltzmann constant.
 """
 
 from __future__ import annotations
@@ -14,18 +25,42 @@ import numpy as np
 
 from aurelius.types import GCMDTwinResult, SEIEvolution, TurboQuantConfig
 
+# Physical constants
+_KB_EV_K = 8.617333262e-5  # Boltzmann constant in eV/K
+_KB_J_K = 1.380649e-23     # Boltzmann constant in J/K
+_AVOGADRO = 6.02214076e23   # Avogadro's number
+
 
 class GCMDigitalTwin:
-    """Tier 3: GCMD Digital Twin with TurboQuant KV-Compression.
+    """Tier 3: GCMD Digital Twin with Arrhenius kMC.
 
     Simulates SEI (Solid Electrolyte Interphase) evolution at the
     anode interface using kinetic Monte Carlo (kMC) to model
     discrete solvent decomposition and salt reduction reactions.
 
-    The kMC simulation uses voltage-dependent rate constants for
-    each reaction pathway, producing physically plausible SEI
-    thickness growth over time.
+    Reaction rate constants are computed via the Arrhenius equation
+    with literature-derived activation energies and mass-transport
+    limited pre-exponential factors.
     """
+
+    # Activation energies (eV) from DFT/experimental literature
+    # EC reduction to lithium/Na alkyl carbonates: 0.55-0.75 eV
+    # DMC reduction to dimethyl carbonate radicals: 0.65-0.85 eV
+    # PF6- decomposition to PF5 + F-: 1.10-1.30 eV
+    _Ea_SOLVENT_EC: float = 0.65    # eV, EC reduction
+    _Ea_SOLVENT_DMC: float = 0.75   # eV, DMC reduction
+    _Ea_SALT_PF6: float = 1.20      # eV, PF6- decomposition
+
+    # Pre-exponential factors (1/ps) at standard conditions
+    # A = nu * exp(delta_S/kB), where nu is attempt frequency
+    _A_SOLVENT_BASE: float = 5.0    # 1/ps, solvent decomposition
+    _A_SALT_BASE: float = 2.0       # 1/ps, salt reduction
+    _A_POLY_BASE: float = 1.0       # 1/ps, polymerization
+
+    # Thickness contribution per reaction event (Angstrom)
+    _D_SOLVENT: float = 0.03        # Angstrom per solvent decomposition
+    _D_SALT: float = 0.04           # Angstrom per salt reduction
+    _D_POLY: float = 0.05           # Angstrom per polymerization
 
     def __init__(self, turboquant_config: Optional[TurboQuantConfig] = None) -> None:
         self.config = turboquant_config or TurboQuantConfig()
@@ -40,11 +75,13 @@ class GCMDigitalTwin:
         salt_type: str = "NaPF6",
         voltage_cutoff: float = 0.05,
         max_time_ps: float = 1000.0,
+        temperature_k: float = 298.15,
     ) -> GCMDTwinResult:
         """Run GCMD Digital Twin simulation of SEI evolution.
 
-        Uses kinetic Monte Carlo (kMC) with voltage-dependent reaction
-        rate constants to simulate SEI layer growth.
+        Uses kinetic Monte Carlo (kMC) with Arrhenius-derived
+        rate constants to simulate SEI layer growth with
+        mass-transport limitations.
         """
         import time
         start = time.perf_counter()
@@ -53,7 +90,8 @@ class GCMDigitalTwin:
         rng = np.random.RandomState(seed)
 
         sei = self._run_kmc_simulation(
-            rng, voltage_cutoff, max_time_ps
+            rng, voltage_cutoff, max_time_ps, temperature_k,
+            solvent_type, salt_type
         )
 
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -78,17 +116,73 @@ class GCMDigitalTwin:
             "long_range_retained": self.config.retain_long_range,
         }
 
+    def _arrhenius_rate(
+        self,
+        activation_energy_eV: float,
+        temperature_k: float,
+        concentration: float,
+        pre_exponential_base: float,
+        overpotential_V: float,
+    ) -> float:
+        """Compute Arrhenius rate constant with overpotential dependence.
+
+        k = A(concentration) * exp(-Ea / (kB * T)) * exp(alpha * eta)
+
+        where:
+            - A(concentration) is the pre-exponential factor scaled by
+              local solvent concentration (mass transport limitation)
+            - Ea is the activation energy in eV
+            - kB is the Boltzmann constant
+            - T is temperature in Kelvin
+            - eta is the overpotential (voltage driving force)
+            - alpha is the symmetry factor (~0.5 for electron transfer)
+
+        Args:
+            activation_energy_eV: Activation energy in electron volts.
+            temperature_k: System temperature in Kelvin.
+            concentration: Local solvent concentration (0-1, normalized).
+            pre_exponential_base: Base pre-exponential factor (1/ps).
+            overpotential_V: Overpotential in volts (driving force).
+
+        Returns:
+            Rate constant in 1/ps.
+        """
+        # Arrhenius factor: exp(-Ea / (kB * T))
+        arrhenius_factor = np.exp(-activation_energy_eV / (_KB_EV_K * temperature_k))
+
+        # Concentration-dependent pre-exponential factor
+        # As SEI grows, solvent concentration at the reaction interface
+        # decreases due to diffusion through the growing SEI layer
+        # A(c) = A0 * c / (c + K_m), where K_m is a Michaelis-like constant
+        K_m = 0.3  # Half-saturation concentration (normalized)
+        concentration_factor = concentration / (concentration + K_m)
+
+        # Overpotential dependence: exp(alpha * eta / (kB * T))
+        # alpha ~ 0.5 for typical electron transfer reactions
+        alpha = 0.5
+        overpotential_factor = np.exp(alpha * overpotential_V / (_KB_EV_K * temperature_k))
+
+        # Combined rate constant
+        k = pre_exponential_base * concentration_factor * arrhenius_factor * overpotential_factor
+
+        return float(k)
+
     def _run_kmc_simulation(
         self,
         rng: np.random.RandomState,
         voltage: float,
         max_time: float,
+        temperature_k: float = 298.15,
+        solvent_type: str = "ec:dmc",
+        salt_type: str = "NaPF6",
     ) -> SEIEvolution:
         """Run kinetic Monte Carlo simulation of SEI growth.
 
-        Defines discrete reaction pathways with voltage-dependent
-        rate constants. Each kMC step selects a reaction proportional
-        to its rate and updates the cumulative SEI thickness.
+        Uses physically derived rate constants from the Arrhenius equation.
+        The kMC loop tracks local solvent concentration as the SEI grows,
+        implementing mass transport limitation: as the SEI thickens,
+        the local concentration of reactive species at the anode interface
+        decreases, reducing subsequent reaction rates.
 
         Reaction pathways:
             - Solvent decomposition (EC/DMC reduction)
@@ -99,28 +193,20 @@ class GCMDigitalTwin:
             rng: Deterministic random state seeded from molecular inputs.
             voltage: Voltage cutoff (V) affecting reaction rates.
             max_time: Maximum simulation time in picoseconds.
+            temperature_k: Simulation temperature in Kelvin.
+            solvent_type: Solvent composition (e.g., "ec:dmc").
+            salt_type: Salt type (e.g., "NaPF6").
 
         Returns:
             SEIEvolution with final thickness, homogeneity, and conductivity.
         """
-        # Reaction rate constants at zero voltage (1/ps)
-        # These represent intrinsic reaction rates for each pathway
-        k_solvent_decomp = 0.05   # Solvent decomposition base rate
-        k_salt_reduction = 0.02   # Salt reduction base rate
-        k_polymerization = 0.01   # Polymerization base rate
+        # Initial bulk solvent concentration (normalized)
+        initial_solvent_conc = 1.0
+        initial_salt_conc = 0.1  # Salt is typically 1M vs ~10M solvent
 
-        # Voltage-dependent rate constants (Arrhenius-like)
-        # Higher voltage → faster reaction rates
-        alpha = 10.0  # Voltage sensitivity factor (1/V)
-
-        k_solvent = k_solvent_decomp * np.exp(alpha * voltage)
-        k_salt = k_salt_reduction * np.exp(alpha * voltage)
-        k_poly = k_polymerization * np.exp(alpha * voltage)
-
-        # Thickness contributions per reaction event (Angstrom)
-        d_solvent = 0.03   # Angstrom per solvent decomposition event
-        d_salt = 0.04      # Angstrom per salt reduction event
-        d_poly = 0.05      # Angstrom per polymerization event
+        # SEI thickness at which mass transport becomes significant
+        # (Angstrom) - beyond this, diffusion through SEI limits rates
+        transport_limit_thickness = 15.0  # Angstrom
 
         # kMC simulation parameters
         n_steps = 5000
@@ -138,11 +224,60 @@ class GCMDigitalTwin:
 
         current_time = 0.0
 
+        # Solvent composition ratio (EC:DMC)
+        ec_ratio = 0.3 if "ec:dmc" in solvent_type else (1.0 if "ec" in solvent_type else 0.5)
+        dmc_ratio = 1.0 - ec_ratio
+
         for step in range(n_steps):
+            # Current SEI thickness determines mass transport limitation
+            # As SEI grows, solvent must diffuse through it to reach the anode
+            transport_factor = 1.0 / (1.0 + total_thickness / transport_limit_thickness)
+
+            # Local solvent concentration at the reaction interface
+            local_solvent_conc = initial_solvent_conc * transport_factor
+            local_salt_conc = initial_salt_conc * transport_factor
+
+            # Compute Arrhenius rate constants for each pathway
+            # Solvent decomposition (EC/DMC reduction)
+            k_ec = self._arrhenius_rate(
+                activation_energy_eV=self._Ea_SOLVENT_EC,
+                temperature_k=temperature_k,
+                concentration=local_solvent_conc * ec_ratio,
+                pre_exponential_base=self._A_SOLVENT_BASE,
+                overpotential_V=voltage,
+            )
+            k_dmc = self._arrhenius_rate(
+                activation_energy_eV=self._Ea_SOLVENT_DMC,
+                temperature_k=temperature_k,
+                concentration=local_solvent_conc * dmc_ratio,
+                pre_exponential_base=self._A_SOLVENT_BASE,
+                overpotential_V=voltage,
+            )
+            k_solvent = k_ec + k_dmc  # Combined solvent decomposition rate
+
+            # Salt reduction (PF6- decomposition)
+            k_salt = self._arrhenius_rate(
+                activation_energy_eV=self._Ea_SALT_PF6,
+                temperature_k=temperature_k,
+                concentration=local_salt_conc,
+                pre_exponential_base=self._A_SALT_BASE,
+                overpotential_V=voltage,
+            )
+
+            # Polymerization rate (organic SEI formation)
+            # Depends on solvent radical concentration (proportional to solvent reaction)
+            k_poly = self._arrhenius_rate(
+                activation_energy_eV=0.40,  # Lower Ea for polymerization of radicals
+                temperature_k=temperature_k,
+                concentration=local_solvent_conc,
+                pre_exponential_base=self._A_POLY_BASE,
+                overpotential_V=voltage * 0.5,  # Weaker voltage dependence
+            )
+
             # Total reaction rate
             k_total = k_solvent + k_salt + k_poly
 
-            # Advance time: delta_t = 1 / k_total
+            # Advance time: delta_t = 1 / k_total (standard kMC time step)
             if k_total > 0:
                 dt = 1.0 / k_total
             else:
@@ -157,15 +292,15 @@ class GCMDigitalTwin:
             if r < k_solvent / k_total:
                 # Solvent decomposition reaction
                 n_solvent_events += 1
-                total_thickness += d_solvent
+                total_thickness += self._D_SOLVENT
             elif r < (k_solvent + k_salt) / k_total:
                 # Salt reduction reaction
                 n_salt_events += 1
-                total_thickness += d_salt
+                total_thickness += self._D_SALT
             else:
                 # Polymerization reaction
                 n_poly_events += 1
-                total_thickness += d_poly
+                total_thickness += self._D_POLY
 
             # Record at intervals
             if step % record_interval == 0:

@@ -38,14 +38,30 @@ class _ChemVLM2MLP:
     Input: 2048-bit ECFP4 fingerprint (float array).
     Hidden: 128 units with ReLU activation.
     Output: 1 scalar viability score via sigmoid.
+
+    Weights are initialized using Xavier/Glorot initialization
+    to ensure non-zero gradients during training and meaningful
+    inference output without requiring a pre-trained model.
     """
 
     def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
-        self.W1 = mx.zeros((input_dim, hidden_dim))
-        self.b1 = mx.zeros((hidden_dim,))
-        self.W2 = mx.zeros((hidden_dim, 1))
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        """Xavier/Glorot initialization for stable training.
+
+        W ~ N(0, sqrt(2 / (fan_in + fan_out)))
+        This ensures the variance of activations is preserved
+        across layers, preventing vanishing/exploding gradients.
+        """
+        scale1 = np.sqrt(2.0 / (self.input_dim + self.hidden_dim))
+        self.W1 = mx.random.normal((self.input_dim, self.hidden_dim), scale=scale1)
+        self.b1 = mx.zeros((self.hidden_dim,))
+
+        scale2 = np.sqrt(2.0 / (self.hidden_dim + 1))
+        self.W2 = mx.random.normal((self.hidden_dim, 1), scale=scale2)
         self.b2 = mx.zeros((1,))
 
     def __call__(self, x: mx.array) -> mx.array:
@@ -88,6 +104,129 @@ class _FallbackMLP:
         return [self.W1, self.b1, self.W2, self.b2]
 
 
+def train_dummy_model(
+    model: _ChemVLM2MLP,
+    epochs: int = 100,
+    lr: float = 0.01,
+    batch_size: int = 64,
+    seed: int = 42,
+) -> _ChemVLM2MLP:
+    """Train the MLX-NA model on a synthetic solubility dataset.
+
+    Generates synthetic molecules with known solubility labels based on
+    structural complexity (number of non-hydrogen atoms). Simple molecules
+    are labeled as soluble (1), complex molecules as insoluble (0).
+
+    Uses MLX's automatic differentiation to compute gradients and
+    performs mini-batch gradient descent with Xavier-initialized weights.
+
+    Args:
+        model: The _ChemVLM2MLP instance to train.
+        epochs: Number of training epochs.
+        lr: Learning rate for gradient descent.
+        batch_size: Mini-batch size.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        The trained _ChemVLM2MLP instance (modified in place).
+    """
+    if not HAS_MLX:
+        raise RuntimeError("train_dummy_model requires MLX")
+    if not HAS_RDKIT:
+        raise RuntimeError("train_dummy_model requires RDKit for fingerprint generation")
+
+    # Training molecules: (SMILES, expected_solubility)
+    # Simple molecules → soluble, complex → insoluble
+    training_data: list[tuple[str, float]] = [
+        # Soluble molecules (simple, small)
+        ("CCO", 1.0),           # ethanol
+        ("CC(=O)OC", 1.0),      # methyl acetate
+        ("CN(C)C=O", 1.0),      # DMF
+        ("C1=CC=CC=C1", 1.0),   # benzene
+        ("CC(=O)O", 1.0),       # acetic acid
+        ("COCCOC", 1.0),        # diethyl ether
+        ("CCC", 1.0),           # propane
+        ("CC(C)O", 1.0),        # isopropanol
+        ("C=CC", 1.0),          # propene
+        ("CC(=O)CC(=O)C", 1.0), # acetone
+        # Insoluble molecules (complex, large)
+        ("C1CCCCC1C2CCCCC2C3CCCCC3", 0.0),   # tricyclic
+        ("C1CCC2C3CCC4CC5CC6CC7CCCCC7CC6CC5CC4C3CCC21", 0.0),  # steroids
+        ("CCCCCCCCCCCCCCCCCC", 0.0),         # long alkane
+        ("C1=CC=C2C(=C1)C3=CC=CC=C3C4=CC=CC=C4C2", 0.0),  # PAH
+        ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C", 0.0),  # branched alkane
+        ("C1=CC2=C(C=C1)C3=CC=CC=C3C4=CC=CC=C4C2", 0.0),  # anthracene derivative
+        ("CCCCCCCCCCCCCCCCCCO", 0.0),        # long alcohol
+        ("C1CCCCC1C2CCCCC2C3CCCCC3C4CCCCC4", 0.0),  # tetra-cyclic
+        ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C", 0.0),  # pentacyclic
+        ("CC(C)CCCC(C)CCCC(C)CCCC(C)CCCC(C)C", 0.0),  # long branched
+    ]
+
+    # Generate fingerprints and labels
+    X_train = np.zeros((len(training_data), 2048), dtype=np.float32)
+    y_train = np.zeros(len(training_data), dtype=np.float32)
+
+    for i, (smiles, label) in enumerate(training_data):
+        fp = _generate_ecfp4_fingerprint(smiles)
+        X_train[i] = fp
+        y_train[i] = label
+
+    X_mx = mx.array(X_train)
+    y_mx = mx.array(y_train)
+    n_samples = X_train.shape[0]
+
+    # Loss function: mean squared error
+    def loss_fn(params: list[mx.array], x: mx.array, target: mx.array) -> mx.array:
+        # Manually compute forward pass for gradient computation
+        W1, b1, W2, b2 = params
+        h = mx.addmm(b1, x, W1, alpha=1.0, beta=1.0)
+        h = mx.maximum(h, 0.0)
+        out = mx.addmm(b2, h, W2, alpha=1.0, beta=1.0)
+        pred = mx.sigmoid(out)
+        pred = mx.squeeze(pred, axis=-1)
+        return mx.mean((pred - target) ** 2)
+
+    # Get gradient function
+    loss_grad = mx.grad(loss_fn)
+
+    # Training loop
+    rng_state = mx.random.key(seed)
+    lr = lr  # learning rate
+
+    for epoch in range(epochs):
+        # Shuffle data
+        perm = mx.random.permutation(n_samples, key=rng_state)
+        X_shuffled = X_mx[perm]
+        y_shuffled = y_mx[perm]
+
+        # Mini-batch gradient descent
+        for start in range(0, n_samples, batch_size):
+            end = min(start + batch_size, n_samples)
+            x_batch = X_shuffled[start:end]
+            y_batch = y_shuffled[start:end]
+
+            # Compute gradients with respect to model parameters
+            grads = loss_grad(model.parameters(), x_batch, y_batch)
+
+            # Update model weights directly (MLX arrays are immutable, so we reassign)
+            model.W1 = model.W1 - lr * grads[0]
+            model.b1 = model.b1 - lr * grads[1]
+            model.W2 = model.W2 - lr * grads[2]
+            model.b2 = model.b2 - lr * grads[3]
+
+        # Print progress every 20 epochs
+        if (epoch + 1) % 20 == 0:
+            current_loss = float(loss_fn(model.parameters(), X_mx, y_mx))
+            # Compute accuracy
+            preds = model(X_mx)
+            preds_binary = mx.squeeze(preds) > 0.5
+            accuracy = float(mx.mean(preds_binary == y_mx))
+            print(f"[Aurelius v5.1 Tier1] Training epoch {epoch + 1}/{epochs}: "
+                  f"loss={current_loss:.4f}, accuracy={accuracy:.2f}")
+
+    return model
+
+
 class MLXNAFilter:
     """Tier 1: MLX Neural Accelerator filter for rapid molecular screening.
 
@@ -95,24 +234,42 @@ class MLXNAFilter:
     to predict molecular viability. When MLX is available, inference
     runs entirely on the MLX backend; otherwise a numpy fallback
     provides deterministic pseudo-results for pipeline validation.
+
+    The model is trained on a synthetic solubility dataset by default,
+    using structural complexity (number of non-hydrogen atoms) as the
+    solubility proxy. This ensures the model learns actual signal
+    from fingerprint features rather than outputting uniform 0.5 values.
     """
 
-    def __init__(self, quantization_format: str = "MX4") -> None:
+    def __init__(self, quantization_format: str = "MX4", train_on_init: bool = True) -> None:
         self.quantization_format = quantization_format
         self._model_loaded = False
         self._model: Optional[Any] = None
         self._use_mlx = HAS_MLX
 
+        if train_on_init and self._use_mlx:
+            self._train_default_model()
+
+    def _train_default_model(self) -> None:
+        """Train the model on a synthetic solubility dataset at initialization."""
+        print("[Aurelius v5.1 Tier1] Training synthetic solubility model...")
+        model = _ChemVLM2MLP()
+        train_dummy_model(model, epochs=100, lr=0.01, batch_size=16, seed=42)
+        self._model = model
+        self._model_loaded = True
+        print("[Aurelius v5.1 Tier1] Synthetic model training complete")
+
     def load_model(self, model_path: str) -> None:
         """Load ChemVLM-2 in MX4 quantized format via MLX.
 
         In production, model_path points to a saved MLX model.
-        For now, initializes the MLP weights deterministically.
+        For now, trains the MLP on synthetic data with Xavier initialization.
         """
         if self._use_mlx:
             print(f"[Aurelius v5.1 Tier1] Loading ChemVLM-2 (MX{self._bits_from_format()}) "
                   f"from {model_path}")
             self._model = _ChemVLM2MLP()
+            train_dummy_model(self._model, epochs=100, lr=0.01, batch_size=16, seed=42)
         else:
             print("[Aurelius v5.1 Tier1] MLX unavailable, using numpy fallback MLP")
             self._model = _FallbackMLP()
@@ -127,7 +284,11 @@ class MLXNAFilter:
         viability result with confidence score.
         """
         if not self._model_loaded:
-            self._model = _FallbackMLP() if not self._use_mlx else _ChemVLM2MLP()
+            if self._use_mlx:
+                self._model = _ChemVLM2MLP()
+                train_dummy_model(self._model, epochs=50, lr=0.01, batch_size=16, seed=42)
+            else:
+                self._model = _FallbackMLP()
             self._model_loaded = True
 
         import time
@@ -205,9 +366,16 @@ def _generate_ecfp4_fingerprint(smiles: str) -> np.ndarray:
         if mol is None:
             return _hash_fallback(smiles)
         fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-        arr = np.zeros(2048, dtype=np.float32)
-        fp.CopyToBitArray(arr)
-        return arr
+        # Convert ExplicitBitVect to numpy array via ToList()
+        # (CopyToBitArray was deprecated/removed in newer RDKit versions)
+        bit_list = fp.ToList()
+        arr = np.array(bit_list, dtype=np.float32)
+        # Ensure correct length (ToList may return fewer bits than nBits)
+        if len(arr) < 2048:
+            padded = np.zeros(2048, dtype=np.float32)
+            padded[:len(arr)] = arr
+            return padded
+        return arr[:2048]
     return _hash_fallback(smiles)
 
 

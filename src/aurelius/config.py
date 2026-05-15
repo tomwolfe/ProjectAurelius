@@ -82,9 +82,14 @@ class M5ProConfig:
 
         # Replace frozen fields via object.__setattr__
         object.__setattr__(self, "total_memory_gb", total_gb)
-        object.__setattr__(self, "mlx_max_mem_gb", round(mlx_alloc, 1))
-        object.__setattr__(self, "metal_shader_cache_gb", round(shader_alloc, 1))
-        object.__setattr__(self, "_pytorch_available_gb", round(pytorch_available, 1))
+
+        # Only apply computed defaults when user hasn't provided non-zero values
+        if self.mlx_max_mem_gb == 0.0:
+            object.__setattr__(self, "mlx_max_mem_gb", round(mlx_alloc, 1))
+        if self.metal_shader_cache_gb == 0.0:
+            object.__setattr__(self, "metal_shader_cache_gb", round(shader_alloc, 1))
+
+        object.__setattr__(self, "_pytorch_available_gb", round(total_gb - self.mlx_max_mem_gb - self.metal_shader_cache_gb, 1))
 
     def apply_environment(self) -> None:
         """Apply hard-partitioning environment variables."""
@@ -95,6 +100,11 @@ class M5ProConfig:
 
     def validate_memory_budget(self) -> bool:
         """Validate that memory budget fits within physical RAM."""
+        # Check that user-provided values don't exceed system caps
+        if self.mlx_max_mem_gb > 12.0:
+            return False
+        if self.metal_shader_cache_gb > 2.0:
+            return False
         used = self.mlx_max_mem_gb + self.metal_shader_cache_gb
         remaining = self.total_memory_gb - used
         return remaining >= 8.0  # Minimum 8GB for PyTorch MPS
