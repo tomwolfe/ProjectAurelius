@@ -25,8 +25,6 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import field
-from typing import Optional
 
 import numpy as np
 
@@ -53,7 +51,7 @@ def _load_kmc_params(path: str | None = None) -> dict:
     )
     if os.path.isfile(ff_path):
         try:
-            with open(ff_path, "r") as f:
+            with open(ff_path) as f:
                 data = json.load(f)
                 return data.get("kmc_reaction_parameters", {})
         except (json.JSONDecodeError, OSError):
@@ -78,7 +76,7 @@ class GCMDigitalTwin:
 
     def __init__(
         self,
-        gcmtwin_config: Optional[GCMDTConfig] = None,
+        gcmtwin_config: GCMDTConfig | None = None,
         force_field_path: str | None = None,
     ) -> None:
         """Initialize GCMD Digital Twin.
@@ -355,7 +353,7 @@ class GCMDigitalTwin:
 
             # Select reaction via multinomial sampling
             r = rng.random()
-            cumulative = 0.0
+            _cumulative = 0.0
 
             if r < k_solvent / k_total:
                 # Solvent decomposition reaction

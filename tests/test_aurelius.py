@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
-import pytest
 import mlx.core as mx
-import torch
 import numpy as np
-from aurelius.config import M5ProConfig, get_config
+import pytest
+import torch
+
+from aurelius.config import M5ProConfig
 from aurelius.memory.manager import (
-    MetalShaderConfig,
     QuantizationConfig,
     ZeroCopyMemoryManager,
 )
-from aurelius.solvation.engine import MWSESolvationEngine
-from aurelius.screening.tier1_mlx_filter import MLXNAFilter
-from aurelius.screening.tier2_mattersim import MatterSimMTSimulator, MatterSimMPEngine
-from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig
 from aurelius.scoring.engine import AureliusScoringEngine
+from aurelius.screening.tier1_mlx_filter import MLXNAFilter
+from aurelius.screening.tier2_mattersim import MatterSimMPEngine, MatterSimMTSimulator
+from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig
+from aurelius.solvation.engine import MWSESolvationEngine
 from aurelius.types import (
-    AureliusScoreResult,
     DesolvationPathResult,
     GCMDTwinResult,
     MLXFilterResult,
@@ -538,7 +537,7 @@ class TestAureliusPipeline:
 class TestCrossFrameworkBridge:
     def test_mlx_to_pytorch_bridge(self):
         """Test DLpack-based bridge from MLX to PyTorch."""
-        from aurelius.bridge import bridge_mlx_to_pytorch, CrossFrameworkBridge
+        from aurelius.bridge import CrossFrameworkBridge, bridge_mlx_to_pytorch
 
         if not mx or not torch:
             pytest.skip("MLX or PyTorch not available")
@@ -1027,9 +1026,9 @@ class TestGBSASolvation:
     def test_born_charges_dft_derived(self):
         """Verify Born effective charges come from DFT literature."""
         from aurelius.solvation.engine import (
-            _BORN_CHARGES_NA,
-            _BORN_CHARGES_LI,
             _BORN_CHARGES_K,
+            _BORN_CHARGES_LI,
+            _BORN_CHARGES_NA,
         )
 
         # Na+ Z* norm should be in physically reasonable range
@@ -1185,7 +1184,7 @@ class TestSchNetLayers:
             [0.0, -1.0, 0.0],
         ], dtype=torch.float32, requires_grad=True)
 
-        energy = engine(atomic_numbers, coordinates)
+        _energy = engine(atomic_numbers, coordinates)
         forces = engine.compute_forces(atomic_numbers, coordinates)
 
         assert forces.shape == (4, 3)
@@ -1296,14 +1295,13 @@ class TestParameterLoading:
     def test_solvation_params_from_json(self):
         """Verify solvation parameters are loaded from force_field_params.json."""
         from aurelius.solvation.engine import (
-            _load_solvation_params,
             _get_coordination_number,
-            _get_shell_radius,
-            _get_desolvation_energy,
-            _get_surface_tension,
-            _get_rejection_threshold,
             _get_energy_profile_gaussians,
+            _get_rejection_threshold,
             _get_repulsive_wall_params,
+            _get_shell_radius,
+            _get_surface_tension,
+            _load_solvation_params,
         )
 
         params = _load_solvation_params()
@@ -1357,7 +1355,7 @@ class TestParameterLoading:
             "src", "aurelius", "data", "force_field_params.json",
         )
         if os.path.isfile(ff_path):
-            with open(ff_path, "r") as f:
+            with open(ff_path) as f:
                 data = json.load(f)
             tier1 = data.get("tier1_parameters", {})
             assert "esol_dataset" in tier1
@@ -1377,7 +1375,7 @@ class TestParameterLoading:
             "src", "aurelius", "data", "force_field_params.json",
         )
         if os.path.isfile(ff_path):
-            with open(ff_path, "r") as f:
+            with open(ff_path) as f:
                 data = json.load(f)
             defaults = data.get("pipeline_defaults", {})
             assert defaults["voltage_cutoff_V"] == 0.05
@@ -1406,11 +1404,10 @@ class TestParameterLoading:
 
     def test_solvation_engine_loads_params_from_json(self):
         """Verify MWSESolvationEngine loads parameters from JSON."""
-        engine = MWSESolvationEngine()
         from aurelius.solvation.engine import (
             _get_coordination_number,
-            _get_shell_radius,
             _get_desolvation_energy,
+            _get_shell_radius,
         )
         assert _get_coordination_number("Na+") == 6
         assert _get_shell_radius("Li+") == 2.5

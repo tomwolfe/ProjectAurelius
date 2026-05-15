@@ -24,17 +24,13 @@ References:
 from __future__ import annotations
 
 import ast
-import csv
 import json
 import math
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from importlib import resources
-from pathlib import Path
-from typing import Optional
 
 import numpy as np
-from scipy import optimize
 
 # ---------------------------------------------------------------------------
 # Force field parameters
@@ -59,7 +55,7 @@ def _load_force_field_params(path: str | None = None) -> dict:
     """
     ff_path = path or _default_ff_path()
     if os.path.isfile(ff_path):
-        with open(ff_path, "r") as f:
+        with open(ff_path) as f:
             return json.load(f)
     return {}
 
@@ -121,7 +117,7 @@ def _load_solvation_params(path: str | None = None) -> dict:
     ff_path = path or _default_ff_path()
     if os.path.isfile(ff_path):
         try:
-            with open(ff_path, "r") as f:
+            with open(ff_path) as f:
                 data = json.load(f)
                 return data.get("solvation_parameters", {})
         except (json.JSONDecodeError, OSError):
@@ -137,7 +133,7 @@ def _load_scoring_params_for_solvation(path: str | None = None) -> dict:
     ff_path = path or _default_ff_path()
     if os.path.isfile(ff_path):
         try:
-            with open(ff_path, "r") as f:
+            with open(ff_path) as f:
                 data = json.load(f)
                 return data.get("scoring_parameters", {})
         except (json.JSONDecodeError, OSError):
@@ -678,9 +674,6 @@ class MWSESolvationEngine:
         Returns DesolvationBarrier with path integral energy profile.
         Rejects if any local maxima > 0.5 eV.
         """
-        kB = 8.617e-5  # eV/K
-        temperature_k = 298.15
-
         # Simulate ion trajectory through solvent layer
         max_traj = _get_max_trajectory_distance()
         positions = np.linspace(0, max_traj, n_steps)  # Angstroms through solvent
@@ -712,7 +705,7 @@ class MWSESolvationEngine:
         energies = np.zeros_like(positions)
         centers, widths, heights = _get_energy_profile_gaussians()
 
-        for c, w, h in zip(centers, widths, heights):
+        for c, w, h in zip(centers, widths, heights, strict=True):
             energies += h * np.exp(-0.5 * ((positions - c) / w) ** 2)
 
         # Add a smooth repulsive wall at the anode surface

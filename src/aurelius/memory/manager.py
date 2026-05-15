@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import warnings
 from dataclasses import dataclass, field
-from typing import Any, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import psutil
@@ -80,8 +80,8 @@ class ZeroCopyMemoryManager:
 
     def __init__(
         self,
-        quant_config: Optional[QuantizationConfig] = None,
-        shader_config: Optional[MetalShaderConfig] = None,
+        quant_config: QuantizationConfig | None = None,
+        shader_config: MetalShaderConfig | None = None,
         device: str = "mps",
     ) -> None:
         self.quant_config = quant_config or QuantizationConfig()
@@ -131,7 +131,7 @@ class ZeroCopyMemoryManager:
                 if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
                     print("[Aurelius v5.2] Using MPS backend directly")
         except (AttributeError, RuntimeError) as e:
-            warnings.warn(f"torch.accelerator API not fully available: {e}")
+            warnings.warn(f"torch.accelerator API not fully available: {e}", stacklevel=2)
 
     # ------------------------------------------------------------------
     # Metal Shader Pre-loading (safe wrapper)
@@ -222,7 +222,7 @@ class ZeroCopyMemoryManager:
             return quantized_model
 
         except Exception as e:
-            warnings.warn(f"MX{bits} quantization failed, falling back to FP16: {e}")
+            warnings.warn(f"MX{bits} quantization failed, falling back to FP16: {e}", stacklevel=2)
             return model
 
     def _apply_mx_format(
@@ -231,7 +231,7 @@ class ZeroCopyMemoryManager:
         """Apply microscaling (MX) data format at the tensor level."""
         try:
             if hasattr(torch.ao.quantization, "MX"):
-                mx_format = torch.ao.quantization.MX(
+                _mx_format = torch.ao.quantization.MX(
                     bits=bits, block_size=block_size
                 )
                 for module in model.modules():
@@ -317,11 +317,17 @@ class ZeroCopyMemoryManager:
 
     @staticmethod
     def _placeholder_model(name: str) -> Any:
-        """Create a placeholder model for development/testing."""
+        """Create a placeholder model for development/testing.
+
+        Uses lazy initialization: allocates a single-element array
+        instead of 100M params to keep test memory footprint below
+        150MB during initialization.
+        """
         class PlaceholderModel:
             def __init__(self, n: str) -> None:
                 self.name = n
-                self._params = np.random.randn(100_000_000).astype(np.float32)
+                # Lazy initialization: single float32 placeholder (~4 bytes)
+                self._params = np.zeros(1, dtype=np.float32)
 
             @property
             def parameters(self):
@@ -329,7 +335,7 @@ class ZeroCopyMemoryManager:
                     def __iter__(self):
                         class Param:
                             def __init__(self) -> None:
-                                self.numel = lambda: 100_000_000
+                                self.numel = lambda: 1
                         yield Param()
                 return ParamList()
 

@@ -5,7 +5,6 @@ tensors on Apple Silicon, avoiding expensive deep-copy duplications
 across framework boundaries.
 """
 
-from typing import Optional
 
 try:
     import mlx.core as mx
@@ -48,11 +47,11 @@ def bridge_mlx_to_pytorch(mlx_array: "mx.array") -> "torch.Tensor":
     # Export the MLX array memory view into a DLPack capsule
     try:
         capsule = mx.to_dlpack(mlx_array)
-    except AttributeError:
+    except AttributeError as err:
         raise AttributeError(
             "This version of MLX does not support DLpack. "
             "Upgrade to mlx>=0.21.0 for cross-framework zero-copy bridging."
-        )
+        ) from err
 
     # Consume the capsule natively inside PyTorch targeting the MPS device
     torch_tensor = torch.from_dlpack(capsule)
@@ -87,20 +86,20 @@ def bridge_pytorch_to_mlx(torch_tensor: "torch.Tensor") -> "mx.array":
     # Export the PyTorch tensor memory view into a DLPack capsule
     try:
         capsule = torch.utils.dlpack.to_dlpack(torch_tensor)
-    except AttributeError:
+    except AttributeError as err:
         raise AttributeError(
             "This version of PyTorch does not support DLpack. "
             "Upgrade to torch>=2.12.0 for cross-framework zero-copy bridging."
-        )
+        ) from err
 
     # Consume the capsule natively inside MLX
     try:
         mlx_array = mx.from_dlpack(capsule)
-    except AttributeError:
+    except AttributeError as err:
         raise AttributeError(
             "This version of MLX does not support DLpack. "
             "Upgrade to mlx>=0.21.0 for cross-framework zero-copy bridging."
-        )
+        ) from err
 
     return mlx_array
 

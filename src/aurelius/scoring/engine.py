@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import os
 from importlib import resources
-from typing import Optional
 
 import numpy as np
 
@@ -46,7 +45,7 @@ def _load_scoring_params(path: str | None = None) -> dict:
     )
     if os.path.isfile(ff_path):
         try:
-            with open(ff_path, "r") as f:
+            with open(ff_path) as f:
                 data = json.load(f)
                 return data.get("scoring_parameters", {})
         except (json.JSONDecodeError, OSError):
@@ -87,9 +86,9 @@ class AureliusScoringEngine:
     def compute_score(
         self,
         molecule_input: MoleculeInput,
-        tier1_result: Optional[MLXFilterResult] = None,
-        tier2_result: Optional[Tier2Result] = None,
-        tier3_result: Optional[GCMDTwinResult] = None,
+        tier1_result: MLXFilterResult | None = None,
+        tier2_result: Tier2Result | None = None,
+        tier3_result: GCMDTwinResult | None = None,
         gwp_value: float = 1.0,
     ) -> AureliusScoreResult:
         """Compute the complete Aurelius v5.1 score.
@@ -177,19 +176,19 @@ class AureliusScoringEngine:
         """Generate a formatted scorecard for the Aurelius v5.1 result."""
         lines = [
             f"{'='*60}",
-            f"  AURELIUS SCORE v5.1 - Scorecard",
+            "  AURELIUS SCORE v5.1 - Scorecard",
             f"{'='*60}",
             f"  Molecule:     {score.molecule_smiles}",
             f"  Total S_A:    {score.total_score:.1f}/100 {'VIABLE' if score.is_viable else 'REJECTED'}",
             f"{'─'*60}",
-            f"  Component Scores:",
+            "  Component Scores:",
             f"    σ (MLX-NA filter):       {score.sigma_score:>6.1f}  × {score.weight_sigma}",
             f"    E_des_barrier:           {score.desolvation_score:>6.1f}  × {score.weight_desolvation}",
             f"    SEI Homogeneity:         {score.sei_homogeneity_score:>6.1f}  × {score.weight_sei}",
             f"    MX_Synthesis_Score:      {score.mx_synthesis_score:>6.1f}  × {score.weight_mx}",
             f"    GWP Penalty:            -{score.gwp_penalty:>5.1f}  × {score.weight_gwp}",
             f"{'─'*60}",
-            f"  Tier Status:",
+            "  Tier Status:",
             f"    Tier 1 (MLX-NA):  {'PASS' if score.tier1_viable else 'FAIL'}",
             f"    Tier 2 (MatterSim): {'PASS' if score.tier2_viable else 'FAIL'}",
             f"    Tier 3 (GCMD DT): {'PASS' if score.tier3_viable else 'FAIL'}",
@@ -241,7 +240,7 @@ class AureliusScoringEngine:
     def _compute_mx_synthesis_score(
         self,
         molecule_input: MoleculeInput,
-        tier3_result: Optional[GCMDTwinResult],
+        tier3_result: GCMDTwinResult | None,
     ) -> float:
         """Compute MX_Synthesis_Score (automated lab compatibility).
 

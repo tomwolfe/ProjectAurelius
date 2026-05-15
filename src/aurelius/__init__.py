@@ -12,10 +12,10 @@ from aurelius.memory.manager import (
     ZeroCopyMemoryManager,
 )
 from aurelius.pipeline import AureliusPipeline
+from aurelius.scoring.engine import AureliusScoringEngine
 from aurelius.screening.tier1_mlx_filter import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin
-from aurelius.scoring.engine import AureliusScoringEngine
 from aurelius.types import (
     AureliusScoreResult,
     DesolvationPathResult,

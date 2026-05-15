@@ -29,10 +29,9 @@ from __future__ import annotations
 
 import ast
 import json
-import math
 import os
 from importlib import resources
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -69,7 +68,7 @@ def _load_force_field_params(path: str | None = None) -> dict:
         resources.files("aurelius.data").joinpath("force_field_params.json")
     )
     if os.path.isfile(ff_path):
-        with open(ff_path, "r") as f:
+        with open(ff_path) as f:
             return json.load(f)
     return {}
 
@@ -114,7 +113,7 @@ class ContinuousFilterConv1d(nn.Module):
         self,
         h: torch.Tensor,
         distances: torch.Tensor,
-        edge_index: Optional[torch.Tensor] = None,
+        edge_index: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Forward pass of continuous filter convolution.
 
@@ -253,8 +252,9 @@ class MatterSimMPEngine(nn.Module):
     over pairwise atomic distances, enabling smooth interpolation
     of atomic interactions.
 
-    Fully vectorized: computes all pairwise interactions in O(1)
-    tensor operations, enabling gradients via torch.autograd.grad.
+    Fully vectorized: computes all pairwise interactions via O(N^2)
+    tensor operations (O(N^2) time/space), with O(1) Python interpreter
+    overhead per step. Enables gradients via torch.autograd.grad.
 
     Supports batched inputs: (B, N, 3) for coordinates and (B, N)
     for atomic numbers.
@@ -431,7 +431,7 @@ class MatterSimMTSimulator:
         # Barrier threshold
         self.barrier_threshold_eV = barrier_threshold_eV if barrier_threshold_eV is not None else params.get("lennard_jones", {}).get("default_barrier_eV", 0.5)
 
-        self._compiled_model: Optional[Any] = None
+        self._compiled_model: Any | None = None
         self._graph_built = False
 
     def _select_device(self) -> str:
@@ -556,7 +556,7 @@ class MatterSimMTSimulator:
                 [0.6, -0.6, -0.5], [-0.5, -0.8, -0.3],
             ])
 
-        n_atoms = len(atomic_numbers_list)
+        _n_atoms = len(atomic_numbers_list)
         atomic_numbers = torch.tensor(atomic_numbers_list, dtype=torch.long, device=device)
         coordinates = torch.tensor(coords_list, dtype=torch.float32, device=device)
 
@@ -567,7 +567,7 @@ class MatterSimMTSimulator:
         # Compute LJ + Coulomb energies
         lj_energy = self._compute_lj_potential(atomic_numbers, distances)
         coulomb_energy = self._compute_coulomb_potential(atomic_numbers, distances)
-        total_energy = lj_energy + coulomb_energy
+        _total_energy = lj_energy + coulomb_energy
 
         # Build energy profile
         energies = self._compute_energy_profile(atomic_numbers, coordinates, n_cycles)
@@ -798,7 +798,7 @@ class MatterSimMTSimulator:
         centers = self._fallback_centers
         widths = self._fallback_widths
 
-        for i, (h, c, w) in enumerate(zip(heights, centers, widths)):
+        for _h, (h, c, w) in enumerate(zip(heights, centers, widths, strict=True)):
             energies += h * np.exp(-0.5 * ((positions - c) / w) ** 2)
 
         if len(heights) >= 4:

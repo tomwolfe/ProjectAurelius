@@ -17,8 +17,7 @@ concurrent pipeline initialization.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from dataclasses import dataclass
 
 import psutil
 
@@ -95,7 +94,7 @@ class M5ProConfig:
         tier1_mlxfilter_enabled: bool = True,
         tier2_mattersim_enabled: bool = True,
         tier3_gcmtwin_enabled: bool = True,
-    ) -> "M5ProConfig":
+    ) -> M5ProConfig:
         """Construct M5ProConfig with dynamic memory allocation.
 
         Detects system RAM via psutil and computes MLX / shader cache
@@ -127,7 +126,7 @@ class M5ProConfig:
         shader_alloc = min(total_gb * 0.1, 2.0)
 
         # PyTorch MPS gets the remainder
-        pytorch_available = total_gb - mlx_alloc - shader_alloc
+        _pytorch_available = total_gb - mlx_alloc - shader_alloc
 
         # Only apply computed defaults when user hasn't provided non-zero values
         final_mlx = mlx_alloc if mlx_max_mem_gb == 0.0 else mlx_max_mem_gb

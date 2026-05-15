@@ -11,7 +11,6 @@ Then computes the Aurelius Score v5.1 (S_A_v5.1).
 from __future__ import annotations
 
 import gc
-from typing import Optional
 
 try:
     import mlx.core as mx
@@ -27,24 +26,21 @@ except ImportError:
     torch = None  # type: ignore
     HAS_TORCH = False
 
-from aurelius.config import apply_global_config, M5ProConfig
+from aurelius.config import M5ProConfig, apply_global_config
 from aurelius.memory.manager import (
     MetalShaderConfig,
     QuantizationConfig,
     ZeroCopyMemoryManager,
 )
-from aurelius.solvation.engine import MWSESolvationEngine
+from aurelius.scoring.engine import AureliusScoringEngine
 from aurelius.screening.tier1_mlx_filter import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig
-from aurelius.scoring.engine import AureliusScoringEngine
+from aurelius.solvation.engine import MWSESolvationEngine
 from aurelius.types import (
-    AureliusScoreResult,
     DesolvationPathResult,
-    GCMDTwinResult,
     MLXFilterResult,
     MoleculeInput,
-    SEIEvolution,
     Tier2Result,
 )
 
@@ -57,7 +53,7 @@ class AureliusPipeline:
 
     def __init__(
         self,
-        config: Optional[M5ProConfig] = None,
+        config: M5ProConfig | None = None,
         use_real_models: bool = True,
     ) -> None:
         """Initialize the Aurelius pipeline.
@@ -68,12 +64,12 @@ class AureliusPipeline:
                 If False, uses synthetic data (demo mode).
         """
         self.config = config or apply_global_config()
-        self._memory_manager: Optional[ZeroCopyMemoryManager] = None
-        self._mlx_filter: Optional[MLXNAFilter] = None
-        self._mattersim_sim: Optional[MatterSimMTSimulator] = None
-        self._gcmtwin: Optional[GCMDigitalTwin] = None
-        self._scoring_engine: Optional[AureliusScoringEngine] = None
-        self._solvation_engine: Optional[MWSESolvationEngine] = None
+        self._memory_manager: ZeroCopyMemoryManager | None = None
+        self._mlx_filter: MLXNAFilter | None = None
+        self._mattersim_sim: MatterSimMTSimulator | None = None
+        self._gcmtwin: GCMDigitalTwin | None = None
+        self._scoring_engine: AureliusScoringEngine | None = None
+        self._solvation_engine: MWSESolvationEngine | None = None
         self.has_mlx = HAS_MLX
         self.has_torch = HAS_TORCH
         self._use_real_models = use_real_models

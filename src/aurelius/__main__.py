@@ -13,11 +13,10 @@ Usage:
 import json
 import os
 import sys
-from pathlib import Path
 
 import click
 
-from aurelius.config import apply_global_config, get_config
+from aurelius.config import get_config
 from aurelius.pipeline import AureliusPipeline
 
 
@@ -206,8 +205,8 @@ def train(dataset, epochs, batch_size, learning_rate, csv_path):
 
     Wraps scripts/train_tier1.py as a native CLI subcommand.
     """
+
     from scripts.train_tier1 import main as train_main
-    import argparse
 
     argv = ["train_tier1.py", "--dataset", dataset, "--epochs", str(epochs),
             "--batch-size", str(batch_size), "--learning-rate", str(learning_rate)]
@@ -224,8 +223,8 @@ def validate(smiles):
 
     Wraps scripts/validate_physics.py as a native CLI subcommand.
     """
+
     from scripts.validate_physics import main as validate_main
-    import argparse
 
     argv = ["validate_physics.py", "--smiles", smiles]
     sys.argv = ["aurelius validate"] + argv
@@ -238,7 +237,7 @@ def status():
     config = get_config()
     env_vars = config.apply_environment()
     _apply_env_thread_safe(env_vars)
-    click.echo(f"\nAurelius v5.2 Configuration:")
+    click.echo("\nAurelius v5.2 Configuration:")
     click.echo(f"  MLX Max Memory:    {config.mlx_max_mem_gb}GB")
     click.echo(f"  Shader Cache:      {config.metal_shader_cache_gb}GB")
     click.echo(f"  GCMD kMC Steps:    {config.turquant_max_context:,} steps")

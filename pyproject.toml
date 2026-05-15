@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aurelius"
-version = "5.1.0"
-description = "Project Aurelius v5.1 - The 2nm Fusion Edition. Accelerated computational chemistry screening pipeline optimized for Apple M-series Neural Accelerators."
+version = "5.2.0"
+description = "Project Aurelius v5.2 - The Hardened Release. Accelerated computational chemistry screening pipeline optimized for Apple M-series Neural Accelerators."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
@@ -13,8 +13,9 @@ authors = [
     {name = "Thomas Wolfe", email = "tomwolfe@gmail.com"}
 ]
 dependencies = [
-    "torch>=2.12.0",
-    "mlx>=0.20.0",
+    # Pinned to stable releases; nightly pins are avoided for reproducibility.
+    "torch>=2.3.0",
+    "mlx>=0.15.0",
     "numpy>=1.26.0",
     "scipy>=1.12.0",
     "torchvision>=0.17.0",
@@ -45,6 +46,9 @@ aurelius = "aurelius.__main__:cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"aurelius.data" = ["force_field_params.json"]
 
 [tool.ruff]
 line-length = 120

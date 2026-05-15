@@ -173,7 +173,7 @@ def compute_coulomb_vectorized(atomic_numbers: np.ndarray, distances: np.ndarray
     q_product = q_i * q_j
 
     mask = np.triu(np.ones((n, n)), k=1)
-    charge_mask = (q_product := q_i * q_j) != 0.0
+    charge_mask = (q_product != 0.0)
     r_soft = np.sqrt(distances * distances + 1.0)
 
     return float(np.sum(14.3996 * q_product / r_soft * mask * charge_mask))

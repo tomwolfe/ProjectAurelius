@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 
 def validate_tier2() -> dict:
@@ -29,6 +28,7 @@ def validate_tier2() -> dict:
 
     try:
         import torch
+
         from aurelius.screening.tier2_mattersim import MatterSimMPEngine
 
         engine = MatterSimMPEngine()
@@ -169,7 +169,7 @@ def validate_tier3() -> dict:
             results["errors"].append(
                 f"Ea reversal: {k_low_ea:.4f} <= {k_high_ea:.4f}"
             )
-            print(f"  [FAIL] Lower Ea did not give higher rate")
+            print("  [FAIL] Lower Ea did not give higher rate")
 
         # Test 3: Concentration-dependent pre-exponential factor
         k_full = twin._arrhenius_rate(
@@ -202,7 +202,7 @@ def validate_tier3() -> dict:
             results["errors"].append(
                 f"Concentration dependence failed: {k_full:.4f} > {k_half:.4f} > {k_low:.4f}"
             )
-            print(f"  [FAIL] Concentration dependence incorrect")
+            print("  [FAIL] Concentration dependence incorrect")
 
         # Test 4: SEI thickness is physically plausible (1-50 Angstroms)
         result = twin.simulate_sei_evolution(
@@ -241,13 +241,14 @@ def validate_solvation() -> dict:
     results = {"passed": 0, "failed": 0, "errors": []}
 
     try:
-        from aurelius.solvation.engine import (
-            MWSESolvationEngine,
-            _BORN_CHARGES_NA,
-            _BORN_CHARGES_LI,
-            _BORN_CHARGES_K,
-        )
         import numpy as np
+
+        from aurelius.solvation.engine import (
+            _BORN_CHARGES_K,
+            _BORN_CHARGES_LI,
+            _BORN_CHARGES_NA,
+            MWSESolvationEngine,
+        )
 
         engine = MWSESolvationEngine(kex_window_ps=10.0)
 
@@ -265,7 +266,7 @@ def validate_solvation() -> dict:
             results["errors"].append(
                 f"Born charges out of range: Na+={na_norm:.3f}, Li+={li_norm:.3f}, K+={k_norm:.3f}"
             )
-            print(f"  [FAIL] Born charges out of physical range")
+            print("  [FAIL] Born charges out of physical range")
 
         # Test 2: Solvent exchange rates are positive
         k_ex = engine.compute_solvent_exchange_rate("water", "Na+")
@@ -294,7 +295,7 @@ def validate_solvation() -> dict:
             results["errors"].append(
                 f"Mixed solvent interpolation failed: {min(z_ec, z_dmc):.3f} > {z_mixed:.3f} > {max(z_ec, z_dmc):.3f}"
             )
-            print(f"  [FAIL] Mixed solvent interpolation incorrect")
+            print("  [FAIL] Mixed solvent interpolation incorrect")
 
         # Test 4: Dielectric constants are loaded correctly
         from aurelius.solvation.engine import _DIELECTRIC_CONSTANTS
@@ -380,7 +381,7 @@ Examples:
         all_errors.extend(results["errors"])
 
         print(f"  Passed: {results['passed']}, Failed: {results['failed']}"
-              + (f", Skipped: 1" if "skipped" in results else ""))
+              + (", Skipped: 1" if "skipped" in results else ""))
 
     print("\n" + "=" * 60)
     print(f"  Results: {total_passed} passed, {total_failed} failed, {total_skipped} skipped")
@@ -400,7 +401,7 @@ Examples:
         return 2
 
     if total_failed == 0:
-        print(f"\n  STATUS: ALL PHYSICS VALIDATIONS PASSED")
+        print("\n  STATUS: ALL PHYSICS VALIDATIONS PASSED")
         return 0
 
     return 0

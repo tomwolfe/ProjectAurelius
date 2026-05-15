@@ -1,6 +1,20 @@
-# Project Aurelius v5.1
+# Project Aurelius v5.2
 
-**The 2nm Fusion Edition** -- Accelerated computational chemistry screening pipeline optimized for Apple M-series Neural Accelerators.
+**The Hardened Release** -- Production-grade computational chemistry screening pipeline optimized for Apple M-series Neural Accelerators.
+
+## Changelog (v5.1 → v5.2)
+
+- **Packaging**: Replaced all `os.path.dirname(__file__)` path resolution with `importlib.resources` for wheel-compatible installs
+- **Thread Safety**: Removed `os.environ` mutation from `M5ProConfig.apply_environment()`; env vars now returned as dict for thread-safe CLI application
+- **Dataclass Fix**: Replaced frozen dataclass `__setattr__` workarounds with proper `__new__` constructor pattern (init=False + keyword-only args)
+- **PyTorch Hardening**: Wrapped `torch._C._mps_loadMetalLib` and `torch.accelerator` in `hasattr` guards with safe fallbacks
+- **Dataset Verification**: Replaced placeholder HF dataset IDs with verified repositories (`deepchem/esol`, `maastrichtuniversity/qm9`)
+- **Fallback Chain**: Implemented robust dataset fallback: HF verified IDs → local CSV → embedded 50-molecule curatated subset
+- **Memory Optimization**: Reduced `_placeholder_model` from 100M params (~400MB) to lazy init (1 float32, ~4 bytes)
+- **Complexity Docs**: Corrected `"O(1) pairwise interaction"` to `"O(N^2) time/space, O(1) Python interpreter overhead"`
+- **Bug Fix**: Removed redundant walrus operator in `compute_coulomb_vectorized`
+- **Dependency Pins**: Pinned stable releases (`torch>=2.3.0`, `mlx>=0.15.0`, `rdkit>=2023.9.0`)
+- **CLI**: Added `aurelius train` and `aurelius validate` subcommands
 
 ## Overview
 
@@ -22,8 +36,8 @@ Aurelius is a high-performance screening pipeline for battery electrolyte molecu
 
 ```
 Python >= 3.11
-torch >= 2.12.0
-mlx >= 0.20.0
+torch >= 2.3.0          # Stable release; nightly pins avoided
+mlx >= 0.15.0           # Stable release; nightly pins avoided
 rdkit >= 2023.9.0
 numpy >= 1.26.0
 scipy >= 1.12.0
@@ -62,6 +76,12 @@ aurelius batch examples/molecules.smi --output results.json
 
 # Compute score only
 aurelius score "CC(=O)OC1=CC=CC=C1"
+
+# Train Tier 1 model
+aurelius train --dataset esol --epochs 200
+
+# Run physics validation
+aurelius validate --smiles "CC(=O)OC1=CC=CC=C1"
 
 # Check pipeline status
 aurelius status
@@ -118,9 +138,9 @@ Models can be loaded from:
 
 > **Note:** The Hugging Face repositories `aurelius/tier1-esol-mlp` and `aurelius/tier1-qm9-mlp` are placeholders. Public pre-trained weights are not yet available. Users should train locally and optionally upload to their own HF repository.
 
-## Aurelius Score v5.1
+## Aurelius Score v5.2
 
-The composite Aurelius Score (S_A_v5.1) combines five components:
+The composite Aurelius Score (S_A_v5.2) combines five components:
 
 | Component | Weight | Description |
 |-----------|--------|-------------|
@@ -130,9 +150,13 @@ The composite Aurelius Score (S_A_v5.1) combines five components:
 | MX Synthesis Score | 0.20 | Material synthesis feasibility |
 | GWP Penalty | 0.10 | Global Warming Potential adjustment |
 
-**Formula:** S_A_v5.1 = 0.30*σ + 0.20*E_des + 0.20*SEI + 0.20*MX - 0.10*GWP
+**Formula:** S_A_v5.2 = 0.30*σ + 0.20*E_des + 0.20*SEI + 0.20*MX - 0.10*GWP
 
-Scores range from 0-100. Molecules with S_A_v5.1 >= 60 are considered viable.
+Scores range from 0-100. Molecules with S_A_v5.2 >= 65 are considered viable.
+
+## Tier 2 Complexity
+
+MatterSim-MT uses **fully vectorized tensor operations** for pairwise interaction computation. The physics engine computes all N×N pairwise distances and energies in **O(N^2) time and space** (where N is the number of atoms), with **O(1) Python interpreter overhead** per step. This is the optimal theoretical complexity for all-pairs interaction models.
 
 ## Scientific References
 
@@ -208,6 +232,11 @@ aurelius screen <smiles>         Screen a single molecule
   --demo                         Use synthetic data (demo mode)
 aurelius batch <file>            Screen molecules from SMILES file
 aurelius score <smiles>          Compute Aurelius score only
+aurelius train                   Train Tier 1 model (esol/qm9)
+  --dataset esol|qm9             Dataset to train on
+  --epochs N                     Number of epochs
+  --csv-path PATH                Local CSV file path
+aurelius validate <smiles>       Run physics validation
 aurelius status                  Show pipeline status and memory
 ```
 

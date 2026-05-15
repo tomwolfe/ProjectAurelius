@@ -231,7 +231,7 @@ def _load_esol_from_csv(csv_path: str) -> tuple[np.ndarray, np.ndarray, list[str
     smiles_list = []
     log_s_list = []
 
-    with open(csv_path, "r") as f:
+    with open(csv_path) as f:
         reader = csv.DictReader(f)
         for row in reader:
             smiles = row.get("smiles", row.get("SMILES", "")).strip()
@@ -550,7 +550,7 @@ def train_mlx(
         nn.Linear(128, 1),
     )
 
-    optimizer = mx.optimizers.SGD(learning_rate=lr)
+    _optimizer = mx.optimizers.SGD(learning_rate=lr)
     loss_fn = nn.MSELoss
 
     X_train_mx = mx.array(X_train)
@@ -672,7 +672,7 @@ def main() -> None:
         result = train_mlx(X_train, y_train, X_val, y_val, epochs, args.learning_rate, batch_size, args.seed)
 
     # Print final metrics
-    print(f"\n[train_tier1] Training complete!")
+    print("\n[train_tier1] Training complete!")
     print(f"  Final val_loss: {result['history']['val_loss'][-1]:.4f}")
     if result["history"]["train_loss"]:
         print(f"  Final train_loss: {result['history']['train_loss'][-1]:.4f}")
@@ -697,7 +697,7 @@ def main() -> None:
     }
     save_model(result["weights"], save_path, args.dataset, hyperparams)
 
-    print(f"\n[train_tier1] Ready to use with Aurelius pipeline!")
+    print("\n[train_tier1] Ready to use with Aurelius pipeline!")
     print(f"  Set AURELIUS_MODEL_DIR to: {os.path.dirname(save_path)}")
 
 

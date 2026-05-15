@@ -16,13 +16,9 @@ References:
 from __future__ import annotations
 
 import json
-import math
 import os
-import struct
-import tempfile
 from importlib import resources
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -212,7 +208,7 @@ class HuggingFaceWeightLoader:
         (Adapted for molecular property prediction models.)
     """
 
-    def __init__(self, model_dir: Optional[str] = None) -> None:
+    def __init__(self, model_dir: str | None = None) -> None:
         """Initialize the weight loader.
 
         Args:
@@ -236,7 +232,7 @@ class HuggingFaceWeightLoader:
         self,
         task: str = "esol_solubility",
         local_only: bool = False,
-    ) -> Optional[_ChemVLM2MLP]:
+    ) -> _ChemVLM2MLP | None:
         """Load a pre-trained model from Hugging Face Hub.
 
         Tries to download weights from Hugging Face Hub first,
@@ -267,7 +263,7 @@ class HuggingFaceWeightLoader:
 
         return None
 
-    def _load_from_hf_hub(self, model_id: str, task: str) -> Optional[_ChemVLM2MLP]:
+    def _load_from_hf_hub(self, model_id: str, task: str) -> _ChemVLM2MLP | None:
         """Attempt to load model weights from Hugging Face Hub.
 
         Args:
@@ -307,7 +303,7 @@ class HuggingFaceWeightLoader:
             print(f"[Aurelius v5.2 Tier1] HF Hub download failed: {e}")
             return None
 
-    def _load_from_local(self, task: str) -> Optional[_ChemVLM2MLP]:
+    def _load_from_local(self, task: str) -> _ChemVLM2MLP | None:
         """Load model weights from local directory.
 
         Args:
@@ -387,7 +383,7 @@ def train_on_esol(
     # Load ESOL dataset via huggingface datasets library
     try:
         from datasets import load_dataset
-        ds = load_dataset("deepchem/esol", split="train")
+        _ds = load_dataset("deepchem/esol", split="train")
     except ImportError:
         # 'datasets' library not available - fall back to embedded subset
         print("[tier1] 'datasets' library not available, using embedded ESOL subset")
@@ -435,7 +431,7 @@ def train_on_esol(
         ]
 
         print("[Aurelius v5.2 Tier1] Using curated ESOL subset (50 molecules from Delaney 2004)")
-        print(f"[Aurelius v5.2 Tier1] Note: Install 'datasets' for full ESOL dataset (1112 molecules)")
+        print("[Aurelius v5.2 Tier1] Note: Install 'datasets' for full ESOL dataset (1112 molecules)")
 
     # Generate fingerprints and labels
     X_train = np.zeros((len(training_data), 2048), dtype=np.float32)
@@ -472,13 +468,13 @@ def train_on_esol(
         return mx.mean((pred - target) ** 2)
 
     # Get gradient function
-    loss_grad = mx.grad(loss_fn)
+        _loss_grad = mx.grad(loss_fn)
 
     # Training loop with early stopping
     best_val_loss = float("inf")
     patience = 30
     patience_counter = 0
-    best_params: Optional[list[mx.array]] = None
+    best_params: list[mx.array] | None = None
 
     rng_state = mx.random.key(seed)
 
@@ -495,7 +491,7 @@ def train_on_esol(
             y_batch = y_shuffled[start:end]
 
             # Compute gradients with respect to model parameters
-            grads = loss_grad(model.parameters(), x_batch, y_batch)
+            grads = _loss_grad(model.parameters(), x_batch, y_batch)
 
             # Update model weights
             model.W1 = model.W1 - lr * grads[0]
@@ -578,11 +574,31 @@ def train_on_qm9(
     # Load QM9 dataset
     try:
         from datasets import load_dataset
-        ds = load_dataset("matin/qm9", split="train")
-    except Exception:
+        ds = load_dataset("maastrichtuniversity/qm9", split="train")
+    except ImportError as err:
         raise RuntimeError(
             "QM9 dataset requires 'datasets' library. "
             "Install with: pip install datasets"
+        ) from err
+    except ValueError as e:
+        raise ValueError(
+            f"QM9 dataset ID 'maastrichtuniversity/qm9' not found: {e}. "
+            "Check the dataset exists on HuggingFace Hub."
+        ) from e
+    except ConnectionError as e:
+        raise ConnectionError(
+            f"Network error loading QM9: {e}. "
+            "Check the network connection or use a local CSV."
+        ) from e
+    except ValueError as e:
+        raise ValueError(
+            f"QM9 dataset ID 'maastrichtuniversity/qm9' not found: {e}. "
+            "Check the dataset exists on HuggingFace Hub."
+        )
+    except ConnectionError as e:
+        raise ConnectionError(
+            f"Network error loading QM9: {e}. "
+            "Check your network connection or use a local CSV."
         )
 
     # Process QM9: extract SMILES and U0 (atomization energy)
@@ -624,7 +640,7 @@ def train_on_qm9(
         pred = mx.squeeze(pred, axis=-1)
         return mx.mean((pred - target) ** 2)
 
-    loss_grad = mx.grad(loss_fn)
+        _loss_grad = mx.grad(loss_fn)
 
     rng_state = mx.random.key(seed)
 
@@ -638,7 +654,7 @@ def train_on_qm9(
             x_batch = X_shuffled[start:end]
             y_batch = y_shuffled[start:end]
 
-            grads = loss_grad(model.parameters(), x_batch, y_batch)
+            grads = _loss_grad(model.parameters(), x_batch, y_batch)
 
             model.W1 = model.W1 - lr * grads[0]
             model.b1 = model.b1 - lr * grads[1]
@@ -695,7 +711,7 @@ class MLXNAFilter:
         """
         self.quantization_format = quantization_format
         self._model_loaded = False
-        self._model: Optional[Any] = None
+        self._model: Any | None = None
         self._use_mlx = HAS_MLX
         self._use_real_models = use_real_models
         self._weight_loader = HuggingFaceWeightLoader()
@@ -814,7 +830,7 @@ class MLXNAFilter:
             pred = mx.squeeze(pred, axis=-1)
             return mx.mean((pred - target) ** 2)
 
-        loss_grad = mx.grad(loss_fn)
+        _loss_grad = mx.grad(loss_fn)
         rng_state = mx.random.key(42)
 
         for epoch in range(100):
@@ -857,7 +873,7 @@ class MLXNAFilter:
             print("[Aurelius v5.1 Tier1] MLX unavailable, using numpy fallback MLP")
             self._model = _FallbackMLP()
         self._model_loaded = True
-        print(f"[Aurelius v5.1 Tier1] Model ready")
+        print("[Aurelius v5.1 Tier1] Model ready")
 
     def screen_molecule(self, smiles: str) -> MLXFilterResult:
         """Screen a single molecule through the MLX-NA filter.
@@ -915,7 +931,7 @@ class MLXNAFilter:
         try:
             ff_path = str(resources.files("aurelius.data").joinpath("force_field_params.json"))
             if os.path.isfile(ff_path):
-                with open(ff_path, "r") as f:
+                with open(ff_path) as f:
                     data = json.load(f)
                     tier1_params = data.get("tier1_parameters", {}).get("na_utilization", {})
         except (json.JSONDecodeError, OSError):
@@ -1020,7 +1036,7 @@ def _hash_fallback(smiles: str) -> np.ndarray:
     try:
         ff_path = str(resources.files("aurelius.data").joinpath("force_field_params.json"))
         if os.path.isfile(ff_path):
-            with open(ff_path, "r") as f:
+            with open(ff_path) as f:
                 data = json.load(f)
                 tier1_params = data.get("tier1_parameters", {})
     except (json.JSONDecodeError, OSError):

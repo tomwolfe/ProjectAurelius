@@ -8,7 +8,6 @@ and the screening tier modules.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -78,7 +77,7 @@ class DesolvationPathResult:
     local_maxima_eV: float
     path_integral_eV_A: float
     rejected: bool
-    rejection_reason: Optional[str] = None
+    rejection_reason: str | None = None
     simulation_cycles: int = 500
 
 
