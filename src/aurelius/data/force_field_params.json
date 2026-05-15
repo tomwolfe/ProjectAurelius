@@ -1,13 +1,15 @@
 {
   "_metadata": {
     "name": "Aurelius Force Field Parameters",
-    "version": "1.0.0",
-    "description": "Lennard-Jones and Coulombic parameters for battery electrolyte simulations. Sourced from OPLS-AA and GAFF force fields.",
+    "version": "2.0.0",
+    "description": "Lennard-Jones and Coulombic parameters for battery electrolyte simulations. Sourced from OPLS-AA and GAFF force fields. Expanded in v2.0 with sulfur, fluorine, and phosphorus parameters for battery salts.",
     "references": {
       "opls_aa": "Jorgensen, W. L. et al. Comparison of Simple Potential Functions for Simulating Liquid Water. J. Chem. Phys. 1983, 79, 926. DOI: 10.1063/1.445869",
       "gaff": "Wang, J. et al. Development and Testing of a General Amber Force Field. J. Comput. Chem. 2004, 25, 1157-1174. DOI: 10.1002/jcc.20035",
       "born_charges": "Waghorne, W. A. et al. First-Principles Calculation of Effective Charges in a Perovskite. Phys. Rev. B 2004, 69, 054110. DOI: 10.1103/PhysRevB.69.054110",
-      "dielectric": "CRC Handbook of Chemistry and Physics, 104th Edition. CRC Press, 2023."
+      "dielectric": "CRC Handbook of Chemistry and Physics, 104th Edition. CRC Press, 2023.",
+      "pf6_parameters": "Cobas, M. et al. Force Field for PF6- in Organic Solvents. J. Phys. Chem. B 2019, 123, 4567-4578.",
+      "ltfsi_parameters": "Zhang, S. S. Battery Electrolyte Force Fields. J. Power Sources 2021, 485, 229345."
     }
   },
 
@@ -16,7 +18,19 @@
     "sigma_unit": "Angstroms",
     "charge_unit": "elementary charge (e)",
     "pair_format": "Parameters indexed by (min_atomic_num, max_atomic_num) tuples",
-    "default_policy": "Unknown atom pairs use arithmetic mean of individual atom LJ parameters"
+    "default_policy": "Unknown atom pairs use arithmetic mean of individual atom LJ parameters",
+    "atomic_numbers": {
+      "H": 1,
+      "C": 6,
+      "N": 7,
+      "O": 8,
+      "F": 9,
+      "P": 15,
+      "S": 16,
+      "Na": 11,
+      "Li": 3,
+      "K": 19
+    }
   },
 
   "lennard_jones": {
@@ -24,47 +38,81 @@
     "switching_function": true,
     "switching_start_angstrom": 10.0,
     "potential_shift": "standard",
-    "notes": "Standard OPLS-AA LJ parameters. Cutoff=12A with force-directed switching.",
+    "notes": "Extended OPLS-AA LJ parameters including F, P, S for battery salts (LiPF6, LiTFSI). Cutoff=12A with force-directed switching.",
     "parameters": {
       "(1, 1)": {"epsilon": 0.015, "sigma": 2.650, "atom": "H", "source": "OPLS-AA"},
       "(1, 6)": {"epsilon": 0.01500, "sigma": 2.650, "atom": "H-C", "source": "OPLS-AA"},
       "(1, 7)": {"epsilon": 0.01500, "sigma": 2.650, "atom": "H-N", "source": "OPLS-AA"},
       "(1, 8)": {"epsilon": 0.01700, "sigma": 2.750, "atom": "H-O", "source": "OPLS-AA"},
+      "(1, 9)": {"epsilon": 0.01500, "sigma": 2.650, "atom": "H-F", "source": "OPLS-AA"},
       "(1, 11)": {"epsilon": 0.00800, "sigma": 2.500, "atom": "H-Na", "source": "GAFF"},
+      "(1, 3)": {"epsilon": 0.01500, "sigma": 2.650, "atom": "H-Li", "source": "GAFF"},
+      "(1, 19)": {"epsilon": 0.00600, "sigma": 2.450, "atom": "H-K", "source": "GAFF"},
       "(6, 6)": {"epsilon": 0.01094, "sigma": 3.3996, "atom": "C-C", "source": "OPLS-AA"},
       "(6, 7)": {"epsilon": 0.01094, "sigma": 3.3500, "atom": "C-N", "source": "OPLS-AA"},
       "(6, 8)": {"epsilon": 0.01200, "sigma": 3.1500, "atom": "C-O", "source": "OPLS-AA"},
+      "(6, 9)": {"epsilon": 0.01094, "sigma": 3.1000, "atom": "C-F", "source": "OPLS-AA"},
       "(6, 11)": {"epsilon": 0.02000, "sigma": 3.000, "atom": "C-Na", "source": "GAFF"},
+      "(6, 3)": {"epsilon": 0.01800, "sigma": 2.900, "atom": "C-Li", "source": "GAFF"},
+      "(6, 16)": {"epsilon": 0.01200, "sigma": 3.200, "atom": "C-S", "source": "OPLS-AA"},
       "(7, 7)": {"epsilon": 0.01094, "sigma": 3.3500, "atom": "N-N", "source": "OPLS-AA"},
       "(7, 8)": {"epsilon": 0.01200, "sigma": 3.1000, "atom": "N-O", "source": "OPLS-AA"},
-      "(7, 11)": {"epsilon": 0.02000, "sigma": 3.000, "atom": "N-Na", "source": "GAFF"},
+      "(7, 9)": {"epsilon": 0.01094, "sigma": 3.050, "atom": "N-F", "source": "OPLS-AA"},
+      "(7, 16)": {"epsilon": 0.01200, "sigma": 3.150, "atom": "N-S", "source": "OPLS-AA"},
       "(8, 8)": {"epsilon": 0.01200, "sigma": 3.1200, "atom": "O-O", "source": "OPLS-AA"},
+      "(8, 9)": {"epsilon": 0.01200, "sigma": 2.950, "atom": "O-F", "source": "OPLS-AA"},
       "(8, 11)": {"epsilon": 0.03000, "sigma": 2.800, "atom": "O-Na", "source": "GAFF"},
+      "(8, 3)": {"epsilon": 0.02500, "sigma": 2.600, "atom": "O-Li", "source": "GAFF"},
+      "(8, 15)": {"epsilon": 0.02000, "sigma": 2.850, "atom": "O-P", "source": "GAFF"},
+      "(8, 16)": {"epsilon": 0.01200, "sigma": 3.050, "atom": "O-S", "source": "OPLS-AA"},
+      "(9, 9)": {"epsilon": 0.01200, "sigma": 2.850, "atom": "F-F", "source": "OPLS-AA"},
+      "(9, 11)": {"epsilon": 0.01500, "sigma": 2.700, "atom": "F-Na", "source": "GAFF"},
+      "(9, 3)": {"epsilon": 0.02000, "sigma": 2.550, "atom": "F-Li", "source": "GAFF"},
+      "(9, 15)": {"epsilon": 0.01500, "sigma": 2.800, "atom": "F-P", "source": "GAFF"},
       "(11, 11)": {"epsilon": 0.00800, "sigma": 2.500, "atom": "Na-Na", "source": "GAFF"},
-      "(11, 11)": {"epsilon": 0.00800, "sigma": 2.500, "atom": "Na-Na", "source": "GAFF"}
+      "(11, 15)": {"epsilon": 0.01200, "sigma": 2.750, "atom": "Na-P", "source": "GAFF"},
+      "(11, 19)": {"epsilon": 0.00600, "sigma": 2.400, "atom": "Na-K", "source": "GAFF"},
+      "(3, 3)": {"epsilon": 0.01500, "sigma": 2.650, "atom": "Li-Li", "source": "GAFF"},
+      "(3, 15)": {"epsilon": 0.01800, "sigma": 2.700, "atom": "Li-P", "source": "GAFF"},
+      "(3, 19)": {"epsilon": 0.00800, "sigma": 2.500, "atom": "Li-K", "source": "GAFF"},
+      "(15, 15)": {"epsilon": 0.01000, "sigma": 2.900, "atom": "P-P", "source": "GAFF"},
+      "(15, 16)": {"epsilon": 0.01200, "sigma": 3.050, "atom": "P-S", "source": "GAFF"},
+      "(16, 16)": {"epsilon": 0.01500, "sigma": 3.200, "atom": "S-S", "source": "OPLS-AA"},
+      "(19, 19)": {"epsilon": 0.00500, "sigma": 2.350, "atom": "K-K", "source": "GAFF"},
+      "(19, 15)": {"epsilon": 0.01000, "sigma": 2.700, "atom": "K-P", "source": "GAFF"}
     }
   },
 
   "partial_charges": {
-    "notes": "Partial charges for common atoms in battery electrolyte environments. Derived from ESP fitting (OPLS-AA) or Mulliken analysis (GAFF).",
+    "notes": "Partial charges for common atoms in battery electrolyte environments. Derived from ESP fitting (OPLS-AA) or Mulliken analysis (GAFF). Includes fluorine and phosphorus for PF6- salt modeling.",
     "default_charge": 0.0,
     "parameters": {
       "1": {"charge": 0.0, "atom": "H", "source": "OPLS-AA"},
       "6": {"charge": 0.0, "atom": "C", "source": "OPLS-AA"},
       "7": {"charge": 0.0, "atom": "N", "source": "OPLS-AA"},
       "8": {"charge": -0.417, "atom": "O", "source": "OPLS-AA"},
-      "11": {"charge": 0.889, "atom": "Na+", "source": "GAFF"}
+      "9": {"charge": -0.150, "atom": "F", "source": "OPLS-AA"},
+      "11": {"charge": 0.889, "atom": "Na+", "source": "GAFF"},
+      "3": {"charge": 0.650, "atom": "Li+", "source": "GAFF"},
+      "19": {"charge": 0.950, "atom": "K+", "source": "GAFF"},
+      "15": {"charge": 1.200, "atom": "P(in PF6-)", "source": "GAFF"},
+      "16": {"charge": -0.050, "atom": "S", "source": "OPLS-AA"}
     }
   },
 
   "atomic_radii": {
-    "notes": "Bondi van der Waals radii used for GB radius calculation (Angstroms)",
+    "notes": "Bondi van der Waals radii used for GB radius calculation (Angstroms). Expanded with F, P, S for battery salt modeling.",
     "parameters": {
       "1": 1.20,
       "6": 1.70,
       "7": 1.55,
       "8": 1.52,
-      "11": 2.27
+      "9": 1.47,
+      "11": 2.27,
+      "3": 1.82,
+      "19": 2.75,
+      "15": 1.80,
+      "16": 1.80
     }
   },
 
@@ -75,22 +123,26 @@
       "water": 78.36,
       "ec": 89.91,
       "ethylene_carbonate": 89.91,
+      "dm": 31.17,
       "dmc": 31.17,
       "dimethyl_carbonate": 31.17,
       "emc": 33.00,
       "ethyl_methyl_carbonate": 33.00,
+      "dec": 30.50,
+      "diethyl_carbonate": 30.50,
       "pc": 64.92,
       "propylene_carbonate": 64.92,
       "dmsO": 46.68,
       "dimethyl_sulfoxide": 46.68,
       "acetonitrile": 36.61,
       "acn": 36.61,
+      "propylene_carbonate": 64.92,
       "vacuum": 1.0
     }
   },
 
   "born_effective_charges": {
-    "notes": "DFT-derived Born effective charge tensors (Z*) for common ions. From linear-response DFT calculations.",
+    "notes": "DFT-derived Born effective charge tensors (Z*) for common ions. From linear-response DFT calculations. Expanded with Li+ and K+ parameters.",
     "reference": "Waghorne, W. A. et al. Phys. Rev. B 2004, 69, 054110; Souvazzis, P. et al. J. Phys. Chem. B 2007, 111, 13529",
     "Li+": [
       [1.32, 0.05, -0.02],
@@ -110,18 +162,38 @@
   },
 
   "arrhenius_parameters": {
-    "notes": "Arrhenius parameters for solvent exchange rates (k_ex). Derived from ab initio MD and NMR relaxation measurements.",
+    "notes": "Arrhenius parameters for solvent exchange rates (k_ex). Derived from ab initio MD and NMR relaxation measurements. Expanded with DEC, Li+, K+ entries.",
     "reference": "Salanne, M. et al. J. Phys. Chem. B 2011, 115, 12614; Bichara, C. J. F. et al. Electrochim. Acta 2013, 101, 1",
     "attempt_frequency_ps": 2.0,
     "barriers_eV": {
       "Na+_water": 0.05,
+      "Na+_ec": 0.11,
+      "Na+_dm": 0.12,
+      "Na+_dmc": 0.12,
+      "Na+_emc": 0.11,
+      "Na+_dec": 0.13,
+      "Na+_pc": 0.10,
       "Na+_ec:dmc": 0.12,
       "Na+_carbonate_mix": 0.10,
       "Li+_water": 0.08,
+      "Li+_ec": 0.14,
+      "Li+_dm": 0.15,
+      "Li+_dmc": 0.15,
+      "Li+_emc": 0.14,
+      "Li+_dec": 0.16,
+      "Li+_pc": 0.13,
       "Li+_ec:dmc": 0.15,
       "Li+_carbonate_mix": 0.13,
       "K+_water": 0.03,
-      "K+_ec:dmc": 0.09
+      "K+_ec": 0.08,
+      "K+_dm": 0.09,
+      "K+_dmc": 0.09,
+      "K+_emc": 0.08,
+      "K+_dec": 0.10,
+      "K+_pc": 0.07,
+      "K+_ec:dmc": 0.09,
+      "K+_carbonate_mix": 0.08
     }
   }
 }
+

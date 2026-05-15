@@ -19,18 +19,19 @@ from aurelius.scoring.engine import AureliusScoringEngine
 from aurelius.types import (
     AureliusScoreResult,
     DesolvationPathResult,
+    GCMDTConfig,
     GCMDTwinResult,
     MLXFilterResult,
     MoleculeInput,
     SEIEvolution,
     Tier2Result,
-    TurboQuantConfig,
 )
 
 __all__ = [
     "AureliusPipeline",
     "AureliusScoreResult",
     "DesolvationPathResult",
+    "GCMDTConfig",
     "GCMDTwinResult",
     "GCMDigitalTwin",
     "MLXFilterResult",
@@ -42,7 +43,6 @@ __all__ = [
     "QuantizationConfig",
     "SEIEvolution",
     "Tier2Result",
-    "TurboQuantConfig",
     "ZeroCopyMemoryManager",
     "apply_global_config",
     "bridge",

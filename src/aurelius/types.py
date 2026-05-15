@@ -118,23 +118,27 @@ class GCMDTwinResult:
 
 
 @dataclass
-class TurboQuantConfig:
-    """TurboQuant KV-Compression configuration for GCMD Digital Twin."""
+class GCMDTConfig:
+    """Configuration for GCMD Digital Twin kMC simulation.
 
-    max_context_tokens: int = 8192
-    kv_compression_ratio: float = 0.4  # Compress KV cache to 40%
-    compression_method: str = "streaming"  # "streaming" or "paged"
-    min_attention_heads: int = 8
-    retain_long_range: bool = True
+    Controls the kinetic Monte Carlo simulation parameters
+    for SEI (Solid Electrolyte Interphase) evolution modeling.
+    """
+
+    max_simulation_steps: int = 5000
+    record_interval: int = 50  # Record thickness every N steps
+    transport_limit_thickness_angstrom: float = 15.0  # Beyond this, diffusion limits rates
+    seed_from_inputs: bool = True  # Deterministic seeding from molecular inputs
+    use_mass_transport_limitation: bool = True  # As SEI grows, solvent concentration at interface drops
 
 
 __all__ = [
     "AureliusScoreResult",
     "DesolvationPathResult",
+    "GCMDTConfig",
     "GCMDTwinResult",
     "MLXFilterResult",
     "MoleculeInput",
     "SEIEvolution",
     "Tier2Result",
-    "TurboQuantConfig",
 ]

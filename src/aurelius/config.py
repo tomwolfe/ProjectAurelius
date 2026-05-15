@@ -39,7 +39,7 @@ class M5ProConfig:
     # Metal shader pre-compilation buffer (10% of RAM, capped at 2GB)
     metal_shader_cache_gb: float = 0.0
 
-    # GCMD TurboQuant context window limit (tokens)
+    # GCMD kMC simulation parameters
     turquant_max_context: int = 8192
 
     # Desolvation energy barrier rejection threshold (eV)
@@ -58,7 +58,7 @@ class M5ProConfig:
     # Quantization presets
     chemvlm_quantization: str = "MX4"
     mattersim_quantization: str = "MX4"
-    gcmd_quantization: str = "TurboQuant"
+    gcmd_quantization: str = "standard"
 
     # Screening pipeline tiers
     tier1_mlxfilter_enabled: bool = True
@@ -119,7 +119,7 @@ class M5ProConfig:
             f"  MLX (ChemVLM-2 MX4):         {mlx_reserved:>5.1f}GB reserved\n"
             f"  Metal Shader Cache:          {shader_reserved:>5.1f}GB reserved\n"
             f"  PyTorch MPS (MatterSim+GCMD): {pytorch_available:>5.1f}GB available\n"
-            f"  TurboQuant Context Window:   {self.turquant_max_context:,} tokens\n"
+            f"  GCMD kMC Steps:              {self.turquant_max_context:,} steps\n"
             f"  Desolvation Barrier Cutoff:  {self.desolvation_barrier_threshold_eV} eV\n"
         )
 

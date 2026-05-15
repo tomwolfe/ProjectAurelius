@@ -26,6 +26,7 @@ References:
 
 from __future__ import annotations
 
+import ast
 import json
 import math
 import os
@@ -432,7 +433,7 @@ class MatterSimMTSimulator:
             lj_data = params.get("lennard_jones", {}).get("parameters", {})
             for key, val in lj_data.items():
                 try:
-                    key_tuple = eval(key)
+                    key_tuple = ast.literal_eval(key)
                     self._LJ_PARAMS[key_tuple] = (val["epsilon"], val["sigma"])
                 except (SyntaxError, ValueError):
                     pass

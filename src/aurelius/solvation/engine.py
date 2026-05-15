@@ -23,6 +23,8 @@ References:
 
 from __future__ import annotations
 
+import ast
+import csv
 import json
 import math
 import os
@@ -85,7 +87,7 @@ _DIELECTRIC_CONSTANTS: dict[str, float] = _FF_PARAMS.get("dielectric_constants",
 _LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {}
 for key, val in _FF_PARAMS.get("lennard_jones", {}).get("parameters", {}).items():
     try:
-        key_tuple = eval(key)  # Convert string key like "(1, 1)" to tuple
+        key_tuple = ast.literal_eval(key)  # Convert string key like "(1, 1)" to tuple
         _LJ_PARAMS[key_tuple] = (val["epsilon"], val["sigma"])
     except (SyntaxError, ValueError):
         pass
@@ -320,7 +322,7 @@ class MWSESolvationEngine:
             _LJ_PARAMS = {}
             for key, val in _FF_PARAMS.get("lennard_jones", {}).get("parameters", {}).items():
                 try:
-                    _LJ_PARAMS[eval(key)] = (val["epsilon"], val["sigma"])
+                    _LJ_PARAMS[ast.literal_eval(key)] = (val["epsilon"], val["sigma"])
                 except (SyntaxError, ValueError):
                     pass
             for z_str, val in _FF_PARAMS.get("partial_charges", {}).get("parameters", {}).items():

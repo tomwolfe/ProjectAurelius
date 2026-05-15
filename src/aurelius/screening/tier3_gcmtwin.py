@@ -1,4 +1,4 @@
-"""Phase 3: Tier 3 - GCMD "Digital Twin" with Arrhenius kMC.
+"""Phase 3: Tier 3 - GCMD Digital Twin with Arrhenius kMC.
 
 Implements a kinetic Monte Carlo (kMC) simulation for SEI growth,
 using physically derived rate constants from the Arrhenius equation.
@@ -14,6 +14,11 @@ where A (pre-exponential factor) depends on local solvent
 concentration (mass transport limitation as SEI grows),
 Ea is the activation energy from literature values,
 and kB is the Boltzmann constant.
+
+Note: This is a standard kinetic Monte Carlo simulator. It does not
+use any Transformer models, KV caching, or model quantization. The
+name "GCMD Digital Twin" refers to the "Gaussian-Chemical Multiscale
+Digital" twin concept for battery electrolyte screening.
 """
 
 from __future__ import annotations
@@ -23,7 +28,7 @@ from typing import Optional
 
 import numpy as np
 
-from aurelius.types import GCMDTwinResult, SEIEvolution, TurboQuantConfig
+from aurelius.types import GCMDTConfig, GCMDTwinResult, SEIEvolution
 
 # Physical constants
 _KB_EV_K = 8.617333262e-5  # Boltzmann constant in eV/K
@@ -62,11 +67,8 @@ class GCMDigitalTwin:
     _D_SALT: float = 0.04           # Angstrom per salt reduction
     _D_POLY: float = 0.05           # Angstrom per polymerization
 
-    def __init__(self, turboquant_config: Optional[TurboQuantConfig] = None) -> None:
-        self.config = turboquant_config or TurboQuantConfig()
-        self._effective_context = int(
-            self.config.max_context_tokens * self.config.kv_compression_ratio
-        )
+    def __init__(self, gcmtwin_config: Optional[GCMDTConfig] = None) -> None:
+        self.config = gcmtwin_config or GCMDTConfig()
 
     def simulate_sei_evolution(
         self,
@@ -95,25 +97,24 @@ class GCMDigitalTwin:
         )
 
         elapsed_ms = (time.perf_counter() - start) * 1000
-        mem_gb = self._estimate_memory_with_turboquant(sei)
+        mem_gb = self._estimate_memory_footprint(sei)
 
         return GCMDTwinResult(
             molecule_smiles=smiles,
             sei_evolution=sei,
             interface_stability=sei.homogeneity_score,
             memory_used_gb=mem_gb,
-            context_tokens_used=self._effective_context,
+            context_tokens_used=self.config.max_simulation_steps,
             simulation_time_ms=elapsed_ms,
         )
 
-    def get_turboquant_stats(self) -> dict:
-        """Return current TurboQuant KV-compression statistics."""
+    def get_simulation_stats(self) -> dict:
+        """Return current kMC simulation statistics."""
         return {
-            "max_context_tokens": self.config.max_context_tokens,
-            "kv_compression_ratio": self.config.kv_compression_ratio,
-            "effective_context": self._effective_context,
-            "compression_method": self.config.compression_method,
-            "long_range_retained": self.config.retain_long_range,
+            "max_simulation_steps": self.config.max_simulation_steps,
+            "record_interval": self.config.record_interval,
+            "transport_limit_thickness_angstrom": self.config.transport_limit_thickness_angstrom,
+            "use_mass_transport_limitation": self.config.use_mass_transport_limitation,
         }
 
     def _arrhenius_rate(
@@ -206,11 +207,11 @@ class GCMDigitalTwin:
 
         # SEI thickness at which mass transport becomes significant
         # (Angstrom) - beyond this, diffusion through SEI limits rates
-        transport_limit_thickness = 15.0  # Angstrom
+        transport_limit_thickness = self.config.transport_limit_thickness_angstrom
 
         # kMC simulation parameters
-        n_steps = 5000
-        record_interval = 50  # Record thickness every N steps
+        n_steps = self.config.max_simulation_steps
+        record_interval = self.config.record_interval
 
         # Track cumulative thickness and reaction counts
         total_thickness = 0.0
@@ -349,8 +350,8 @@ class GCMDigitalTwin:
         )
 
     @staticmethod
-    def _estimate_memory_with_turboquant(sei: SEIEvolution) -> float:
-        """Estimate memory usage with TurboQuant compression."""
+    def _estimate_memory_footprint(sei: SEIEvolution) -> float:
+        """Estimate memory usage for GCMD Digital Twin simulation."""
         base = 2.0  # GB base for GCMD Digital Twin
         context_scaling = sei.thickness_angstrom * 0.1
         return base + context_scaling

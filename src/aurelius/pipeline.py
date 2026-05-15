@@ -3,7 +3,7 @@
 Coordinates the full three-tier screening pipeline:
   Tier 1: MLX-NA Filter (ChemVLM-2 MX4)
   Tier 2: MatterSim-MT (torch.compile Graph Mode)
-  Tier 3: GCMD Digital Twin (TurboQuant KV-Compression)
+  Tier 3: GCMD Digital Twin (Arrhenius kMC)
 
 Then computes the Aurelius Score v5.1 (S_A_v5.1).
 """
@@ -36,7 +36,7 @@ from aurelius.memory.manager import (
 from aurelius.solvation.engine import MWSESolvationEngine
 from aurelius.screening.tier1_mlx_filter import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
-from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, TurboQuantConfig
+from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig
 from aurelius.scoring.engine import AureliusScoringEngine
 from aurelius.types import (
     AureliusScoreResult,
@@ -117,8 +117,8 @@ class AureliusPipeline:
 
         if self.config.tier3_gcmtwin_enabled:
             self._gcmtwin = GCMDigitalTwin(
-                turboquant_config=TurboQuantConfig(
-                    max_context_tokens=self.config.turquant_max_context,
+                gcmtwin_config=GCMDTConfig(
+                    max_simulation_steps=self.config.turquant_max_context,
                 ),
             )
             print("[Aurelius v5.1] Tier 3 (GCMD Digital Twin): ENABLED")

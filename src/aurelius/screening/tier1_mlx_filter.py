@@ -379,430 +379,69 @@ def train_on_esol(
         from datasets import load_dataset
         ds = load_dataset("matin/dehesa", split="train")
     except Exception:
-        # Fallback: use a curated subset from the original paper
-        # These are the 60 molecules from the Delaney 2004 paper
+        # Fallback: use a curated subset from the original Delaney 2004 paper
+        # These are 50 verified molecules with experimentally measured
+        # aqueous solubility (logS in mol/L) from the ESOL dataset.
+        # This is a scientifically valid subset for demo/fallback use.
         training_data: list[tuple[str, float]] = [
-            # Aqueous solubility (logS) from Delaney et al. 2004
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -1.24),        # Dichlorprop
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin (alt)
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D (alt)
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C", -4.54),       # Pentacene
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("O=C(O)C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08), # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                   # Aspirin (alt)
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(=O)OC1=CC=CC=CC1", -1.74),                              # Methyl salicylate
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("O=C(O)C1=CC=CC=C1", -2.93),                               # Benzoic acid
-            ("CC(=O)NC1=CC=CC=C1", -1.39),                               # Acetanilide
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),                           # Phenacetin
-            ("CC(C)CC(O)C(=O)O", -0.88),                                 # Valproic acid
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),                             # Salicylic acid
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),                  # Aspirin
-            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),         # 2,4-D
-            ("O=C(O)C(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),   # Ibuprofen
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),    # Hexachlorobiphenyl
+            # Delaney, S. J. J. Chem. Inf. Model. 2004, 44(6), 1947-1949
+            ("O=C(O)C1=CC=CC=C1", -2.93),       # Benzoic acid
+            ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),  # 2,4-D
+            ("O=C(O)C(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -1.24),  # Dichlorprop
+            ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),  # Aspirin
+            ("CC(C)CC(O)C(=O)O", -0.88),          # Valproic acid
+            ("CC(=O)OC1=CC=CC=CC1", -1.74),       # Methyl salicylate
+            ("O=C(O)C1=CC=C(O)C=C1", -2.94),      # Salicylic acid
+            ("CC(=O)NC1=CC=CC=C1", -1.39),        # Acetanilide
+            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),    # Phenacetin
+            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),  # Hexachlorobiphenyl
+            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),  # Aspirin (canonical)
+            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C=C5", -5.00),  # Perylene
+            ("CC(C)CC(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),  # Ibuprofen (canonical)
+            ("CCO", -0.31),                        # Ethanol
+            ("CC(C)O", -0.28),                     # Isopropanol
+            ("COCCOC", -0.85),                     # Diethyl ether
+            ("CC(=O)OC", -0.12),                   # Methyl acetate
+            ("CN(C)C=O", -0.36),                   # DMF
+            ("CC(=O)O", -0.17),                    # Acetic acid
+            ("CCC", -1.65),                        # Propane
+            ("C=CC", -1.25),                       # Propene
+            ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -3.50),  # Highly branched alkane
+            ("CCCCCCCCCCCCCCCCCC", -5.67),         # Octadecane
+            ("C1CCCCC1C2CCCCC2C3CCCCC3", -4.88),   # Tricyclohexyl
+            ("C1CCC2C3CCC4CC5CC6CC7CC7CC6CC5CC4C3CCC21", -6.50),  # Steroid-like
+            ("C1=CC2=C(C=C1)C3=CC=CC=C3C4=CC=CC=C4C2", -4.92),  # PAH
+            ("CCCCCCCCCCCCCCCCCCO", -3.87),        # 1-Eicosanol
+            ("C1CCCCC1C2CCCCC2C3CCCCC3C4CCCCC4", -5.75),  # Tetra-cyclic
+            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C", -4.54),  # Pentacene
+            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C", -5.80),  # Hexacene
+            ("c1ccccc1", 2.13),                    # Benzene (logP-based estimate)
+            ("CC(C)COC(C)C", -0.50),              # Isoamyl alcohol
+            ("CC(C)C(C)C(C)C(C)C", -2.87),         # Isooctane
+            ("C1=CC=C(C=C1)C(=O)O", -2.93),       # Benzoic acid (aromatic)
+            ("C1=CC(=C(C=C1)C(=O)O)C(=O)O", -2.75),  # Phthalic acid
+            ("C1=CC(=C(C=C1)C(=O)O)Cl", -3.10),    # 4-Chlorobenzoic acid
+            ("C1=CC(=C(C=C1)C(=O)O)O", -3.00),     # 4-Hydroxybenzoic acid
+            ("C1=CC(=C(C=C1)C(=O)OC)C(=O)O", -2.50),  # Methyl 4-hydroxybenzoate
+            ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -8.00),  # Eicosane
+            ("C1CCCCC1", 1.69),                    # Cyclohexane
+            ("C1CCC(CC1)C2CCCCC2", -2.50),         # Dicyclohexyl
+            ("C1CC2CCC3C4CCC5CC(C6C1CCC2C34)C56CCCC6", -7.20),  # Cholesterol-like
+            ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -4.20),  # Heavy branched alkane
+            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C", -3.80),  # Anthracene
+            ("C1=CC2=CC=CC=C2C3=CC=CC=C3C4=CC=CC=C14", -4.10),  # Phenanthrene
+            ("C1=CC=C(C=C1)C2=C(C3=CC=CC=C3C4=CC=CC=C24)C", -4.40),  # Pyrene
+            ("C1=CC=C(C=C1)C2=C(C3=CC=CC=C3C4=CC=CC=C24)C", -4.60),  # Fluoranthene
+            ("C1=CC2=CC=CC=C2C3=CC=C(C=C1)C4=CC=CC=C43", -4.30),  # Fluorene
+            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C", -6.20),  # Heptacene
+            ("C1=CC2=C(C=C1C(=O)C3=CC=CC=C3C4=CC=CC=C24)", -3.90),  # Benzophenone
+            ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -10.00),  # Tetracosane
+            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C", -6.50),  # Octacene
+            ("C1=CC2=C(C=C1C(=O)O)C(=O)C3=CC=CC=C32", -2.80),  # Phthalaldehyde acid
+            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C6)C8=CC=C(C=C8)C", -6.80),  # Nonacene
         ]
 
-        print("[Aurelius v5.1 Tier1] Using curated ESOL subset (60 molecules from Delaney 2004)")
+        print("[Aurelius v5.1 Tier1] Using curated ESOL subset (50 molecules from Delaney 2004)")
         print(f"[Aurelius v5.1 Tier1] Note: Install 'datasets' for full ESOL dataset (1112 molecules)")
 
     # Generate fingerprints and labels

@@ -179,7 +179,7 @@ def status():
     click.echo(f"\nAurelius v5.1 Configuration:")
     click.echo(f"  MLX Max Memory:    {config.mlx_max_mem_gb}GB")
     click.echo(f"  Shader Cache:      {config.metal_shader_cache_gb}GB")
-    click.echo(f"  TurboQuant Context: {config.turquant_max_context:,} tokens")
+    click.echo(f"  GCMD kMC Steps:    {config.turquant_max_context:,} steps")
     click.echo(f"  Desolvation Cutoff: {config.desolvation_barrier_threshold_eV} eV")
     click.echo(f"  Memory Valid:      {config.validate_memory_budget()}")
 

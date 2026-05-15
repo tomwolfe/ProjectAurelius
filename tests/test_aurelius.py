@@ -15,7 +15,7 @@ from aurelius.memory.manager import (
 from aurelius.solvation.engine import MWSESolvationEngine
 from aurelius.screening.tier1_mlx_filter import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator, MatterSimMPEngine
-from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, TurboQuantConfig
+from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig
 from aurelius.scoring.engine import AureliusScoringEngine
 from aurelius.types import (
     AureliusScoreResult,
@@ -321,7 +321,7 @@ class TestMatterSimMTSimulator:
 class TestGCMDigitalTwin:
     def setup_method(self):
         self.twin = GCMDigitalTwin(
-            turboquant_config=TurboQuantConfig(max_context_tokens=8192)
+            gcmtwin_config=GCMDTConfig(max_simulation_steps=5000)
         )
 
     def test_simulate_sei_evolution(self):
@@ -334,13 +334,14 @@ class TestGCMDigitalTwin:
         assert result.sei_evolution.thickness_angstrom > 0
         assert 0 <= result.sei_evolution.homogeneity_score <= 1
         assert result.sei_evolution.components
-        assert result.context_tokens_used == 3276  # 8192 * 0.4
+        assert result.context_tokens_used == 5000  # max_simulation_steps
 
-    def test_turboquant_stats(self):
-        stats = self.twin.get_turboquant_stats()
-        assert stats["max_context_tokens"] == 8192
-        assert stats["kv_compression_ratio"] == 0.4
-        assert stats["effective_context"] == 3276
+    def test_simulation_stats(self):
+        stats = self.twin.get_simulation_stats()
+        assert stats["max_simulation_steps"] == 5000
+        assert stats["record_interval"] == 50
+        assert stats["transport_limit_thickness_angstrom"] == 15.0
+        assert stats["use_mass_transport_limitation"] is True
 
     def test_kmc_deterministic(self):
         """kMC simulation must produce deterministic results for same inputs."""

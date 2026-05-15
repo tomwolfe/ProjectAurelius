@@ -10,7 +10,7 @@ Aurelius is a high-performance screening pipeline for battery electrolyte molecu
 |------|-----------|-----------|---------|
 | 1 | MLX-NA Filter | MLX | Rapid solubility/viability screening via ECFP4 fingerprints |
 | 2 | MatterSim-MT | PyTorch MPS | Vectorized Lennard-Jones + Coulombic physics simulation |
-| 3 | GCMD Digital Twin | PyTorch | SEI evolution simulation with TurboQuant KV compression |
+| 3 | GCMD Digital Twin | NumPy | Arrhenius kinetic Monte Carlo (kMC) for SEI evolution |
 
 ## Hardware Requirements
 
@@ -67,13 +67,21 @@ aurelius score "CC(=O)OC1=CC=CC=C1"
 aurelius status
 ```
 
-## Real Model Integration
+## Model Availability & Training
+
+### Important: Local Training Required
+
+**Project Aurelius does not ship with pre-trained model weights.** The Tier 1 screening model must be trained locally before meaningful screening can occur. The pipeline will attempt to:
+
+1. Load pre-trained weights from Hugging Face Hub (if available)
+2. Fall back to local model directory (`AURELIUS_MODEL_DIR`)
+3. **Train on ESOL/QM9 datasets** if no weights are found
+
+**Out-of-the-box, the pipeline trains a fresh model on real experimental data each time.** For production use, you should train and save a model once, then reuse it.
 
 ### Tier 1: MLX-NA Filter
 
 The Tier 1 filter uses a 2-layer MLP (2048->128->1) trained on ECFP4 (Morgan radius=2) fingerprints.
-
-**Default behavior:** Loads pre-trained weights from Hugging Face Hub or trains on real experimental data.
 
 **Supported datasets:**
 - **ESOL** (Delaney et al., JACS 2004): 1,112 molecules with experimental aqueous solubility (logS)
@@ -97,10 +105,18 @@ python scripts/train_tier1.py --dataset esol --csv-path ./data/esol/esol.csv
 
 ### Loading Pre-trained Weights
 
+After training, set the model directory for efficient reuse:
+
+```bash
+export AURELIUS_MODEL_DIR=./models/tier1
+```
+
 Models can be loaded from:
-1. **Hugging Face Hub** (if `huggingface_hub` is installed)
+1. **Hugging Face Hub** (if `huggingface_hub` is installed and weights are published)
 2. **Local directory** (set via `AURELIUS_MODEL_DIR` environment variable)
 3. **Training on-the-fly** (falls back to ESOL/QM9 training)
+
+> **Note:** The Hugging Face repositories `aurelius/tier1-esol-mlp` and `aurelius/tier1-qm9-mlp` are placeholders. Public pre-trained weights are not yet available. Users should train locally and optionally upload to their own HF repository.
 
 ## Aurelius Score v5.1
 
