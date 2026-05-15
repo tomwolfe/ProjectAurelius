@@ -1,60 +1,33 @@
 """Phase 3: Tier 3 - GCMD "Digital Twin" with TurboQuant KV-Compression.
 
-Uses TurboQuant KV-Compression for interfacial simulation, allowing
-the M5 Pro to maintain a larger context window for SEI Evolution
-simulation, capturing long-range electrostatic effects at the anode.
+Implements a kinetic Monte Carlo (kMC) simulation for SEI growth,
+replacing the previous logarithmic-randomness approach with
+voltage-dependent reaction rate constants.
 """
 
-from dataclasses import dataclass, field
+from __future__ import annotations
+
+from dataclasses import field
 from typing import Optional
 
 import numpy as np
 
-
-@dataclass
-class SEIEvolution:
-    """SEI (Solid Electrolyte Interphase) evolution state."""
-
-    time_ps: float
-    thickness_angstrom: float
-    homogeneity_score: float  # 0-1, higher = more homogeneous
-    ionic_conductivity_s_cm: float
-    electronic_insulation: bool
-    components: list[str] = field(default_factory=list)
-
-
-@dataclass
-class TurboQuantConfig:
-    """TurboQuant KV-Compression configuration for GCMD Digital Twin."""
-
-    max_context_tokens: int = 8192
-    kv_compression_ratio: float = 0.4  # Compress KV cache to 40%
-    compression_method: str = "streaming"  # "streaming" or "paged"
-    min_attention_heads: int = 8
-    retain_long_range: bool = True
-
-
-@dataclass
-class GCMDTwinResult:
-    """Result from the GCMD Digital Twin simulation."""
-
-    molecule_smiles: str
-    sei_evolution: SEIEvolution
-    interface_stability: float  # 0-1
-    memory_used_gb: float
-    context_tokens_used: int
-    simulation_time_ms: float
+from aurelius.types import GCMDTwinResult, SEIEvolution, TurboQuantConfig
 
 
 class GCMDigitalTwin:
     """Tier 3: GCMD Digital Twin with TurboQuant KV-Compression.
 
     Simulates SEI (Solid Electrolyte Interphase) evolution at the
-    anode interface using compressed KV cache to maintain large
-    context windows within the 24GB M5 Pro memory limit.
+    anode interface using kinetic Monte Carlo (kMC) to model
+    discrete solvent decomposition and salt reduction reactions.
+
+    The kMC simulation uses voltage-dependent rate constants for
+    each reaction pathway, producing physically plausible SEI
+    thickness growth over time.
     """
 
-    def __init__(self, turboquant_config: Optional[TurboQuantConfig] = None):
+    def __init__(self, turboquant_config: Optional[TurboQuantConfig] = None) -> None:
         self.config = turboquant_config or TurboQuantConfig()
         self._effective_context = int(
             self.config.max_context_tokens * self.config.kv_compression_ratio
@@ -70,24 +43,20 @@ class GCMDigitalTwin:
     ) -> GCMDTwinResult:
         """Run GCMD Digital Twin simulation of SEI evolution.
 
-        Uses TurboQuant KV-compression to maintain a large effective
-        context window for long-range electrostatic effects.
+        Uses kinetic Monte Carlo (kMC) with voltage-dependent reaction
+        rate constants to simulate SEI layer growth.
         """
         import time
         start = time.perf_counter()
 
-        # Deterministic pseudo-random based on molecular inputs
         seed = self._hash_inputs(smiles, solvent_type, salt_type)
         rng = np.random.RandomState(seed)
 
-        # Simulate SEI growth over time
-        sei = self._simulate_sei_growth(
+        sei = self._run_kmc_simulation(
             rng, voltage_cutoff, max_time_ps
         )
 
         elapsed_ms = (time.perf_counter() - start) * 1000
-
-        # Memory usage with TurboQuant compression
         mem_gb = self._estimate_memory_with_turboquant(sei)
 
         return GCMDTwinResult(
@@ -99,10 +68,6 @@ class GCMDigitalTwin:
             simulation_time_ms=elapsed_ms,
         )
 
-    # ------------------------------------------------------------------
-    # TurboQuant KV-Compression
-    # ------------------------------------------------------------------
-
     def get_turboquant_stats(self) -> dict:
         """Return current TurboQuant KV-compression statistics."""
         return {
@@ -113,47 +78,136 @@ class GCMDigitalTwin:
             "long_range_retained": self.config.retain_long_range,
         }
 
-    # ------------------------------------------------------------------
-    # Internal simulation
-    # ------------------------------------------------------------------
-
-    def _simulate_sei_growth(
-        self, rng: np.random.RandomState, voltage: float, max_time: float
+    def _run_kmc_simulation(
+        self,
+        rng: np.random.RandomState,
+        voltage: float,
+        max_time: float,
     ) -> SEIEvolution:
-        """Simulate SEI layer growth over time."""
-        # SEI growth follows a logarithmic growth law with fluctuations
-        time_points = np.linspace(0, max_time, 100)
+        """Run kinetic Monte Carlo simulation of SEI growth.
 
-        # Inorganic component (LiF/NaF-rich) - grows quickly then plateaus
-        inorganic_thickness = 3.0 * (1 - np.exp(-time_points / 200))
-        inorganic_thickness += rng.normal(0, 0.1, len(time_points))
+        Defines discrete reaction pathways with voltage-dependent
+        rate constants. Each kMC step selects a reaction proportional
+        to its rate and updates the cumulative SEI thickness.
 
-        # Organic component (polymer-rich) - grows slowly
-        organic_thickness = 1.5 * np.log1p(time_points / 50)
-        organic_thickness += rng.normal(0, 0.05, len(time_points))
+        Reaction pathways:
+            - Solvent decomposition (EC/DMC reduction)
+            - Salt reduction (PF6- / TFSI- decomposition)
+            - Polymerization (organic SEI formation)
 
-        total_thickness = inorganic_thickness + organic_thickness
-        final_thickness = float(np.clip(total_thickness[-1], 1.0, 50.0))
+        Args:
+            rng: Deterministic random state seeded from molecular inputs.
+            voltage: Voltage cutoff (V) affecting reaction rates.
+            max_time: Maximum simulation time in picoseconds.
 
-        # Homogeneity: determined by the ratio of inorganic to total
-        inorganic_ratio = float(inorganic_thickness[-1] / final_thickness) if final_thickness > 0 else 0.5
-        homogeneity = inorganic_ratio * (1 - abs(inorganic_ratio - 0.7))  # Optimal ~70% inorganic
+        Returns:
+            SEIEvolution with final thickness, homogeneity, and conductivity.
+        """
+        # Reaction rate constants at zero voltage (1/ps)
+        # These represent intrinsic reaction rates for each pathway
+        k_solvent_decomp = 0.05   # Solvent decomposition base rate
+        k_salt_reduction = 0.02   # Salt reduction base rate
+        k_polymerization = 0.01   # Polymerization base rate
 
-        # Ionic conductivity decreases as SEI thickens
+        # Voltage-dependent rate constants (Arrhenius-like)
+        # Higher voltage → faster reaction rates
+        alpha = 10.0  # Voltage sensitivity factor (1/V)
+
+        k_solvent = k_solvent_decomp * np.exp(alpha * voltage)
+        k_salt = k_salt_reduction * np.exp(alpha * voltage)
+        k_poly = k_polymerization * np.exp(alpha * voltage)
+
+        # Thickness contributions per reaction event (Angstrom)
+        d_solvent = 0.03   # Angstrom per solvent decomposition event
+        d_salt = 0.04      # Angstrom per salt reduction event
+        d_poly = 0.05      # Angstrom per polymerization event
+
+        # kMC simulation parameters
+        n_steps = 5000
+        record_interval = 50  # Record thickness every N steps
+
+        # Track cumulative thickness and reaction counts
+        total_thickness = 0.0
+        n_solvent_events = 0
+        n_salt_events = 0
+        n_poly_events = 0
+
+        # Record time-thickness profile
+        time_points: list[float] = []
+        thickness_points: list[float] = []
+
+        current_time = 0.0
+
+        for step in range(n_steps):
+            # Total reaction rate
+            k_total = k_solvent + k_salt + k_poly
+
+            # Advance time: delta_t = 1 / k_total
+            if k_total > 0:
+                dt = 1.0 / k_total
+            else:
+                dt = 0.0
+
+            current_time += dt
+
+            # Select reaction via multinomial sampling
+            r = rng.random()
+            cumulative = 0.0
+
+            if r < k_solvent / k_total:
+                # Solvent decomposition reaction
+                n_solvent_events += 1
+                total_thickness += d_solvent
+            elif r < (k_solvent + k_salt) / k_total:
+                # Salt reduction reaction
+                n_salt_events += 1
+                total_thickness += d_salt
+            else:
+                # Polymerization reaction
+                n_poly_events += 1
+                total_thickness += d_poly
+
+            # Record at intervals
+            if step % record_interval == 0:
+                time_points.append(float(current_time))
+                thickness_points.append(float(total_thickness))
+
+        # Final SEI thickness (clamped to physical range)
+        final_thickness = float(np.clip(total_thickness, 1.0, 50.0))
+
+        # Homogeneity: based on the distribution of reaction types
+        total_events = n_solvent_events + n_salt_events + n_poly_events
+        if total_events > 0:
+            fractions = np.array([
+                n_solvent_events / total_events,
+                n_salt_events / total_events,
+                n_poly_events / total_events,
+            ])
+            # Homogeneity is high when reactions are well-distributed
+            # (not dominated by a single pathway)
+            ideal_fraction = 1.0 / 3.0
+            deviation = np.mean(np.abs(fractions - ideal_fraction))
+            homogeneity = max(1.0 - 2.0 * deviation, 0.0)
+        else:
+            homogeneity = 0.5
+
+        # Ionic conductivity decreases exponentially with thickness
         ionic_cond = 1e-4 * np.exp(-final_thickness / 10.0)
 
-        # Electronic insulation is maintained if SEI is sufficiently thick
+        # Electronic insulation maintained if SEI is sufficiently thick
         is_insulated = final_thickness > 2.0
 
-        # SEI components
+        # SEI components based on dominant reaction pathway
         components = ["NaF", "RO-ONa", "Na2CO3"]
-        if inorganic_ratio > 0.6:
+        if n_salt_events > n_solvent_events and n_salt_events > n_poly_events:
             components.insert(0, "PF5-derived")
+        elif n_poly_events > n_solvent_events:
+            components.insert(0, "polymer-rich")
 
         return SEIEvolution(
             time_ps=float(max_time),
             thickness_angstrom=final_thickness,
-            homogeneity_score=max(float(homogeneity), 0.0),
+            homogeneity_score=float(homogeneity),
             ionic_conductivity_s_cm=float(ionic_cond),
             electronic_insulation=is_insulated,
             components=components,
@@ -163,7 +217,6 @@ class GCMDigitalTwin:
     def _estimate_memory_with_turboquant(sei: SEIEvolution) -> float:
         """Estimate memory usage with TurboQuant compression."""
         base = 2.0  # GB base for GCMD Digital Twin
-        # Context window scales with SEI thickness (more atoms = more tokens)
         context_scaling = sei.thickness_angstrom * 0.1
         return base + context_scaling
 

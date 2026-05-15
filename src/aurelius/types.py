@@ -1,0 +1,140 @@
+"""Central type definitions for Project Aurelius v5.1.
+
+All @dataclass definitions used across the pipeline are centralized here
+to eliminate circular imports between pipeline.py, scoring/engine.py,
+and the screening tier modules.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class MoleculeInput:
+    """Input molecule specification for the Aurelius screening pipeline."""
+
+    smiles: str
+    solvent_type: str = "ec:dmc"
+    salt_type: str = "NaPF6"
+    ion_type: str = "Na+"
+    temperature_k: float = 298.15
+    voltage_cutoff: float = 0.05
+    max_sei_time_ps: float = 1000.0
+    n_md_cycles: int = 500
+
+
+@dataclass
+class AureliusScoreResult:
+    """Complete Aurelius v5.1 score breakdown."""
+
+    molecule_smiles: str
+    total_score: float = 0.0  # S_A_v5.1 (0-100 scale)
+
+    # Component scores (0-100 each)
+    sigma_score: float = 0.0
+    desolvation_score: float = 0.0
+    sei_homogeneity_score: float = 0.0
+    mx_synthesis_score: float = 0.0
+    gwp_penalty: float = 0.0
+
+    # Weights used
+    weight_sigma: float = 0.3
+    weight_desolvation: float = 0.2
+    weight_sei: float = 0.2
+    weight_mx: float = 0.2
+    weight_gwp: float = 0.1
+
+    # Pass/fail
+    is_viable: bool = False
+    rejection_reasons: list[str] = field(default_factory=list)
+    viability_threshold: float = 0.0
+
+    # Metadata
+    tier1_viable: bool = False
+    tier2_viable: bool = False
+    tier3_viable: bool = False
+
+
+@dataclass
+class MLXFilterResult:
+    """Result from the MLX-NA tier 1 screening filter."""
+
+    molecule_smiles: str
+    is_viable: bool
+    confidence_score: float
+    inference_time_ms: float
+    na_utilization_pct: float
+    quantization_format: str = "MX4"
+
+
+@dataclass
+class DesolvationPathResult:
+    """Result from the MatterSim-MT desolvation path integral calculation."""
+
+    molecule_smiles: str
+    barrier_height_eV: float
+    local_maxima_eV: float
+    path_integral_eV_A: float
+    rejected: bool
+    rejection_reason: Optional[str] = None
+    simulation_cycles: int = 500
+
+
+@dataclass
+class Tier2Result:
+    """Result from the MatterSim-MT Tier 2 simulation."""
+
+    molecule_smiles: str
+    is_viable: bool
+    desolvation_path: DesolvationPathResult
+    simulation_time_ms: float
+    memory_used_gb: float
+
+
+@dataclass
+class SEIEvolution:
+    """SEI (Solid Electrolyte Interphase) evolution state."""
+
+    time_ps: float
+    thickness_angstrom: float
+    homogeneity_score: float  # 0-1, higher = more homogeneous
+    ionic_conductivity_s_cm: float
+    electronic_insulation: bool
+    components: list[str] = field(default_factory=list)
+
+
+@dataclass
+class GCMDTwinResult:
+    """Result from the GCMD Digital Twin simulation."""
+
+    molecule_smiles: str
+    sei_evolution: SEIEvolution
+    interface_stability: float  # 0-1
+    memory_used_gb: float
+    context_tokens_used: int
+    simulation_time_ms: float
+
+
+@dataclass
+class TurboQuantConfig:
+    """TurboQuant KV-Compression configuration for GCMD Digital Twin."""
+
+    max_context_tokens: int = 8192
+    kv_compression_ratio: float = 0.4  # Compress KV cache to 40%
+    compression_method: str = "streaming"  # "streaming" or "paged"
+    min_attention_heads: int = 8
+    retain_long_range: bool = True
+
+
+__all__ = [
+    "AureliusScoreResult",
+    "DesolvationPathResult",
+    "GCMDTwinResult",
+    "MLXFilterResult",
+    "MoleculeInput",
+    "SEIEvolution",
+    "Tier2Result",
+    "TurboQuantConfig",
+]

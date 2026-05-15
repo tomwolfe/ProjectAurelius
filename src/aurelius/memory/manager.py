@@ -1,9 +1,11 @@
 """Phase 1: Zero-Copy Memory Management.
 
-Replaces standard PyTorch MPS with the PyTorch 2.12 torch.accelerator API.
-Implements Microscaling (MX) Quantization (MX4) for ChemVLM-2 backbone.
-Pre-compiles Metal-4 shaders to eliminate JIT compilation lag.
+Manages zero-copy memory between MLX and PyTorch on M-series NPUs.
+Uses dynamic RAM detection via psutil for hardware-agnostic allocation.
+Replaces private torch._C APIs with safe wrappers.
 """
+
+from __future__ import annotations
 
 import os
 import warnings
@@ -11,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional, Tuple
 
 import numpy as np
+import psutil
 
 try:
     import torch
@@ -70,8 +73,9 @@ class MetalShaderConfig:
 class ZeroCopyMemoryManager:
     """Manages zero-copy memory between MLX and PyTorch on M-series NPUs.
 
-    Uses the PyTorch 2.12 torch.accelerator API for direct Neural Accelerator
-    access, eliminating unnecessary CPU↔GPU data transfers.
+    Uses dynamic RAM detection via psutil for hardware-agnostic allocation.
+    Wraps private torch._C APIs in strict try/except blocks with safe
+    fallback paths.
     """
 
     def __init__(
@@ -79,7 +83,7 @@ class ZeroCopyMemoryManager:
         quant_config: Optional[QuantizationConfig] = None,
         shader_config: Optional[MetalShaderConfig] = None,
         device: str = "mps",
-    ):
+    ) -> None:
         self.quant_config = quant_config or QuantizationConfig()
         self.shader_config = shader_config or MetalShaderConfig()
         self.device = device
@@ -88,6 +92,17 @@ class ZeroCopyMemoryManager:
         self._gcmtwin_model: Any = None
         self._shader_cache_loaded: bool = False
         self._memory_footprint_gb: float = 0.0
+        self._total_ram_gb: float = self._detect_total_ram()
+
+    # ------------------------------------------------------------------
+    # System detection
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _detect_total_ram() -> float:
+        """Detect total system RAM in GB using psutil."""
+        total_bytes = psutil.virtual_memory().total
+        return total_bytes / (1024 ** 3)
 
     # ------------------------------------------------------------------
     # PyTorch 2.12 Accelerator API
@@ -98,7 +113,6 @@ class ZeroCopyMemoryManager:
         if not HAS_TORCH:
             raise RuntimeError("PyTorch >= 2.12 is required for the accelerator API.")
 
-        # Register the MPS accelerator through the new API
         try:
             accel = torch.accelerator
             if hasattr(accel, "get_current_accelerator_device"):
@@ -109,11 +123,16 @@ class ZeroCopyMemoryManager:
         except (AttributeError, RuntimeError) as e:
             warnings.warn(f"torch.accelerator API not fully available: {e}")
 
-    def load_precompiled_shaders(self) -> bool:
-        """Load pre-compiled Metal-4 shaders via torch._C._mps_loadMetalLib.
+    # ------------------------------------------------------------------
+    # Metal Shader Pre-loading (safe wrapper)
+    # ------------------------------------------------------------------
 
-        This skips JIT compilation lag that freezes M-series Macs during
-        the first 100 frames of molecular dynamics.
+    def load_precompiled_shaders(self) -> bool:
+        """Load pre-compiled Metal-4 shaders with safe fallback.
+
+        Attempts to use torch._C._mps_loadMetalLib but wraps the call
+        in a strict try/except block. If pre-loading fails, JIT
+        compilation proceeds normally as a fallback path.
         """
         if not HAS_TORCH:
             return False
@@ -122,21 +141,31 @@ class ZeroCopyMemoryManager:
             cache_dir = self.shader_config.cache_directory
             os.makedirs(cache_dir, exist_ok=True)
 
-            # Attempt to load pre-compiled Metal library
             metal_lib_path = os.path.join(cache_dir, "aurelius_metal4.metallib")
 
             if os.path.exists(metal_lib_path):
-                torch._C._mps_loadMetalLib(metal_lib_path)
-                self._shader_cache_loaded = True
-                print(f"[Aurelius v5.1] Metal-4 shaders loaded from {metal_lib_path}")
-                return True
+                try:
+                    torch._C._mps_loadMetalLib(metal_lib_path)
+                    self._shader_cache_loaded = True
+                    print(f"[Aurelius v5.1] Metal-4 shaders loaded from {metal_lib_path}")
+                    return True
+                except Exception as load_exc:
+                    # Strict fallback: allow JIT compilation to proceed
+                    warnings.warn(
+                        f"Failed to pre-load Metal library (JIT compilation will proceed normally): {load_exc}",
+                        stacklevel=2,
+                    )
+                    return False
             else:
                 print(f"[Aurelius v5.1] No pre-compiled Metal lib found at {metal_lib_path}")
                 print("  First MD run will compile shaders (subsequent runs will use cache).")
                 return False
 
         except Exception as e:
-            warnings.warn(f"Failed to load Metal-4 shaders: {e}")
+            warnings.warn(
+                f"Failed to pre-load Metal library (JIT compilation will proceed normally): {e}",
+                stacklevel=2,
+            )
             return False
 
     # ------------------------------------------------------------------
@@ -147,23 +176,21 @@ class ZeroCopyMemoryManager:
         """Apply MX4 (4-bit) quantization to a model backbone.
 
         Reduces ChemVLM-2 footprint to ~7GB, leaving ~17GB free for
-        MatterSim-MT and GCMD on a 24GB M5 Pro.
+        MatterSim-MT and GCMD on typical M-series Macs.
         """
         if not HAS_TORCH:
             raise RuntimeError("PyTorch is required for quantization.")
 
         bits = self.quant_config.bits
-        block_size = self.quant_config.block_size
+        block_size = self.quant_config.bits
 
         try:
-            # PyTorch 2.12 native MX quantization
             quantized_model = torch.ao.quantization.quantize_dynamic(
                 model,
                 {torch.nn.Linear},
                 dtype=torch.int8 if bits <= 4 else torch.uint8,
             )
 
-            # Apply microscaling format via the new torch.ao.quantization API
             if hasattr(torch.ao.quantization, "get_min_max"):
                 quantized_model = self._apply_mx_format(quantized_model, bits, block_size)
 
@@ -182,14 +209,11 @@ class ZeroCopyMemoryManager:
         self, model: Any, bits: int, block_size: int
     ) -> Any:
         """Apply microscaling (MX) data format at the tensor level."""
-        # PyTorch 2.12 introduces torch.ao.quantization.MX format
-        # This uses the new MX4/MX6/MX8 data format for NPU acceleration
         try:
             if hasattr(torch.ao.quantization, "MX"):
                 mx_format = torch.ao.quantization.MX(
                     bits=bits, block_size=block_size
                 )
-                # Apply MX format to all linear layers
                 for module in model.modules():
                     if isinstance(module, torch.nn.Linear):
                         module.to(device=torch.device(self.device))
@@ -202,7 +226,6 @@ class ZeroCopyMemoryManager:
         total_params = sum(p.numel() for p in model.parameters())
         bytes_per_param = bits / 8.0
         footprint_bytes = total_params * bytes_per_param
-        # Add ~10% overhead for activations and temporary buffers
         return (footprint_bytes * 1.1) / (1024 ** 3)
 
     # ------------------------------------------------------------------
@@ -219,7 +242,6 @@ class ZeroCopyMemoryManager:
             raise RuntimeError("PyTorch is required to load ChemVLM-2.")
 
         print(f"[Aurelius v5.1] Loading ChemVLM-2 from {model_path}")
-        # Placeholder: actual model loading depends on the ChemVLM-2 architecture
         model = self._placeholder_model("ChemVLM-2")
         if quantize:
             model = self.apply_mx4_quantization(model)
@@ -264,9 +286,9 @@ class ZeroCopyMemoryManager:
 
     def get_memory_budget(self) -> dict:
         """Report current memory allocation status."""
-        remaining = 24.0 - self._memory_footprint_gb
+        remaining = self._total_ram_gb - self._memory_footprint_gb
         return {
-            "total_gb": 24.0,
+            "total_gb": round(self._total_ram_gb, 1),
             "chemvlm2_footprint_gb": round(self._memory_footprint_gb, 1),
             "remaining_gb": round(remaining, 1),
             "mx_quantization": self.quant_config.precision,
@@ -277,7 +299,7 @@ class ZeroCopyMemoryManager:
     def _placeholder_model(name: str) -> Any:
         """Create a placeholder model for development/testing."""
         class PlaceholderModel:
-            def __init__(self, n):
+            def __init__(self, n: str) -> None:
                 self.name = n
                 self._params = np.random.randn(100_000_000).astype(np.float32)
 
@@ -286,18 +308,18 @@ class ZeroCopyMemoryManager:
                 class ParamList:
                     def __iter__(self):
                         class Param:
-                            def __init__(self):
+                            def __init__(self) -> None:
                                 self.numel = lambda: 100_000_000
                         yield Param()
                 return ParamList()
 
-            def to(self, **kwargs):
+            def to(self, **kwargs: Any) -> Any:
                 return self
 
-            def eval(self):
+            def eval(self) -> Any:
                 return self
 
-            def __repr__(self):
+            def __repr__(self) -> str:
                 return f"<PlaceholderModel: {self.name}>"
 
         return PlaceholderModel(name)

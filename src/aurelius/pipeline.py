@@ -8,6 +8,8 @@ Coordinates the full three-tier screening pipeline:
 Then computes the Aurelius Score v5.1 (S_A_v5.1).
 """
 
+from __future__ import annotations
+
 import gc
 from typing import Optional
 
@@ -35,7 +37,16 @@ from aurelius.solvation.engine import MWSESolvationEngine
 from aurelius.screening.tier1_mlx_filter import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, TurboQuantConfig
-from aurelius.scoring.engine import AureliusScoringEngine, MoleculeInput
+from aurelius.scoring.engine import AureliusScoringEngine
+from aurelius.types import (
+    AureliusScoreResult,
+    DesolvationPathResult,
+    GCMDTwinResult,
+    MLXFilterResult,
+    MoleculeInput,
+    SEIEvolution,
+    Tier2Result,
+)
 
 
 class AureliusPipeline:
@@ -44,7 +55,7 @@ class AureliusPipeline:
     Coordinates all three tiers and computes the final Aurelius Score.
     """
 
-    def __init__(self, config: Optional[M5ProConfig] = None):
+    def __init__(self, config: Optional[M5ProConfig] = None) -> None:
         self.config = config or apply_global_config()
         self._memory_manager: Optional[ZeroCopyMemoryManager] = None
         self._mlx_filter: Optional[MLXNAFilter] = None
@@ -131,10 +142,6 @@ class AureliusPipeline:
         Returns an automatic-failure profile so downstream scoring
         components still receive a well-structured response.
         """
-        from aurelius.scoring.engine import AureliusScoreResult
-        from aurelius.screening.tier1_mlx_filter import MLXFilterResult
-        from aurelius.screening.tier2_mattersim import Tier2Result, DesolvationPathResult
-
         molecule_input = MoleculeInput(
             smiles=smiles,
             solvent_type=kwargs.get("solvent_type", "ec:dmc"),
@@ -247,7 +254,6 @@ class AureliusPipeline:
                 )
 
         # CROSS-TIER HARDWARE CLEANUP
-        # Force Python GC and explicit allocator flushes to keep RAM clean for Tier 3
         gc.collect()
         if self.has_mlx:
             mx.metal.clear_cache()

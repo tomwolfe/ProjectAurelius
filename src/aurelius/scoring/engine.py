@@ -12,62 +12,29 @@ Where:
     GWP        = Global Warming Potential penalty
 """
 
-from dataclasses import dataclass, field
+from __future__ import annotations
+
 from typing import Optional
 
 import numpy as np
 
-
-@dataclass
-class MoleculeInput:
-    """Input molecule specification for the Aurelius screening pipeline."""
-
-    smiles: str
-    solvent_type: str = "ec:dmc"
-    salt_type: str = "NaPF6"
-    ion_type: str = "Na+"
-    temperature_k: float = 298.15
-    voltage_cutoff: float = 0.05
-    max_sei_time_ps: float = 1000.0
-    n_md_cycles: int = 500
-
-
-@dataclass
-class AureliusScoreResult:
-    """Complete Aurelius v5.1 score breakdown."""
-
-    molecule_smiles: str
-    total_score: float = 0.0  # S_A_v5.1 (0-100 scale)
-
-    # Component scores (0-100 each)
-    sigma_score: float = 0.0       # MLX-NA filter confidence
-    desolvation_score: float = 0.0 # Desolvation barrier score
-    sei_homogeneity_score: float = 0.0
-    mx_synthesis_score: float = 0.0
-    gwp_penalty: float = 0.0
-
-    # Weights used
-    weight_sigma: float = 0.3
-    weight_desolvation: float = 0.2
-    weight_sei: float = 0.2
-    weight_mx: float = 0.2
-    weight_gwp: float = 0.1
-
-    # Pass/fail
-    is_viable: bool = False
-    rejection_reasons: list[str] = field(default_factory=list)
-    viability_threshold: float = 0.0
-
-    # Metadata
-    tier1_viable: bool = False
-    tier2_viable: bool = False
-    tier3_viable: bool = False
+from aurelius.types import (
+    AureliusScoreResult,
+    DesolvationPathResult,
+    GCMDTwinResult,
+    MLXFilterResult,
+    MoleculeInput,
+    SEIEvolution,
+    Tier2Result,
+)
 
 
 class AureliusScoringEngine:
     """Revised Aurelius Score v5.1 calculation engine.
 
     Computes S_A_v5.1 from the three-tier screening pipeline results.
+    All result types are imported from the centralized types module
+    to eliminate circular imports.
     """
 
     def __init__(
@@ -78,7 +45,7 @@ class AureliusScoringEngine:
         weight_mx_synthesis: float = 0.2,
         weight_gwp: float = 0.1,
         viability_threshold: float = 65.0,
-    ):
+    ) -> None:
         self.weights = {
             "sigma": weight_sigma,
             "desolvation": weight_desolvation,
@@ -91,9 +58,9 @@ class AureliusScoringEngine:
     def compute_score(
         self,
         molecule_input: MoleculeInput,
-        tier1_result: Optional["MLXFilterResult"] = None,  # noqa: F821
-        tier2_result: Optional["Tier2Result"] = None,  # noqa: F821
-        tier3_result: Optional["GCMDTwinResult"] = None,  # noqa: F821
+        tier1_result: Optional[MLXFilterResult] = None,
+        tier2_result: Optional[Tier2Result] = None,
+        tier3_result: Optional[GCMDTwinResult] = None,
         gwp_value: float = 1.0,
     ) -> AureliusScoreResult:
         """Compute the complete Aurelius v5.1 score.
@@ -101,11 +68,6 @@ class AureliusScoringEngine:
         S_A = 0.3(σ) + 0.2(E_des_barrier) + 0.2(SEI Homogeneity)
               + 0.2(MX_Synthesis_Score) - 0.1(GWP)
         """
-        # Import here to avoid circular imports
-        from aurelius.screening.tier1_mlx_filter import MLXFilterResult
-        from aurelius.screening.tier2_mattersim import Tier2Result
-        from aurelius.screening.tier3_gcmtwin import GCMDTwinResult
-
         result = AureliusScoreResult(
             molecule_smiles=molecule_input.smiles,
             viability_threshold=self.viability_threshold,
@@ -117,35 +79,34 @@ class AureliusScoringEngine:
         )
 
         # Component 1: σ (MLX-NA filter confidence)
-        if tier1_result is not None and isinstance(tier1_result, MLXFilterResult):
+        if tier1_result is not None:
             result.sigma_score = self._normalize_sigma(tier1_result.confidence_score)
             result.tier1_viable = tier1_result.is_viable
         else:
-            result.sigma_score = 50.0  # Neutral default
+            result.sigma_score = 50.0
             result.tier1_viable = True
 
         # Component 2: E_des_barrier (Normalized desolvation path integral)
-        if tier2_result is not None and isinstance(tier2_result, Tier2Result):
+        if tier2_result is not None:
             result.desolvation_score = self._normalize_desolvation_barrier(
                 tier2_result.desolvation_path
             )
             result.tier2_viable = tier2_result.is_viable
         else:
-            result.desolvation_score = 50.0  # Neutral default
+            result.desolvation_score = 50.0
             result.tier2_viable = True
 
         # Component 3: SEI Homogeneity
-        if tier3_result is not None and isinstance(tier3_result, GCMDTwinResult):
+        if tier3_result is not None:
             result.sei_homogeneity_score = self._normalize_sei_homogeneity(
                 tier3_result.sei_evolution
             )
             result.tier3_viable = tier3_result.sei_evolution.electronic_insulation
         else:
-            result.sei_homogeneity_score = 50.0  # Neutral default
+            result.sei_homogeneity_score = 50.0
             result.tier3_viable = True
 
         # Component 4: MX_Synthesis_Score (Automated lab compatibility)
-        # New metric from 2026 AI for Materials Conference
         result.mx_synthesis_score = self._compute_mx_synthesis_score(
             molecule_input, tier3_result
         )
@@ -190,7 +151,7 @@ class AureliusScoringEngine:
             f"  AURELIUS SCORE v5.1 - Scorecard",
             f"{'='*60}",
             f"  Molecule:     {score.molecule_smiles}",
-            f"  Total S_A:    {score.total_score:.1f}/100 {'✓ VIABLE' if score.is_viable else '✗ REJECTED'}",
+            f"  Total S_A:    {score.total_score:.1f}/100 {'VIABLE' if score.is_viable else 'REJECTED'}",
             f"{'─'*60}",
             f"  Component Scores:",
             f"    σ (MLX-NA filter):       {score.sigma_score:>6.1f}  × {score.weight_sigma}",
@@ -223,38 +184,22 @@ class AureliusScoringEngine:
         """Normalize MLX-NA filter confidence to 0-100 scale."""
         return float(confidence * 100.0)
 
-    def _normalize_desolvation_barrier(self, path_result: "DesolvationPathResult") -> float:  # noqa: F821
+    @staticmethod
+    def _normalize_desolvation_barrier(path_result: DesolvationPathResult) -> float:
         """Normalize desolvation path integral score to 0-100 scale.
 
         Lower barrier = better score. Local maxima > 0.5 eV = rejection.
         """
-        # Import here to avoid circular imports
-        from aurelius.screening.tier2_mattersim import DesolvationPathResult
-
-        if not isinstance(path_result, DesolvationPathResult):
-            return 50.0
-
         if path_result.rejected:
             return 0.0
 
-        # Score inversely proportional to barrier height
-        # Perfect: 0 eV barrier → 100 score
-        # At threshold (0.5 eV): ~60 score
         barrier = path_result.barrier_height_eV
         score = 100.0 * np.exp(-barrier / 0.3)
         return float(np.clip(score, 0, 100))
 
     @staticmethod
-    def _normalize_sei_homogeneity(sei: "SEIEvolution") -> float:  # noqa: F821
+    def _normalize_sei_homogeneity(sei: SEIEvolution) -> float:
         """Normalize SEI homogeneity to 0-100 scale."""
-        # Import here to avoid circular imports
-        from aurelius.screening.tier3_gcmtwin import SEIEvolution
-
-        if not isinstance(sei, SEIEvolution):
-            return 50.0
-
-        # Homogeneity is 0-1, scale to 0-100
-        # Bonus for electronic insulation
         base = sei.homogeneity_score * 100.0
         if sei.electronic_insulation:
             base = min(base * 1.1, 100.0)
@@ -263,7 +208,7 @@ class AureliusScoringEngine:
     def _compute_mx_synthesis_score(
         self,
         molecule_input: MoleculeInput,
-        tier3_result: Optional["GCMDTwinResult"],
+        tier3_result: Optional[GCMDTwinResult],
     ) -> float:
         """Compute MX_Synthesis_Score (automated lab compatibility).
 
@@ -271,28 +216,21 @@ class AureliusScoringEngine:
         Assesses how well a molecule's properties align with
         automated synthesis laboratory capabilities.
         """
-        # Import here to avoid circular imports
-        from aurelius.screening.tier3_gcmtwin import GCMDTwinResult
+        score = 70.0
 
-        score = 70.0  # Base score
-
-        # Bonus for simple, common solvents
         common_solvents = ["ec:dmc", "ec:emc", "pc:dmc", "water"]
         if molecule_input.solvent_type in common_solvents:
             score += 10.0
 
-        # Bonus for common salts
         common_salts = ["NaPF6", "NaTFSI", "NaClO4"]
         if molecule_input.salt_type in common_salts:
             score += 5.0
 
-        # Bonus for well-characterized ions
         common_ions = ["Na+", "Li+", "K+"]
         if molecule_input.ion_type in common_ions:
             score += 5.0
 
-        # Bonus from SEI quality
-        if tier3_result is not None and isinstance(tier3_result, GCMDTwinResult):
+        if tier3_result is not None:
             if tier3_result.sei_evolution.electronic_insulation:
                 score += 5.0
             if tier3_result.sei_evolution.homogeneity_score > 0.7:
@@ -306,5 +244,4 @@ class AureliusScoringEngine:
 
         Higher GWP → higher penalty.
         """
-        # Normalize GWP: 0 = no penalty, 100+ = max penalty
         return float(np.clip(gwp_value, 0, 100))
