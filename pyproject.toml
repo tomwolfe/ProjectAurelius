@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aurelius"
+version = "5.1.0"
+description = "Project Aurelius v5.1 - The 2nm Fusion Edition. Accelerated computational chemistry screening pipeline optimized for Apple M-series Neural Accelerators."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Thomas Wolfe", email = "tomwolfe@gmail.com"}
+]
+dependencies = [
+    "torch>=2.12.0",
+    "mlx>=0.20.0",
+    "numpy>=1.26.0",
+    "scipy>=1.12.0",
+    "torchvision>=0.17.0",
+    "pandas>=2.2.0",
+    "pydantic>=2.8.0",
+    "tqdm>=4.66.0",
+    "hydra-core>=1.3.0",
+    "click>=8.1.0",
+    "structlog>=24.1.0",
+    "psutil>=5.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.3.0",
+    "mypy>=1.9.0",
+    "hypothesis>=6.100.0",
+]
+
+[project.scripts]
+aurelius = "aurelius.__main__:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=src/aurelius --cov-report=term-missing -v"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true

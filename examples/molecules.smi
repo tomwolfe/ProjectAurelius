@@ -1,0 +1,15 @@
+# Example SMILES file for Aurelius v5.1 batch screening
+
+# Common electrolyte solvent components
+COC1=CC(=O)O1          # Ethylene carbonate (EC)
+CC1(C)C(=O)OC1=O       # Dimethyl carbonate (DMC)
+C1CC(=O)OC1            # Propylene carbonate (PC)
+
+# Common salt anions
+C(F)(F)(F)(F)(F)N     # PF6- derived species
+C(S(=O)(=O)(F)(F)N     # TFSI- derived species
+
+# Test molecules (putative SEI-forming additives)
+CC(C)OC(=O)N           # N-methylacetamide
+O=C1C=CC(=O)OC1        # Ethylene carbonate
+COC(=O)C1=CC=CC=C1     # Methyl benzoate
