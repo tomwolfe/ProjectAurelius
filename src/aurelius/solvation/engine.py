@@ -29,6 +29,7 @@ import json
 import math
 import os
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 from typing import Optional
 
@@ -39,13 +40,11 @@ from scipy import optimize
 # Force field parameters
 # ---------------------------------------------------------------------------
 
-# Path to force field parameter JSON
-# __file__ = src/aurelius/solvation/engine.py
-# Parent = src/aurelius/
-_DEFAULT_FF_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "data", "force_field_params.json",
-)
+# Use importlib.resources for wheel-compatible path resolution.
+# Works in both `pip install -e .` and installed wheels.
+def _default_ff_path() -> str:
+    """Return the path to force_field_params.json via importlib.resources."""
+    return str(resources.files("aurelius.data").joinpath("force_field_params.json"))
 
 
 def _load_force_field_params(path: str | None = None) -> dict:
@@ -58,7 +57,7 @@ def _load_force_field_params(path: str | None = None) -> dict:
     Returns:
         Dictionary of force field parameters.
     """
-    ff_path = path or _DEFAULT_FF_PATH
+    ff_path = path or _default_ff_path()
     if os.path.isfile(ff_path):
         with open(ff_path, "r") as f:
             return json.load(f)
@@ -119,7 +118,7 @@ def _load_solvation_params(path: str | None = None) -> dict:
     Returns:
         Dictionary of solvation parameters, or empty dict on failure.
     """
-    ff_path = path or _DEFAULT_FF_PATH
+    ff_path = path or _default_ff_path()
     if os.path.isfile(ff_path):
         try:
             with open(ff_path, "r") as f:
@@ -135,7 +134,7 @@ _SOLVATION_PARAMS = _load_solvation_params()
 # Also load scoring params for MWSE stability threshold
 def _load_scoring_params_for_solvation(path: str | None = None) -> dict:
     """Load scoring parameters from force field JSON for MWSE evaluation."""
-    ff_path = path or _DEFAULT_FF_PATH
+    ff_path = path or _default_ff_path()
     if os.path.isfile(ff_path):
         try:
             with open(ff_path, "r") as f:

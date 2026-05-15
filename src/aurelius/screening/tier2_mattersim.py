@@ -1,8 +1,9 @@
 """Phase 3: Tier 2 - MatterSim-MT fully vectorized physics engine.
 
 Executes real Lennard-Jones + Coulombic potential calculations
-using PyTorch tensor broadcasting for O(1) pairwise interaction
-computation (vs O(N^2) Python loops).
+using PyTorch tensor broadcasting for fully vectorized pairwise
+interaction computation (O(N^2) time/space, O(1) Python interpreter
+overhead).
 
 All computation runs on Apple Silicon MPS backend for maximum
 throughput. Energy gradients are computable via torch.autograd.grad
@@ -19,7 +20,7 @@ References:
             Convolutional Neural Network for Quantum Chemistry."
             NeurIPS 2018.
     MatterSim: Butler, K. T. et al. "Machine Learning Molecular
-             Embeddings for Battery Materials." Nature 2023.
+              Embeddings for Battery Materials." Nature 2023.
     OPLS-AA: Jorgensen, W. L. et al. J. Chem. Phys. 1983, 79, 926.
     GAFF: Wang, J. et al. J. Comput. Chem. 2004, 25, 1157.
 """
@@ -30,7 +31,8 @@ import ast
 import json
 import math
 import os
-from typing import TYPE_CHECKING, Optional
+from importlib import resources
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
@@ -63,9 +65,8 @@ def _load_force_field_params(path: str | None = None) -> dict:
     Returns:
         Dictionary of force field parameters.
     """
-    ff_path = path or os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-        "src", "aurelius", "data", "force_field_params.json",
+    ff_path = path or str(
+        resources.files("aurelius.data").joinpath("force_field_params.json")
     )
     if os.path.isfile(ff_path):
         with open(ff_path, "r") as f:

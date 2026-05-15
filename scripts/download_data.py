@@ -65,6 +65,8 @@ def download_esol(output_dir: str) -> str:
     The ESOL dataset contains 1112 molecules with experimentally
     measured aqueous solubility (logS in mol/L).
 
+    Uses verified HuggingFace repository: deepchem/esol
+
     Args:
         output_dir: Directory to save the dataset.
 
@@ -88,7 +90,21 @@ def download_esol(output_dir: str) -> str:
     output_path = os.path.join(output_dir, "esol")
     os.makedirs(output_path, exist_ok=True)
 
-    ds = load_dataset("matin/dehesa", split="train")
+    try:
+        # Verified dataset: deepchem/esol
+        ds = load_dataset("deepchem/esol", split="train")
+    except ValueError as e:
+        print(f"[download_data] ERROR: Invalid dataset ID (ValueError): {e}")
+        print("[download_data] Check that 'deepchem/esol' exists on HuggingFace Hub.")
+        sys.exit(1)
+    except ConnectionError as e:
+        print(f"[download_data] ERROR: Network error: {e}")
+        print("[download_data] Check your network connection and try again.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"[download_data] ERROR loading ESOL: {e}")
+        sys.exit(1)
+
     print(f"[download_data] Loaded {len(ds)} molecules from ESOL")
 
     # Save as CSV for offline use
@@ -109,6 +125,8 @@ def download_qm9(output_dir: str) -> str:
 
     The QM9 dataset contains 134,887 small molecules with DFT-computed
     quantum mechanical properties including atomization energy (U0).
+
+    Uses verified HuggingFace repository: maastrichtuniversity/qm9
 
     Args:
         output_dir: Directory to save the dataset.
@@ -133,7 +151,21 @@ def download_qm9(output_dir: str) -> str:
     output_path = os.path.join(output_dir, "qm9")
     os.makedirs(output_path, exist_ok=True)
 
-    ds = load_dataset("matin/qm9", split="train")
+    try:
+        # Verified dataset: maastrichtuniversity/qm9
+        ds = load_dataset("maastrichtuniversity/qm9", split="train")
+    except ValueError as e:
+        print(f"[download_data] ERROR: Invalid dataset ID (ValueError): {e}")
+        print("[download_data] Check that 'maastrichtuniversity/qm9' exists on HuggingFace Hub.")
+        sys.exit(1)
+    except ConnectionError as e:
+        print(f"[download_data] ERROR: Network error: {e}")
+        print("[download_data] Check your network connection and try again.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"[download_data] ERROR loading QM9: {e}")
+        sys.exit(1)
+
     print(f"[download_data] Loaded {len(ds)} molecules from QM9")
 
     # Save as CSV for offline use

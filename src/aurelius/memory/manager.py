@@ -109,17 +109,27 @@ class ZeroCopyMemoryManager:
     # ------------------------------------------------------------------
 
     def initialize_accelerator(self) -> None:
-        """Initialize torch.accelerator API for M-series Neural Accelerators."""
+        """Initialize torch.accelerator API for M-series Neural Accelerators.
+
+        Safely checks for the torch.accelerator API with hasattr guards.
+        Falls back gracefully if the API is unavailable.
+        """
         if not HAS_TORCH:
             raise RuntimeError("PyTorch >= 2.12 is required for the accelerator API.")
 
         try:
-            accel = torch.accelerator
-            if hasattr(accel, "get_current_accelerator_device"):
-                current = accel.get_current_accelerator_device()
-                print(f"[Aurelius v5.1] Active accelerator: {current}")
+            if hasattr(torch, "accelerator"):
+                accel = torch.accelerator
+                if hasattr(accel, "get_current_accelerator_device"):
+                    current = accel.get_current_accelerator_device()
+                    print(f"[Aurelius v5.2] Active accelerator: {current}")
+                else:
+                    print("[Aurelius v5.2] torch.accelerator API available (PyTorch 2.12+)")
             else:
-                print("[Aurelius v5.1] torch.accelerator API available (PyTorch 2.12+)")
+                print("[Aurelius v5.2] torch.accelerator API not available (PyTorch < 2.12)")
+                # Safe fallback: use MPS directly
+                if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                    print("[Aurelius v5.2] Using MPS backend directly")
         except (AttributeError, RuntimeError) as e:
             warnings.warn(f"torch.accelerator API not fully available: {e}")
 
@@ -131,8 +141,9 @@ class ZeroCopyMemoryManager:
         """Load pre-compiled Metal-4 shaders with safe fallback.
 
         Attempts to use torch._C._mps_loadMetalLib but wraps the call
-        in a strict try/except block. If pre-loading fails, JIT
-        compilation proceeds normally as a fallback path.
+        in a strict try/except block with hasattr guards. If pre-loading
+        fails, JIT compilation proceeds normally as a fallback path.
+        Also sets MPS memory fraction for safe memory management.
         """
         if not HAS_TORCH:
             return False
@@ -143,21 +154,30 @@ class ZeroCopyMemoryManager:
 
             metal_lib_path = os.path.join(cache_dir, "aurelius_metal4.metallib")
 
+            # Safe MPS memory management: set per-process memory fraction
+            if hasattr(torch.mps, "set_per_process_memory_fraction"):
+                torch.mps.set_per_process_memory_fraction(0.8)
+
             if os.path.exists(metal_lib_path):
-                try:
-                    torch._C._mps_loadMetalLib(metal_lib_path)
-                    self._shader_cache_loaded = True
-                    print(f"[Aurelius v5.1] Metal-4 shaders loaded from {metal_lib_path}")
-                    return True
-                except Exception as load_exc:
-                    # Strict fallback: allow JIT compilation to proceed
-                    warnings.warn(
-                        f"Failed to pre-load Metal library (JIT compilation will proceed normally): {load_exc}",
-                        stacklevel=2,
-                    )
+                # Guard: only call private API if it exists
+                if hasattr(torch._C, "_mps_loadMetalLib"):
+                    try:
+                        torch._C._mps_loadMetalLib(metal_lib_path)
+                        self._shader_cache_loaded = True
+                        print(f"[Aurelius v5.2] Metal-4 shaders loaded from {metal_lib_path}")
+                        return True
+                    except Exception as load_exc:
+                        # Strict fallback: allow JIT compilation to proceed
+                        warnings.warn(
+                            f"Failed to pre-load Metal library (JIT compilation will proceed normally): {load_exc}",
+                            stacklevel=2,
+                        )
+                        return False
+                else:
+                    print("[Aurelius v5.2] torch._C._mps_loadMetalLib not available (PyTorch < 2.12), skipping pre-load")
                     return False
             else:
-                print(f"[Aurelius v5.1] No pre-compiled Metal lib found at {metal_lib_path}")
+                print(f"[Aurelius v5.2] No pre-compiled Metal lib found at {metal_lib_path}")
                 print("  First MD run will compile shaders (subsequent runs will use cache).")
                 return False
 

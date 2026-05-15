@@ -1,4 +1,4 @@
-"""Phase 4: Revised Aurelius Score v5.1 (S_A_v5.1).
+"""Phase 4: Revised Aurelius Score v5.2 (S_A_v5.2).
 
 Formula:
     S_A = 0.3(σ) + 0.2(E_des_barrier) + 0.2(SEI Homogeneity)
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+from importlib import resources
 from typing import Optional
 
 import numpy as np
@@ -40,9 +41,8 @@ def _load_scoring_params(path: str | None = None) -> dict:
     Returns:
         Dictionary of scoring parameters, or empty dict on failure.
     """
-    ff_path = path or os.path.join(
-        os.path.dirname(os.path.dirname(__file__)),
-        "data", "force_field_params.json",
+    ff_path = path or str(
+        resources.files("aurelius.data").joinpath("force_field_params.json")
     )
     if os.path.isfile(ff_path):
         try:

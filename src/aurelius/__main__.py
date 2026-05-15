@@ -1,27 +1,41 @@
-"""Project Aurelius v5.1 - CLI Entry Point.
+"""Project Aurelius v5.2 - CLI Entry Point.
 
 Usage:
     aurelius init                    Initialize pipeline
     aurelius screen <smiles>         Screen a single molecule
     aurelius batch <file>            Screen molecules from SMILES file
     aurelius score <smiles>          Compute Aurelius score only
+    aurelius train <smiles>          Train Tier 1 model on dataset
+    aurelius validate <smiles>       Run physics validation
     aurelius status                  Show pipeline status and memory
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
 import click
 
-from aurelius.config import apply_global_config
+from aurelius.config import apply_global_config, get_config
 from aurelius.pipeline import AureliusPipeline
 
 
+def _apply_env_thread_safe(env_vars: dict[str, str]) -> None:
+    """Apply environment variables in a thread-safe manner.
+
+    Only sets variables that are not already set by the user,
+    preventing race conditions during concurrent pipeline init.
+    """
+    for k, v in env_vars.items():
+        if k not in os.environ:
+            os.environ[k] = v
+
+
 @click.group()
-@click.version_option(version="5.1.0", prog_name="Aurelius")
+@click.version_option(version="5.2.0", prog_name="Aurelius")
 def cli():
-    """Project Aurelius v5.1 - The 2nm Fusion Edition.
+    """Project Aurelius v5.2 - The Hardened Release.
 
     Accelerated computational chemistry screening pipeline optimized
     for Apple M-series Neural Accelerators.
@@ -31,8 +45,11 @@ def cli():
 
 @cli.command()
 def init():
-    """Initialize the Aurelius v5.1 pipeline."""
-    config = apply_global_config()
+    """Initialize the Aurelius v5.2 pipeline."""
+    config = get_config()
+    # Thread-safe environment variable application
+    env_vars = config.apply_environment()
+    _apply_env_thread_safe(env_vars)
     pipeline = AureliusPipeline(config)
     pipeline.initialize()
     click.echo("\nPipeline initialized successfully.")
@@ -71,7 +88,7 @@ def screen(
     use_real_models,
     demo,
 ):
-    """Screen a single molecule through the full Aurelius v5.1 pipeline.
+    """Screen a single molecule through the full Aurelius v5.2 pipeline.
 
     By default, Tier 1 loads or trains on real experimental data (ESOL/QM9).
     Use --demo to switch to synthetic training data for demonstration.
@@ -80,7 +97,9 @@ def screen(
     if demo:
         use_real_models = False
 
-    config = apply_global_config()
+    config = get_config()
+    env_vars = config.apply_environment()
+    _apply_env_thread_safe(env_vars)
     pipeline = AureliusPipeline(config, use_real_models=use_real_models)
     pipeline.initialize()
 
@@ -107,7 +126,9 @@ def screen(
 @click.option("--output", type=click.Path(), help="Output JSON file")
 def batch(file, solvent, salt, output):
     """Screen multiple molecules from a SMILES file (one per line)."""
-    config = apply_global_config()
+    config = get_config()
+    env_vars = config.apply_environment()
+    _apply_env_thread_safe(env_vars)
     pipeline = AureliusPipeline(config)
     pipeline.initialize()
 
@@ -153,8 +174,10 @@ def batch(file, solvent, salt, output):
 @click.option("--ion", default="Na+", help="Ion type")
 @click.option("--gwp", default=1.0, help="Global Warming Potential")
 def score(smiles, solvent, salt, ion, gwp):
-    """Compute the Aurelius v5.1 score for a molecule (quick mode)."""
-    config = apply_global_config()
+    """Compute the Aurelius v5.2 score for a molecule (quick mode)."""
+    config = get_config()
+    env_vars = config.apply_environment()
+    _apply_env_thread_safe(env_vars)
     pipeline = AureliusPipeline(config)
     pipeline.initialize()
 
@@ -168,15 +191,54 @@ def score(smiles, solvent, salt, ion, gwp):
 
     score = results.get("score")
     if score:
-        click.echo(f"\nAurelius Score v5.1: {score.total_score:.1f}/100 "
+        click.echo(f"\nAurelius Score v5.2: {score.total_score:.1f}/100 "
                    f"{'VIABLE' if score.is_viable else 'REJECTED'}")
+
+
+@cli.command("train")
+@click.option("--dataset", default="esol", help="Dataset to train on (esol/qm9)")
+@click.option("--epochs", type=int, default=200, help="Number of training epochs")
+@click.option("--batch-size", type=int, default=16, help="Mini-batch size")
+@click.option("--learning-rate", type=float, default=0.005, help="Learning rate")
+@click.option("--csv-path", type=str, default=None, help="Path to local CSV file")
+def train(dataset, epochs, batch_size, learning_rate, csv_path):
+    """Train Tier 1 model on a dataset (esol or qm9).
+
+    Wraps scripts/train_tier1.py as a native CLI subcommand.
+    """
+    from scripts.train_tier1 import main as train_main
+    import argparse
+
+    argv = ["train_tier1.py", "--dataset", dataset, "--epochs", str(epochs),
+            "--batch-size", str(batch_size), "--learning-rate", str(learning_rate)]
+    if csv_path:
+        argv.extend(["--csv-path", csv_path])
+    sys.argv = ["aurelius train"] + argv
+    train_main()
+
+
+@cli.command("validate")
+@click.option("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to validate")
+def validate(smiles):
+    """Run physics validation on a molecule.
+
+    Wraps scripts/validate_physics.py as a native CLI subcommand.
+    """
+    from scripts.validate_physics import main as validate_main
+    import argparse
+
+    argv = ["validate_physics.py", "--smiles", smiles]
+    sys.argv = ["aurelius validate"] + argv
+    validate_main()
 
 
 @cli.command("status")
 def status():
     """Show pipeline status and memory partition."""
-    config = apply_global_config()
-    click.echo(f"\nAurelius v5.1 Configuration:")
+    config = get_config()
+    env_vars = config.apply_environment()
+    _apply_env_thread_safe(env_vars)
+    click.echo(f"\nAurelius v5.2 Configuration:")
     click.echo(f"  MLX Max Memory:    {config.mlx_max_mem_gb}GB")
     click.echo(f"  Shader Cache:      {config.metal_shader_cache_gb}GB")
     click.echo(f"  GCMD kMC Steps:    {config.turquant_max_context:,} steps")

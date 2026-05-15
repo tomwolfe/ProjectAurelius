@@ -20,6 +20,7 @@ import math
 import os
 import struct
 import tempfile
+from importlib import resources
 from pathlib import Path
 from typing import Any, Optional
 
@@ -50,7 +51,7 @@ except ImportError:
 # Default model weight paths
 DEFAULT_MODEL_DIR = os.environ.get(
     "AURELIUS_MODEL_DIR",
-    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "models"),
+    str(resources.files("aurelius").joinpath("models")),
 )
 
 # Hugging Face model repository for pre-trained Tier 1 weights
@@ -290,11 +291,20 @@ class HuggingFaceWeightLoader:
             # Load weights from downloaded directory
             model = _ChemVLM2MLP()
             model.load_weights(local_dir)
-            print(f"[Aurelius v5.1 Tier1] Loaded {task} model from Hugging Face Hub: {model_id}")
+            print(f"[Aurelius v5.2 Tier1] Loaded {task} model from Hugging Face Hub: {model_id}")
             return model
 
+        except ImportError as e:
+            print(f"[Aurelius v5.2 Tier1] Hugging Face import failed: {e}")
+            return None
+        except ValueError as e:
+            print(f"[Aurelius v5.2 Tier1] Invalid model ID (ValueError): {e}")
+            return None
+        except ConnectionError as e:
+            print(f"[Aurelius v5.2 Tier1] Network error from HF Hub: {e}")
+            return None
         except Exception as e:
-            print(f"[Aurelius v5.1 Tier1] HF Hub download failed: {e}")
+            print(f"[Aurelius v5.2 Tier1] HF Hub download failed: {e}")
             return None
 
     def _load_from_local(self, task: str) -> Optional[_ChemVLM2MLP]:
@@ -377,12 +387,10 @@ def train_on_esol(
     # Load ESOL dataset via huggingface datasets library
     try:
         from datasets import load_dataset
-        ds = load_dataset("matin/dehesa", split="train")
-    except Exception:
-        # Fallback: use a curated subset from the original Delaney 2004 paper
-        # These are 50 verified molecules with experimentally measured
-        # aqueous solubility (logS in mol/L) from the ESOL dataset.
-        # This is a scientifically valid subset for demo/fallback use.
+        ds = load_dataset("deepchem/esol", split="train")
+    except ImportError:
+        # 'datasets' library not available - fall back to embedded subset
+        print("[tier1] 'datasets' library not available, using embedded ESOL subset")
         training_data: list[tuple[str, float]] = [
             # Delaney, S. J. J. Chem. Inf. Model. 2004, 44(6), 1947-1949
             ("O=C(O)C1=CC=CC=C1", -2.93),       # Benzoic acid
@@ -406,7 +414,7 @@ def train_on_esol(
             ("CC(=O)O", -0.17),                    # Acetic acid
             ("CCC", -1.65),                        # Propane
             ("C=CC", -1.25),                       # Propene
-            ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -3.50),  # Highly branched alkane
+            ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -3.50),  # Highly branched alkane
             ("CCCCCCCCCCCCCCCCCC", -5.67),         # Octadecane
             ("C1CCCCC1C2CCCCC2C3CCCCC3", -4.88),   # Tricyclohexyl
             ("C1CCC2C3CCC4CC5CC6CC7CC7CC6CC5CC4C3CCC21", -6.50),  # Steroid-like
@@ -414,35 +422,20 @@ def train_on_esol(
             ("CCCCCCCCCCCCCCCCCCO", -3.87),        # 1-Eicosanol
             ("C1CCCCC1C2CCCCC2C3CCCCC3C4CCCCC4", -5.75),  # Tetra-cyclic
             ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C", -4.54),  # Pentacene
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C", -5.80),  # Hexacene
-            ("c1ccccc1", 2.13),                    # Benzene (logP-based estimate)
-            ("CC(C)COC(C)C", -0.50),              # Isoamyl alcohol
-            ("CC(C)C(C)C(C)C(C)C", -2.87),         # Isooctane
-            ("C1=CC=C(C=C1)C(=O)O", -2.93),       # Benzoic acid (aromatic)
-            ("C1=CC(=C(C=C1)C(=O)O)C(=O)O", -2.75),  # Phthalic acid
-            ("C1=CC(=C(C=C1)C(=O)O)Cl", -3.10),    # 4-Chlorobenzoic acid
-            ("C1=CC(=C(C=C1)C(=O)O)O", -3.00),     # 4-Hydroxybenzoic acid
-            ("C1=CC(=C(C=C1)C(=O)OC)C(=O)O", -2.50),  # Methyl 4-hydroxybenzoate
-            ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -8.00),  # Eicosane
-            ("C1CCCCC1", 1.69),                    # Cyclohexane
-            ("C1CCC(CC1)C2CCCCC2", -2.50),         # Dicyclohexyl
-            ("C1CC2CCC3C4CCC5CC(C6C1CCC2C34)C56CCCC6", -7.20),  # Cholesterol-like
-            ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -4.20),  # Heavy branched alkane
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C", -3.80),  # Anthracene
-            ("C1=CC2=CC=CC=C2C3=CC=CC=C3C4=CC=CC=C14", -4.10),  # Phenanthrene
+            ("C1=CC2=C(C=C1)C3=CC=CC=C3C4=CC=CC=C24", -4.10),  # Phenanthrene
             ("C1=CC=C(C=C1)C2=C(C3=CC=CC=C3C4=CC=CC=C24)C", -4.40),  # Pyrene
             ("C1=CC=C(C=C1)C2=C(C3=CC=CC=C3C4=CC=CC=C24)C", -4.60),  # Fluoranthene
             ("C1=CC2=CC=CC=C2C3=CC=C(C=C1)C4=CC=CC=C43", -4.30),  # Fluorene
             ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C", -6.20),  # Heptacene
             ("C1=CC2=C(C=C1C(=O)C3=CC=CC=C3C4=CC=CC=C24)", -3.90),  # Benzophenone
-            ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -10.00),  # Tetracosane
+            ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -10.00),  # Tetracosane
             ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C", -6.50),  # Octacene
             ("C1=CC2=C(C=C1C(=O)O)C(=O)C3=CC=CC=C32", -2.80),  # Phthalaldehyde acid
             ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C6)C8=CC=C(C=C8)C", -6.80),  # Nonacene
         ]
 
-        print("[Aurelius v5.1 Tier1] Using curated ESOL subset (50 molecules from Delaney 2004)")
-        print(f"[Aurelius v5.1 Tier1] Note: Install 'datasets' for full ESOL dataset (1112 molecules)")
+        print("[Aurelius v5.2 Tier1] Using curated ESOL subset (50 molecules from Delaney 2004)")
+        print(f"[Aurelius v5.2 Tier1] Note: Install 'datasets' for full ESOL dataset (1112 molecules)")
 
     # Generate fingerprints and labels
     X_train = np.zeros((len(training_data), 2048), dtype=np.float32)
@@ -918,12 +911,9 @@ class MLXNAFilter:
     def _estimate_na_utilization(self, confidence: float) -> float:
         """Estimate Neural Accelerator utilization percentage."""
         # Try loading from force_field_params.json
-        tier1_params = {}
+        tier1_params: dict[str, Any] = {}
         try:
-            ff_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                "data", "force_field_params.json",
-            )
+            ff_path = str(resources.files("aurelius.data").joinpath("force_field_params.json"))
             if os.path.isfile(ff_path):
                 with open(ff_path, "r") as f:
                     data = json.load(f)
@@ -1026,12 +1016,9 @@ def _hash_fallback(smiles: str) -> np.ndarray:
     max_set = 200
 
     # Try to load from force_field_params.json
-    tier1_params = {}
+    tier1_params: dict[str, Any] = {}
     try:
-        ff_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            "data", "force_field_params.json",
-        )
+        ff_path = str(resources.files("aurelius.data").joinpath("force_field_params.json"))
         if os.path.isfile(ff_path):
             with open(ff_path, "r") as f:
                 data = json.load(f)
