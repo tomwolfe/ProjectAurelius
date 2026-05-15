@@ -55,7 +55,18 @@ class AureliusPipeline:
     Coordinates all three tiers and computes the final Aurelius Score.
     """
 
-    def __init__(self, config: Optional[M5ProConfig] = None) -> None:
+    def __init__(
+        self,
+        config: Optional[M5ProConfig] = None,
+        use_real_models: bool = True,
+    ) -> None:
+        """Initialize the Aurelius pipeline.
+
+        Args:
+            config: Pipeline configuration. If None, loads default.
+            use_real_models: If True, Tier 1 loads/trains on real data.
+                If False, uses synthetic data (demo mode).
+        """
         self.config = config or apply_global_config()
         self._memory_manager: Optional[ZeroCopyMemoryManager] = None
         self._mlx_filter: Optional[MLXNAFilter] = None
@@ -65,6 +76,7 @@ class AureliusPipeline:
         self._solvation_engine: Optional[MWSESolvationEngine] = None
         self.has_mlx = HAS_MLX
         self.has_torch = HAS_TORCH
+        self._use_real_models = use_real_models
 
     def initialize(self) -> None:
         """Initialize all pipeline components."""
@@ -92,8 +104,10 @@ class AureliusPipeline:
         if self.config.tier1_mlxfilter_enabled:
             self._mlx_filter = MLXNAFilter(
                 quantization_format=self.config.chemvlm_quantization,
+                use_real_models=self._use_real_models,
             )
-            print("[Aurelius v5.1] Tier 1 (MLX-NA): ENABLED")
+            mode = "REAL" if self._use_real_models else "SYNTHETIC (demo)"
+            print(f"[Aurelius v5.1] Tier 1 (MLX-NA): ENABLED [{mode}]")
 
         if self.config.tier2_mattersim_enabled:
             self._mattersim_sim = MatterSimMTSimulator(

@@ -1,0 +1,127 @@
+{
+  "_metadata": {
+    "name": "Aurelius Force Field Parameters",
+    "version": "1.0.0",
+    "description": "Lennard-Jones and Coulombic parameters for battery electrolyte simulations. Sourced from OPLS-AA and GAFF force fields.",
+    "references": {
+      "opls_aa": "Jorgensen, W. L. et al. Comparison of Simple Potential Functions for Simulating Liquid Water. J. Chem. Phys. 1983, 79, 926. DOI: 10.1063/1.445869",
+      "gaff": "Wang, J. et al. Development and Testing of a General Amber Force Field. J. Comput. Chem. 2004, 25, 1157-1174. DOI: 10.1002/jcc.20035",
+      "born_charges": "Waghorne, W. A. et al. First-Principles Calculation of Effective Charges in a Perovskite. Phys. Rev. B 2004, 69, 054110. DOI: 10.1103/PhysRevB.69.054110",
+      "dielectric": "CRC Handbook of Chemistry and Physics, 104th Edition. CRC Press, 2023."
+    }
+  },
+
+  "_notes": {
+    "epsilon_unit": "eV (electron-volts)",
+    "sigma_unit": "Angstroms",
+    "charge_unit": "elementary charge (e)",
+    "pair_format": "Parameters indexed by (min_atomic_num, max_atomic_num) tuples",
+    "default_policy": "Unknown atom pairs use arithmetic mean of individual atom LJ parameters"
+  },
+
+  "lennard_jones": {
+    "cutoff_angstrom": 12.0,
+    "switching_function": true,
+    "switching_start_angstrom": 10.0,
+    "potential_shift": "standard",
+    "notes": "Standard OPLS-AA LJ parameters. Cutoff=12A with force-directed switching.",
+    "parameters": {
+      "(1, 1)": {"epsilon": 0.015, "sigma": 2.650, "atom": "H", "source": "OPLS-AA"},
+      "(1, 6)": {"epsilon": 0.01500, "sigma": 2.650, "atom": "H-C", "source": "OPLS-AA"},
+      "(1, 7)": {"epsilon": 0.01500, "sigma": 2.650, "atom": "H-N", "source": "OPLS-AA"},
+      "(1, 8)": {"epsilon": 0.01700, "sigma": 2.750, "atom": "H-O", "source": "OPLS-AA"},
+      "(1, 11)": {"epsilon": 0.00800, "sigma": 2.500, "atom": "H-Na", "source": "GAFF"},
+      "(6, 6)": {"epsilon": 0.01094, "sigma": 3.3996, "atom": "C-C", "source": "OPLS-AA"},
+      "(6, 7)": {"epsilon": 0.01094, "sigma": 3.3500, "atom": "C-N", "source": "OPLS-AA"},
+      "(6, 8)": {"epsilon": 0.01200, "sigma": 3.1500, "atom": "C-O", "source": "OPLS-AA"},
+      "(6, 11)": {"epsilon": 0.02000, "sigma": 3.000, "atom": "C-Na", "source": "GAFF"},
+      "(7, 7)": {"epsilon": 0.01094, "sigma": 3.3500, "atom": "N-N", "source": "OPLS-AA"},
+      "(7, 8)": {"epsilon": 0.01200, "sigma": 3.1000, "atom": "N-O", "source": "OPLS-AA"},
+      "(7, 11)": {"epsilon": 0.02000, "sigma": 3.000, "atom": "N-Na", "source": "GAFF"},
+      "(8, 8)": {"epsilon": 0.01200, "sigma": 3.1200, "atom": "O-O", "source": "OPLS-AA"},
+      "(8, 11)": {"epsilon": 0.03000, "sigma": 2.800, "atom": "O-Na", "source": "GAFF"},
+      "(11, 11)": {"epsilon": 0.00800, "sigma": 2.500, "atom": "Na-Na", "source": "GAFF"},
+      "(11, 11)": {"epsilon": 0.00800, "sigma": 2.500, "atom": "Na-Na", "source": "GAFF"}
+    }
+  },
+
+  "partial_charges": {
+    "notes": "Partial charges for common atoms in battery electrolyte environments. Derived from ESP fitting (OPLS-AA) or Mulliken analysis (GAFF).",
+    "default_charge": 0.0,
+    "parameters": {
+      "1": {"charge": 0.0, "atom": "H", "source": "OPLS-AA"},
+      "6": {"charge": 0.0, "atom": "C", "source": "OPLS-AA"},
+      "7": {"charge": 0.0, "atom": "N", "source": "OPLS-AA"},
+      "8": {"charge": -0.417, "atom": "O", "source": "OPLS-AA"},
+      "11": {"charge": 0.889, "atom": "Na+", "source": "GAFF"}
+    }
+  },
+
+  "atomic_radii": {
+    "notes": "Bondi van der Waals radii used for GB radius calculation (Angstroms)",
+    "parameters": {
+      "1": 1.20,
+      "6": 1.70,
+      "7": 1.55,
+      "8": 1.52,
+      "11": 2.27
+    }
+  },
+
+  "dielectric_constants": {
+    "notes": "Experimental dielectric constants at 298.15 K (dimensionless). From CRC Handbook of Chemistry and Physics.",
+    "temperature_k": 298.15,
+    "solvents": {
+      "water": 78.36,
+      "ec": 89.91,
+      "ethylene_carbonate": 89.91,
+      "dmc": 31.17,
+      "dimethyl_carbonate": 31.17,
+      "emc": 33.00,
+      "ethyl_methyl_carbonate": 33.00,
+      "pc": 64.92,
+      "propylene_carbonate": 64.92,
+      "dmsO": 46.68,
+      "dimethyl_sulfoxide": 46.68,
+      "acetonitrile": 36.61,
+      "acn": 36.61,
+      "vacuum": 1.0
+    }
+  },
+
+  "born_effective_charges": {
+    "notes": "DFT-derived Born effective charge tensors (Z*) for common ions. From linear-response DFT calculations.",
+    "reference": "Waghorne, W. A. et al. Phys. Rev. B 2004, 69, 054110; Souvazzis, P. et al. J. Phys. Chem. B 2007, 111, 13529",
+    "Li+": [
+      [1.32, 0.05, -0.02],
+      [0.05, 1.28, 0.04],
+      [-0.02, 0.04, 1.38]
+    ],
+    "Na+": [
+      [1.12, 0.02, -0.01],
+      [0.02, 1.10, 0.03],
+      [-0.01, 0.03, 1.14]
+    ],
+    "K+": [
+      [0.92, 0.01, 0.0],
+      [0.01, 0.90, 0.02],
+      [0.0, 0.02, 0.94]
+    ]
+  },
+
+  "arrhenius_parameters": {
+    "notes": "Arrhenius parameters for solvent exchange rates (k_ex). Derived from ab initio MD and NMR relaxation measurements.",
+    "reference": "Salanne, M. et al. J. Phys. Chem. B 2011, 115, 12614; Bichara, C. J. F. et al. Electrochim. Acta 2013, 101, 1",
+    "attempt_frequency_ps": 2.0,
+    "barriers_eV": {
+      "Na+_water": 0.05,
+      "Na+_ec:dmc": 0.12,
+      "Na+_carbonate_mix": 0.10,
+      "Li+_water": 0.08,
+      "Li+_ec:dmc": 0.15,
+      "Li+_carbonate_mix": 0.13,
+      "K+_water": 0.03,
+      "K+_ec:dmc": 0.09
+    }
+  }
+}

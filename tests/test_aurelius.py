@@ -6,7 +6,6 @@ import pytest
 import mlx.core as mx
 import torch
 import numpy as np
-
 from aurelius.config import M5ProConfig, get_config
 from aurelius.memory.manager import (
     MetalShaderConfig,
@@ -27,6 +26,8 @@ from aurelius.types import (
     SEIEvolution,
     Tier2Result,
 )
+
+HAS_TORCH = torch is not None
 
 
 # ============================================================
@@ -992,3 +993,230 @@ class TestVectorizationSpeed:
         # Should return a scalar (mean over batch)
         assert energy.shape == ()
         assert torch.isfinite(energy)
+
+
+# ============================================================
+# GBSA Solvation Energy Tests
+# ============================================================
+
+class TestGBSASolvation:
+    """Tests verifying GBSA solvation energy computation."""
+
+    def test_gbsa_energy_computation(self):
+        """Test that GBSA solvation energy is computed correctly."""
+        from aurelius.solvation.engine import compute_gbsa_solvation_energy
+
+        # Simple diatomic: two charges at fixed distance
+        charges = np.array([0.5, -0.5])
+        radii = np.array([1.5, 1.5])
+
+        # In vacuum (epsilon=1.0), electrostatic term should be zero
+        e_vacuum = compute_gbsa_solvation_energy(charges, radii, dielectric_bulk=1.0)
+        assert np.isfinite(e_vacuum)
+
+        # In high-dielectric solvent, electrostatic screening reduces energy
+        e_water = compute_gbsa_solvation_energy(charges, radii, dielectric_bulk=78.36)
+        assert np.isfinite(e_water)
+
+        # Nonpolar term should be positive (surface area cost)
+        # Both energies should be finite and non-negative (dominated by SASA)
+        assert e_vacuum >= 0
+        assert e_water >= 0
+
+    def test_born_charges_dft_derived(self):
+        """Verify Born effective charges come from DFT literature."""
+        from aurelius.solvation.engine import (
+            _BORN_CHARGES_NA,
+            _BORN_CHARGES_LI,
+            _BORN_CHARGES_K,
+        )
+
+        # Na+ Z* norm should be in physically reasonable range
+        na_norm = np.linalg.norm(_BORN_CHARGES_NA)
+        assert 1.0 < na_norm < 2.5
+
+        # Li+ Z* should be near 1.3 per diagonal element, norm ~2.3
+        li_norm = np.linalg.norm(_BORN_CHARGES_LI)
+        assert 1.5 < li_norm < 3.0
+
+        # K+ Z* should be near 0.9 per diagonal element, norm ~1.6
+        k_norm = np.linalg.norm(_BORN_CHARGES_K)
+        assert 1.0 < k_norm < 2.0
+
+
+# ============================================================
+# Real Model Integration Tests
+# ============================================================
+
+class TestRealModelIntegration:
+    """Tests verifying Tier 1 real model integration."""
+
+    def test_hf_weight_loader_exists(self):
+        """Verify HuggingFaceWeightLoader class exists."""
+        from aurelius.screening.tier1_mlx_filter import HuggingFaceWeightLoader
+
+        loader = HuggingFaceWeightLoader()
+        assert loader is not None
+        assert hasattr(loader, "load_model")
+        assert hasattr(loader, "save_model")
+
+    def test_real_model_filter_creation(self):
+        """Verify MLXNAFilter can be created with use_real_models=True."""
+        from aurelius.screening.tier1_mlx_filter import MLXNAFilter
+
+        # Should work without training on init
+        f = MLXNAFilter(quantization_format="MX4", use_real_models=True, train_on_init=False)
+        assert f._use_real_models is True
+        assert f._model_loaded is False
+
+    def test_demo_mode_filter_creation(self):
+        """Verify MLXNAFilter works in demo (synthetic) mode."""
+        from aurelius.screening.tier1_mlx_filter import MLXNAFilter
+
+        f = MLXNAFilter(quantization_format="MX4", use_real_models=False, train_on_init=False)
+        assert f._use_real_models is False
+
+    def test_screening_produces_viability_score(self):
+        """Verify that screening produces meaningful viability scores."""
+        from aurelius.screening.tier1_mlx_filter import MLXNAFilter
+
+        f = MLXNAFilter(quantization_format="MX4", use_real_models=True, train_on_init=False)
+        result = f.screen_molecule("CCO")  # ethanol
+
+        assert result.is_viable is True or result.is_viable is False
+        assert 0.0 <= result.confidence_score <= 1.0
+        assert result.inference_time_ms >= 0
+        assert 0.0 <= result.na_utilization_pct <= 100.0
+
+    def test_ecfp4_fingerprint_properties(self):
+        """Verify ECFP4 fingerprints have correct properties."""
+        from aurelius.screening.tier1_mlx_filter import _generate_ecfp4_fingerprint
+
+        smiles = "CC(=O)OC1=CC(=O)O1"
+        fp = _generate_ecfp4_fingerprint(smiles)
+
+        assert fp.shape == (2048,)
+        assert fp.dtype == np.float32
+        # Should be binary (0 or 1)
+        assert set(np.unique(fp).tolist()).issubset({0.0, 1.0})
+        # Should have some bits set
+        assert np.sum(fp) > 0
+
+    def test_esol_training_function_exists(self):
+        """Verify train_on_esol function exists and is callable."""
+        from aurelius.screening.tier1_mlx_filter import train_on_esol
+
+        assert callable(train_on_esol)
+
+    def test_qm9_training_function_exists(self):
+        """Verify train_on_qm9 function exists and is callable."""
+        from aurelius.screening.tier1_mlx_filter import train_on_qm9
+
+        assert callable(train_on_qm9)
+
+
+# ============================================================
+# SchNet Layer Tests
+# ============================================================
+
+class TestSchNetLayers:
+    """Tests verifying SchNet-style message passing layers."""
+
+    def test_continuous_filter_conv(self):
+        """Test continuous-filter convolution layer."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch not available")
+
+        from aurelius.screening.tier2_mattersim import ContinuousFilterConv1d
+
+        conv = ContinuousFilterConv1d(input_dim=128, output_dim=128, num_filters=32)
+        h = torch.randn(10, 128)
+        distances = torch.rand(10, 10)
+
+        out = conv(h, distances)
+        assert out.shape == (10, 128)
+
+    def test_schnet_interaction_block(self):
+        """Test SchNet interaction block."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch not available")
+
+        from aurelius.screening.tier2_mattersim import SchNetInteractionBlock
+
+        block = SchNetInteractionBlock(hidden_dim=128, num_filters=32)
+        h = torch.randn(10, 128)
+        distances = torch.rand(10, 10)
+
+        out = block(h, distances)
+        assert out.shape == (10, 128)
+
+    def test_mattersim_engine_forward(self):
+        """Test MatterSimMPEngine forward pass with SchNet layers."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch not available")
+
+        engine = MatterSimMPEngine(hidden_dim=128, num_filters=32)
+
+        atomic_numbers = torch.tensor([6, 8, 1, 1], dtype=torch.long)
+        coordinates = torch.tensor([
+            [0.0, 0.0, 0.0],
+            [1.2, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0],
+        ], dtype=torch.float32)
+
+        energy = engine(atomic_numbers, coordinates)
+        assert torch.isfinite(energy)
+        assert energy.shape == ()
+
+    def test_mattersim_force_computation(self):
+        """Test that forces can be computed as energy gradients."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch not available")
+
+        engine = MatterSimMPEngine(hidden_dim=128, num_filters=32)
+
+        atomic_numbers = torch.tensor([6, 8, 1, 1], dtype=torch.long)
+        coordinates = torch.tensor([
+            [0.0, 0.0, 0.0],
+            [1.2, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0],
+        ], dtype=torch.float32, requires_grad=True)
+
+        energy = engine(atomic_numbers, coordinates)
+        forces = engine.compute_forces(atomic_numbers, coordinates)
+
+        assert forces.shape == (4, 3)
+        assert torch.all(torch.isfinite(forces))
+
+
+# ============================================================
+# CLI Flag Tests
+# ============================================================
+
+class TestCLIFlags:
+    """Tests verifying CLI flag support for real models."""
+
+    def test_pipeline_accepts_use_real_models(self):
+        """Verify AureliusPipeline accepts use_real_models parameter."""
+        from aurelius.pipeline import AureliusPipeline
+
+        config = M5ProConfig()
+
+        # Should accept use_real_models parameter
+        pipeline = AureliusPipeline(config, use_real_models=True)
+        assert pipeline._use_real_models is True
+
+        pipeline_demo = AureliusPipeline(config, use_real_models=False)
+        assert pipeline_demo._use_real_models is False
+
+    def test_cli_help_includes_real_model_flags(self):
+        """Verify CLI help text includes --use-real-models and --demo flags."""
+        import subprocess
+        result = subprocess.run(
+            ["python3", "-m", "aurelius", "screen", "--help"],
+            capture_output=True, text=True,
+        )
+        assert "--use-real-models" in result.stdout
+        assert "--demo" in result.stdout

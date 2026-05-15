@@ -47,6 +47,18 @@ def init():
 @click.option("--voltage", default=0.05, help="Voltage cutoff")
 @click.option("--cycles", default=500, help="MD simulation cycles")
 @click.option("--gwp", default=1.0, help="Global Warming Potential value")
+@click.option(
+    "--use-real-models",
+    is_flag=True,
+    default=True,
+    help="Use real pre-trained models trained on experimental data (default: enabled)",
+)
+@click.option(
+    "--demo",
+    is_flag=True,
+    default=False,
+    help="Use synthetic training data for demonstration purposes",
+)
 def screen(
     smiles,
     solvent,
@@ -56,10 +68,20 @@ def screen(
     voltage,
     cycles,
     gwp,
+    use_real_models,
+    demo,
 ):
-    """Screen a single molecule through the full Aurelius v5.1 pipeline."""
+    """Screen a single molecule through the full Aurelius v5.1 pipeline.
+
+    By default, Tier 1 loads or trains on real experimental data (ESOL/QM9).
+    Use --demo to switch to synthetic training data for demonstration.
+    """
+    # --demo overrides --use-real-models
+    if demo:
+        use_real_models = False
+
     config = apply_global_config()
-    pipeline = AureliusPipeline(config)
+    pipeline = AureliusPipeline(config, use_real_models=use_real_models)
     pipeline.initialize()
 
     results = pipeline.screen_molecule(
