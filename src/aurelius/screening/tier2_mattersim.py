@@ -64,7 +64,7 @@ def _load_force_field_params(path: str | None = None) -> dict:
         Dictionary of force field parameters.
     """
     ff_path = path or os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
         "src", "aurelius", "data", "force_field_params.json",
     )
     if os.path.isfile(ff_path):
@@ -374,80 +374,89 @@ class MatterSimMTSimulator:
     Uses OPLS-AA/GAFF force field parameters loaded from JSON config.
     """
 
-    # OPLS-AA / GAFF LJ parameters: (epsilon [eV], sigma [Angstrom])
-    # Indexed by (min_atomic_num, max_atomic_num)
-    _LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {
-        (1, 1): (0.015, 2.650),     # H-H (OPLS-AA)
-        (1, 6): (0.01500, 2.650),   # H-C (OPLS-AA)
-        (1, 7): (0.01500, 2.650),   # H-N (OPLS-AA)
-        (1, 8): (0.01700, 2.750),   # H-O (OPLS-AA)
-        (1, 11): (0.00800, 2.500),  # H-Na (GAFF)
-        (6, 6): (0.01094, 3.3996),  # C-C (OPLS-AA)
-        (6, 7): (0.01094, 3.3500),  # C-N (OPLS-AA)
-        (6, 8): (0.01200, 3.1500),  # C-O (OPLS-AA)
-        (6, 11): (0.02000, 3.000),  # C-Na (GAFF)
-        (7, 7): (0.01094, 3.3500),  # N-N (OPLS-AA)
-        (7, 8): (0.01200, 3.1000),  # N-O (OPLS-AA)
-        (7, 11): (0.02000, 3.000),  # N-Na (GAFF)
-        (8, 8): (0.01200, 3.1200),  # O-O (OPLS-AA)
-        (8, 11): (0.03000, 2.800),  # O-Na (GAFF)
-        (11, 11): (0.00800, 2.500), # Na-Na (GAFF)
-    }
-
-    # Partial charges from OPLS-AA / GAFF
-    _CHARGES: dict[int, float] = {
-        1: 0.0,      # H (OPLS-AA)
-        6: 0.0,      # C (OPLS-AA)
-        7: 0.0,      # N (OPLS-AA)
-        8: -0.417,   # O (OPLS-AA)
-        11: 0.889,   # Na+ (GAFF)
-    }
-
-    # Atomic radii for GB calculation (Bondi radii)
-    _ATOMIC_RADII: dict[int, float] = {
-        1: 1.20,
-        6: 1.70,
-        7: 1.55,
-        8: 1.52,
-        11: 2.27,
-    }
-
     def __init__(
         self,
-        barrier_threshold_eV: float = 0.5,
+        barrier_threshold_eV: float | None = None,
         force_field_path: str | None = None,
     ) -> None:
         """Initialize MatterSim-MT simulator.
 
         Args:
             barrier_threshold_eV: Energy barrier rejection threshold.
+                Defaults to value from force_field_params.json.
             force_field_path: Optional path to force field JSON.
         """
-        self.barrier_threshold_eV = barrier_threshold_eV
+        # Load parameters from force field JSON
+        self._LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {}
+        self._CHARGES: dict[int, float] = {}
+        self._ATOMIC_RADII: dict[int, float] = {}
+
+        if force_field_path and os.path.isfile(force_field_path):
+            params = _load_force_field_params(force_field_path)
+        else:
+            params = _load_force_field_params()
+
+        # Load LJ parameters from JSON
+        lj_data = params.get("lennard_jones", {}).get("parameters", {})
+        for key, val in lj_data.items():
+            try:
+                key_tuple = ast.literal_eval(key)
+                self._LJ_PARAMS[key_tuple] = (val["epsilon"], val["sigma"])
+            except (SyntaxError, ValueError):
+                pass
+
+        # Load partial charges from JSON
+        charge_data = params.get("partial_charges", {}).get("parameters", {})
+        for z_str, val in charge_data.items():
+            self._CHARGES[int(z_str)] = val["charge"]
+
+        # Load atomic radii from JSON
+        radii_data = params.get("atomic_radii", {}).get("parameters", {})
+        for z_str, r in radii_data.items():
+            self._ATOMIC_RADII[int(z_str)] = r
+
+        # Default LJ parameters for unknown pairs
+        self._default_eps = params.get("lennard_jones", {}).get("default_epsilon", 0.02)
+        self._default_sig = params.get("lennard_jones", {}).get("default_sigma", 2.5)
+        self._cutoff = params.get("lennard_jones", {}).get("cutoff_angstrom", 12.0)
+        self._cutoff_mask_start = params.get("lennard_jones", {}).get("switching_start_angstrom", 10.0)
+
+        # Fallback Gaussian parameters
+        fallback = params.get("fallback_gaussians", {})
+        self._fallback_heights = fallback.get("heights", [0.2, 0.15, 0.1, 0.03])
+        self._fallback_centers = fallback.get("centers", [2.0, 4.5, 6.5])
+        self._fallback_widths = fallback.get("widths", [0.8, 1.0, 0.6, 0.3])
+
+        # Barrier threshold
+        self.barrier_threshold_eV = barrier_threshold_eV if barrier_threshold_eV is not None else params.get("lennard_jones", {}).get("default_barrier_eV", 0.5)
+
         self._compiled_model: Optional[Any] = None
         self._graph_built = False
 
-        # Load force field parameters from JSON
-        if force_field_path and os.path.isfile(force_field_path):
-            params = _load_force_field_params(force_field_path)
-            lj_data = params.get("lennard_jones", {}).get("parameters", {})
-            for key, val in lj_data.items():
-                try:
-                    key_tuple = ast.literal_eval(key)
-                    self._LJ_PARAMS[key_tuple] = (val["epsilon"], val["sigma"])
-                except (SyntaxError, ValueError):
-                    pass
-            charge_data = params.get("partial_charges", {}).get("parameters", {})
-            for z_str, val in charge_data.items():
-                self._CHARGES[int(z_str)] = val["charge"]
+    def _select_device(self) -> str:
+        """Select the best available compute device.
+
+        Priority: CUDA > MPS (Apple Silicon) > CPU.
+        Returns the device string for PyTorch tensor placement.
+        """
+        if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built():
+            if torch.cuda.is_available():
+                return "cuda"
+
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+
+        return "cpu"
 
     def initialize(self, model_path: str = "") -> None:
         """Initialize MatterSim-MT engine."""
         if not HAS_TORCH:
             raise RuntimeError("PyTorch is required for MatterSim-MT.")
 
+        device = self._select_device()
         print(f"[Aurelius v5.1 Tier2] Initializing MatterSim-MT "
-              f"(barrier threshold: {self.barrier_threshold_eV} eV)")
+              f"(barrier threshold: {self.barrier_threshold_eV} eV, "
+              f"device={device})")
 
     def simulate_desolvation(
         self,
@@ -479,7 +488,8 @@ class MatterSimMTSimulator:
         )
 
         elapsed_ms = (time.perf_counter() - start) * 1000
-        mem_gb = self._estimate_memory_usage(n_cycles)
+        device = self._select_device()
+        mem_gb = self._estimate_memory_usage(n_cycles, device=device)
 
         return Tier2Result(
             molecule_smiles=smiles,
@@ -514,7 +524,7 @@ class MatterSimMTSimulator:
         if not HAS_TORCH:
             return self._fallback_path_integral(smiles, n_cycles)
 
-        device = "mps" if torch.backends.mps.is_available() else "cpu"
+        device = self._select_device()
 
         # Build ion + solvent system
         atomic_numbers_list: list[int] = [11]  # Na+
@@ -615,12 +625,10 @@ class MatterSimMTSimulator:
             sig_tensor = torch.where(pair_mask, torch.full_like(sig_tensor, sig), sig_tensor)
 
         # Default parameters for unknown pairs
-        default_eps = 0.02
-        default_sig = 2.5
-        eps_tensor = torch.where(eps_tensor == 0, torch.full_like(eps_tensor, default_eps), eps_tensor)
-        sig_tensor = torch.where(sig_tensor == 0, torch.full_like(sig_tensor, default_sig), sig_tensor)
+        eps_tensor = torch.where(eps_tensor == 0, torch.full_like(eps_tensor, self._default_eps), eps_tensor)
+        sig_tensor = torch.where(sig_tensor == 0, torch.full_like(sig_tensor, self._default_sig), sig_tensor)
 
-        cutoff_mask = (distances < 12.0) & mask  # OPLS-AA cutoff = 12A
+        cutoff_mask = (distances < self._cutoff) & mask  # OPLS-AA cutoff
 
         # Shifted LJ potential
         r_soft = torch.sqrt(distances * distances + sig_tensor ** 2)
@@ -729,12 +737,12 @@ class MatterSimMTSimulator:
                 eps_vals = torch.where(pair_mask, torch.full_like(eps_vals, eps), eps_vals)
                 sig_vals = torch.where(pair_mask, torch.full_like(sig_vals, sig), sig_vals)
 
-            default_eps = 0.02
-            default_sig = 2.5
+            default_eps = self._default_eps
+            default_sig = self._default_sig
             eps_vals = torch.where(eps_vals == 0, torch.full_like(eps_vals, default_eps), eps_vals)
             sig_vals = torch.where(sig_vals == 0, torch.full_like(sig_vals, default_sig), sig_vals)
 
-            cutoff_mask = ion_dist < 12.0
+            cutoff_mask = ion_dist < self._cutoff
             r_soft = torch.sqrt(ion_dist * ion_dist + sig_vals ** 2)
             sig_over_r = sig_vals / r_soft
             sig_over_r6 = sig_over_r ** 6
@@ -785,10 +793,17 @@ class MatterSimMTSimulator:
         positions = np.linspace(0, 8.0, n_cycles)
         energies = np.zeros(n_cycles)
 
-        energies += 0.2 * np.exp(-0.5 * ((positions - 2.0) / 0.8) ** 2)
-        energies += 0.15 * np.exp(-0.5 * ((positions - 4.5) / 1.0) ** 2)
-        energies += 0.1 * np.exp(-0.5 * ((positions - 6.5) / 0.6) ** 2)
-        energies += 0.03 * np.exp(-positions / 0.3)
+        heights = self._fallback_heights
+        centers = self._fallback_centers
+        widths = self._fallback_widths
+
+        for i, (h, c, w) in enumerate(zip(heights, centers, widths)):
+            energies += h * np.exp(-0.5 * ((positions - c) / w) ** 2)
+
+        if len(heights) >= 4:
+            energies += heights[3] * np.exp(-positions / widths[3])
+        else:
+            energies += 0.03 * np.exp(-positions / 0.3)
         energies += rng.normal(0, 0.01, n_cycles)
 
         local_maxima = self._find_local_maxima(energies)
@@ -812,8 +827,23 @@ class MatterSimMTSimulator:
         )
 
     @staticmethod
-    def _estimate_memory_usage(n_cycles: int) -> float:
-        """Estimate GPU memory usage for the simulation."""
-        base = 0.5
-        per_cycle = 0.001
+    def _estimate_memory_usage(n_cycles: int, device: str = "cpu") -> float:
+        """Estimate memory usage for the simulation.
+
+        Args:
+            n_cycles: Number of simulation cycles.
+            device: Compute device ("cuda", "mps", or "cpu").
+
+        Returns:
+            Estimated memory usage in GB.
+        """
+        if device == "cuda":
+            base = 1.0
+            per_cycle = 0.002
+        elif device == "mps":
+            base = 0.5
+            per_cycle = 0.001
+        else:
+            base = 0.2
+            per_cycle = 0.0001
         return base + n_cycles * per_cycle

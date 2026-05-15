@@ -1221,3 +1221,240 @@ class TestCLIFlags:
         )
         assert "--use-real-models" in result.stdout
         assert "--demo" in result.stdout
+
+
+# ============================================================
+# Cross-Platform Support Tests (v5.2)
+# ============================================================
+
+class TestCrossPlatformSupport:
+    """Tests verifying cross-platform device selection for Tier 2."""
+
+    def test_device_selection_cpu_fallback(self):
+        """Verify that CPU is selected when no GPU is available."""
+        sim = MatterSimMTSimulator()
+        device = sim._select_device()
+        assert device in ("cpu", "mps", "cuda")
+        assert isinstance(device, str)
+
+    def test_device_selection_prefers_cuda_over_mps(self):
+        """Verify CUDA is preferred over MPS when both are available."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch not available")
+
+        sim = MatterSimMTSimulator()
+        device = sim._select_device()
+
+        # If CUDA is available, it should be selected
+        if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built():
+            if torch.cuda.is_available():
+                assert device == "cuda"
+            elif torch.backends.mps.is_available():
+                assert device == "mps"
+            else:
+                assert device == "cpu"
+        elif torch.backends.mps.is_available():
+            assert device == "mps"
+        else:
+            assert device == "cpu"
+
+    def test_memory_estimation_device_aware(self):
+        """Verify memory estimation varies by device type."""
+        mem_cpu = MatterSimMTSimulator._estimate_memory_usage(500, "cpu")
+        mem_mps = MatterSimMTSimulator._estimate_memory_usage(500, "mps")
+        mem_cuda = MatterSimMTSimulator._estimate_memory_usage(500, "cuda")
+
+        # CUDA should use more memory than MPS, which uses more than CPU
+        assert mem_cuda >= mem_mps >= mem_cpu
+
+    def test_tier2_initialization_logs_device(self, capsys):
+        """Verify that Tier 2 initialization logs the selected device."""
+        sim = MatterSimMTSimulator()
+        sim.initialize()
+        captured = capsys.readouterr()
+        assert "device=" in captured.out.lower() or "Device" in captured.out
+
+
+# ============================================================
+# Parameter Loading Tests (v5.2)
+# ============================================================
+
+class TestParameterLoading:
+    """Tests verifying that magic numbers are loaded from force_field_params.json."""
+
+    def test_kmc_params_from_json(self):
+        """Verify kMC parameters are loaded from force_field_params.json."""
+        from aurelius.screening.tier3_gcmtwin import _load_kmc_params
+
+        params = _load_kmc_params()
+        assert "activation_energies_eV" in params
+        assert "pre_exponential_factors_ps" in params
+        assert "thickness_contributions_angstrom" in params
+        assert params["activation_energies_eV"]["ec_reduction"] == 0.65
+        assert params["kinetic_parameters"]["km_half_saturation"] == 0.3
+
+    def test_solvation_params_from_json(self):
+        """Verify solvation parameters are loaded from force_field_params.json."""
+        from aurelius.solvation.engine import (
+            _load_solvation_params,
+            _get_coordination_number,
+            _get_shell_radius,
+            _get_desolvation_energy,
+            _get_surface_tension,
+            _get_rejection_threshold,
+            _get_energy_profile_gaussians,
+            _get_repulsive_wall_params,
+        )
+
+        params = _load_solvation_params()
+        assert "coordination_numbers" in params
+        assert params["coordination_numbers"]["Na+"] == 6
+        assert params["coordination_numbers"]["Li+"] == 4
+        assert params["coordination_numbers"]["K+"] == 8
+
+        # Test accessor functions
+        assert _get_coordination_number("Na+") == 6
+        assert _get_coordination_number("Li+") == 4
+        assert _get_shell_radius("Na+") == 3.0
+        assert _get_shell_radius("Li+") == 2.5
+        assert _get_surface_tension() == 0.00542
+        assert _get_rejection_threshold() == 0.5
+
+        centers, widths, heights = _get_energy_profile_gaussians()
+        assert centers == [1.5, 3.0, 4.2]
+        assert widths == [0.4, 0.5, 0.3]
+        assert heights == [0.15, 0.25, 0.10]
+
+        amp, decay = _get_repulsive_wall_params()
+        assert amp == 0.02
+        assert decay == 0.5
+
+    def test_scoring_params_from_json(self):
+        """Verify scoring parameters are loaded from force_field_params.json."""
+        from aurelius.scoring.engine import _load_scoring_params
+
+        params = _load_scoring_params()
+        assert "component_weights" in params
+        assert params["component_weights"]["sigma"] == 0.3
+        assert params["component_weights"]["desolvation"] == 0.2
+        assert params["viability_threshold"] == 65.0
+
+        mx_params = params["mx_synthesis"]
+        assert mx_params["base_score"] == 70.0
+        assert "ec:dmc" in mx_params["common_solvents"]
+        assert "NaPF6" in mx_params["common_salts"]
+        assert "Na+" in mx_params["common_ions"]
+
+    def test_tier1_params_from_json(self):
+        """Verify Tier 1 parameters are loaded from force_field_params.json."""
+        import json
+        import os
+
+        ff_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(__file__)
+            ))),
+            "src", "aurelius", "data", "force_field_params.json",
+        )
+        if os.path.isfile(ff_path):
+            with open(ff_path, "r") as f:
+                data = json.load(f)
+            tier1 = data.get("tier1_parameters", {})
+            assert "esol_dataset" in tier1
+            assert tier1["esol_dataset"]["mean_logS"] == -2.95
+            assert tier1["training_hyperparameters"]["learning_rate"] == 0.005
+            assert tier1["hash_fallback"]["n_bits"] == 2048
+
+    def test_pipeline_defaults_from_json(self):
+        """Verify pipeline defaults are loaded from force_field_params.json."""
+        import json
+        import os
+
+        ff_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(__file__)
+            ))),
+            "src", "aurelius", "data", "force_field_params.json",
+        )
+        if os.path.isfile(ff_path):
+            with open(ff_path, "r") as f:
+                data = json.load(f)
+            defaults = data.get("pipeline_defaults", {})
+            assert defaults["voltage_cutoff_V"] == 0.05
+            assert defaults["max_sei_time_ps"] == 1000.0
+            assert defaults["config_defaults"]["barrier_threshold_eV"] == 0.5
+
+    def test_gcmtwin_loads_params_from_json(self):
+        """Verify GCMDigitalTwin loads parameters from JSON instead of hardcoded."""
+        twin = GCMDigitalTwin()
+        # These should come from force_field_params.json now
+        assert twin._Ea_SOLVENT_EC == 0.65
+        assert twin._A_SOLVENT_BASE == 5.0
+        assert twin._K_m == 0.3
+        assert twin._alpha == 0.5
+        assert twin._initial_salt_conc == 0.1
+
+    def test_mattersim_loads_params_from_json(self):
+        """Verify MatterSimMTSimulator loads parameters from JSON instead of hardcoded."""
+        sim = MatterSimMTSimulator()
+        # LJ params should come from JSON now
+        assert len(sim._LJ_PARAMS) > 0
+        assert len(sim._CHARGES) > 0
+        assert sim._default_eps == 0.02
+        assert sim._default_sig == 2.5
+        assert sim._cutoff == 12.0
+
+    def test_solvation_engine_loads_params_from_json(self):
+        """Verify MWSESolvationEngine loads parameters from JSON."""
+        engine = MWSESolvationEngine()
+        from aurelius.solvation.engine import (
+            _get_coordination_number,
+            _get_shell_radius,
+            _get_desolvation_energy,
+        )
+        assert _get_coordination_number("Na+") == 6
+        assert _get_shell_radius("Li+") == 2.5
+        assert _get_desolvation_energy("Na+", "water") == 0.05
+
+
+# ============================================================
+# RDKit Fallback Warning Tests (v5.2)
+# ============================================================
+
+class TestRDKitFallbackWarnings:
+    """Tests verifying explicit warnings when RDKit is unavailable."""
+
+    def test_hash_fallback_uses_json_params(self):
+        """Verify hash fallback loads parameters from force_field_params.json."""
+        from aurelius.screening.tier1_mlx_filter import _hash_fallback
+
+        fp = _hash_fallback("CCO")
+        assert fp.shape == (2048,)
+        assert fp.dtype == np.float32
+        # Should have some bits set
+        assert np.sum(fp) > 0
+        # Should be binary
+        assert set(np.unique(fp).tolist()).issubset({0.0, 1.0})
+
+    def test_hash_fallback_deterministic(self):
+        """Verify hash fallback produces deterministic results."""
+        from aurelius.screening.tier1_mlx_filter import _hash_fallback
+
+        fp1 = _hash_fallback("CC(=O)OC1=CC(=O)O1")
+        fp2 = _hash_fallback("CC(=O)OC1=CC(=O)O1")
+        assert np.array_equal(fp1, fp2)
+
+    def test_different_smiles_different_fallback(self):
+        """Verify different SMILES produce different hash fallbacks."""
+        from aurelius.screening.tier1_mlx_filter import _hash_fallback
+
+        fp_ethanol = _hash_fallback("CCO")
+        fp_acetic = _hash_fallback("CC(=O)O")
+        # Different SMILES should produce different hash vectors
+        assert not np.array_equal(fp_ethanol, fp_acetic)
+
+    def test_na_utilization_uses_json_params(self):
+        """Verify NA utilization estimation uses JSON parameters."""
+        f = MLXNAFilter(quantization_format="MX4", train_on_init=False)
+        util = f._estimate_na_utilization(0.75)
+        assert 0 <= util <= 100

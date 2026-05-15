@@ -14,6 +14,8 @@ Where:
 
 from __future__ import annotations
 
+import json
+import os
 from typing import Optional
 
 import numpy as np
@@ -29,6 +31,32 @@ from aurelius.types import (
 )
 
 
+def _load_scoring_params(path: str | None = None) -> dict:
+    """Load scoring parameters from force field JSON.
+
+    Args:
+        path: Optional path to force field params JSON file.
+
+    Returns:
+        Dictionary of scoring parameters, or empty dict on failure.
+    """
+    ff_path = path or os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "data", "force_field_params.json",
+    )
+    if os.path.isfile(ff_path):
+        try:
+            with open(ff_path, "r") as f:
+                data = json.load(f)
+                return data.get("scoring_parameters", {})
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+_SCORING_PARAMS = _load_scoring_params()
+
+
 class AureliusScoringEngine:
     """Revised Aurelius Score v5.1 calculation engine.
 
@@ -39,21 +67,22 @@ class AureliusScoringEngine:
 
     def __init__(
         self,
-        weight_sigma: float = 0.3,
-        weight_desolvation: float = 0.2,
-        weight_sei_homogeneity: float = 0.2,
-        weight_mx_synthesis: float = 0.2,
-        weight_gwp: float = 0.1,
-        viability_threshold: float = 65.0,
+        weight_sigma: float | None = None,
+        weight_desolvation: float | None = None,
+        weight_sei_homogeneity: float | None = None,
+        weight_mx_synthesis: float | None = None,
+        weight_gwp: float | None = None,
+        viability_threshold: float | None = None,
     ) -> None:
+        scoring = _SCORING_PARAMS.get("component_weights", {})
         self.weights = {
-            "sigma": weight_sigma,
-            "desolvation": weight_desolvation,
-            "sei_homogeneity": weight_sei_homogeneity,
-            "mx_synthesis": weight_mx_synthesis,
-            "gwp": weight_gwp,
+            "sigma": weight_sigma if weight_sigma is not None else scoring.get("sigma", 0.3),
+            "desolvation": weight_desolvation if weight_desolvation is not None else scoring.get("desolvation", 0.2),
+            "sei_homogeneity": weight_sei_homogeneity if weight_sei_homogeneity is not None else scoring.get("sei_homogeneity", 0.2),
+            "mx_synthesis": weight_mx_synthesis if weight_mx_synthesis is not None else scoring.get("mx_synthesis", 0.2),
+            "gwp": weight_gwp if weight_gwp is not None else scoring.get("gwp", 0.1),
         }
-        self.viability_threshold = viability_threshold
+        self.viability_threshold = viability_threshold if viability_threshold is not None else _SCORING_PARAMS.get("viability_threshold", 65.0)
 
     def compute_score(
         self,
@@ -83,7 +112,7 @@ class AureliusScoringEngine:
             result.sigma_score = self._normalize_sigma(tier1_result.confidence_score)
             result.tier1_viable = tier1_result.is_viable
         else:
-            result.sigma_score = 50.0
+            result.sigma_score = _SCORING_PARAMS.get("default_tier_score", 50.0)
             result.tier1_viable = True
 
         # Component 2: E_des_barrier (Normalized desolvation path integral)
@@ -93,7 +122,7 @@ class AureliusScoringEngine:
             )
             result.tier2_viable = tier2_result.is_viable
         else:
-            result.desolvation_score = 50.0
+            result.desolvation_score = _SCORING_PARAMS.get("default_tier_score", 50.0)
             result.tier2_viable = True
 
         # Component 3: SEI Homogeneity
@@ -103,7 +132,7 @@ class AureliusScoringEngine:
             )
             result.tier3_viable = tier3_result.sei_evolution.electronic_insulation
         else:
-            result.sei_homogeneity_score = 50.0
+            result.sei_homogeneity_score = _SCORING_PARAMS.get("default_tier_score", 50.0)
             result.tier3_viable = True
 
         # Component 4: MX_Synthesis_Score (Automated lab compatibility)
@@ -193,8 +222,12 @@ class AureliusScoringEngine:
         if path_result.rejected:
             return 0.0
 
+        normalization = _SCORING_PARAMS.get("desolvation_normalization", {})
+        scale_factor = normalization.get("scale_factor", 100.0)
+        scale_denom = normalization.get("scale_denominator_eV", 0.3)
+
         barrier = path_result.barrier_height_eV
-        score = 100.0 * np.exp(-barrier / 0.3)
+        score = scale_factor * np.exp(-barrier / scale_denom)
         return float(np.clip(score, 0, 100))
 
     @staticmethod
@@ -216,25 +249,27 @@ class AureliusScoringEngine:
         Assesses how well a molecule's properties align with
         automated synthesis laboratory capabilities.
         """
-        score = 70.0
+        mx_params = _SCORING_PARAMS.get("mx_synthesis", {})
+        score = mx_params.get("base_score", 70.0)
 
-        common_solvents = ["ec:dmc", "ec:emc", "pc:dmc", "water"]
+        common_solvents = mx_params.get("common_solvents", ["ec:dmc", "ec:emc", "pc:dmc", "water"])
         if molecule_input.solvent_type in common_solvents:
-            score += 10.0
+            score += mx_params.get("solvent_bonus", 10.0)
 
-        common_salts = ["NaPF6", "NaTFSI", "NaClO4"]
+        common_salts = mx_params.get("common_salts", ["NaPF6", "NaTFSI", "NaClO4"])
         if molecule_input.salt_type in common_salts:
-            score += 5.0
+            score += mx_params.get("salt_bonus", 5.0)
 
-        common_ions = ["Na+", "Li+", "K+"]
+        common_ions = mx_params.get("common_ions", ["Na+", "Li+", "K+"])
         if molecule_input.ion_type in common_ions:
-            score += 5.0
+            score += mx_params.get("ion_bonus", 5.0)
 
         if tier3_result is not None:
             if tier3_result.sei_evolution.electronic_insulation:
-                score += 5.0
-            if tier3_result.sei_evolution.homogeneity_score > 0.7:
-                score += 5.0
+                score += mx_params.get("insulation_bonus", 5.0)
+            hom_threshold = mx_params.get("homogeneity_threshold", 0.7)
+            if tier3_result.sei_evolution.homogeneity_score > hom_threshold:
+                score += mx_params.get("homogeneity_bonus", 5.0)
 
         return float(np.clip(score, 0, 100))
 

@@ -23,6 +23,8 @@ Digital" twin concept for battery electrolyte screening.
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import field
 from typing import Optional
 
@@ -36,6 +38,29 @@ _KB_J_K = 1.380649e-23     # Boltzmann constant in J/K
 _AVOGADRO = 6.02214076e23   # Avogadro's number
 
 
+def _load_kmc_params(path: str | None = None) -> dict:
+    """Load kMC reaction parameters from force field JSON.
+
+    Args:
+        path: Optional path to force field params JSON file.
+
+    Returns:
+        Dictionary of kMC reaction parameters, or empty dict on failure.
+    """
+    ff_path = path or os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "data", "force_field_params.json",
+    )
+    if os.path.isfile(ff_path):
+        try:
+            with open(ff_path, "r") as f:
+                data = json.load(f)
+                return data.get("kmc_reaction_parameters", {})
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
 class GCMDigitalTwin:
     """Tier 3: GCMD Digital Twin with Arrhenius kMC.
 
@@ -46,29 +71,69 @@ class GCMDigitalTwin:
     Reaction rate constants are computed via the Arrhenius equation
     with literature-derived activation energies and mass-transport
     limited pre-exponential factors.
+
+    Parameters are loaded from force_field_params.json for
+    configurability without code changes.
     """
 
-    # Activation energies (eV) from DFT/experimental literature
-    # EC reduction to lithium/Na alkyl carbonates: 0.55-0.75 eV
-    # DMC reduction to dimethyl carbonate radicals: 0.65-0.85 eV
-    # PF6- decomposition to PF5 + F-: 1.10-1.30 eV
-    _Ea_SOLVENT_EC: float = 0.65    # eV, EC reduction
-    _Ea_SOLVENT_DMC: float = 0.75   # eV, DMC reduction
-    _Ea_SALT_PF6: float = 1.20      # eV, PF6- decomposition
+    def __init__(
+        self,
+        gcmtwin_config: Optional[GCMDTConfig] = None,
+        force_field_path: str | None = None,
+    ) -> None:
+        """Initialize GCMD Digital Twin.
 
-    # Pre-exponential factors (1/ps) at standard conditions
-    # A = nu * exp(delta_S/kB), where nu is attempt frequency
-    _A_SOLVENT_BASE: float = 5.0    # 1/ps, solvent decomposition
-    _A_SALT_BASE: float = 2.0       # 1/ps, salt reduction
-    _A_POLY_BASE: float = 1.0       # 1/ps, polymerization
-
-    # Thickness contribution per reaction event (Angstrom)
-    _D_SOLVENT: float = 0.03        # Angstrom per solvent decomposition
-    _D_SALT: float = 0.04           # Angstrom per salt reduction
-    _D_POLY: float = 0.05           # Angstrom per polymerization
-
-    def __init__(self, gcmtwin_config: Optional[GCMDTConfig] = None) -> None:
+        Args:
+            gcmtwin_config: kMC simulation configuration.
+            force_field_path: Optional path to force field JSON.
+        """
         self.config = gcmtwin_config or GCMDTConfig()
+        self._kmc_params = _load_kmc_params(force_field_path)
+        self._activation_energies = self._kmc_params.get("activation_energies_eV", {})
+        self._pre_exponential_factors = self._kmc_params.get("pre_exponential_factors_ps", {})
+        self._thickness_contributions = self._kmc_params.get("thickness_contributions_angstrom", {})
+        self._kinetic_params = self._kmc_params.get("kinetic_parameters", {})
+        self._initial_concentrations = self._kmc_params.get("initial_concentrations", {})
+        self._solvent_composition = self._kmc_params.get("solvent_composition", {})
+        self._sei_property_params = self._kmc_params.get("sei_property_parameters", {})
+        self._memory_model = self._kmc_params.get("memory_model", {})
+
+        # Activation energies (eV) from DFT/experimental literature
+        self._Ea_SOLVENT_EC = self._activation_energies.get("ec_reduction", 0.65)
+        self._Ea_SOLVENT_DMC = self._activation_energies.get("dm_reduction", 0.75)
+        self._Ea_SALT_PF6 = self._activation_energies.get("pf6_decomposition", 1.20)
+
+        # Pre-exponential factors (1/ps) at standard conditions
+        self._A_SOLVENT_BASE = self._pre_exponential_factors.get("solvent", 5.0)
+        self._A_SALT_BASE = self._pre_exponential_factors.get("salt", 2.0)
+        self._A_POLY_BASE = self._pre_exponential_factors.get("polymerization", 1.0)
+
+        # Thickness contribution per reaction event (Angstrom)
+        self._D_SOLVENT = self._thickness_contributions.get("solvent", 0.03)
+        self._D_SALT = self._thickness_contributions.get("salt", 0.04)
+        self._D_POLY = self._thickness_contributions.get("polymerization", 0.05)
+
+        # Kinetic parameters
+        self._K_m = self._kinetic_params.get("km_half_saturation", 0.3)
+        self._alpha = self._kinetic_params.get("symmetry_factor_alpha", 0.5)
+        self._polymer_voltage_factor = self._kinetic_params.get("polymer_voltage_factor", 0.5)
+
+        # Initial concentrations
+        self._initial_solvent_conc = self._initial_concentrations.get("solvent", 1.0)
+        self._initial_salt_conc = self._initial_concentrations.get("salt", 0.1)
+
+        # Solvent composition defaults
+        self._ec_ratio_default = self._solvent_composition.get("ec_dmc_ec_ratio", 0.3)
+
+        # SEI property parameters
+        self._ionic_cond_base = self._sei_property_params.get("ionic_conductivity_base_s_cm", 1e-4)
+        self._cond_decay_length = self._sei_property_params.get("conductivity_decay_length_angstrom", 10.0)
+        self._insulation_threshold = self._sei_property_params.get("electronic_insulation_threshold_angstrom", 2.0)
+        self._ideal_fraction = self._sei_property_params.get("ideal_reaction_fraction", 1.0 / 3.0)
+
+        # Memory model
+        self._mem_base = self._memory_model.get("base_footprint_gb", 2.0)
+        self._mem_scaling = self._memory_model.get("per_angstrom_scaling", 0.1)
 
     def simulate_sei_evolution(
         self,
@@ -97,7 +162,9 @@ class GCMDigitalTwin:
         )
 
         elapsed_ms = (time.perf_counter() - start) * 1000
-        mem_gb = self._estimate_memory_footprint(sei)
+        mem_gb = self._estimate_memory_footprint(
+            sei, base=self._mem_base, scaling=self._mem_scaling
+        )
 
         return GCMDTwinResult(
             molecule_smiles=smiles,
@@ -155,12 +222,12 @@ class GCMDigitalTwin:
         # As SEI grows, solvent concentration at the reaction interface
         # decreases due to diffusion through the growing SEI layer
         # A(c) = A0 * c / (c + K_m), where K_m is a Michaelis-like constant
-        K_m = 0.3  # Half-saturation concentration (normalized)
+        K_m = self._K_m
         concentration_factor = concentration / (concentration + K_m)
 
         # Overpotential dependence: exp(alpha * eta / (kB * T))
         # alpha ~ 0.5 for typical electron transfer reactions
-        alpha = 0.5
+        alpha = self._alpha
         overpotential_factor = np.exp(alpha * overpotential_V / (_KB_EV_K * temperature_k))
 
         # Combined rate constant
@@ -202,8 +269,8 @@ class GCMDigitalTwin:
             SEIEvolution with final thickness, homogeneity, and conductivity.
         """
         # Initial bulk solvent concentration (normalized)
-        initial_solvent_conc = 1.0
-        initial_salt_conc = 0.1  # Salt is typically 1M vs ~10M solvent
+        initial_solvent_conc = self._initial_solvent_conc
+        initial_salt_conc = self._initial_salt_conc
 
         # SEI thickness at which mass transport becomes significant
         # (Angstrom) - beyond this, diffusion through SEI limits rates
@@ -226,7 +293,7 @@ class GCMDigitalTwin:
         current_time = 0.0
 
         # Solvent composition ratio (EC:DMC)
-        ec_ratio = 0.3 if "ec:dmc" in solvent_type else (1.0 if "ec" in solvent_type else 0.5)
+        ec_ratio = self._ec_ratio_default if "ec:dmc" in solvent_type else (1.0 if "ec" in solvent_type else self._solvent_composition.get("fallback_ratio", 0.5))
         dmc_ratio = 1.0 - ec_ratio
 
         for step in range(n_steps):
@@ -268,11 +335,11 @@ class GCMDigitalTwin:
             # Polymerization rate (organic SEI formation)
             # Depends on solvent radical concentration (proportional to solvent reaction)
             k_poly = self._arrhenius_rate(
-                activation_energy_eV=0.40,  # Lower Ea for polymerization of radicals
+                activation_energy_eV=self._activation_energies.get("polymerization", 0.40),
                 temperature_k=temperature_k,
                 concentration=local_solvent_conc,
                 pre_exponential_base=self._A_POLY_BASE,
-                overpotential_V=voltage * 0.5,  # Weaker voltage dependence
+                overpotential_V=voltage * self._polymer_voltage_factor,
             )
 
             # Total reaction rate
@@ -321,17 +388,17 @@ class GCMDigitalTwin:
             ])
             # Homogeneity is high when reactions are well-distributed
             # (not dominated by a single pathway)
-            ideal_fraction = 1.0 / 3.0
+            ideal_fraction = self._ideal_fraction
             deviation = np.mean(np.abs(fractions - ideal_fraction))
             homogeneity = max(1.0 - 2.0 * deviation, 0.0)
         else:
             homogeneity = 0.5
 
         # Ionic conductivity decreases exponentially with thickness
-        ionic_cond = 1e-4 * np.exp(-final_thickness / 10.0)
+        ionic_cond = self._ionic_cond_base * np.exp(-final_thickness / self._cond_decay_length)
 
         # Electronic insulation maintained if SEI is sufficiently thick
-        is_insulated = final_thickness > 2.0
+        is_insulated = final_thickness > self._insulation_threshold
 
         # SEI components based on dominant reaction pathway
         components = ["NaF", "RO-ONa", "Na2CO3"]
@@ -350,11 +417,9 @@ class GCMDigitalTwin:
         )
 
     @staticmethod
-    def _estimate_memory_footprint(sei: SEIEvolution) -> float:
+    def _estimate_memory_footprint(sei: SEIEvolution, base: float = 2.0, scaling: float = 0.1) -> float:
         """Estimate memory usage for GCMD Digital Twin simulation."""
-        base = 2.0  # GB base for GCMD Digital Twin
-        context_scaling = sei.thickness_angstrom * 0.1
-        return base + context_scaling
+        return base + sei.thickness_angstrom * scaling
 
     @staticmethod
     def _hash_inputs(smiles: str, solvent: str, salt: str) -> int:

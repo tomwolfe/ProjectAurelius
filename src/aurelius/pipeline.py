@@ -113,7 +113,8 @@ class AureliusPipeline:
             self._mattersim_sim = MatterSimMTSimulator(
                 barrier_threshold_eV=self.config.desolvation_barrier_threshold_eV,
             )
-            print("[Aurelius v5.1] Tier 2 (MatterSim-MT): ENABLED")
+            device = self._mattersim_sim._select_device() if self._mattersim_sim else "cpu"
+            print(f"[Aurelius v5.1] Tier 2 (MatterSim-MT): ENABLED (device={device})")
 
         if self.config.tier3_gcmtwin_enabled:
             self._gcmtwin = GCMDigitalTwin(
@@ -271,8 +272,12 @@ class AureliusPipeline:
         gc.collect()
         if self.has_mlx:
             mx.metal.clear_cache()
-        if self.has_torch and torch.backends.mps.is_available():
-            torch.mps.empty_cache()
+        if self.has_torch:
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built():
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
         # Tier 3: GCMD Digital Twin
         t3_result = None

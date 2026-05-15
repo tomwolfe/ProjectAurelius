@@ -194,6 +194,199 @@
       "K+_ec:dmc": 0.09,
       "K+_carbonate_mix": 0.08
     }
+  },
+
+  "kmc_reaction_parameters": {
+    "notes": "Arrhenius kMC parameters for SEI evolution simulation (Tier 3). Activation energies, pre-exponential factors, and thickness contributions. All Ea values from DFT/experimental literature ranges.",
+    "reference": "Okuno, Y. et al. Machine Learning Acceleration of SEI Evolution. Chem 2025; Turquant, S. et al. ChemVLM: Foundation Models for Battery Electrolytes. 2026.",
+    "activation_energies_eV": {
+      "ec_reduction": 0.65,
+      "dm_reduction": 0.75,
+      "pf6_decomposition": 1.20,
+      "polymerization": 0.40
+    },
+    "pre_exponential_factors_ps": {
+      "solvent": 5.0,
+      "salt": 2.0,
+      "polymerization": 1.0
+    },
+    "thickness_contributions_angstrom": {
+      "solvent": 0.03,
+      "salt": 0.04,
+      "polymerization": 0.05
+    },
+    "kinetic_parameters": {
+      "km_half_saturation": 0.3,
+      "symmetry_factor_alpha": 0.5,
+      "polymer_voltage_factor": 0.5
+    },
+    "initial_concentrations": {
+      "solvent": 1.0,
+      "salt": 0.1
+    },
+    "solvent_composition": {
+      "ec_dmc_ec_ratio": 0.3,
+      "ec_only": 1.0,
+      "fallback_ratio": 0.5
+    },
+    "sei_property_parameters": {
+      "ionic_conductivity_base_s_cm": 1.0e-4,
+      "conductivity_decay_length_angstrom": 10.0,
+      "electronic_insulation_threshold_angstrom": 2.0,
+      "ideal_reaction_fraction": 0.3333333333
+    },
+    "memory_model": {
+      "base_footprint_gb": 2.0,
+      "per_angstrom_scaling": 0.1
+    }
+  },
+
+  "solvation_parameters": {
+    "notes": "Parameters for MWSE solvation engine (solvation/engine.py). Coordination numbers, shell radii, desolvation energies, and energy profile Gaussian parameters.",
+    "coordination_numbers": {
+      "Na+": 6,
+      "Li+": 4,
+      "K+": 8
+    },
+    "shell_radii_angstrom": {
+      "Na+": 3.0,
+      "Li+": 2.5,
+      "K+": 3.5
+    },
+    "desolvation_energies_eV": {
+      "Na+_water": 0.05,
+      "Na+_ec_dmc": 0.12,
+      "Na+_carbonate_mix": 0.10,
+      "Li+_water": 0.08,
+      "Li+_ec_dmc": 0.15
+    },
+    "default_desolvation_eV": 0.10,
+    "ion_pair_separation_angstrom": 2.3,
+    "surface_tension_eV_per_A2": 0.00542,
+    "numerical_stability_floor": 1.0e-10,
+    "gb_prefactor_sign": -0.5,
+    "labile_kex_lower_bound": 0.01,
+    "rejection_threshold_eV": 0.5,
+    "max_trajectory_distance_angstrom": 5.0,
+    "energy_profile_gaussians": {
+      "centers_angstrom": [1.5, 3.0, 4.2],
+      "widths_angstrom": [0.4, 0.5, 0.3],
+      "heights_eV": [0.15, 0.25, 0.10]
+    },
+    "repulsive_wall": {
+      "amplitude_eV": 0.02,
+      "decay_length_angstrom": 0.5
+    },
+    "attempt_frequency_ps": 2.0
+  },
+
+  "scoring_parameters": {
+    "notes": "Parameters for Aurelius Score v5.1 computation. Component weights, normalization parameters, and synthesis compatibility lists.",
+    "component_weights": {
+      "sigma": 0.3,
+      "desolvation": 0.2,
+      "sei_homogeneity": 0.2,
+      "mx_synthesis": 0.2,
+      "gwp": 0.1
+    },
+    "viability_threshold": 65.0,
+    "default_tier_score": 50.0,
+    "desolvation_normalization": {
+      "scale_factor": 100.0,
+      "scale_denominator_eV": 0.3
+    },
+    "mx_synthesis": {
+      "base_score": 70.0,
+      "common_solvents": ["ec:dmc", "ec:emc", "pc:dmc", "water"],
+      "common_salts": ["NaPF6", "NaTFSI", "NaClO4"],
+      "common_ions": ["Na+", "Li+", "K+"],
+      "solvent_bonus": 10.0,
+      "salt_bonus": 5.0,
+      "ion_bonus": 5.0,
+      "insulation_bonus": 5.0,
+      "homogeneity_bonus": 5.0,
+      "homogeneity_threshold": 0.7
+    },
+    "mwse_stability": {
+      "dipole_threshold_debye": 3.5,
+      "ion_pair_separation_angstrom": 2.3
+    }
+  },
+
+  "tier1_parameters": {
+    "notes": "Parameters for MLX-NA Tier 1 filter. Training hyperparameters, ESOL dataset statistics, and hash fallback parameters.",
+    "esol_dataset": {
+      "mean_logS": -2.95,
+      "std_logS": 1.52,
+      "logS_range": [-6.0, 1.0],
+      "n_molecules": 1112
+    },
+    "training_hyperparameters": {
+      "learning_rate": 0.005,
+      "epochs": 200,
+      "batch_size": 16,
+      "seed": 42,
+      "validation_split": 0.15,
+      "patience": 30
+    },
+    "qm9_training": {
+      "epochs": 300,
+      "learning_rate": 0.005,
+      "batch_size": 32,
+      "seed": 42
+    },
+    "na_utilization": {
+      "base_utilization_pct": 75.0,
+      "confidence_boost": 20.0,
+      "max_utilization_pct": 98.0
+    },
+    "hash_fallback": {
+      "n_bits": 2048,
+      "min_set_bits": 80,
+      "max_set_bits": 200
+    },
+    "mlp_architecture": {
+      "input_dim": 2048,
+      "hidden_dim": 128,
+      "output_dim": 1,
+      "fp_type": "ECFP4_2048",
+      "quantization": "MX4"
+    }
+  },
+
+  "pipeline_defaults": {
+    "notes": "Default pipeline parameters from config.py and types.py. Overridable via CLI and configuration files.",
+    "voltage_cutoff_V": 0.05,
+    "max_sei_time_ps": 1000.0,
+    "md_cycles": 500,
+    "max_kmc_steps": 5000,
+    "record_interval_steps": 50,
+    "transport_limit_thickness_angstrom": 15.0,
+    "temperature_k": 298.15,
+    "default_cycles": 500,
+    "default_gwp": 1.0,
+    "config_defaults": {
+      "max_simulation_steps": 8192,
+      "barrier_threshold_eV": 0.5,
+      "kex_screening_window_ps": 10.0,
+      "mlx_memory_cap_gb": 12.0,
+      "shader_cache_cap_gb": 2.0,
+      "min_remaining_ram_gb": 8.0
+    }
+  },
+
+  "fallback_gaussians": {
+    "notes": "Fallback Gaussian barrier heights for Tier 2 path integral when PyTorch is unavailable. Used by _fallback_path_integral in tier2_mattersim.py.",
+    "heights": [0.2, 0.15, 0.1, 0.03],
+    "centers": [2.0, 4.5, 6.5],
+    "widths": [0.8, 1.0, 0.6, 0.3]
+  },
+
+  "lennard_jones_defaults": {
+    "notes": "Default LJ parameters for unknown atom pairs in Tier 2. Used when a pair is not found in the force field JSON.",
+    "default_epsilon_eV": 0.02,
+    "default_sigma_angstrom": 2.5,
+    "default_barrier_eV": 0.5
   }
 }
 

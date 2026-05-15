@@ -917,8 +917,22 @@ class MLXNAFilter:
 
     def _estimate_na_utilization(self, confidence: float) -> float:
         """Estimate Neural Accelerator utilization percentage."""
-        base_util = 75.0 + confidence * 20.0
-        return min(base_util, 98.0)
+        # Try loading from force_field_params.json
+        tier1_params = {}
+        try:
+            ff_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                "data", "force_field_params.json",
+            )
+            if os.path.isfile(ff_path):
+                with open(ff_path, "r") as f:
+                    data = json.load(f)
+                    tier1_params = data.get("tier1_parameters", {}).get("na_utilization", {})
+        except (json.JSONDecodeError, OSError):
+            pass
+
+        base_util = tier1_params.get("base_utilization_pct", 75.0) + confidence * tier1_params.get("confidence_boost", 20.0)
+        return min(base_util, tier1_params.get("max_utilization_pct", 98.0))
 
     def _bits_from_format(self) -> int:
         """Extract bit depth from quantization format string."""
@@ -968,6 +982,10 @@ def _generate_ecfp4_fingerprint(smiles: str) -> np.ndarray:
     if HAS_RDKIT:
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
+            print(
+                f"[Aurelius v5.1 Tier1] WARNING: RDKit failed to parse SMILES '{smiles}', "
+                f"using hash fallback. This fingerprint is NOT chemically valid."
+            )
             return _hash_fallback(smiles)
         fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
         bit_list = fp.ToList()
@@ -977,6 +995,15 @@ def _generate_ecfp4_fingerprint(smiles: str) -> np.ndarray:
             padded[:len(arr)] = arr
             return padded
         return arr[:2048]
+
+    # RDKit not installed - use hash fallback with explicit warning
+    print(
+        "[Aurelius v5.1 Tier1] WARNING: RDKit is not installed. "
+        "Using deterministic hash-based fingerprint fallback. "
+        "This is NOT a real ECFP4 fingerprint and breaks chemical validity. "
+        "Install RDKit for chemically meaningful screening: "
+        "pip install rdkit"
+    )
     return _hash_fallback(smiles)
 
 
@@ -993,10 +1020,35 @@ def _hash_fallback(smiles: str) -> np.ndarray:
     Returns:
         numpy float32 array of shape (2048,).
     """
-    arr = np.zeros(2048, dtype=np.float32)
+    # Load hash fallback parameters from force field JSON
+    n_bits = 2048
+    min_set = 80
+    max_set = 200
+
+    # Try to load from force_field_params.json
+    tier1_params = {}
+    try:
+        ff_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data", "force_field_params.json",
+        )
+        if os.path.isfile(ff_path):
+            with open(ff_path, "r") as f:
+                data = json.load(f)
+                tier1_params = data.get("tier1_parameters", {})
+    except (json.JSONDecodeError, OSError):
+        pass
+
+    if tier1_params:
+        hash_params = tier1_params.get("hash_fallback", {})
+        n_bits = hash_params.get("n_bits", n_bits)
+        min_set = hash_params.get("min_set_bits", min_set)
+        max_set = hash_params.get("max_set_bits", max_set)
+
+    arr = np.zeros(n_bits, dtype=np.float32)
     seed = hash(smiles) & 0xFFFFFFFF
     rng = np.random.RandomState(seed)
-    n_bits = rng.randint(80, 200)
-    indices = rng.randint(0, 2048, size=n_bits)
+    n_set = rng.randint(min_set, max_set)
+    indices = rng.randint(0, n_bits, size=n_set)
     arr[indices] = 1.0
     return arr
