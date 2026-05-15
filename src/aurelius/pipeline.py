@@ -8,7 +8,22 @@ Coordinates the full three-tier screening pipeline:
 Then computes the Aurelius Score v5.1 (S_A_v5.1).
 """
 
+import gc
 from typing import Optional
+
+try:
+    import mlx.core as mx
+    HAS_MLX = True
+except ImportError:
+    mx = None  # type: ignore
+    HAS_MLX = False
+
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    torch = None  # type: ignore
+    HAS_TORCH = False
 
 from aurelius.config import apply_global_config, M5ProConfig
 from aurelius.memory.manager import (
@@ -37,6 +52,8 @@ class AureliusPipeline:
         self._gcmtwin: Optional[GCMDigitalTwin] = None
         self._scoring_engine: Optional[AureliusScoringEngine] = None
         self._solvation_engine: Optional[MWSESolvationEngine] = None
+        self.has_mlx = HAS_MLX
+        self.has_torch = HAS_TORCH
 
     def initialize(self) -> None:
         """Initialize all pipeline components."""
@@ -108,6 +125,60 @@ class AureliusPipeline:
         if self._mattersim_sim:
             self._mattersim_sim.initialize(mattersim_path)
 
+    def _generate_failed_run(self, smiles: str, reason: str, **kwargs) -> dict:
+        """Generate a failed run result dict for early-exit scenarios.
+
+        Returns an automatic-failure profile so downstream scoring
+        components still receive a well-structured response.
+        """
+        from aurelius.scoring.engine import AureliusScoreResult
+        from aurelius.screening.tier1_mlx_filter import MLXFilterResult
+        from aurelius.screening.tier2_mattersim import Tier2Result, DesolvationPathResult
+
+        molecule_input = MoleculeInput(
+            smiles=smiles,
+            solvent_type=kwargs.get("solvent_type", "ec:dmc"),
+            salt_type=kwargs.get("salt_type", "NaPF6"),
+            ion_type=kwargs.get("ion_type", "Na+"),
+            temperature_k=kwargs.get("temperature_k", 298.15),
+            voltage_cutoff=kwargs.get("voltage_cutoff", 0.05),
+            max_sei_time_ps=kwargs.get("max_sei_time_ps", 1000.0),
+            n_md_cycles=kwargs.get("n_md_cycles", 500),
+        )
+
+        failed_tier1 = MLXFilterResult(
+            molecule_smiles=smiles,
+            is_viable=False,
+            confidence_score=0.0,
+            inference_time_ms=0.0,
+            na_utilization_pct=0.0,
+        )
+        failed_tier2 = Tier2Result(
+            molecule_smiles=smiles,
+            is_viable=False,
+            desolvation_path=DesolvationPathResult(
+                molecule_smiles=smiles,
+                barrier_height_eV=0.0,
+                local_maxima_eV=0.0,
+                path_integral_eV_A=0.0,
+                rejected=True,
+                rejection_reason=reason,
+            ),
+            simulation_time_ms=0.0,
+            memory_used_gb=0.0,
+        )
+
+        score = self._scoring_engine.compute_score(
+            molecule_input, failed_tier1, failed_tier2, None, 1.0
+        )
+
+        return {
+            "tier1": failed_tier1,
+            "tier2": failed_tier2,
+            "tier3": None,
+            "score": score,
+        }
+
     def screen_molecule(self, smiles: str, **kwargs) -> dict:
         """Run the complete three-tier screening pipeline on a molecule.
 
@@ -115,6 +186,8 @@ class AureliusPipeline:
         """
         if not self._scoring_engine:
             raise RuntimeError("Pipeline not initialized. Call initialize() first.")
+
+        print(f"[Aurelius Pipeline] Processing: {smiles}")
 
         # Build molecule input
         molecule_input = MoleculeInput(
@@ -131,14 +204,17 @@ class AureliusPipeline:
         results = {}
 
         # Tier 1: MLX-NA Filter
-        tier1_result = None
+        t1_result = None
         if self._mlx_filter:
-            tier1_result = self._mlx_filter.screen_molecule(smiles)
-            results["tier1"] = tier1_result
-            print(f"\n  Tier 1 Result: {tier1_result.molecule_smiles} "
-                  f"-> {'VIABLE' if tier1_result.is_viable else 'REJECTED'} "
-                  f"(confidence={tier1_result.confidence_score:.3f}, "
-                  f"time={tier1_result.inference_time_ms:.1f}ms)")
+            t1_result = self._mlx_filter.screen_molecule(smiles)
+            results["tier1"] = t1_result
+            print(f"\n  Tier 1 Result: {t1_result.molecule_smiles} "
+                  f"-> {'VIABLE' if t1_result.is_viable else 'REJECTED'} "
+                  f"(confidence={t1_result.confidence_score:.3f}, "
+                  f"time={t1_result.inference_time_ms:.1f}ms)")
+            if not t1_result.is_viable:
+                print(f"[Aurelius Pipeline] Short-circuiting: {smiles} failed Tier 1.")
+                return self._generate_failed_run(smiles, "Failed Tier 1 Structural Filter", **kwargs)
 
         # MWSE Solvation analysis
         mwse_state = None
@@ -149,39 +225,54 @@ class AureliusPipeline:
             results["mwse"] = mwse_state
 
         # Tier 2: MatterSim-MT
-        tier2_result = None
+        t2_result = None
         if self._mattersim_sim:
-            tier2_result = self._mattersim_sim.simulate_desolvation(
+            t2_result = self._mattersim_sim.simulate_desolvation(
                 smiles,
                 molecule_input.ion_type,
                 molecule_input.solvent_type,
                 molecule_input.n_md_cycles,
             )
-            results["tier2"] = tier2_result
-            print(f"  Tier 2 Result: {tier2_result.molecule_smiles} "
-                  f"-> {'VIABLE' if tier2_result.is_viable else 'REJECTED'} "
-                  f"(barrier={tier2_result.desolvation_path.barrier_height_eV:.3f} eV, "
-                  f"time={tier2_result.simulation_time_ms:.1f}ms)")
+            results["tier2"] = t2_result
+            print(f"  Tier 2 Result: {t2_result.molecule_smiles} "
+                  f"-> {'VIABLE' if t2_result.is_viable else 'REJECTED'} "
+                  f"(barrier={t2_result.desolvation_path.barrier_height_eV:.3f} eV, "
+                  f"time={t2_result.simulation_time_ms:.1f}ms)")
+
+            # HARD SHORT-CIRCUIT: Explicit early exit
+            if not t2_result.is_viable:
+                print(f"[Aurelius Pipeline] Short-circuiting: {smiles} failed Tier 2 viability.")
+                return self._generate_failed_run(
+                    smiles, f"Failed Tier 2 Solvation (Barrier: {t2_result.desolvation_path.barrier_height_eV} eV)", **kwargs
+                )
+
+        # CROSS-TIER HARDWARE CLEANUP
+        # Force Python GC and explicit allocator flushes to keep RAM clean for Tier 3
+        gc.collect()
+        if self.has_mlx:
+            mx.metal.clear_cache()
+        if self.has_torch and torch.backends.mps.is_available():
+            torch.mps.empty_cache()
 
         # Tier 3: GCMD Digital Twin
-        tier3_result = None
+        t3_result = None
         if self._gcmtwin:
-            tier3_result = self._gcmtwin.simulate_sei_evolution(
+            t3_result = self._gcmtwin.simulate_sei_evolution(
                 smiles,
                 molecule_input.solvent_type,
                 molecule_input.salt_type,
                 molecule_input.voltage_cutoff,
                 molecule_input.max_sei_time_ps,
             )
-            results["tier3"] = tier3_result
-            print(f"  Tier 3 Result: {tier3_result.molecule_smiles} "
-                  f"-> SEI: {tier3_result.sei_evolution.thickness_angstrom:.1f}Å, "
-                  f"Homogeneity={tier3_result.sei_evolution.homogeneity_score:.3f}")
+            results["tier3"] = t3_result
+            print(f"  Tier 3 Result: {t3_result.molecule_smiles} "
+                  f"-> SEI: {t3_result.sei_evolution.thickness_angstrom:.1f}A, "
+                  f"Homogeneity={t3_result.sei_evolution.homogeneity_score:.3f}")
 
-        # Phase 4: Compute Aurelius Score
+        # Final consolidated score compilation
         gwp = kwargs.get("gwp_value", 1.0)
         score = self._scoring_engine.compute_score(
-            molecule_input, tier1_result, tier2_result, tier3_result, gwp
+            molecule_input, t1_result, t2_result, t3_result, gwp
         )
         results["score"] = score
 

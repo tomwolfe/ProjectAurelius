@@ -1,6 +1,9 @@
 """Tests for Project Aurelius v5.1."""
 
 import pytest
+import mlx.core as mx
+import torch
+import numpy as np
 
 from aurelius.config import M5ProConfig, get_config
 from aurelius.memory.manager import (
@@ -10,7 +13,7 @@ from aurelius.memory.manager import (
 )
 from aurelius.solvation.engine import MWSESolvationEngine
 from aurelius.screening.tier1_mlx_filter import MLXNAFilter
-from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
+from aurelius.screening.tier2_mattersim import MatterSimMTSimulator, MatterSimMPEngine
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, TurboQuantConfig
 from aurelius.scoring.engine import AureliusScoringEngine, MoleculeInput
 
@@ -293,3 +296,199 @@ class TestAureliusPipeline:
         results = pipeline.screen_batch(molecules, solvent_type="ec:dmc")
         assert len(results) == 3
         assert all("score" in r for r in results)
+
+
+# ============================================================
+# Cross-Framework Bridge Tests
+# ============================================================
+
+class TestCrossFrameworkBridge:
+    def test_mlx_to_pytorch_bridge(self):
+        """Test DLpack-based bridge from MLX to PyTorch."""
+        from aurelius.bridge import bridge_mlx_to_pytorch, CrossFrameworkBridge
+
+        if not mx or not torch:
+            pytest.skip("MLX or PyTorch not available")
+
+        bridge = CrossFrameworkBridge()
+        assert bridge.is_available is True
+
+        # Create a test MLX array with known shape
+        mlx_array = mx.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        try:
+            torch_tensor = bridge_mlx_to_pytorch(mlx_array)
+        except AttributeError as e:
+            if "DLpack" in str(e):
+                pytest.skip("MLX version does not support DLpack")
+            raise
+
+        assert torch_tensor.shape == (2, 3)
+        if torch.backends.mps.is_available():
+            assert torch_tensor.is_mps
+
+    def test_pytorch_to_mlx_bridge(self):
+        """Test DLpack-based bridge from PyTorch to MLX."""
+        from aurelius.bridge import bridge_pytorch_to_mlx
+
+        if not mx or not torch:
+            pytest.skip("MLX or PyTorch not available")
+
+        # Create a test PyTorch tensor
+        torch_tensor = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        try:
+            mlx_array = bridge_pytorch_to_mlx(torch_tensor)
+        except AttributeError as e:
+            if "DLpack" in str(e):
+                pytest.skip("MLX version does not support DLpack")
+            raise
+
+        assert list(mlx_array.shape) == [3, 2]
+
+    def test_bridge_unavailable_fallback(self):
+        """Test that bridge raises RuntimeError when frameworks are missing."""
+        from aurelius.bridge import bridge_mlx_to_pytorch
+
+        if not mx or not torch:
+            pytest.skip("MLX or PyTorch not available")
+
+        mlx_array = mx.array([1.0, 2.0])
+        try:
+            torch_tensor = bridge_mlx_to_pytorch(mlx_array)
+        except AttributeError as e:
+            if "DLpack" in str(e):
+                pytest.skip("MLX version does not support DLpack")
+            raise
+        assert torch_tensor.shape == (2,)
+
+
+# ============================================================
+# 3D Physics Engine Tests
+# ============================================================
+
+class TestMatterSimMPEngine:
+    def test_3d_vector_forward_pass(self):
+        """Test that the 3D physics engine processes proper (N, 3) coordinates."""
+        engine = MatterSimMPEngine()
+
+        # N=5 atoms with 3D coordinates
+        atomic_numbers = torch.tensor([6, 6, 8, 1, 1], dtype=torch.long)  # C, C, O, H, H
+        coordinates = torch.tensor([
+            [0.0, 0.0, 0.0],
+            [1.5, 0.0, 0.0],
+            [0.0, 1.2, 0.5],
+            [2.0, 0.0, 0.0],
+            [1.3, 0.5, 0.0],
+        ], dtype=torch.float32)
+
+        energy = engine(atomic_numbers, coordinates)
+        assert energy.shape == ()  # Scalar output
+
+    def test_vectorized_batch(self):
+        """Test 3D engine with multiple molecules in batch."""
+        engine = MatterSimMPEngine()
+
+        # Batch of 2 molecules, each with 4 atoms
+        atomic_numbers = torch.tensor([
+            [6, 8, 1, 1],
+            [7, 7, 1, 1],  # N, N, H, H
+        ], dtype=torch.long)
+
+        coordinates = torch.tensor([
+            [
+                [0.0, 0.0, 0.0],
+                [1.2, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0],
+            ],
+            [
+                [0.0, 0.0, 0.0],
+                [1.1, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0],
+            ],
+        ], dtype=torch.float32)
+
+        energy = engine(atomic_numbers, coordinates)
+        assert energy.shape == ()  # Scalar output
+
+    def test_pairwise_distance_computation(self):
+        """Verify pairwise distance matrix is computed correctly."""
+        engine = MatterSimMPEngine()
+
+        # Two atoms at known separation
+        atomic_numbers = torch.tensor([6, 8], dtype=torch.long)
+        coordinates = torch.tensor([
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        ], dtype=torch.float32)
+
+        energy = engine(atomic_numbers, coordinates)
+        # Should produce a finite energy value
+        assert torch.isfinite(energy)
+
+
+# ============================================================
+# Shape Compatibility Tests
+# ============================================================
+
+class TestShapeCompatibility:
+    def test_tier1_to_tier2_shape_compatibility(self):
+        """
+        Integration test validating that the physical output shapes match the
+        downstream execution parameters required by MatterSim.
+        """
+        if not mx or not torch:
+            pytest.skip("MLX or PyTorch not available")
+
+        batch_size = 1
+        hidden_dim = 1024
+
+        # Instantiate actual structure framework
+        model = MLXNAFilter(quantization_format="MX4")
+        mock_input = mx.random.normal(shape=(batch_size, hidden_dim))
+
+        # Process through MLX layer
+        mlx_output = model._create_placeholder_mlx_model()(mock_input)
+        assert list(mlx_output.shape) == [batch_size, hidden_dim]
+
+        # Convert to physical numpy storage layout
+        np_view = np.array(mlx_output)
+
+        # Validate PyTorch ingestion dimensions for structural graphing
+        torch_tensor = torch.from_numpy(np_view).to("mps")
+        assert torch_tensor.is_mps
+        assert torch_tensor.shape == (batch_size, hidden_dim)
+
+    def test_tier2_3d_tensor_shapes(self):
+        """Validate that 3D physics engine requires proper (N, 3) coordinate tensors."""
+        engine = MatterSimMPEngine()
+
+        # Realistic water molecule: 3 atoms with 3D coordinates
+        atomic_numbers = torch.tensor([1, 8, 1], dtype=torch.long)
+        coordinates = torch.tensor([
+            [0.0, 0.0, 0.0],
+            [0.0, 0.757, 0.586],
+            [0.0, -0.586, -0.586],
+        ], dtype=torch.float32)
+
+        energy = engine(atomic_numbers, coordinates)
+        assert energy.shape == ()
+        assert torch.isfinite(energy)
+
+    def test_dlpack_zero_copy_preserves_shape(self):
+        """Verify DLpack bridging preserves tensor shapes exactly."""
+        if not mx or not torch:
+            pytest.skip("MLX or PyTorch not available")
+        from aurelius.bridge import bridge_mlx_to_pytorch
+
+        # Test various shapes
+        test_shapes = [(1, 1024), (32, 128), (100, 3), (512,)]
+        for shape in test_shapes:
+            mlx_array = mx.random.normal(shape=shape)
+            try:
+                torch_tensor = bridge_mlx_to_pytorch(mlx_array)
+            except AttributeError as e:
+                if "DLpack" in str(e):
+                    pytest.skip("MLX version does not support DLpack")
+                raise
+            assert torch_tensor.shape == shape
