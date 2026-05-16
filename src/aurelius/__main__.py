@@ -7,6 +7,7 @@ Usage:
     aurelius score <smiles>          Compute Aurelius score only
     aurelius train <smiles>          Train Tier 1 model on dataset
     aurelius validate <smiles>       Run physics validation
+    aurelius benchmark               Run hardware benchmark
     aurelius status                  Show pipeline status and memory
 """
 
@@ -244,6 +245,22 @@ def status():
     click.echo(f"  GCMD kMC Steps:    {config.turquant_max_context:,} steps")
     click.echo(f"  Desolvation Cutoff: {config.desolvation_barrier_threshold_eV} eV")
     click.echo(f"  Memory Valid:      {config.validate_memory_budget()}")
+
+
+@cli.command("benchmark")
+@click.option("--tier", type=click.Choice(["1", "2"]), default=None, help="Benchmark only a specific tier (1 or 2). Omit for all tiers.")
+@click.option("--quick/--detailed", default=True, help="Quick mode with fewer repeats (default: enabled)")
+@click.option("--output", type=click.Path(), default=None, help="Save results to JSON file")
+def benchmark(tier, quick, output):
+    """Run hardware benchmark and validation.
+
+    Verifies that the user's Apple Silicon hardware is properly
+    configured and provides performance baselines for Tier 1
+    (MLX inference) and Tier 2 (vectorized physics) computation.
+    """
+    from aurelius.benchmark import run_benchmark
+
+    run_benchmark(tier=tier, quick=quick, output=output)
 
 
 if __name__ == "__main__":

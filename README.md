@@ -52,12 +52,14 @@ datasets >= 2.16.0
 git clone https://github.com/your-org/ProjectAurelius.git
 cd ProjectAurelius
 
-# Set up environment
-./setup_env.sh
-
 # Install in development mode
 pip install -e ".[dev]"
+
+# Optional: configure persistent environment variables for advanced usage
+./setup_env.sh
 ```
+
+> **Note:** Environment variables (`PYTORCH_MPS_ENABLE_ASYNC_COMPILATION`, `MLX_MAX_MEM_CACHE`) are automatically set on first import via `aurelius.config.initialize_environment()`. The `setup_env.sh` script is only needed for persistent shell-level configuration (e.g., cluster environments, long-running services).
 
 ## Quick Start
 
@@ -85,6 +87,10 @@ aurelius validate --smiles "CC(=O)OC1=CC=CC=C1"
 
 # Check pipeline status
 aurelius status
+
+# Run hardware benchmark
+aurelius benchmark
+aurelius benchmark --tier 1 --quick
 ```
 
 ## Model Availability & Training
@@ -137,6 +143,16 @@ Models can be loaded from:
 3. **Training on-the-fly** (falls back to ESOL/QM9 training)
 
 > **Note:** The Hugging Face repositories `aurelius/tier1-esol-mlp` and `aurelius/tier1-qm9-mlp` are placeholders. Public pre-trained weights are not yet available. Users should train locally and optionally upload to their own HF repository.
+
+### Disk Usage Considerations
+
+When downloading models from Hugging Face Hub, Aurelius uses `local_dir_use_symlinks=False` for compatibility and portability. This means:
+
+- **Disk usage:** Each downloaded model is stored as full copies (not symlinks), which may consume more disk space than a symlinked HF cache.
+- **Cache location:** Models are stored under `AURELIUS_MODEL_DIR/<task>/hf_cache/`.
+- **Cleanup:** Use `huggingface-cli delete-cache` to manage the shared HF cache, or manually remove model directories under `AURELIUS_MODEL_DIR`.
+
+For users with limited disk space, consider training locally and reusing the model rather than downloading from HF repeatedly.
 
 ## Aurelius Score v5.2
 
@@ -237,6 +253,10 @@ aurelius train                   Train Tier 1 model (esol/qm9)
   --epochs N                     Number of epochs
   --csv-path PATH                Local CSV file path
 aurelius validate <smiles>       Run physics validation
+aurelius benchmark               Run hardware benchmark
+  --tier 1|2                     Benchmark specific tier only
+  --quick/--detailed             Quick mode (default: enabled)
+  --output PATH                  Save results to JSON
 aurelius status                  Show pipeline status and memory
 ```
 

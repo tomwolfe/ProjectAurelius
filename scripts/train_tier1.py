@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import sys
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -205,7 +206,30 @@ def load_esol_data(csv_path: str | None = None) -> tuple[np.ndarray, np.ndarray,
         print(f"[train_tier1] Network error loading from HuggingFace: {e}")
         if csv_path:
             return _load_esol_from_csv(csv_path)
-        print("[train_tier1] Falling back to embedded ESOL subset...")
+        warnings.warn(
+            "[train_tier1] FALLBACK: Using embedded 50-molecule ESOL subset due to network error. "
+            "This is a small curated subset from Delaney 2004, NOT the full 1112-molecule dataset. "
+            "Model quality will be significantly reduced. "
+            "Install 'datasets' and ensure network connectivity for full training, "
+            "or use --csv-path to provide a local CSV file.",
+            UserWarning,
+            stacklevel=2,
+        )
+        print(
+            "\n" + "=" * 60,
+            "[train_tier1] WARNING: Fallback to embedded ESOL subset",
+            "=" * 60,
+            file=sys.stderr,
+        )
+        print(
+            "[train_tier1] The full HuggingFace dataset could not be loaded.\n"
+            "[train_tier1] Training will proceed with only 50 embedded molecules\n"
+            "[train_tier1] from the original Delaney 2004 dataset.\n"
+            "[train_tier1] For full dataset training:\n"
+            "[train_tier1]   - Ensure network connectivity and install 'datasets'\n"
+            "[train_tier1]   - Or use --csv-path to provide a local CSV file\n",
+            file=sys.stderr,
+        )
         return _load_esol_embedded()
     except Exception as e:
         print(f"[train_tier1] Unexpected error loading ESOL (type={type(e).__name__}): {e}")
@@ -213,7 +237,31 @@ def load_esol_data(csv_path: str | None = None) -> tuple[np.ndarray, np.ndarray,
         traceback.print_exc()
         if csv_path:
             return _load_esol_from_csv(csv_path)
-        print("[train_tier1] Falling back to embedded ESOL subset...")
+        warnings.warn(
+            "[train_tier1] FALLBACK: Using embedded 50-molecule ESOL subset due to error: "
+            f"{type(e).__name__}: {e}. "
+            "This is a small curated subset from Delaney 2004, NOT the full 1112-molecule dataset. "
+            "Model quality will be significantly reduced. "
+            "Install 'datasets' and ensure network connectivity for full training, "
+            "or use --csv-path to provide a local CSV file.",
+            UserWarning,
+            stacklevel=2,
+        )
+        print(
+            "\n" + "=" * 60,
+            "[train_tier1] WARNING: Fallback to embedded ESOL subset",
+            "=" * 60,
+            file=sys.stderr,
+        )
+        print(
+            f"[train_tier1] Error: {type(e).__name__}: {e}\n"
+            "[train_tier1] Training will proceed with only 50 embedded molecules\n"
+            "[train_tier1] from the original Delaney 2004 dataset.\n"
+            "[train_tier1] For full dataset training:\n"
+            "[train_tier1]   - Ensure network connectivity and install 'datasets'\n"
+            "[train_tier1]   - Or use --csv-path to provide a local CSV file\n",
+            file=sys.stderr,
+        )
         return _load_esol_embedded()
 
 
@@ -320,7 +368,10 @@ def _load_esol_embedded() -> tuple[np.ndarray, np.ndarray, list[str]]:
         ("C1CCC(CC1)C2CCCCC2", -2.50),
     ]
 
-    print(f"[train_tier1] Using embedded ESOL subset ({len(training_data)} molecules from Delaney 2004)")
+    print(
+        f"\n[train_tier1] *** EMBEDDED SUBSET: Using {len(training_data)} molecules "
+        f"from Delaney 2004 (NOT full dataset) ***\n"
+    )
 
     n_bits = 2048
     X = np.zeros((len(training_data), n_bits), dtype=np.float32)

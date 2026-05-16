@@ -282,7 +282,6 @@ class HuggingFaceWeightLoader:
             snapshot_download(
                 repo_id=model_id,
                 local_dir=local_dir,
-                local_dir_use_symlinks=False,
             )
 
             # Load weights from downloaded directory

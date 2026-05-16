@@ -185,3 +185,29 @@ def apply_global_config() -> M5ProConfig:
             os.environ[k] = v
     print(config.memory_report())
     return config
+
+
+def initialize_environment() -> dict[str, str]:
+    """Initialize Aurelius environment variables before any framework imports.
+
+    This function sets the minimum required environment variables for
+    Apple Silicon optimization (PyTorch MPS async compilation, MLX
+    memory budget) BEFORE torch or mlx are imported anywhere in the
+    package. This eliminates the need for users to manually source
+    setup_env.sh or configure their shell profiles.
+
+    Only sets variables that are not already set, preserving user
+    overrides from shell profiles, cluster job scripts, or testing.
+
+    Returns:
+        Dictionary of environment variables that were applied (only
+        those that were not already present in os.environ).
+    """
+    config = get_config()
+    env_vars = config.apply_environment()
+    applied = {}
+    for k, v in env_vars.items():
+        if k not in os.environ:
+            os.environ[k] = v
+            applied[k] = v
+    return applied
