@@ -14,14 +14,11 @@ Scaffold categories:
 4. Asymmetric carbonates (altered decomposition kinetics)
 """
 
-import json
 import os
 import sys
 
-import numpy as np
-from rdkit import Chem
-from rdkit.Chem import AllChem, Descriptors, Lipinski
-from rdkit import DataStructs
+from rdkit import Chem, DataStructs
+from rdkit.Chem import AllChem, Descriptors
 
 # ------------------------------------------------------------------
 # Paths
@@ -205,7 +202,7 @@ def main():
             # Novelty check: Tanimoto < 0.75 against all existing candidates
             new_fp = compute_ecfp4_fingerprint(smi, radius=2, n_bits=2048)
             max_sim = 0.0
-            for existing_smi, existing_fp in existing_fps.items():
+            for _existing_smi, existing_fp in existing_fps.items():
                 sim = tanimoto_similarity(new_fp, existing_fp)
                 if sim > max_sim:
                     max_sim = sim

@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import json
 import time
 from dataclasses import dataclass, field
@@ -93,13 +94,9 @@ def _detect_hardware() -> HardwareInfo:
         pass
 
     # MLX
-    try:
-        import mlx
+    if importlib.util.find_spec("mlx") is not None:
         info.has_mlx = True
-        import importlib.metadata
         info.mlx_version = importlib.metadata.version("mlx")
-    except (ImportError, Exception):
-        pass
 
     # macOS version
     with contextlib.suppress(Exception):

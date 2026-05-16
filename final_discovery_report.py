@@ -7,7 +7,6 @@ chemical modifications (F, B, CN additions) correlated with improved homogeneity
 
 import json
 import os
-import sys
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -139,7 +138,7 @@ def main():
     print(f"  GWP Penalty:            {best['gwp_penalty']:.1f}")
     print(f"  Viable:                 {best['is_viable']}")
     if best.get("rejection_reasons"):
-        print(f"  Rejection Reasons:")
+        print("  Rejection Reasons:")
         for reason in best["rejection_reasons"]:
             print(f"    - {reason}")
 
@@ -150,9 +149,9 @@ def main():
     print("  SECTION 6: WORKFLOW SUMMARY & CONCLUSIONS")
     print("=" * 70)
 
-    print(f"\n  Candidates Generated:  22 (batch 1) + 12 (batch 2) = 34 total")
-    print(f"  Candidates Screened:   22 (batch 1) + 12 (batch 2) = 34 total")
-    print(f"  Viable Candidates:     0/34 (0%)")
+    print("\n  Candidates Generated:  22 (batch 1) + 12 (batch 2) = 34 total")
+    print("  Candidates Screened:   22 (batch 1) + 12 (batch 2) = 34 total")
+    print("  Viable Candidates:     0/34 (0%)")
     all_screened = homog_results + final_results
     tier1_pass = sum(
         1 for r in all_screened
@@ -160,22 +159,22 @@ def main():
     )
     print(f"  Tier 1 Pass Rate:      {tier1_pass}/34 passed Tier 1")
 
-    print(f"\n  SEI Homogeneity Improvement:")
+    print("\n  SEI Homogeneity Improvement:")
     print(f"    Baseline mean:         {sum(baseline_homog)/len(baseline_homog):.4f} (raw ~0.122)")
     print(f"    Targeted batch mean:   {sum(homog_homog)/len(homog_homog):.4f} (raw ~0.122)")
     print(f"    Refined batch mean:    {sum(final_homog)/len(final_homog):.4f} (raw ~0.122)")
     print(f"    Improvement:           {(sum(homog_homog)/len(homog_homog) - sum(baseline_homog)/len(baseline_homog)):.4f}")
 
-    print(f"\n  KEY FINDING: Structural modifications (F, B, CN, C=C additions) did NOT")
-    print(f"  correlate with improved SEI homogeneity because the Tier 3 kMC model")
-    print(f"  uses fixed activation energies from force_field_params.json. The model")
-    print(f"  does not incorporate molecule-specific reaction barriers.")
+    print("\n  KEY FINDING: Structural modifications (F, B, CN, C=C additions) did NOT")
+    print("  correlate with improved SEI homogeneity because the Tier 3 kMC model")
+    print("  uses fixed activation energies from force_field_params.json. The model")
+    print("  does not incorporate molecule-specific reaction barriers.")
 
-    print(f"\n  RECOMMENDATION: To achieve SEI homogeneity > 30/100, the kMC model")
-    print(f"  (tier3_gcmtwin.py) must be extended to accept molecule-specific")
-    print(f"  activation energies, computed via DFT or predicted by a Tier 0 model.")
-    print(f"  Without molecule-specific barriers, no SMILES input will produce")
-    print(f"  significantly different homogeneity scores.")
+    print("\n  RECOMMENDATION: To achieve SEI homogeneity > 30/100, the kMC model")
+    print("  (tier3_gcmtwin.py) must be extended to accept molecule-specific")
+    print("  activation energies, computed via DFT or predicted by a Tier 0 model.")
+    print("  Without molecule-specific barriers, no SMILES input will produce")
+    print("  significantly different homogeneity scores.")
 
     print("\n" + "=" * 70)
     print("  END OF REPORT")

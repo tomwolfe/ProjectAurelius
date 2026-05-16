@@ -7,9 +7,7 @@ identified by the dynamic kinetic calibration, using in-memory Ea patching.
 """
 
 import json
-import sys
 
-import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors, Lipinski
 
@@ -210,7 +208,7 @@ def main():
     with open("dynamic_kinetic_full_scores.json", "w") as f:
         json.dump(results, f, indent=2)
 
-    print(f"\nSaved results to dynamic_kinetic_full_scores.json")
+    print("\nSaved results to dynamic_kinetic_full_scores.json")
 
     # Summary
     viable = [r for r in results if r.get("is_viable")]

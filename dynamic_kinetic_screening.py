@@ -11,9 +11,7 @@ Strategy:
 """
 
 import json
-import sys
 
-import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors, Lipinski
 
@@ -211,7 +209,7 @@ def main():
 
         # Show top 5 by homogeneity
         sorted_results = sorted(results, key=lambda x: x["sei_homogeneity_raw"], reverse=True)
-        print(f"\n  Top 5 by Homogeneity:")
+        print("\n  Top 5 by Homogeneity:")
         for r in sorted_results[:5]:
             print(
                 f"    {r['smiles']:40s}  raw={r['sei_homogeneity_raw']:.4f}  scaled={r['sei_homogeneity_scaled']:.1f}  components={r['components']}"

@@ -639,7 +639,7 @@ def train_mlx(
             model_layers = model['layers']
             for layer_idx, grad_layer in enumerate(grad_layers):
                 model_layer = model_layers[layer_idx]
-                for param_name in grad_layer.keys():
+                for param_name in grad_layer:
                     grad_val = grad_layer[param_name]
                     model_param = model_layer[param_name]
                     model_layer[param_name] = model_param - lr * grad_val

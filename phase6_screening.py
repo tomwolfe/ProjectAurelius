@@ -7,16 +7,11 @@ Uses dynamic kinetic calibration to compute molecule-specific Ea shifts.
 """
 
 import json
-import sys
 
-import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors, Lipinski
 
-from aurelius.config import M5ProConfig
-from aurelius.pipeline import AureliusPipeline
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig
-from aurelius.types import MoleculeInput
 
 
 def calculate_electronic_descriptors(smiles: str) -> dict:

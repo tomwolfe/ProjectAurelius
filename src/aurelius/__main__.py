@@ -207,7 +207,8 @@ def train(dataset: str, epochs: int, batch_size: int, learning_rate: float, csv_
     Wraps scripts/train_tier1.py as a native CLI subcommand.
     """
 
-    import sys, os
+    import os
+    import sys
     _scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "scripts")
     if _scripts_dir not in sys.path:
         sys.path.insert(0, _scripts_dir)
@@ -230,7 +231,8 @@ def validate(smiles: str) -> None:
     Wraps scripts/validate_physics.py as a native CLI subcommand.
     """
 
-    import sys, os
+    import os
+    import sys
     _scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "scripts")
     if _scripts_dir not in sys.path:
         sys.path.insert(0, _scripts_dir)

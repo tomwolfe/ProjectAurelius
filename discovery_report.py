@@ -105,8 +105,8 @@ def main() -> None:
     if second:
         print(f"\n  Secondary Candidate: {second['smiles']}")
         print(f"  Score: {second['total_score']:.1f}/100")
-        print(f"  Note: This molecule differs in fluorination pattern and "
-              f"offers complementary SEI-forming properties.")
+        print("  Note: This molecule differs in fluorination pattern and "
+              "offers complementary SEI-forming properties.")
 
     print(f"\n  Overall Assessment: {len(results)} novel electrolyte candidates "
           f"screened. Maximum score of {max_score:.1f}/100 is below the "

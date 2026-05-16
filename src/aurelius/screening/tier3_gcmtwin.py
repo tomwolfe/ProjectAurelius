@@ -49,7 +49,7 @@ def _generate_molecular_descriptors(smiles: str) -> dict[str, float]:
     """
     try:
         from rdkit import Chem
-        from rdkit.Chem import Descriptors, rdMolDescriptors
+        from rdkit.Chem import Descriptors
 
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
