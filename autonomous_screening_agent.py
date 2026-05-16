@@ -74,10 +74,12 @@ np.random.seed(42)
 
 from aurelius.config import M5ProConfig, initialize_environment
 from aurelius.pipeline import AureliusPipeline
-from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, Tier0ActivationPredictor
+from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin
+from aurelius.screening.tier0_gnn import Tier0ActivationPredictor
 from aurelius.types import MoleculeInput
 from aurelius.screening.tier1_mlx_filter import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
+from aurelius.memory.profiler import MemoryProfiler
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -819,9 +821,16 @@ def generate_manifest(convergence: ConvergenceChecker, discoveries: list[dict[st
 def run_screening(args):
     """Main autonomous screening loop."""
 
+    # Initialize memory profiler if requested
+    profiler: MemoryProfiler | None = None
+    if getattr(args, "profile_memory", False):
+        profiler = MemoryProfiler()
+        profiler.start()
+        print("[AGENT] Memory profiling enabled. CSV reports will be generated.")
+
     # ---- Phase 1: Environment & Pipeline Initialization ----
     print("=" * 60)
-    print("  PROJECT AURELIUS v5.2 — Autonomous Screening Agent")
+    print("  PROJECT AURELIUS v6.0 — Autonomous Screening Agent")
     print("  The 2nm Fusion Edition | M5 Pro Neural Accelerators")
     print("=" * 60)
 
@@ -838,12 +847,14 @@ def run_screening(args):
     pipeline = AureliusPipeline(config, use_real_models=True)
     pipeline.initialize()
 
-    # Inject Tier 0 Activation Energy Predictor
+    # Inject Tier 0 Activation Energy Predictor (MPNN + linear fallback)
     if pipeline._gcmtwin:
-        tier0_pred = Tier0ActivationPredictor()
+        tier0_pred = Tier0ActivationPredictor(
+            model_path="models/tier0/mpnn_weights.pth",
+        )
         pipeline._gcmtwin._tier0_predictor = tier0_pred
         pipeline._gcmtwin._use_tier0_prediction = True
-        print("[AGENT] Tier 0 Activation Energy Predictor injected successfully.")
+        print("[AGENT] Tier 0 Activation Energy Predictor (MPNN) injected successfully.")
     else:
         raise RuntimeError("Pipeline GCMD Twin not initialized. Cannot run Tier 3.")
 
@@ -1051,6 +1062,14 @@ def run_screening(args):
               f"{len(valid_candidates)} screened, {batch_viable} viable, "
               f"best={max(batch_scores) if batch_scores else 0:.1f}")
 
+        # Memory profiling sample
+        if profiler:
+            profiler.sample(
+                generation=generation,
+                screened_count=convergence.total_screened,
+                gc_collected=gc.collect(),
+            )
+
         # ---- Feedback adaptation ----
         strategy = feedback.get_adaptation_strategy()
         if generation % 5 == 0:
@@ -1093,6 +1112,16 @@ def run_screening(args):
     # Final checkpoint save
     checkpoint.save()
 
+    # Generate memory profile report if profiling was enabled
+    if profiler:
+        profiler.stop()
+        report_path = profiler.generate_report()
+        print(f"\n[AGENT] Memory profile report: {report_path}")
+        print(f"  Peak RAM:      {profiler.peak_ram_gb:.2f} GB")
+        print(f"  Peak MPS:      {profiler.peak_mps_gb:.2f} GB")
+        print(f"  Peak MLX:      {profiler.peak_mlx_gb:.2f} GB")
+        print(f"  Samples:       {profiler.n_samples}")
+
     # Summary
     print("\n" + "=" * 60)
     print("  SCREENING COMPLETE")
@@ -1116,10 +1145,11 @@ def run_screening(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Aurelius v5.2 Autonomous Screening Agent")
+    parser = argparse.ArgumentParser(description="Aurelius v6.0 Autonomous Screening Agent")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     parser.add_argument("--max-generations", type=int, default=50, help="Maximum generations to run")
     parser.add_argument("--batch-size", type=int, default=50, help="Candidates per batch")
+    parser.add_argument("--profile-memory", action="store_true", help="Enable memory profiling with CSV report output")
     args = parser.parse_args()
 
     try:

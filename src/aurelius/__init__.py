@@ -1,7 +1,8 @@
-"""Project Aurelius v5.2 - The 2nm Fusion Edition.
+"""Project Aurelius v6.0 - The GNN-Enhanced Release.
 
-Accelerated computational chemistry screening pipeline optimized
-for Apple M-series Neural Accelerators.
+Accelerated computational chemistry screening pipeline with MPNN
+activation energy prediction, cutoff-aware neighbor lists, and
+HuggingFace integration, optimized for Apple M-series Neural Accelerators.
 """
 
 from aurelius import bridge
@@ -11,8 +12,10 @@ from aurelius.memory.manager import (
     QuantizationConfig,
     ZeroCopyMemoryManager,
 )
+from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.engine import AureliusScoringEngine
+from aurelius.screening.tier0_gnn import Tier0ActivationPredictor, Tier0MPNN
 from aurelius.screening.tier1_mlx_filter import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin
@@ -38,12 +41,15 @@ __all__ = [
     "GCMDigitalTwin",
     "MLXFilterResult",
     "M5ProConfig",
+    "MemoryProfiler",
     "MoleculeInput",
     "MLXNAFilter",
     "MatterSimMTSimulator",
     "MetalShaderConfig",
     "QuantizationConfig",
     "SEIEvolution",
+    "Tier0ActivationPredictor",
+    "Tier0MPNN",
     "Tier2Result",
     "ZeroCopyMemoryManager",
     "apply_global_config",

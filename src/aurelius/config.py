@@ -72,6 +72,10 @@ class M5ProConfig:
     tier2_mattersim_enabled: bool = True
     tier3_gcmtwin_enabled: bool = True
 
+    # Tier 2 neighbor list settings
+    use_neighbor_list: bool = False
+    neighbor_list_cutoff: float = 12.0
+
     def __new__(
         cls,
         *,
@@ -93,6 +97,8 @@ class M5ProConfig:
         tier1_mlxfilter_enabled: bool = True,
         tier2_mattersim_enabled: bool = True,
         tier3_gcmtwin_enabled: bool = True,
+        use_neighbor_list: bool = False,
+        neighbor_list_cutoff: float = 12.0,
     ) -> M5ProConfig:
         """Compute dynamic memory allocations during construction.
 
@@ -140,6 +146,8 @@ class M5ProConfig:
         object.__setattr__(instance, "tier1_mlxfilter_enabled", tier1_mlxfilter_enabled)
         object.__setattr__(instance, "tier2_mattersim_enabled", tier2_mattersim_enabled)
         object.__setattr__(instance, "tier3_gcmtwin_enabled", tier3_gcmtwin_enabled)
+        object.__setattr__(instance, "use_neighbor_list", use_neighbor_list)
+        object.__setattr__(instance, "neighbor_list_cutoff", neighbor_list_cutoff)
 
         return instance
 
@@ -155,7 +163,7 @@ class M5ProConfig:
         return {
             "PYTORCH_MPS_ENABLE_ASYNC_COMPILATION": "1" if self.pytorch_mps_async else "0",
             "MLX_MAX_MEM_CACHE": f"{int(self.mlx_max_mem_gb)}G",
-            "AURELIUS_VERSION": "5.2.0",
+            "AURELIUS_VERSION": "6.0.0",
             "AURELIUS_QUANT_PRESET": self.chemvlm_quantization,
         }
 

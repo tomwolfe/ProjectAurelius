@@ -78,8 +78,20 @@ class AureliusPipeline:
 
     def initialize(self) -> None:
         """Initialize all pipeline components."""
+        # Enforce RDKit availability for real model paths
+        if self._use_real_models:
+            try:
+                from rdkit import Chem  # noqa: F401
+            except ImportError:
+                raise RuntimeError(
+                    "RDKit is required when use_real_models=True. "
+                    "Install with: pip install rdkit\n\n"
+                    "To run without RDKit, create the pipeline with "
+                    "use_real_models=False, or use --demo mode."
+                )
+
         print("\n" + "=" * 60)
-        print("  PROJECT AURELIUS v5.2 - Pipeline Initialization")
+        print("  PROJECT AURELIUS v6.0 - Pipeline Initialization")
         print("  The 2nm Fusion Edition | M5 Pro Neural Accelerators")
         print("=" * 60 + "\n")
 
@@ -119,6 +131,8 @@ class AureliusPipeline:
                 gcmtwin_config=GCMDTConfig(
                     max_simulation_steps=self.config.turquant_max_context,
                 ),
+                use_tier0_prediction=self._use_real_models,
+                tier0_model_path="models/tier0/mpnn_weights.pth" if self._use_real_models else None,
             )
             print("[Aurelius v5.2] Tier 3 (GCMD Digital Twin): ENABLED")
 

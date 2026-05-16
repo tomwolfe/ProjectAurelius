@@ -288,6 +288,7 @@ class GCMDigitalTwin:
         gcmtwin_config: GCMDTConfig | None = None,
         force_field_path: str | None = None,
         use_tier0_prediction: bool = False,
+        tier0_model_path: str | None = None,
     ) -> None:
         """Initialize GCMD Digital Twin.
 
@@ -297,6 +298,11 @@ class GCMDigitalTwin:
             use_tier0_prediction: If True, use Tier 0 activation energy
                 predictor for molecule-specific Ea values. When False,
                 uses fixed literature values (default behavior).
+            tier0_model_path: Optional path to MPNN model weights. If
+                provided and use_tier0_prediction is True, the MPNN model
+                will be loaded for molecule-specific activation energy
+                prediction. Falls back to the linear predictor if the
+                MPNN model is unavailable.
         """
         self.config = gcmtwin_config or GCMDTConfig()
         self._kmc_params = _load_kmc_params(force_field_path)
@@ -316,9 +322,14 @@ class GCMDigitalTwin:
 
         # Tier 0 activation energy predictor (optional)
         self._use_tier0_prediction = use_tier0_prediction
-        self._tier0_predictor: Tier0ActivationPredictor | None = (
-            Tier0ActivationPredictor() if use_tier0_prediction else None
-        )
+        if use_tier0_prediction:
+            from aurelius.screening.tier0_gnn import Tier0ActivationPredictor
+
+            self._tier0_predictor: Tier0ActivationPredictor = Tier0ActivationPredictor(
+                model_path=tier0_model_path,
+            )
+        else:
+            self._tier0_predictor = None
 
         # Pre-exponential factors (1/ps) at standard conditions
         self._A_SOLVENT_BASE = self._pre_exponential_factors.get("solvent", 5.0)

@@ -48,12 +48,52 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+          pip install huggingface-hub
 
       - name: Run pytest
         run: pytest tests/ -v
 
       - name: Run physics validation
         run: python scripts/validate_physics.py
+
+  test-tier0:
+    name: Tier 0 MPNN Tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install rdkit
+
+      - name: Run tier0 tests
+        run: pytest tests/ -v -k "tier0 or mpnn or gnn" --tb=short
+
+  test-memory:
+    name: Memory Profiler Tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run memory profiler tests
+        run: pytest tests/ -v -k "memory or profiler" --tb=short
 
   wheel:
     name: Build Wheel

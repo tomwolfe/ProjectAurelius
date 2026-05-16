@@ -5,9 +5,11 @@ from aurelius.memory.manager import (
     QuantizationConfig,
     ZeroCopyMemoryManager,
 )
+from aurelius.memory.profiler import MemoryProfiler
 
 __all__ = [
     "ZeroCopyMemoryManager",
     "QuantizationConfig",
     "MetalShaderConfig",
+    "MemoryProfiler",
 ]

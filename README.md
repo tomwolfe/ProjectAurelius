@@ -1,20 +1,27 @@
-# Project Aurelius v5.2
+# Project Aurelius v6.0
 
-**The Hardened Release** -- Production-grade computational chemistry screening pipeline optimized for Apple M-series Neural Accelerators.
+**The GNN-Enhanced Release** -- Production-grade computational chemistry screening pipeline with MPNN activation energy prediction, cutoff-aware neighbor lists, and HuggingFace integration, optimized for Apple M-series Neural Accelerators.
 
-## Changelog (v5.1 → v5.2)
+## Changelog (v5.2 → v6.0)
 
-- **Packaging**: Replaced all `os.path.dirname(__file__)` path resolution with `importlib.resources` for wheel-compatible installs
-- **Thread Safety**: Removed `os.environ` mutation from `M5ProConfig.apply_environment()`; env vars now returned as dict for thread-safe CLI application
-- **Dataclass Fix**: Replaced frozen dataclass `__setattr__` workarounds with proper `__new__` constructor pattern (init=False + keyword-only args)
-- **PyTorch Hardening**: Wrapped `torch._C._mps_loadMetalLib` and `torch.accelerator` in `hasattr` guards with safe fallbacks
-- **Dataset Verification**: Replaced placeholder HF dataset IDs with verified repositories (`deepchem/esol`, `maastrichtuniversity/qm9`)
-- **Fallback Chain**: Implemented robust dataset fallback: HF verified IDs → local CSV → embedded 50-molecule curatated subset
-- **Memory Optimization**: Reduced `_placeholder_model` from 100M params (~400MB) to lazy init (1 float32, ~4 bytes)
-- **Complexity Docs**: Corrected `"O(1) pairwise interaction"` to `"O(N^2) time/space, O(1) Python interpreter overhead"`
-- **Bug Fix**: Removed redundant walrus operator in `compute_coulomb_vectorized`
-- **Dependency Pins**: Pinned stable releases (`torch>=2.3.0`, `mlx>=0.15.0`, `rdkit>=2023.9.0`)
-- **CLI**: Added `aurelius train` and `aurelius validate` subcommands
+### New Features
+
+- **🥇 Task 1: MPNN Activation Energy Predictor** -- Replaced the Tier 0 linear heuristic with a lightweight Message Passing Neural Network (MPNN). Generates deterministic synthetic training data (500 molecules), trains via MSE loss with early stopping, and falls back to the original linear model if the GNN is unavailable. Added `aurelius train --task tier0` CLI command.
+
+- **🥈 Task 2: Cutoff-Aware Neighbor Lists** -- Added optional neighbor list with fixed-cell spatial binning to Tier 2, reducing complexity from O(N²) to O(N·M). Toggleable via config (`use_neighbor_list: bool`, `neighbor_list_cutoff: float = 12.0`). Falls back to dense computation for small systems (<50 atoms) on MPS.
+
+- **🏅 Task 3: RDKit Enforcement** -- RDKit is now strictly required for `--use-real-models`. Hash fallbacks are blocked in production paths. Added `--allow-fallback` CLI flag for demo/CI environments. Clear error messages point to `pip install rdkit`.
+
+- **📊 Task 4: HuggingFace Hub Upload** -- Added `aurelius hf-upload` CLI subcommand for pushing locally trained models to HF Hub. Supports `--model-dir`, `--repo-id`, `--task`, `--private/--public`, `--commit-message`, and `--dry-run`. Auto-generates model cards with architecture, dataset, and hyperparameters.
+
+- **📈 Task 5: Memory Profiler** -- Added `MemoryProfiler` class for tracking peak RAM, MPS/MLX memory, and GC activity. Generates timestamped CSV reports. Added `--profile-memory` flag to the autonomous screening agent CLI.
+
+### Bug Fixes & Improvements
+
+- **Version Bump**: Updated to 6.0.0 with all backward-compatible changes.
+- **Config Extension**: Added `use_neighbor_list` and `neighbor_list_cutoff` to `M5ProConfig`.
+- **CLI Flags**: Added `--task tier1|tier0` to `aurelius train`, `--allow-fallback` to `screen` and `batch`, and `--profile-memory` to the agent.
+- **CI Updates**: Updated `.github/workflows/ci.yml` for new test markers and optional dependency installs.
 
 ## Overview
 
@@ -246,10 +253,13 @@ aurelius screen <smiles>         Screen a single molecule
   --gwp VALUE                    Global Warming Potential
   --use-real-models              Use real models (default: enabled)
   --demo                         Use synthetic data (demo mode)
+  --allow-fallback               Allow hash fallback without RDKit (demo/CI)
 aurelius batch <file>            Screen molecules from SMILES file
+  --allow-fallback               Allow hash fallback without RDKit (demo/CI)
 aurelius score <smiles>          Compute Aurelius score only
-aurelius train                   Train Tier 1 model (esol/qm9)
-  --dataset esol|qm9             Dataset to train on
+aurelius train                   Train model
+  --task tier1|tier0             Task: tier1 (MLX filter) or tier0 (MPNN)
+  --dataset esol|qm9             Dataset to train on (for --task tier1)
   --epochs N                     Number of epochs
   --csv-path PATH                Local CSV file path
 aurelius validate <smiles>       Run physics validation
@@ -258,6 +268,13 @@ aurelius benchmark               Run hardware benchmark
   --quick/--detailed             Quick mode (default: enabled)
   --output PATH                  Save results to JSON
 aurelius status                  Show pipeline status and memory
+aurelius hf-upload               Upload model to HuggingFace Hub
+  --model-dir PATH               Local model directory (required)
+  --repo-id ID                   HF repository ID (required)
+  --task tier0|esol|qm9          Model task type
+  --private/--public             Repository visibility (default: private)
+  --commit-message MSG           Commit message
+  --dry-run                      Validate without uploading
 ```
 
 ## License

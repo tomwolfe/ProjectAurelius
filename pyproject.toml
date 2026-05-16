@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aurelius"
-version = "5.2.0"
-description = "Project Aurelius v5.2 - The Hardened Release. Accelerated computational chemistry screening pipeline optimized for Apple M-series Neural Accelerators."
+version = "6.0.0"
+description = "Project Aurelius v6.0 - The GNN-Enhanced Release. Accelerated computational chemistry screening pipeline with MPNN activation energy prediction, cutoff-aware neighbor lists, and HuggingFace integration, optimized for Apple M-series Neural Accelerators."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
