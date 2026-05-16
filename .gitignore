@@ -58,6 +58,7 @@ esol.csv
 
 # Batch screening output
 discovery_results.json
+*_results.json
 
 # OS
 .DS_Store

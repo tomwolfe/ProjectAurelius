@@ -1,0 +1,52 @@
+# Refined candidates - Phase 3 iterative mutation
+# Mutating top 3 homogeneity candidates from batch 1
+# Strategy: Add Fluorine atoms (salt reduction) and Double Bonds (polymerization)
+
+# === Top 3 Homogeneity Candidates - Mutated ===
+
+# 1. Mutated from COC(=O)OC(F)=C(F)C(F)(F)F (homog=12.29)
+# Added extra F to enhance salt reduction pathway
+COC(=O)OC(F)=C(F)C(F)(F)C(F)(F)F
+
+# 2. Mutated from N#CC(F)S(=O)(=O)C (homog=12.28)
+# Added double bond for polymerization + extra F for salt reduction
+N#CC(F)=C(F)S(=O)(=O)C(F)=CF2
+
+# 3. Mutated from FCC(F)(F)S(=O)(=O)OC=C (homog=12.26)
+# Added extra F atoms and additional double bond
+FCC(F)(F)S(=O)(=O)OC(F)=CF2
+
+# === Conservative Novelty Batch (Standard carbonates with single-atom substitutions) ===
+
+# EC with single fluorine substitution
+COC(=O)OCC(F)F
+
+# DMC with methyl-fluoro substitution
+CCOC(=O)OC(F)F
+
+# EMC with fluorine substitution
+CCOC(=O)OCC(F)F
+
+# Perfluoro-ethyl carbonate
+COC(=O)OC(F)(F)C(F)(F)F
+
+# Fluoro-vinyl carbonate
+COC(=O)OC=C(F)F
+
+# Trifluoro-methyl carbonate
+COC(=O)OC(F)(F)F
+
+# Difluoro-isopropyl carbonate
+COC(=O)OC(C)(F)F
+
+# Fluoro-ethyl methyl carbonate (verified)
+COC(=O)OC(F)F
+
+# Trifluoro-ethyl ethyl carbonate
+CCOC(=O)OC(F)(F)F
+
+# Vinyl fluoride carbonate
+COC(=O)OC(F)=CF2
+
+# 2,2,2-Trifluoroethyl acetate (carbonate analog)
+CC(=O)OC(F)(F)F
