@@ -212,7 +212,7 @@ def train(dataset: str, epochs: int, batch_size: int, learning_rate: float, csv_
     _scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "scripts")
     if _scripts_dir not in sys.path:
         sys.path.insert(0, _scripts_dir)
-    from train_tier1 import train_main
+    from train_tier1 import train_main  # type: ignore[import-not-found]
 
     train_main(
         dataset=dataset,
@@ -236,7 +236,7 @@ def validate(smiles: str) -> None:
     _scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "scripts")
     if _scripts_dir not in sys.path:
         sys.path.insert(0, _scripts_dir)
-    from validate_physics import main as validate_main
+    from validate_physics import main as validate_main  # type: ignore[import-not-found]
 
     sys.argv = ["validate_physics.py"]
     validate_main()

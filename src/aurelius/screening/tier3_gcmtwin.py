@@ -56,14 +56,14 @@ def _generate_molecular_descriptors(smiles: str) -> dict[str, float]:
             return _hash_descriptors(smiles)
 
         return {
-            "mw": float(Descriptors.MolWt(mol)),
-            "logp": float(Descriptors.MolLogP(mol)),
-            "hba": int(Descriptors.NumHAcceptors(mol)),
-            "hbd": int(Descriptors.NumHDonors(mol)),
-            "tpsa": float(Descriptors.TPSA(mol)),
-            "rot_bonds": int(Descriptors.NumRotatableBonds(mol)),
-            "aromatic_ratio": float(Descriptors.fr_aromatic / max(Descriptors.NumAtoms(mol), 1)),
-            "heavy_atom_count": float(Descriptors.HeavyAtomCount(mol)),
+            "mw": float(Descriptors.MolWt(mol)),  # type: ignore[attr-defined]
+            "logp": float(Descriptors.MolLogP(mol)),  # type: ignore[attr-defined]
+            "hba": int(Descriptors.NumHAcceptors(mol)),  # type: ignore[attr-defined]
+            "hbd": int(Descriptors.NumHDonors(mol)),  # type: ignore[attr-defined]
+            "tpsa": float(Descriptors.TPSA(mol)),  # type: ignore[attr-defined]
+            "rot_bonds": int(Descriptors.NumRotatableBonds(mol)),  # type: ignore[attr-defined]
+            "aromatic_ratio": float(Descriptors.fr_aromatic / max(Descriptors.NumAtoms(mol), 1)),  # type: ignore[attr-defined]
+            "heavy_atom_count": float(Descriptors.HeavyAtomCount(mol)),  # type: ignore[no-untyped-call]
         }
     except ImportError:
         return _hash_descriptors(smiles)
