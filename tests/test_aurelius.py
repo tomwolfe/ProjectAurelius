@@ -1,4 +1,4 @@
-"""Tests for Project Aurelius v5.1."""
+"""Tests for Project Aurelius v5.2."""
 
 from __future__ import annotations
 
@@ -395,7 +395,7 @@ class TestAureliusScoringEngine:
         molecule_input = MoleculeInput(smiles="CC(=O)OC1=CC(=O)O1")
         score = self.engine.compute_score(molecule_input)
         card = self.engine.print_scorecard(score)
-        assert "AURELIUS SCORE v5.1" in card
+        assert "AURELIUS SCORE v5.2" in card
         assert "Molecule:" in card
         assert "Total S_A:" in card
         assert "Component Scores:" in card

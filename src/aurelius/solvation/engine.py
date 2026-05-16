@@ -523,10 +523,10 @@ class MWSESolvationEngine:
         )
 
         if is_labile:
-            print(f"[Aurelius v5.1 MWSE] Labile shell: {ion_type} in {solvent_type} "
+            print(f"[Aurelius v5.2 MWSE] Labile shell: {ion_type} in {solvent_type} "
                   f"(k_ex={k_ex:.3f} ps^-1, nu_coord={shell.coordination_number})")
         else:
-            print(f"[Aurelius v5.1 MWSE] Non-labile shell: {ion_type} in {solvent_type} "
+            print(f"[Aurelius v5.2 MWSE] Non-labile shell: {ion_type} in {solvent_type} "
                   f"(k_ex={k_ex:.3f} ps^-1)")
 
         return shell
@@ -624,7 +624,7 @@ class MWSESolvationEngine:
         High dipole moments (>3.5 D) correlate with 500-cycle stability.
         """
         mu = born_charges.dipole_moment_debye
-        print(f"[Aurelius v5.1 MWSE] Born Z* norm: {born_charges.z_star_scalar:.3f}, "
+        print(f"[Aurelius v5.2 MWSE] Born Z* norm: {born_charges.z_star_scalar:.3f}, "
               f"Predicted dipole: {mu:.2f} D")
         return mu
 
@@ -690,9 +690,9 @@ class MWSESolvationEngine:
 
         rejection_threshold = _get_rejection_threshold()
         if barrier.local_maxima_eV > rejection_threshold:
-            print(f"[Aurelius v5.1 MWSE] REJECTED: Local maxima {barrier.local_maxima_eV:.3f} eV > {rejection_threshold} eV")
+            print(f"[Aurelius v5.2 MWSE] REJECTED: Local maxima {barrier.local_maxima_eV:.3f} eV > {rejection_threshold} eV")
         else:
-            print(f"[Aurelius v5.1 MWSE] PASS: Barrier {barrier.barrier_height_eV:.3f} eV, "
+            print(f"[Aurelius v5.2 MWSE] PASS: Barrier {barrier.barrier_height_eV:.3f} eV, "
                   f"Maxima={barrier.local_maxima_eV:.3f} eV, Path integral={barrier.path_integral_energy:.3f} eV*A")
 
         return barrier

@@ -1,1 +1,1 @@
-"""Benchmark scripts for Project Aurelius v5.1."""
+"""Benchmark scripts for Project Aurelius v5.2."""

@@ -319,10 +319,10 @@ class HuggingFaceWeightLoader:
         try:
             model = _ChemVLM2MLP()
             model.load_weights(local_path)
-            print(f"[Aurelius v5.1 Tier1] Loaded {task} model from local: {local_path}")
+            print(f"[Aurelius v5.2 Tier1] Loaded {task} model from local: {local_path}")
             return model
         except Exception as e:
-            print(f"[Aurelius v5.1 Tier1] Local load failed: {e}")
+            print(f"[Aurelius v5.2 Tier1] Local load failed: {e}")
             return None
 
     def save_model(self, model: _ChemVLM2MLP, task: str) -> str:
@@ -337,7 +337,7 @@ class HuggingFaceWeightLoader:
         """
         save_path = os.path.join(self.model_dir, task)
         model.save_weights(save_path)
-        print(f"[Aurelius v5.1 Tier1] Saved {task} model to: {save_path}")
+        print(f"[Aurelius v5.2 Tier1] Saved {task} model to: {save_path}")
         return save_path
 
 
@@ -438,7 +438,7 @@ def train_on_esol(
     y_train = np.zeros(len(training_data), dtype=np.float32)
 
     for i, (smiles, log_s) in enumerate(training_data):
-        fp = _generate_ecfp4_fingerprint(smiles)
+        fp = _generate_ecfp4_fingerprint(smiles, use_real_models=True)
         X_train[i] = fp
         # Normalize logS to [0, 1] range for sigmoid output
         # ESOL logS ranges roughly from -6 to +1
@@ -507,7 +507,7 @@ def train_on_esol(
             preds = model(X_val_split)
             preds_binary = mx.squeeze(preds) > 0.5
             accuracy = float(mx.mean(preds_binary == y_val_split))
-            print(f"[Aurelius v5.1 Tier1] Epoch {epoch + 1}/{epochs}: "
+            print(f"[Aurelius v5.2 Tier1] Epoch {epoch + 1}/{epochs}: "
                   f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, "
                   f"val_accuracy={accuracy:.2f}")
 
@@ -520,7 +520,7 @@ def train_on_esol(
         else:
             patience_counter += 1
             if patience_counter >= patience:
-                print(f"[Aurelius v5.1 Tier1] Early stopping at epoch {epoch + 1} "
+                print(f"[Aurelius v5.2 Tier1] Early stopping at epoch {epoch + 1} "
                       f"(best val_loss={best_val_loss:.4f})")
                 break
 
@@ -622,7 +622,7 @@ def train_on_qm9(
     y_train = np.zeros(n_samples, dtype=np.float32)
 
     for i, smiles in enumerate(valid_smiles):
-        fp = _generate_ecfp4_fingerprint(smiles)
+        fp = _generate_ecfp4_fingerprint(smiles, use_real_models=True)
         X_train[i] = fp
         # Normalize U0 to [0, 1]
         y_train[i] = np.clip((valid_u0[i] - u0_min) / u0_range, 0.0, 1.0)
@@ -663,7 +663,7 @@ def train_on_qm9(
 
         if (epoch + 1) % 50 == 0:
             current_loss = float(loss_fn(model.parameters(), X_mx, y_mx))
-            print(f"[Aurelius v5.1 Tier1] QM9 training epoch {epoch + 1}/{epochs}: "
+            print(f"[Aurelius v5.2 Tier1] QM9 training epoch {epoch + 1}/{epochs}: "
                   f"loss={current_loss:.4f}")
 
     return model
@@ -730,28 +730,28 @@ class MLXNAFilter:
         """
         if self._use_real_models:
             # Try to load pre-trained weights
-            print("[Aurelius v5.1 Tier1] Attempting to load real model weights...")
+            print("[Aurelius v5.2 Tier1] Attempting to load real model weights...")
             model = self._weight_loader.load_model(
                 task="esol_solubility", local_only=False
             )
             if model is not None:
                 self._model = model
                 self._model_loaded = True
-                print("[Aurelius v5.1 Tier1] Real model loaded successfully")
+                print("[Aurelius v5.2 Tier1] Real model loaded successfully")
                 return
 
             # Fall back to training on ESOL
-            print("[Aurelius v5.1 Tier1] No pre-trained weights found, training on ESOL dataset...")
+            print("[Aurelius v5.2 Tier1] No pre-trained weights found, training on ESOL dataset...")
             self._train_default_model()
         else:
             # Demo mode: train on synthetic data
-            print("[Aurelius v5.1 Tier1] Demo mode: training synthetic solubility model...")
+            print("[Aurelius v5.2 Tier1] Demo mode: training synthetic solubility model...")
             self._train_default_model()
 
     def _train_default_model(self) -> None:
         """Train the model on real solubility or synthetic data."""
         if not self._use_mlx:
-            print("[Aurelius v5.1 Tier1] MLX unavailable, using numpy fallback")
+            print("[Aurelius v5.2 Tier1] MLX unavailable, using numpy fallback")
             self._model = _FallbackMLP()
             self._model_loaded = True
             return
@@ -764,8 +764,8 @@ class MLXNAFilter:
                 # Save trained model locally
                 self._weight_loader.save_model(model, "esol_solubility")
             except Exception as e:
-                print(f"[Aurelius v5.1 Tier1] ESOL training failed: {e}")
-                print("[Aurelius v5.1 Tier1] Falling back to synthetic training...")
+                print(f"[Aurelius v5.2 Tier1] ESOL training failed: {e}")
+                print("[Aurelius v5.2 Tier1] Falling back to synthetic training...")
                 model = self._train_synthetic(model)
         else:
             model = self._train_synthetic(model)
@@ -813,7 +813,7 @@ class MLXNAFilter:
         y_train = np.zeros(len(training_data), dtype=np.float32)
 
         for i, (smiles, label) in enumerate(training_data):
-            fp = _generate_ecfp4_fingerprint(smiles)
+            fp = _generate_ecfp4_fingerprint(smiles, use_real_models=False)
             X_train[i] = fp
             y_train[i] = label
 
@@ -852,7 +852,7 @@ class MLXNAFilter:
 
             if (epoch + 1) % 20 == 0:
                 current_loss = float(loss_fn(model.parameters(), X_mx, y_mx))
-                print(f"[Aurelius v5.1 Tier1] Synthetic epoch {epoch + 1}/100: loss={current_loss:.4f}")
+                print(f"[Aurelius v5.2 Tier1] Synthetic epoch {epoch + 1}/100: loss={current_loss:.4f}")
 
         return model
 
@@ -866,14 +866,14 @@ class MLXNAFilter:
             model_path: Path to model weights directory.
         """
         if self._use_mlx:
-            print(f"[Aurelius v5.1 Tier1] Loading model from {model_path}")
+            print(f"[Aurelius v5.2 Tier1] Loading model from {model_path}")
             self._model = _ChemVLM2MLP()
             self._train_default_model()
         else:
-            print("[Aurelius v5.1 Tier1] MLX unavailable, using numpy fallback MLP")
+            print("[Aurelius v5.2 Tier1] MLX unavailable, using numpy fallback MLP")
             self._model = _FallbackMLP()
         self._model_loaded = True
-        print("[Aurelius v5.1 Tier1] Model ready")
+        print("[Aurelius v5.2 Tier1] Model ready")
 
     def screen_molecule(self, smiles: str) -> MLXFilterResult:
         """Screen a single molecule through the MLX-NA filter.
@@ -899,7 +899,7 @@ class MLXNAFilter:
         import time
         start = time.perf_counter()
 
-        fingerprint = _generate_ecfp4_fingerprint(smiles)
+        fingerprint = _generate_ecfp4_fingerprint(smiles, use_real_models=self._use_real_models)
         result = self._run_inference(fingerprint, smiles)
 
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -964,7 +964,7 @@ class MLXNAFilter:
         return {"is_viable": is_viable, "confidence": confidence}
 
 
-def _generate_ecfp4_fingerprint(smiles: str) -> np.ndarray:
+def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np.ndarray:
     """Generate a 2048-bit ECFP4 (Morgan radius=2) fingerprint from SMILES.
 
     Uses RDKit's GetMorganFingerprintAsBitVect for production-grade
@@ -977,9 +977,14 @@ def _generate_ecfp4_fingerprint(smiles: str) -> np.ndarray:
 
     Args:
         smiles: SMILES string of the molecule.
+        use_real_models: If True and RDKit is unavailable, raises
+            RuntimeError since hash fingerprints break chemical validity.
 
     Returns:
         numpy float32 array of shape (2048,) with values 0.0 or 1.0.
+
+    Raises:
+        RuntimeError: If use_real_models=True and RDKit is unavailable.
 
     Reference:
         Morgan, H. L. "The Generation of a Unique Machine
@@ -989,7 +994,7 @@ def _generate_ecfp4_fingerprint(smiles: str) -> np.ndarray:
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             print(
-                f"[Aurelius v5.1 Tier1] WARNING: RDKit failed to parse SMILES '{smiles}', "
+                f"[Aurelius v5.2 Tier1] WARNING: RDKit failed to parse SMILES '{smiles}', "
                 f"using hash fallback. This fingerprint is NOT chemically valid."
             )
             return _hash_fallback(smiles)
@@ -1003,8 +1008,17 @@ def _generate_ecfp4_fingerprint(smiles: str) -> np.ndarray:
         return arr[:2048]
 
     # RDKit not installed - use hash fallback with explicit warning
+    if use_real_models:
+        raise RuntimeError(
+            "[Aurelius v5.2 Tier1] RDKit is required when use_real_models=True. "
+            "Hash-based fingerprints are NOT chemically valid and cannot be used "
+            "for real screening. Install RDKit for chemically meaningful screening:\n"
+            "  pip install rdkit\n"
+            "Or run in demo mode: AureliusPipeline(config, use_real_models=False)"
+        )
+
     print(
-        "[Aurelius v5.1 Tier1] WARNING: RDKit is not installed. "
+        "[Aurelius v5.2 Tier1] WARNING: RDKit is not installed. "
         "Using deterministic hash-based fingerprint fallback. "
         "This is NOT a real ECFP4 fingerprint and breaks chemical validity. "
         "Install RDKit for chemically meaningful screening: "

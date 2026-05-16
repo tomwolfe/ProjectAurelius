@@ -455,7 +455,7 @@ class MatterSimMTSimulator:
             raise RuntimeError("PyTorch is required for MatterSim-MT.")
 
         device = self._select_device()
-        print(f"[Aurelius v5.1 Tier2] Initializing MatterSim-MT "
+        print(f"[Aurelius v5.2 Tier2] Initializing MatterSim-MT "
               f"(barrier threshold: {self.barrier_threshold_eV} eV, "
               f"device={device})")
 

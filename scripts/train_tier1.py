@@ -208,7 +208,9 @@ def load_esol_data(csv_path: str | None = None) -> tuple[np.ndarray, np.ndarray,
         print("[train_tier1] Falling back to embedded ESOL subset...")
         return _load_esol_embedded()
     except Exception as e:
-        print(f"[train_tier1] Unexpected error loading ESOL: {e}")
+        print(f"[train_tier1] Unexpected error loading ESOL (type={type(e).__name__}): {e}")
+        import traceback
+        traceback.print_exc()
         if csv_path:
             return _load_esol_from_csv(csv_path)
         print("[train_tier1] Falling back to embedded ESOL subset...")
@@ -375,7 +377,9 @@ def load_qm9_data() -> tuple[np.ndarray, np.ndarray, list[str]]:
         print("[train_tier1] QM9 requires full HuggingFace download. Use --csv-path for local data.")
         sys.exit(1)
     except Exception as e:
-        print(f"[train_tier1] Unexpected error loading QM9: {e}")
+        print(f"[train_tier1] Unexpected error loading QM9 (type={type(e).__name__}): {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
     smiles_list = list(ds["smiles"])
@@ -635,27 +639,54 @@ def save_model(
     print(f"[train_tier1] Model saved to: {save_path}")
 
 
-def main() -> None:
-    args = parse_args()
+def train_main(
+    dataset: str = "esol",
+    epochs: int = 200,
+    batch_size: int = 16,
+    learning_rate: float = 0.005,
+    csv_path: str | None = None,
+    seed: int = 42,
+    val_split: float = 0.15,
+    save_path: str | None = None,
+    no_mlx: bool = False,
+) -> dict:
+    """Train Tier 1 model on a dataset (esol or qm9).
 
-    if args.dataset == "esol":
-        epochs = args.epochs if args.epochs != 200 else 200
-        batch_size = args.batch_size if args.batch_size != 16 else 16
+    This is the programmatic entry point for training, callable
+    directly from other modules without CLI argument parsing.
+
+    Args:
+        dataset: Dataset to train on ("esol" or "qm9").
+        epochs: Number of training epochs.
+        batch_size: Mini-batch size.
+        learning_rate: Learning rate for optimization.
+        csv_path: Optional path to local CSV file (bypasses HuggingFace).
+        seed: Random seed for reproducibility.
+        val_split: Fraction of data held out for validation.
+        save_path: Optional path to save the trained model.
+        no_mlx: If True, train with numpy only (no MLX required).
+
+    Returns:
+        Dictionary with training results and metadata.
+    """
+    if dataset == "esol":
+        epochs = epochs if epochs != 200 else 200
+        batch_size = batch_size if batch_size != 16 else 16
         print(f"[train_tier1] Training on ESOL dataset ({epochs} epochs)")
-        X, y, smiles_list = load_esol_data(args.csv_path)
-    elif args.dataset == "qm9":
-        epochs = args.epochs if args.epochs != 300 else 300
-        batch_size = args.batch_size if args.batch_size != 32 else 32
+        X, y, smiles_list = load_esol_data(csv_path)
+    elif dataset == "qm9":
+        epochs = epochs if epochs != 300 else 300
+        batch_size = batch_size if batch_size != 32 else 32
         print(f"[train_tier1] Training on QM9 dataset ({epochs} epochs)")
         X, y, smiles_list = load_qm9_data()
     else:
-        raise ValueError(f"Unknown dataset: {args.dataset}")
+        raise ValueError(f"Unknown dataset: {dataset}")
 
     print(f"[train_tier1] Dataset: {len(X)} molecules, {X.shape[1]} features")
 
     # Train/validation split
-    n_val = int(len(X) * args.val_split)
-    rng = np.random.RandomState(args.seed)
+    n_val = int(len(X) * val_split)
+    rng = np.random.RandomState(seed)
     perm = rng.permutation(len(X))
 
     X_train, y_train = X[perm[: len(X) - n_val]], y[perm[: len(X) - n_val]]
@@ -664,12 +695,12 @@ def main() -> None:
     print(f"[train_tier1] Train: {len(X_train)}, Val: {len(X_val)}")
 
     # Train model
-    if args.no_mlx:
+    if no_mlx:
         print("[train_tier1] Training with numpy (CPU only)")
-        result = train_numpy(X_train, y_train, X_val, y_val, epochs, args.learning_rate, batch_size, args.seed)
+        result = train_numpy(X_train, y_train, X_val, y_val, epochs, learning_rate, batch_size, seed)
     else:
         print("[train_tier1] Training with MLX (Apple Silicon)")
-        result = train_mlx(X_train, y_train, X_val, y_val, epochs, args.learning_rate, batch_size, args.seed)
+        result = train_mlx(X_train, y_train, X_val, y_val, epochs, learning_rate, batch_size, seed)
 
     # Print final metrics
     print("\n[train_tier1] Training complete!")
@@ -678,27 +709,44 @@ def main() -> None:
         print(f"  Final train_loss: {result['history']['train_loss'][-1]:.4f}")
 
     # Save model
-    save_path = args.save_path or os.path.join(
+    save_path = save_path or os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
         "models",
         "tier1",
-        f"{args.dataset}_solubility",
+        f"{dataset}_solubility",
     )
     hyperparams = {
-        "dataset": args.dataset,
+        "dataset": dataset,
         "epochs": epochs,
         "batch_size": batch_size,
-        "learning_rate": args.learning_rate,
-        "val_split": args.val_split,
-        "seed": args.seed,
+        "learning_rate": learning_rate,
+        "val_split": val_split,
+        "seed": seed,
         "n_train": len(X_train),
         "n_val": len(X_val),
         "n_samples": len(X),
     }
-    save_model(result["weights"], save_path, args.dataset, hyperparams)
+    save_model(result["weights"], save_path, dataset, hyperparams)
 
     print("\n[train_tier1] Ready to use with Aurelius pipeline!")
     print(f"  Set AURELIUS_MODEL_DIR to: {os.path.dirname(save_path)}")
+
+    return {"result": result, "save_path": save_path, "hyperparams": hyperparams}
+
+
+def main() -> None:
+    args = parse_args()
+    train_main(
+        dataset=args.dataset,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        csv_path=args.csv_path,
+        seed=args.seed,
+        val_split=args.val_split,
+        save_path=args.save_path,
+        no_mlx=args.no_mlx,
+    )
 
 
 if __name__ == "__main__":

@@ -206,14 +206,15 @@ def train(dataset, epochs, batch_size, learning_rate, csv_path):
     Wraps scripts/train_tier1.py as a native CLI subcommand.
     """
 
-    from scripts.train_tier1 import main as train_main
+    from scripts.train_tier1 import train_main
 
-    argv = ["train_tier1.py", "--dataset", dataset, "--epochs", str(epochs),
-            "--batch-size", str(batch_size), "--learning-rate", str(learning_rate)]
-    if csv_path:
-        argv.extend(["--csv-path", csv_path])
-    sys.argv = ["aurelius train"] + argv
-    train_main()
+    train_main(
+        dataset=dataset,
+        epochs=epochs,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        csv_path=csv_path,
+    )
 
 
 @cli.command("validate")

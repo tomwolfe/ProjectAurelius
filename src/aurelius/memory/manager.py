@@ -215,7 +215,7 @@ class ZeroCopyMemoryManager:
                 quantized_model = self._apply_mx_format(quantized_model, bits, block_size)
 
             self._memory_footprint_gb = self._estimate_footprint(model, bits)
-            print(f"[Aurelius v5.1] MX{bits} quantization applied: "
+            print(f"[Aurelius v5.2] MX{bits} quantization applied: "
                   f"{self._memory_footprint_gb:.1f}GB footprint "
                   f"({self.quant_config.compression_ratio}x compression)")
 
@@ -261,7 +261,7 @@ class ZeroCopyMemoryManager:
         if not HAS_TORCH:
             raise RuntimeError("PyTorch is required to load ChemVLM-2.")
 
-        print(f"[Aurelius v5.1] Loading ChemVLM-2 from {model_path}")
+        print(f"[Aurelius v5.2] Loading ChemVLM-2 from {model_path}")
         model = self._placeholder_model("ChemVLM-2")
         if quantize:
             model = self.apply_mx4_quantization(model)
@@ -277,7 +277,7 @@ class ZeroCopyMemoryManager:
         if not HAS_TORCH:
             raise RuntimeError("PyTorch is required to load MatterSim-MT.")
 
-        print(f"[Aurelius v5.1] Loading MatterSim-MT from {model_path}")
+        print(f"[Aurelius v5.2] Loading MatterSim-MT from {model_path}")
         model = self._placeholder_model("MatterSim-MT")
         if quantize:
             model = self.apply_mx4_quantization(model)
@@ -293,7 +293,7 @@ class ZeroCopyMemoryManager:
         if not HAS_TORCH:
             raise RuntimeError("PyTorch is required to load GCMD Digital Twin.")
 
-        print(f"[Aurelius v5.1] Loading GCMD Digital Twin from {model_path}")
+        print(f"[Aurelius v5.2] Loading GCMD Digital Twin from {model_path}")
         model = self._placeholder_model("GCMD-DT")
         if quantize:
             model = self.apply_mx4_quantization(model)

@@ -281,7 +281,7 @@
   },
 
   "scoring_parameters": {
-    "notes": "Parameters for Aurelius Score v5.1 computation. Component weights, normalization parameters, and synthesis compatibility lists.",
+    "notes": "Parameters for Aurelius Score v5.2 computation. Component weights, normalization parameters, and synthesis compatibility lists.",
     "component_weights": {
       "sigma": 0.3,
       "desolvation": 0.2,

@@ -57,9 +57,9 @@ _SCORING_PARAMS = _load_scoring_params()
 
 
 class AureliusScoringEngine:
-    """Revised Aurelius Score v5.1 calculation engine.
+    """Revised Aurelius Score v5.2 calculation engine.
 
-    Computes S_A_v5.1 from the three-tier screening pipeline results.
+    Computes S_A_v5.2 from the three-tier screening pipeline results.
     All result types are imported from the centralized types module
     to eliminate circular imports.
     """
@@ -91,7 +91,7 @@ class AureliusScoringEngine:
         tier3_result: GCMDTwinResult | None = None,
         gwp_value: float = 1.0,
     ) -> AureliusScoreResult:
-        """Compute the complete Aurelius v5.1 score.
+        """Compute the complete Aurelius v5.2 score.
 
         S_A = 0.3(σ) + 0.2(E_des_barrier) + 0.2(SEI Homogeneity)
               + 0.2(MX_Synthesis_Score) - 0.1(GWP)
@@ -142,7 +142,7 @@ class AureliusScoringEngine:
         # Component 5: GWP penalty
         result.gwp_penalty = self._compute_gwp_penalty(gwp_value)
 
-        # Total Aurelius Score v5.1
+        # Total Aurelius Score v5.2
         raw_score = (
             self.weights["sigma"] * result.sigma_score
             + self.weights["desolvation"] * result.desolvation_score
@@ -173,10 +173,10 @@ class AureliusScoringEngine:
         return result
 
     def print_scorecard(self, score: AureliusScoreResult) -> str:
-        """Generate a formatted scorecard for the Aurelius v5.1 result."""
+        """Generate a formatted scorecard for the Aurelius v5.2 result."""
         lines = [
             f"{'='*60}",
-            "  AURELIUS SCORE v5.1 - Scorecard",
+            "  AURELIUS SCORE v5.2 - Scorecard",
             f"{'='*60}",
             f"  Molecule:     {score.molecule_smiles}",
             f"  Total S_A:    {score.total_score:.1f}/100 {'VIABLE' if score.is_viable else 'REJECTED'}",

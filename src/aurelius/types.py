@@ -1,4 +1,4 @@
-"""Central type definitions for Project Aurelius v5.1.
+"""Central type definitions for Project Aurelius v5.2.
 
 All @dataclass definitions used across the pipeline are centralized here
 to eliminate circular imports between pipeline.py, scoring/engine.py,
@@ -26,10 +26,10 @@ class MoleculeInput:
 
 @dataclass
 class AureliusScoreResult:
-    """Complete Aurelius v5.1 score breakdown."""
+    """Complete Aurelius v5.2 score breakdown."""
 
     molecule_smiles: str
-    total_score: float = 0.0  # S_A_v5.1 (0-100 scale)
+    total_score: float = 0.0  # S_A_v5.2 (0-100 scale)
 
     # Component scores (0-100 each)
     sigma_score: float = 0.0

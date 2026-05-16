@@ -1,4 +1,4 @@
-# Example SMILES file for Aurelius v5.1 batch screening
+# Example SMILES file for Aurelius v5.2 batch screening
 
 # Common electrolyte solvent components
 COC1=CC(=O)O1          # Ethylene carbonate (EC)

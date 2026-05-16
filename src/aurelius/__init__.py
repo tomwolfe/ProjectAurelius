@@ -1,4 +1,4 @@
-"""Project Aurelius v5.1 - The 2nm Fusion Edition.
+"""Project Aurelius v5.2 - The 2nm Fusion Edition.
 
 Accelerated computational chemistry screening pipeline optimized
 for Apple M-series Neural Accelerators.
