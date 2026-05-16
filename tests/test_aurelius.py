@@ -247,12 +247,11 @@ class TestMLXNAFilter:
         params = filter_trained._model.parameters()
         # Weights should have been updated from initial Xavier initialization
         # (they should not be exactly zero or all identical)
-        for p in params:
-            if HAS_MLX:
-                p_np = np.array(p) if isinstance(p, mx.array) else p
-            else:
-                p_np = p
-            # Weights should have some non-zero values (Xavier init + training)
+        # Only check weight matrices (W1, W2), not biases which may be zero
+        # in the numpy fallback path
+        for i in (0, 2):
+            p = params[i]
+            p_np = np.array(p) if HAS_MLX and isinstance(p, mx.array) else p
             assert np.any(np.abs(p_np) > 1e-10), "Model weights should have non-zero values"
 
 
@@ -420,7 +419,7 @@ class TestAureliusScoringEngine:
             "mx_synthesis": 0.2,
             "gwp": 0.1,
         }
-        assert sum(weights.values()) == 1.0
+        assert sum(weights.values()) == pytest.approx(1.0)
 
     def test_viability_threshold(self):
         engine = AureliusScoringEngine(viability_threshold=90.0)
