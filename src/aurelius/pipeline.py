@@ -281,9 +281,8 @@ class AureliusPipeline:
         if self.has_torch:
             if torch.backends.mps.is_available():
                 torch.mps.empty_cache()
-            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built():
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         # Tier 3: GCMD Digital Twin
         t3_result = None
@@ -309,9 +308,8 @@ class AureliusPipeline:
         if self.has_torch:
             if torch.backends.mps.is_available():
                 torch.mps.empty_cache()
-            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built():
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         # Final consolidated score compilation
         gwp = kwargs.get("gwp_value", 1.0)

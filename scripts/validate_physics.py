@@ -345,11 +345,7 @@ Examples:
     )
     args = parser.parse_args()
 
-    tiers_to_run: list[str] = []
-    if "all" in args.tier:
-        tiers_to_run = ["2", "3", "solvation"]
-    else:
-        tiers_to_run = args.tier
+    tiers_to_run: list[str] = ["2", "3", "solvation"] if "all" in args.tier else args.tier
 
     print("=" * 60)
     print("  Project Aurelius Physics Validation")

@@ -28,7 +28,7 @@ import os
 
 import numpy as np
 
-from aurelius.constants import AVOGADRO, BOLTZMANN_EV_K, BOLTZMANN_J_K
+from aurelius.constants import BOLTZMANN_EV_K
 from aurelius.types import GCMDTConfig, GCMDTwinResult, SEIEvolution
 
 
@@ -340,10 +340,7 @@ class GCMDigitalTwin:
             k_total = k_solvent + k_salt + k_poly
 
             # Advance time: delta_t = 1 / k_total (standard kMC time step)
-            if k_total > 0:
-                dt = 1.0 / k_total
-            else:
-                dt = 0.0
+            dt = 1.0 / k_total if k_total > 0 else 0.0
 
             current_time += dt
 

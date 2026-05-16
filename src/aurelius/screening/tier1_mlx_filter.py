@@ -468,7 +468,7 @@ def train_on_esol(
         return mx.mean((pred - target) ** 2)
 
     # Get gradient function
-        _loss_grad = mx.grad(loss_fn)
+    _loss_grad = mx.grad(loss_fn)
 
     # Training loop with early stopping
     best_val_loss = float("inf")
@@ -630,7 +630,7 @@ def train_on_qm9(
         pred = mx.squeeze(pred, axis=-1)
         return mx.mean((pred - target) ** 2)
 
-        _loss_grad = mx.grad(loss_fn)
+    _loss_grad = mx.grad(loss_fn)
 
     rng_state = mx.random.key(seed)
 

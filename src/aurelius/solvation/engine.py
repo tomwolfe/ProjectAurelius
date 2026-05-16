@@ -24,15 +24,16 @@ References:
 from __future__ import annotations
 
 import ast
+import contextlib
 import json
 import math
 import os
 from dataclasses import dataclass
-
-from aurelius.constants import COULOMB_EV_A
 from importlib import resources
 
 import numpy as np
+
+from aurelius.constants import COULOMB_EV_A
 
 # ---------------------------------------------------------------------------
 # Force field parameters
@@ -448,10 +449,8 @@ class MWSESolvationEngine:
             _DIELECTRIC_CONSTANTS = _FF_PARAMS.get("dielectric_constants", {}).get("solvents", {})
             _LJ_PARAMS = {}
             for key, val in _FF_PARAMS.get("lennard_jones", {}).get("parameters", {}).items():
-                try:
+                with contextlib.suppress(SyntaxError, ValueError):
                     _LJ_PARAMS[ast.literal_eval(key)] = (val["epsilon"], val["sigma"])
-                except (SyntaxError, ValueError):
-                    pass
             for z_str, val in _FF_PARAMS.get("partial_charges", {}).get("parameters", {}).items():
                 _PARTIAL_CHARGES[int(z_str)] = val["charge"]
             _BORN_CHARGES_LI = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("Li+", np.eye(3) * 1.32))

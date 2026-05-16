@@ -12,10 +12,10 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -101,10 +101,8 @@ def _detect_hardware() -> HardwareInfo:
         pass
 
     # macOS version
-    try:
+    with contextlib.suppress(Exception):
         info.macOS_version = platform.mac_ver()[0] or "unknown"
-    except Exception:
-        pass
 
     return info
 
@@ -419,9 +417,7 @@ def run_benchmark(
     for name, result in results["benchmarks"].items():
         status = result["status"]
         symbol = status_symbol.get(status, "[??]")
-        if status in ("fail",):
-            all_pass = False
-        elif status == "warning":
+        if status in ("fail",) or status == "warning":
             all_pass = False
         print(f"    {symbol} {name}: {result['details']}")
 

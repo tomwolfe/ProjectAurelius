@@ -242,10 +242,7 @@ class TestMLXNAFilter:
         # Weights should have been updated from initial Xavier initialization
         # (they should not be exactly zero or all identical)
         for p in params:
-            if isinstance(p, mx.array):
-                p_np = np.array(p)
-            else:
-                p_np = p
+            p_np = np.array(p) if isinstance(p, mx.array) else p
             # Weights should have some non-zero values (Xavier init + training)
             assert np.any(np.abs(p_np) > 1e-10), "Model weights should have non-zero values"
 

@@ -41,7 +41,6 @@ from aurelius.types import DesolvationPathResult, Tier2Result
 try:
     import torch
     import torch.nn as nn
-    import torch.nn.functional as F
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
@@ -441,9 +440,8 @@ class MatterSimMTSimulator:
         Priority: CUDA > MPS (Apple Silicon) > CPU.
         Returns the device string for PyTorch tensor placement.
         """
-        if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built():
-            if torch.cuda.is_available():
-                return "cuda"
+        if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():
+            return "cuda"
 
         if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             return "mps"

@@ -4,15 +4,8 @@ Accelerated computational chemistry screening pipeline optimized
 for Apple M-series Neural Accelerators.
 """
 
-# Initialize environment variables BEFORE any framework imports (torch, mlx).
-# This ensures Apple Silicon optimization is active from the moment any
-# Aurelius module is imported, without requiring users to source setup_env.sh.
-from aurelius.config import initialize_environment
-
-initialize_environment()
-
 from aurelius import bridge
-from aurelius.config import M5ProConfig, apply_global_config, get_config
+from aurelius.config import M5ProConfig, apply_global_config, get_config, initialize_environment
 from aurelius.memory.manager import (
     MetalShaderConfig,
     QuantizationConfig,
@@ -34,6 +27,8 @@ from aurelius.types import (
     Tier2Result,
 )
 
+initialize_environment()
+
 __all__ = [
     "AureliusPipeline",
     "AureliusScoreResult",
@@ -54,4 +49,5 @@ __all__ = [
     "apply_global_config",
     "bridge",
     "get_config",
+    "AureliusScoringEngine",
 ]

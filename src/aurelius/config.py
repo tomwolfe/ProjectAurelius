@@ -123,7 +123,9 @@ class M5ProConfig:
             return False
         used = self.mlx_max_mem_gb + self.metal_shader_cache_gb
         remaining = self.total_memory_gb - used
-        return remaining >= 8.0  # Minimum 8GB for PyTorch MPS
+        # Require at least 2GB for PyTorch MPS (scales down for smaller machines)
+        min_required = min(8.0, self.total_memory_gb * 0.25)
+        return remaining >= min_required
 
     def memory_report(self) -> str:
         """Generate a human-readable memory partition report."""

@@ -85,10 +85,7 @@ def compute_lj_loop(atomic_numbers: np.ndarray, distances: np.ndarray) -> float:
 
             zi, zj = min(atomic_numbers[i], atomic_numbers[j]), max(atomic_numbers[i], atomic_numbers[j])
             key = (zi, zj)
-            if key in _LJ_PARAMS:
-                eps, sig = _LJ_PARAMS[key]
-            else:
-                eps, sig = 0.02, 2.5
+            eps, sig = _LJ_PARAMS.get(key, (0.02, 2.5))
 
             r_soft = np.sqrt(r * r + sig * sig)
             sig_over_r = sig / r_soft
