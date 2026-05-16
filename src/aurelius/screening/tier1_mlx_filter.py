@@ -945,7 +945,8 @@ class MLXNAFilter:
             logits = self._model(fp_array)
             confidence = float(mx.squeeze(logits))
         else:
-            confidence = float(self._model(fingerprint))  # type: ignore[misc]
+            output = self._model(fingerprint)  # type: ignore[misc]
+            confidence = float(np.squeeze(output))
 
         confidence = float(np.clip(confidence, 0.0, 1.0))
         is_viable = confidence > 0.5
