@@ -1057,7 +1057,7 @@ def run_screening(args):
             print(f"  [Feedback] Strategy: {strategy['recommendation']}")
 
         # ---- Check convergence ----
-        should_stop, reason = convergence.should_termination()
+        should_stop, reason = convergence.should_terminate()
         if should_stop:
             print(f"\n[AGENT] Convergence reached: {reason}")
             break
