@@ -15,6 +15,7 @@ References:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from importlib import resources
@@ -590,16 +591,6 @@ def train_on_qm9(
             f"Network error loading QM9: {e}. "
             "Check the network connection or use a local CSV."
         ) from e
-    except ValueError as e:
-        raise ValueError(
-            f"QM9 dataset ID 'maastrichtuniversity/qm9' not found: {e}. "
-            "Check the dataset exists on HuggingFace Hub."
-        )
-    except ConnectionError as e:
-        raise ConnectionError(
-            f"Network error loading QM9: {e}. "
-            "Check your network connection or use a local CSV."
-        )
 
     # Process QM9: extract SMILES and U0 (atomization energy)
     # U0 is in kcal/mol, we normalize to [0, 1] for sigmoid
@@ -842,8 +833,6 @@ class MLXNAFilter:
                 end = min(start + 16, n_samples)
                 x_batch = X_shuffled[start:end]
                 y_batch = y_shuffled[start:end]
-                grads = loss_fn(params=model.parameters(), x=x_batch, target=y_batch)
-                # Compute gradient manually
                 grads = mx.grad(loss_fn)(model.parameters(), x_batch, y_batch)
                 model.W1 = model.W1 - 0.01 * grads[0]
                 model.b1 = model.b1 - 0.01 * grads[1]
@@ -1063,7 +1052,7 @@ def _hash_fallback(smiles: str) -> np.ndarray:
         max_set = hash_params.get("max_set_bits", max_set)
 
     arr = np.zeros(n_bits, dtype=np.float32)
-    seed = hash(smiles) & 0xFFFFFFFF
+    seed = int(hashlib.sha256(smiles.encode()).hexdigest()[:8], 16)
     rng = np.random.RandomState(seed)
     n_set = rng.randint(min_set, max_set)
     indices = rng.randint(0, n_bits, size=n_set)

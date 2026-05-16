@@ -28,12 +28,8 @@ import os
 
 import numpy as np
 
+from aurelius.constants import AVOGADRO, BOLTZMANN_EV_K, BOLTZMANN_J_K
 from aurelius.types import GCMDTConfig, GCMDTwinResult, SEIEvolution
-
-# Physical constants
-_KB_EV_K = 8.617333262e-5  # Boltzmann constant in eV/K
-_KB_J_K = 1.380649e-23     # Boltzmann constant in J/K
-_AVOGADRO = 6.02214076e23   # Avogadro's number
 
 
 def _load_kmc_params(path: str | None = None) -> dict:
@@ -214,7 +210,7 @@ class GCMDigitalTwin:
             Rate constant in 1/ps.
         """
         # Arrhenius factor: exp(-Ea / (kB * T))
-        arrhenius_factor = np.exp(-activation_energy_eV / (_KB_EV_K * temperature_k))
+        arrhenius_factor = np.exp(-activation_energy_eV / (BOLTZMANN_EV_K * temperature_k))
 
         # Concentration-dependent pre-exponential factor
         # As SEI grows, solvent concentration at the reaction interface
@@ -226,7 +222,7 @@ class GCMDigitalTwin:
         # Overpotential dependence: exp(alpha * eta / (kB * T))
         # alpha ~ 0.5 for typical electron transfer reactions
         alpha = self._alpha
-        overpotential_factor = np.exp(alpha * overpotential_V / (_KB_EV_K * temperature_k))
+        overpotential_factor = np.exp(alpha * overpotential_V / (BOLTZMANN_EV_K * temperature_k))
 
         # Combined rate constant
         k = pre_exponential_base * concentration_factor * arrhenius_factor * overpotential_factor

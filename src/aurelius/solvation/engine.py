@@ -28,6 +28,8 @@ import json
 import math
 import os
 from dataclasses import dataclass
+
+from aurelius.constants import COULOMB_EV_A
 from importlib import resources
 
 import numpy as np
@@ -383,7 +385,7 @@ def compute_gbsa_solvation_energy(
 
     # Electrostatic term
     prefactor = prefactor_sign * (1.0 - 1.0 / dielectric_bulk)
-    e_electrostatic = prefactor * gb_energy * 14.3996  # Convert to eV
+    e_electrostatic = prefactor * gb_energy * COULOMB_EV_A
 
     # Nonpolar SASA term (approximate as sphere surface area)
     sasa = 0.0

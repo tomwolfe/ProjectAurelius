@@ -22,17 +22,13 @@ from dataclasses import dataclass
 import psutil
 
 
-@dataclass(init=False)
+@dataclass(frozen=True)
 class M5ProConfig:
     """Dynamic memory configuration for Apple M-series chips.
 
     Detects total system RAM at instantiation and computes
-    tiered allocations accordingly. Uses keyword-only __new__
-    to set all fields at construction time, avoiding frozen
-    dataclass __setattr__ workarounds in __post_init__.
-
-    All fields are set during __new__ before the dataclass
-    __init__ runs, so no post-construction mutation is needed.
+    tiered allocations accordingly. User-provided non-zero values
+    override computed defaults.
     """
 
     # Dynamically set from psutil at construction time
@@ -73,51 +69,20 @@ class M5ProConfig:
     tier2_mattersim_enabled: bool = True
     tier3_gcmtwin_enabled: bool = True
 
-    def __new__(
-        cls,
-        *,
-        total_memory_gb: float = 0.0,
-        mlx_max_mem_gb: float = 0.0,
-        pytorch_mps_async: bool = True,
-        metal_shader_cache_gb: float = 0.0,
-        turquant_max_context: int = 8192,
-        desolvation_barrier_threshold_eV: float = 0.5,
-        kex_screening_window_ps: float = 10.0,
-        weight_sigma: float = 0.3,
-        weight_desolvation_barrier: float = 0.2,
-        weight_sei_homogeneity: float = 0.2,
-        weight_mx_synthesis_score: float = 0.2,
-        weight_gwp: float = 0.1,
-        chemvlm_quantization: str = "MX4",
-        mattersim_quantization: str = "MX4",
-        gcmd_quantization: str = "standard",
-        tier1_mlxfilter_enabled: bool = True,
-        tier2_mattersim_enabled: bool = True,
-        tier3_gcmtwin_enabled: bool = True,
-    ) -> M5ProConfig:
-        """Construct M5ProConfig with dynamic memory allocation.
+    def __post_init__(self) -> None:
+        """Compute dynamic memory allocations after dataclass initialization.
 
         Detects system RAM via psutil and computes MLX / shader cache
         allocations. User-provided non-zero values override computed
-        defaults. All fields are set in __new__ so __post_init__
-        (if any) receives already-computed values.
-
-        Args:
-            total_memory_gb: Override total RAM (for testing).
-            mlx_max_mem_gb: Override MLX memory (for testing).
-            metal_shader_cache_gb: Override shader cache size (for testing).
-            **kwargs: Other config fields.
-
-        Returns:
-            A fully-constructed M5ProConfig instance.
+        defaults. Uses object.__setattr__ to mutate frozen dataclass fields.
         """
         # Detect total system RAM
         total_bytes = psutil.virtual_memory().total
         total_gb = total_bytes / (1024 ** 3)
 
         # Use user override if provided
-        if total_memory_gb > 0:
-            total_gb = total_memory_gb
+        if self.total_memory_gb > 0:
+            total_gb = self.total_memory_gb
 
         # MLX: 50% of RAM, capped at 12GB
         mlx_alloc = min(total_gb * 0.5, 12.0)
@@ -125,35 +90,14 @@ class M5ProConfig:
         # Metal Shader Cache: 10% of RAM, capped at 2GB
         shader_alloc = min(total_gb * 0.1, 2.0)
 
-        # PyTorch MPS gets the remainder
-        _pytorch_available = total_gb - mlx_alloc - shader_alloc
-
         # Only apply computed defaults when user hasn't provided non-zero values
-        final_mlx = mlx_alloc if mlx_max_mem_gb == 0.0 else mlx_max_mem_gb
-        final_shader = shader_alloc if metal_shader_cache_gb == 0.0 else metal_shader_cache_gb
+        final_mlx = mlx_alloc if self.mlx_max_mem_gb == 0.0 else self.mlx_max_mem_gb
+        final_shader = shader_alloc if self.metal_shader_cache_gb == 0.0 else self.metal_shader_cache_gb
 
-        # Create instance with all fields set at construction
-        instance = super().__new__(cls)
-        object.__setattr__(instance, "total_memory_gb", round(total_gb, 1))
-        object.__setattr__(instance, "mlx_max_mem_gb", round(final_mlx, 1))
-        object.__setattr__(instance, "pytorch_mps_async", pytorch_mps_async)
-        object.__setattr__(instance, "metal_shader_cache_gb", round(final_shader, 1))
-        object.__setattr__(instance, "turquant_max_context", turquant_max_context)
-        object.__setattr__(instance, "desolvation_barrier_threshold_eV", desolvation_barrier_threshold_eV)
-        object.__setattr__(instance, "kex_screening_window_ps", kex_screening_window_ps)
-        object.__setattr__(instance, "weight_sigma", weight_sigma)
-        object.__setattr__(instance, "weight_desolvation_barrier", weight_desolvation_barrier)
-        object.__setattr__(instance, "weight_sei_homogeneity", weight_sei_homogeneity)
-        object.__setattr__(instance, "weight_mx_synthesis_score", weight_mx_synthesis_score)
-        object.__setattr__(instance, "weight_gwp", weight_gwp)
-        object.__setattr__(instance, "chemvlm_quantization", chemvlm_quantization)
-        object.__setattr__(instance, "mattersim_quantization", mattersim_quantization)
-        object.__setattr__(instance, "gcmd_quantization", gcmd_quantization)
-        object.__setattr__(instance, "tier1_mlxfilter_enabled", tier1_mlxfilter_enabled)
-        object.__setattr__(instance, "tier2_mattersim_enabled", tier2_mattersim_enabled)
-        object.__setattr__(instance, "tier3_gcmtwin_enabled", tier3_gcmtwin_enabled)
-
-        return instance
+        # Mutate frozen dataclass fields
+        object.__setattr__(self, "total_memory_gb", round(total_gb, 1))
+        object.__setattr__(self, "mlx_max_mem_gb", round(final_mlx, 1))
+        object.__setattr__(self, "metal_shader_cache_gb", round(final_shader, 1))
 
     def apply_environment(self) -> dict[str, str]:
         """Return environment variables to set (thread-safe).

@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from aurelius.constants import COULOMB_EV_A
 from aurelius.types import DesolvationPathResult, Tier2Result
 
 try:
@@ -681,8 +682,7 @@ class MatterSimMTSimulator:
         charge_mask = (q_product != 0.0)
         r_soft = torch.sqrt(distances * distances + 1.0)
 
-        k_coulomb = 14.3996  # eV*A
-        coulomb_per_pair = k_coulomb * q_product / r_soft
+        coulomb_per_pair = COULOMB_EV_A * q_product / r_soft
         coulomb_total = torch.sum(coulomb_per_pair * mask.float() * charge_mask.float())
 
         return coulomb_total

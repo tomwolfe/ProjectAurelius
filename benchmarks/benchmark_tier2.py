@@ -15,6 +15,8 @@ import time
 
 import numpy as np
 
+from aurelius.constants import COULOMB_EV_A
+
 
 def generate_random_molecule(n_atoms: int, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
     """Generate a random molecular structure for benchmarking.
@@ -158,7 +160,7 @@ def compute_coulomb_loop(atomic_numbers: np.ndarray, distances: np.ndarray) -> f
                 continue
 
             r_soft = np.sqrt(r * r + 1.0)
-            total += 14.3996 * qi * qj / r_soft
+            total += COULOMB_EV_A * qi * qj / r_soft
 
     return total
 
@@ -176,7 +178,7 @@ def compute_coulomb_vectorized(atomic_numbers: np.ndarray, distances: np.ndarray
     charge_mask = (q_product != 0.0)
     r_soft = np.sqrt(distances * distances + 1.0)
 
-    return float(np.sum(14.3996 * q_product / r_soft * mask * charge_mask))
+    return float(np.sum(COULOMB_EV_A * q_product / r_soft * mask * charge_mask))
 
 
 def main() -> None:
