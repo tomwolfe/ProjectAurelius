@@ -63,3 +63,15 @@ discovery_results.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Autonomous screening agent runtime outputs
+errors.log
+agent_state.json
+agent_state.json.tmp
+agent_discovery_manifest.json
+discovery_results_final.json
+top_discoveries.smi
+screening_statistics.md
+chemical_insights.md
+mutation_rationale.md
+candidates_batch_*.smi
