@@ -260,7 +260,7 @@ class AureliusPipeline:
                 molecule_input.solvent_type,
                 molecule_input.n_md_cycles,
             )
-            tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) if 't2_start' in dir() else t2_result.simulation_time_ms
+            tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
             results["tier2"] = t2_result  # type: ignore[assignment]
             print(f"  Tier 2 Result: {t2_result.molecule_smiles} "
                   f"-> {'VIABLE' if t2_result.is_viable else 'REJECTED'} "

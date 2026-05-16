@@ -693,6 +693,10 @@ class MatterSimMTSimulator:
     ) -> torch.Tensor:
         """Compute energy profile along the desolvation path.
 
+        Fully vectorized implementation: computes LJ + Coulomb energies
+        for all displacement steps simultaneously via tensor broadcasting.
+        O(N^2 * n_cycles) time/space, O(1) Python interpreter overhead.
+
         Args:
             atomic_numbers: (N,) LongTensor.
             coordinates: (N, 3) FloatTensor.
@@ -707,73 +711,79 @@ class MatterSimMTSimulator:
 
         positions = torch.linspace(0, 8.0, n_cycles, device=device)
 
-        base_coords = coordinates.clone()
-        displaced_coords = base_coords.unsqueeze(0).expand(n_cycles, -1, -1).clone()
-
-        displacement_x = positions.clone()
+        # Displace ion along x-axis: (n_cycles, 3)
         ion_coords = torch.zeros(n_cycles, 3, device=device, dtype=torch.float32)
-        ion_coords[:, 0] = displacement_x
-        displaced_coords[:, ion_idx, :] = ion_coords
+        ion_coords[:, 0] = positions
 
-        diffs = displaced_coords.unsqueeze(2) - displaced_coords.unsqueeze(1)
-        all_distances = torch.norm(diffs, dim=-1)
+        # Solvent coordinates: (1, n_solvent, 3)
+        solvent_coords = coordinates[1:].unsqueeze(0)  # (1, n_solvent, 3)
 
-        energies = torch.zeros(n_cycles, device=device)
+        # Ion positions broadcast to (n_cycles, 1, 3)
+        # Solvent coords broadcast to (n_cycles, n_solvent, 3)
+        # Result: (n_cycles, n_solvent, 3)
+        diffs = ion_coords.unsqueeze(1) - solvent_coords
+        ion_solvent_distances = torch.norm(diffs, dim=-1)  # (n_cycles, n_solvent)
 
-        for step in range(n_cycles):
-            dists = all_distances[step]
-            lj_total = torch.zeros((), device=device)
-            solvent_indices = torch.arange(1, n_solvent + 1, device=device)
-            ion_dist = dists[ion_idx, solvent_indices]
+        # Build LJ parameter tensors for ion (z=11) vs solvent pairs
+        solvent_z = atomic_numbers[1:]  # (n_solvent,)
+        eps_vals = torch.zeros(n_solvent, device=device)
+        sig_vals = torch.zeros(n_solvent, device=device)
 
-            solvent_z = atomic_numbers[solvent_indices]
+        for (zi, zj), (eps, sig) in self._LJ_PARAMS.items():
+            pair_mask = ((solvent_z == zi) & (zi == 11)) | ((solvent_z == zj) & (zj == 11))
+            eps_vals = torch.where(pair_mask, torch.full_like(eps_vals, eps), eps_vals)
+            sig_vals = torch.where(pair_mask, torch.full_like(sig_vals, sig), sig_vals)
 
-            eps_vals = torch.zeros(n_solvent, device=device)
-            sig_vals = torch.zeros(n_solvent, device=device)
+        # Apply defaults for unknown pairs: (n_solvent,)
+        eps_vals = torch.where(
+            eps_vals == 0, torch.full_like(eps_vals, self._default_eps), eps_vals
+        )
+        sig_vals = torch.where(
+            sig_vals == 0, torch.full_like(sig_vals, self._default_sig), sig_vals
+        )
 
-            for (zi, zj), (eps, sig) in self._LJ_PARAMS.items():
-                pair_mask = ((solvent_z == zi) & (zi == 11)) | ((solvent_z == zj) & (zj == 11))
-                eps_vals = torch.where(pair_mask, torch.full_like(eps_vals, eps), eps_vals)
-                sig_vals = torch.where(pair_mask, torch.full_like(sig_vals, sig), sig_vals)
+        # Broadcast to (n_cycles, n_solvent) for all steps
+        eps_broadcast = eps_vals.unsqueeze(0).expand(n_cycles, -1)
+        sig_broadcast = sig_vals.unsqueeze(0).expand(n_cycles, -1)
 
-            default_eps = self._default_eps
-            default_sig = self._default_sig
-            eps_vals = torch.where(eps_vals == 0, torch.full_like(eps_vals, default_eps), eps_vals)
-            sig_vals = torch.where(sig_vals == 0, torch.full_like(sig_vals, default_sig), sig_vals)
+        # Cutoff mask: (n_cycles, n_solvent)
+        cutoff_mask = ion_solvent_distances < self._cutoff
 
-            cutoff_mask = ion_dist < self._cutoff
-            r_soft = torch.sqrt(ion_dist * ion_dist + sig_vals ** 2)
-            sig_over_r = sig_vals / r_soft
-            sig_over_r6 = sig_over_r ** 6
-            sig_over_r12 = sig_over_r6 ** 2
-            lj_per_atom = 4.0 * eps_vals * (sig_over_r12 - sig_over_r6)
+        # Shifted LJ potential: fully vectorized over all steps
+        r_soft = torch.sqrt(ion_solvent_distances ** 2 + sig_broadcast ** 2)
+        sig_over_r = sig_broadcast / r_soft
+        sig_over_r6 = sig_over_r ** 6
+        sig_over_r12 = sig_over_r6 ** 2
+        lj_per_atom = 4.0 * eps_broadcast * (sig_over_r12 - sig_over_r6)
 
-            r_cutoff_soft = torch.sqrt(torch.full_like(ion_dist, 144.0) + sig_vals ** 2)
-            sig_over_r_cutoff = sig_vals / r_cutoff_soft
-            sig_over_r6_cutoff = sig_over_r_cutoff ** 6
-            sig_over_r12_cutoff = sig_over_r6_cutoff ** 2
-            lj_cutoff = 4.0 * eps_vals * (sig_over_r12_cutoff - sig_over_r6_cutoff)
-            lj_per_atom = lj_per_atom - lj_cutoff
+        # Shift to zero at cutoff
+        r_cutoff_soft = torch.sqrt(torch.full_like(ion_solvent_distances, 144.0) + sig_broadcast ** 2)
+        sig_over_r_cutoff = sig_broadcast / r_cutoff_soft
+        sig_over_r6_cutoff = sig_over_r_cutoff ** 6
+        sig_over_r12_cutoff = sig_over_r6_cutoff ** 2
+        lj_cutoff = 4.0 * eps_broadcast * (sig_over_r12_cutoff - sig_over_r6_cutoff)
+        lj_per_atom = lj_per_atom - lj_cutoff
 
-            lj_total = torch.sum(lj_per_atom * cutoff_mask.float())
+        lj_total = torch.sum(lj_per_atom * cutoff_mask.float(), dim=1)  # (n_cycles,)
 
-            coul_total = torch.zeros((), device=device)
-            qi = self._CHARGES.get(int(atomic_numbers[ion_idx].item()), 0.0)
+        # Coulomb: ion charge (scalar) vs solvent charges
+        qi = self._CHARGES.get(int(atomic_numbers[ion_idx].item()), 0.0)
 
-            if qi != 0.0:
-                q_j_vals = torch.zeros(n_solvent, device=device, dtype=torch.float32)
-                for z, q in self._CHARGES.items():
-                    q_j_vals = torch.where(solvent_z == z, torch.full_like(q_j_vals, q), q_j_vals)
+        if qi != 0.0:
+            q_j_vals = torch.zeros(n_solvent, device=device, dtype=torch.float32)
+            for z, q in self._CHARGES.items():
+                q_j_vals = torch.where(solvent_z == z, torch.full_like(q_j_vals, q), q_j_vals)
 
-                q_product = qi * q_j_vals
-                charge_mask = q_product != 0.0
-                r_soft_c = torch.sqrt(ion_dist * ion_dist + 1.0)
-                coul_per_atom = 14.3996 * q_product / r_soft_c
-                coul_total = torch.sum(coul_per_atom * charge_mask.float())
+            # Broadcast charge products: (n_cycles, n_solvent)
+            qi_broadcast = qi * q_j_vals.unsqueeze(0).expand(n_cycles, -1)
+            charge_mask = (q_j_vals != 0.0).unsqueeze(0).expand(n_cycles, -1)
+            r_soft_c = torch.sqrt(ion_solvent_distances ** 2 + 1.0)
+            coul_per_atom = 14.3996 * qi_broadcast / r_soft_c
+            coul_total = torch.sum(coul_per_atom * charge_mask.float(), dim=1)  # (n_cycles,)
+        else:
+            coul_total = torch.zeros(n_cycles, device=device)
 
-            energies[step] = lj_total + coul_total
-
-        return energies
+        return lj_total + coul_total
 
     def _find_local_maxima(self, energies: np.ndarray) -> list[float]:
         """Find local maxima in the energy profile."""
