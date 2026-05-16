@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Any
 
 import numpy as np
 
@@ -32,7 +33,7 @@ from aurelius.constants import BOLTZMANN_EV_K
 from aurelius.types import GCMDTConfig, GCMDTwinResult, SEIEvolution
 
 
-def _load_kmc_params(path: str | None = None) -> dict:
+def _load_kmc_params(path: str | None = None) -> dict[str, Any]:
     """Load kMC reaction parameters from force field JSON.
 
     Args:
@@ -49,7 +50,7 @@ def _load_kmc_params(path: str | None = None) -> dict:
         try:
             with open(ff_path) as f:
                 data = json.load(f)
-                return data.get("kmc_reaction_parameters", {})
+                return data.get("kmc_reaction_parameters", {})  # type: ignore[no-any-return]
         except (json.JSONDecodeError, OSError):
             pass
     return {}
@@ -169,7 +170,7 @@ class GCMDigitalTwin:
             simulation_time_ms=elapsed_ms,
         )
 
-    def get_simulation_stats(self) -> dict:
+    def get_simulation_stats(self) -> dict[str, Any]:
         """Return current kMC simulation statistics."""
         return {
             "max_simulation_steps": self.config.max_simulation_steps,

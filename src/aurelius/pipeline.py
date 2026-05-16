@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import gc
 import time
+from typing import Any
 
 try:
     import mlx.core as mx
@@ -36,7 +37,7 @@ from aurelius.memory.manager import (
 from aurelius.scoring.engine import AureliusScoringEngine
 from aurelius.screening.tier1_mlx_filter import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
-from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig
+from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig  # type: ignore[attr-defined]
 from aurelius.solvation.engine import MWSESolvationEngine
 from aurelius.types import (
     DesolvationPathResult,
@@ -139,7 +140,7 @@ class AureliusPipeline:
         """Load all models into the memory manager."""
         if self._memory_manager:
             self._memory_manager.load_chemvlm2(chemvlm2_path)
-            self._memory_manager.load_mattersim(mattersim_path)
+            self._memory_manager.load_mattersim_mt(mattersim_path)
             self._memory_manager.load_gcmtwin(gcmtwin_path)
 
         if self._mlx_filter:
@@ -148,7 +149,7 @@ class AureliusPipeline:
         if self._mattersim_sim:
             self._mattersim_sim.initialize(mattersim_path)
 
-    def _generate_failed_run(self, smiles: str, reason: str, **kwargs) -> dict:
+    def _generate_failed_run(self, smiles: str, reason: str, **kwargs: Any) -> dict[str, Any]:
         """Generate a failed run result dict for early-exit scenarios.
 
         Returns an automatic-failure profile so downstream scoring
@@ -187,7 +188,7 @@ class AureliusPipeline:
             memory_used_gb=0.0,
         )
 
-        score = self._scoring_engine.compute_score(
+        score = self._scoring_engine.compute_score(  # type: ignore[union-attr]
             molecule_input, failed_tier1, failed_tier2, None, 1.0
         )
 
@@ -198,7 +199,7 @@ class AureliusPipeline:
             "score": score,
         }
 
-    def screen_molecule(self, smiles: str, **kwargs) -> dict:
+    def screen_molecule(self, smiles: str, **kwargs: Any) -> dict[str, Any]:
         """Run the complete three-tier screening pipeline on a molecule.
 
         Returns a dict with all tier results and the final Aurelius score.
@@ -238,7 +239,7 @@ class AureliusPipeline:
                   f"time={t1_result.inference_time_ms:.1f}ms)")
             if not t1_result.is_viable:
                 print(f"[Aurelius Pipeline] Short-circuiting: {smiles} failed Tier 1.")
-                results["tier_timings"] = tier_timings
+                results["tier_timings"] = tier_timings  # type: ignore[assignment]
                 return self._generate_failed_run(smiles, "Failed Tier 1 Structural Filter", **kwargs)
 
         # MWSE Solvation analysis
@@ -247,7 +248,7 @@ class AureliusPipeline:
             mwse_state = self._solvation_engine.evaluate_mwse_state(
                 molecule_input.ion_type, molecule_input.solvent_type
             )
-            results["mwse"] = mwse_state
+            results["mwse"] = mwse_state  # type: ignore[assignment]
 
         # Tier 2: MatterSim-MT
         t2_result = None
@@ -260,7 +261,7 @@ class AureliusPipeline:
                 molecule_input.n_md_cycles,
             )
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) if 't2_start' in dir() else t2_result.simulation_time_ms
-            results["tier2"] = t2_result
+            results["tier2"] = t2_result  # type: ignore[assignment]
             print(f"  Tier 2 Result: {t2_result.molecule_smiles} "
                   f"-> {'VIABLE' if t2_result.is_viable else 'REJECTED'} "
                   f"(barrier={t2_result.desolvation_path.barrier_height_eV:.3f} eV, "
@@ -269,7 +270,7 @@ class AureliusPipeline:
             # HARD SHORT-CIRCUIT: Explicit early exit
             if not t2_result.is_viable:
                 print(f"[Aurelius Pipeline] Short-circuiting: {smiles} failed Tier 2 viability.")
-                results["tier_timings"] = tier_timings
+                results["tier_timings"] = tier_timings  # type: ignore[assignment]
                 return self._generate_failed_run(
                     smiles, f"Failed Tier 2 Solvation (Barrier: {t2_result.desolvation_path.barrier_height_eV} eV)", **kwargs
                 )
@@ -281,7 +282,7 @@ class AureliusPipeline:
         if self.has_torch:
             if torch.backends.mps.is_available():
                 torch.mps.empty_cache()
-            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():
+            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call]
                 torch.cuda.empty_cache()
 
         # Tier 3: GCMD Digital Twin
@@ -296,7 +297,7 @@ class AureliusPipeline:
                 molecule_input.max_sei_time_ps,
             )
             tier_timings["tier3_ms"] = (time.perf_counter() - t3_start) * 1000
-            results["tier3"] = t3_result
+            results["tier3"] = t3_result  # type: ignore[assignment]
             print(f"  Tier 3 Result: {t3_result.molecule_smiles} "
                   f"-> SEI: {t3_result.sei_evolution.thickness_angstrom:.1f}A, "
                   f"Homogeneity={t3_result.sei_evolution.homogeneity_score:.3f}")
@@ -308,7 +309,7 @@ class AureliusPipeline:
         if self.has_torch:
             if torch.backends.mps.is_available():
                 torch.mps.empty_cache()
-            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():
+            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call]
                 torch.cuda.empty_cache()
 
         # Final consolidated score compilation
@@ -316,8 +317,8 @@ class AureliusPipeline:
         score = self._scoring_engine.compute_score(
             molecule_input, t1_result, t2_result, t3_result, gwp
         )
-        results["score"] = score
-        results["tier_timings"] = tier_timings
+        results["score"] = score  # type: ignore[assignment]
+        results["tier_timings"] = tier_timings  # type: ignore[assignment]
 
         # Print scorecard
         print(f"\n{self._scoring_engine.print_scorecard(score)}")
@@ -339,7 +340,7 @@ class AureliusPipeline:
 
         return results
 
-    def screen_batch(self, smiles_list: list[str], **kwargs) -> list[dict]:
+    def screen_batch(self, smiles_list: list[str], **kwargs: Any) -> list[dict[str, Any]]:
         """Screen a batch of molecules through the full pipeline."""
         all_results = []
         for smiles in smiles_list:
@@ -347,7 +348,7 @@ class AureliusPipeline:
             all_results.append(result)
         return all_results
 
-    def get_memory_budget(self) -> dict:
+    def get_memory_budget(self) -> dict[str, Any]:
         """Get current memory allocation status."""
         if self._memory_manager:
             return self._memory_manager.get_memory_budget()

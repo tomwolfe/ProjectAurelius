@@ -182,7 +182,7 @@ class _FallbackMLP:
         h = x @ self.W1 + self.b1
         h = np.maximum(h, 0.0)
         out = h @ self.W2 + self.b2
-        return 1.0 / (1.0 + np.exp(-out))
+        return 1.0 / (1.0 + np.exp(-out))  # type: ignore[no-any-return]
 
     def parameters(self) -> list[np.ndarray]:
         return [self.W1, self.b1, self.W2, self.b2]
@@ -382,7 +382,7 @@ def train_on_esol(
 
     # Load ESOL dataset via huggingface datasets library
     try:
-        from datasets import load_dataset
+        from datasets import load_dataset  # type: ignore[import-untyped]
         _ds = load_dataset("deepchem/esol", split="train")
     except ImportError:
         # 'datasets' library not available - fall back to embedded subset
@@ -506,7 +506,7 @@ def train_on_esol(
             train_loss = float(loss_fn(model.parameters(), X_train_split, y_train_split))
             preds = model(X_val_split)
             preds_binary = mx.squeeze(preds) > 0.5
-            accuracy = float(mx.mean(preds_binary == y_val_split))
+            accuracy = float(mx.mean(preds_binary == y_val_split))  # type: ignore[arg-type]
             print(f"[Aurelius v5.2 Tier1] Epoch {epoch + 1}/{epochs}: "
                   f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, "
                   f"val_accuracy={accuracy:.2f}")
@@ -516,7 +516,7 @@ def train_on_esol(
             best_val_loss = val_loss
             patience_counter = 0
             # Save best parameters
-            best_params = [p.copy() for p in model.parameters()]
+            best_params = [p.copy() for p in model.parameters()]  # type: ignore[attr-defined]
         else:
             patience_counter += 1
             if patience_counter >= patience:
@@ -926,7 +926,7 @@ class MLXNAFilter:
             pass
 
         base_util = tier1_params.get("base_utilization_pct", 75.0) + confidence * tier1_params.get("confidence_boost", 20.0)
-        return min(base_util, tier1_params.get("max_utilization_pct", 98.0))
+        return float(min(base_util, tier1_params.get("max_utilization_pct", 98.0)))
 
     def _bits_from_format(self) -> int:
         """Extract bit depth from quantization format string."""
@@ -936,7 +936,7 @@ class MLXNAFilter:
             return 6
         return 4
 
-    def _run_inference(self, fingerprint: np.ndarray, smiles: str) -> dict:
+    def _run_inference(self, fingerprint: np.ndarray, smiles: str) -> dict[str, Any]:
         """Run molecular viability inference via MLX or numpy fallback."""
         if self._use_mlx and self._model is not None:
             fp_array = mx.array(fingerprint, dtype=mx.float32)
@@ -945,7 +945,7 @@ class MLXNAFilter:
             logits = self._model(fp_array)
             confidence = float(mx.squeeze(logits))
         else:
-            confidence = float(self._model(fingerprint))
+            confidence = float(self._model(fingerprint))  # type: ignore[misc]
 
         confidence = float(np.clip(confidence, 0.0, 1.0))
         is_viable = confidence > 0.5
@@ -986,7 +986,7 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
                 f"using hash fallback. This fingerprint is NOT chemically valid."
             )
             return _hash_fallback(smiles)
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined]
         bit_list = fp.ToList()
         arr = np.array(bit_list, dtype=np.float32)
         if len(arr) < 2048:

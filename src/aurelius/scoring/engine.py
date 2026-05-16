@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 from importlib import resources
+from typing import Any
 
 import numpy as np
 
@@ -31,7 +32,7 @@ from aurelius.types import (
 )
 
 
-def _load_scoring_params(path: str | None = None) -> dict:
+def _load_scoring_params(path: str | None = None) -> dict[str, Any]:
     """Load scoring parameters from force field JSON.
 
     Args:
@@ -47,7 +48,7 @@ def _load_scoring_params(path: str | None = None) -> dict:
         try:
             with open(ff_path) as f:
                 data = json.load(f)
-                return data.get("scoring_parameters", {})
+                return data.get("scoring_parameters", {})  # type: ignore[no-any-return]
         except (json.JSONDecodeError, OSError):
             pass
     return {}

@@ -25,6 +25,7 @@ import os
 import sys
 import warnings
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -120,7 +121,7 @@ def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray:
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return _hash_fallback(smiles, n_bits)
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=n_bits)
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=n_bits)  # type: ignore[attr-defined]
         bit_list = fp.ToList()
         arr = np.array(bit_list, dtype=np.float32)
         if len(arr) < n_bits:
@@ -171,7 +172,7 @@ def load_esol_data(csv_path: str | None = None) -> tuple[np.ndarray, np.ndarray,
 
     # Try HuggingFace datasets with verified repository IDs
     try:
-        from datasets import load_dataset
+        from datasets import load_dataset  # type: ignore[import-untyped]
 
         print("[train_tier1] Loading ESOL from HuggingFace Hub...")
         # Verified dataset: deepchem/esol ( maintained by DeepChem )
@@ -297,9 +298,9 @@ def _load_esol_from_csv(csv_path: str) -> tuple[np.ndarray, np.ndarray, list[str
     for i, smiles in enumerate(smiles_list):
         X[i] = generate_ecfp4_fingerprint(smiles, n_bits)
 
-    log_s = np.array(log_s_list, dtype=np.float32)
+    log_s_array = np.array(log_s_list, dtype=np.float32)
     log_s_min, log_s_max = -6.0, 1.0
-    y = np.clip((log_s - log_s_min) / (log_s_max - log_s_min), 0.0, 1.0)
+    y = np.clip((log_s_array - log_s_min) / (log_s_max - log_s_min), 0.0, 1.0)
 
     return X, y, smiles_list
 
@@ -383,9 +384,9 @@ def _load_esol_embedded() -> tuple[np.ndarray, np.ndarray, list[str]]:
         smiles_list.append(smiles)
         log_s_list.append(log_s)
 
-    log_s = np.array(log_s_list, dtype=np.float32)
+    log_s_array = np.array(log_s_list, dtype=np.float32)
     log_s_min, log_s_max = -6.0, 1.0
-    y = np.clip((log_s - log_s_min) / (log_s_max - log_s_min), 0.0, 1.0)
+    y = np.clip((log_s_array - log_s_min) / (log_s_max - log_s_min), 0.0, 1.0)
 
     return X, y, smiles_list
 
@@ -465,7 +466,7 @@ def train_numpy(
     lr: float,
     batch_size: int,
     seed: int,
-) -> dict:
+) -> dict[str, Any]:
     """Train MLP on CPU using numpy (no MLX required).
 
     Args:
@@ -493,7 +494,7 @@ def train_numpy(
     b2 = np.zeros(1, dtype=np.float32)
 
     n_samples = X_train.shape[0]
-    history = {"train_loss": [], "val_loss": []}
+    history: dict[str, list[float]] = {"train_loss": [], "val_loss": []}
     best_val_loss = float("inf")
     best_weights = {"W1": W1.copy(), "b1": b1.copy(), "W2": W2.copy(), "b2": b2.copy()}
     patience = 30
@@ -576,7 +577,7 @@ def train_mlx(
     lr: float,
     batch_size: int,
     seed: int,
-) -> dict:
+) -> dict[str, Any]:
     """Train MLP using MLX (requires MLX library).
 
     Args:
@@ -599,14 +600,14 @@ def train_mlx(
         print("[train_tier1] MLX not available, falling back to numpy training")
         return train_numpy(X_train, y_train, X_val, y_val, epochs, lr, batch_size, seed)
 
-    model = nn.Sequential(
-        nn.Linear(2048, 128),
-        nn.ReLU(),
-        nn.Linear(128, 1),
+    model = nn.Sequential(  # type: ignore[attr-defined]
+        nn.Linear(2048, 128),  # type: ignore[attr-defined]
+        nn.ReLU(),  # type: ignore[attr-defined]
+        nn.Linear(128, 1),  # type: ignore[attr-defined]
     )
 
-    _optimizer = mx.optimizers.SGD(learning_rate=lr)
-    loss_fn = nn.MSELoss
+    _optimizer = mx.optimizers.SGD(learning_rate=lr)  # type: ignore[attr-defined]
+    loss_fn = nn.MSELoss  # type: ignore[attr-defined]
 
     X_train_mx = mx.array(X_train)
     y_train_mx = mx.array(y_train)
@@ -614,7 +615,7 @@ def train_mlx(
     y_val_mx = mx.array(y_val)
 
     n_samples = X_train.shape[0]
-    history = {"train_loss": [], "val_loss": []}
+    history: dict[str, list[float]] = {"train_loss": [], "val_loss": []}
     best_val_loss = float("inf")
     best_weights = None
     patience = 30
@@ -631,7 +632,7 @@ def train_mlx(
             x_batch = X_shuffled[start:end]
             y_batch = y_shuffled[start:end]
 
-            loss, grads = nn.value_and_grad(model, loss_fn)(x_batch, y_batch)
+            loss, grads = nn.value_and_grad(model, loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
             model.apply_gradients(grads)
 
         val_loss = float(loss_fn(model, X_val_mx, y_val_mx))
@@ -657,10 +658,10 @@ def train_mlx(
 
 
 def save_model(
-    weights: dict,
+    weights: dict[str, Any],
     save_path: str,
     dataset: str,
-    hyperparams: dict,
+    hyperparams: dict[str, Any],
 ) -> None:
     """Save trained model weights and metadata.
 
@@ -700,7 +701,7 @@ def train_main(
     val_split: float = 0.15,
     save_path: str | None = None,
     no_mlx: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Train Tier 1 model on a dataset (esol or qm9).
 
     This is the programmatic entry point for training, callable

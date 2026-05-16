@@ -30,6 +30,7 @@ import math
 import os
 from dataclasses import dataclass
 from importlib import resources
+from typing import Any
 
 import numpy as np
 
@@ -46,12 +47,11 @@ def _default_ff_path() -> str:
     return str(resources.files("aurelius.data").joinpath("force_field_params.json"))
 
 
-def _load_force_field_params(path: str | None = None) -> dict:
+def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
     """Load force field parameters from JSON config.
 
     Args:
         path: Path to force field params JSON file.
-            Defaults to built-in force_field_params.json.
 
     Returns:
         Dictionary of force field parameters.
@@ -59,7 +59,7 @@ def _load_force_field_params(path: str | None = None) -> dict:
     ff_path = path or _default_ff_path()
     if os.path.isfile(ff_path):
         with open(ff_path) as f:
-            return json.load(f)
+            return json.load(f)  # type: ignore[no-any-return]
     return {}
 
 
@@ -108,7 +108,7 @@ _ARRHENIUS_BARRIERS: dict[str, float] = _FF_PARAMS.get("arrhenius_parameters", {
 # Solvation-specific parameter loading
 # ---------------------------------------------------------------------------
 
-def _load_solvation_params(path: str | None = None) -> dict:
+def _load_solvation_params(path: str | None = None) -> dict[str, Any]:
     """Load solvation-specific parameters from force field JSON.
 
     Args:
@@ -122,7 +122,7 @@ def _load_solvation_params(path: str | None = None) -> dict:
         try:
             with open(ff_path) as f:
                 data = json.load(f)
-                return data.get("solvation_parameters", {})
+                return data.get("solvation_parameters", {})  # type: ignore[no-any-return]
         except (json.JSONDecodeError, OSError):
             pass
     return {}
@@ -131,14 +131,14 @@ def _load_solvation_params(path: str | None = None) -> dict:
 _SOLVATION_PARAMS = _load_solvation_params()
 
 # Also load scoring params for MWSE stability threshold
-def _load_scoring_params_for_solvation(path: str | None = None) -> dict:
+def _load_scoring_params_for_solvation(path: str | None = None) -> dict[str, Any]:
     """Load scoring parameters from force field JSON for MWSE evaluation."""
     ff_path = path or _default_ff_path()
     if os.path.isfile(ff_path):
         try:
             with open(ff_path) as f:
                 data = json.load(f)
-                return data.get("scoring_parameters", {})
+                return data.get("scoring_parameters", {})  # type: ignore[no-any-return]
         except (json.JSONDecodeError, OSError):
             pass
     return {}
@@ -169,49 +169,49 @@ class SolvationShell:
 
 def _get_coordination_number(ion_type: str) -> int:
     """Get coordination number for ion from force field params."""
-    return _SOLVATION_PARAMS.get("coordination_numbers", {}).get(ion_type, 6)
+    return int(_SOLVATION_PARAMS.get("coordination_numbers", {}).get(ion_type, 6))
 
 
 def _get_shell_radius(ion_type: str) -> float:
     """Get solvation shell radius for ion from force field params."""
-    return _SOLVATION_PARAMS.get("shell_radii_angstrom", {}).get(ion_type, 3.0)
+    return float(_SOLVATION_PARAMS.get("shell_radii_angstrom", {}).get(ion_type, 3.0))
 
 
 def _get_desolvation_energy(ion_type: str, solvent_type: str) -> float:
     """Get desolvation energy for ion-solvent pair from force field params."""
     base = _SOLVATION_PARAMS.get("desolvation_energies_eV", {})
     key = f"{ion_type}_{solvent_type.replace(':', '_')}"
-    return base.get(key, _SOLVATION_PARAMS.get("default_desolvation_eV", 0.10))
+    return float(base.get(key, _SOLVATION_PARAMS.get("default_desolvation_eV", 0.10)))
 
 
 def _get_surface_tension() -> float:
     """Get surface tension parameter from force field params."""
-    return _SOLVATION_PARAMS.get("surface_tension_eV_per_A2", 0.00542)
+    return float(_SOLVATION_PARAMS.get("surface_tension_eV_per_A2", 0.00542))
 
 
 def _get_numerical_floor() -> float:
     """Get numerical stability floor from force field params."""
-    return _SOLVATION_PARAMS.get("numerical_stability_floor", 1e-10)
+    return float(_SOLVATION_PARAMS.get("numerical_stability_floor", 1e-10))
 
 
 def _get_gb_prefactor_sign() -> float:
     """Get GBSA prefactor sign from force field params."""
-    return _SOLVATION_PARAMS.get("gb_prefactor_sign", -0.5)
+    return float(_SOLVATION_PARAMS.get("gb_prefactor_sign", -0.5))
 
 
 def _get_labile_kex_lower_bound() -> float:
     """Get lower bound for labile k_ex from force field params."""
-    return _SOLVATION_PARAMS.get("labile_kex_lower_bound", 0.01)
+    return float(_SOLVATION_PARAMS.get("labile_kex_lower_bound", 0.01))
 
 
 def _get_rejection_threshold() -> float:
     """Get local maxima rejection threshold from force field params."""
-    return _SOLVATION_PARAMS.get("rejection_threshold_eV", 0.5)
+    return float(_SOLVATION_PARAMS.get("rejection_threshold_eV", 0.5))
 
 
 def _get_max_trajectory_distance() -> float:
     """Get max trajectory distance from force field params."""
-    return _SOLVATION_PARAMS.get("max_trajectory_distance_angstrom", 5.0)
+    return float(_SOLVATION_PARAMS.get("max_trajectory_distance_angstrom", 5.0))
 
 
 def _get_energy_profile_gaussians() -> tuple[list[float], list[float], list[float]]:
@@ -233,12 +233,12 @@ def _get_repulsive_wall_params() -> tuple[float, float]:
 
 def _get_attempt_frequency() -> float:
     """Get attempt frequency from force field params."""
-    return _SOLVATION_PARAMS.get("attempt_frequency_ps", 2.0)
+    return float(_SOLVATION_PARAMS.get("attempt_frequency_ps", 2.0))
 
 
 def _get_ion_pair_separation() -> float:
     """Get ion-pair separation distance from force field params."""
-    return _SOLVATION_PARAMS.get("ion_pair_separation_angstrom", 2.3)
+    return float(_SOLVATION_PARAMS.get("ion_pair_separation_angstrom", 2.3))
 
 
 @dataclass

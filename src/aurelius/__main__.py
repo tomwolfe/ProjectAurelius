@@ -34,7 +34,7 @@ def _apply_env_thread_safe(env_vars: dict[str, str]) -> None:
 
 @click.group()
 @click.version_option(version="5.2.0", prog_name="Aurelius")
-def cli():
+def cli() -> None:
     """Project Aurelius v5.2 - The Hardened Release.
 
     Accelerated computational chemistry screening pipeline optimized
@@ -44,7 +44,7 @@ def cli():
 
 
 @cli.command()
-def init():
+def init() -> None:
     """Initialize the Aurelius v5.2 pipeline."""
     config = get_config()
     # Thread-safe environment variable application
@@ -77,17 +77,17 @@ def init():
     help="Use synthetic training data for demonstration purposes",
 )
 def screen(
-    smiles,
-    solvent,
-    salt,
-    ion,
-    temperature,
-    voltage,
-    cycles,
-    gwp,
-    use_real_models,
-    demo,
-):
+    smiles: str,
+    solvent: str,
+    salt: str,
+    ion: str,
+    temperature: float,
+    voltage: float,
+    cycles: int,
+    gwp: float,
+    use_real_models: bool,
+    demo: bool,
+) -> None:
     """Screen a single molecule through the full Aurelius v5.2 pipeline.
 
     By default, Tier 1 loads or trains on real experimental data (ESOL/QM9).
@@ -124,7 +124,7 @@ def screen(
 @click.option("--solvent", default="ec:dmc", help="Solvent type")
 @click.option("--salt", default="NaPF6", help="Salt type")
 @click.option("--output", type=click.Path(), help="Output JSON file")
-def batch(file, solvent, salt, output):
+def batch(file: str, solvent: str, salt: str, output: str | None) -> None:
     """Screen multiple molecules from a SMILES file (one per line)."""
     config = get_config()
     env_vars = config.apply_environment()
@@ -173,7 +173,7 @@ def batch(file, solvent, salt, output):
 @click.option("--salt", default="NaPF6", help="Salt type")
 @click.option("--ion", default="Na+", help="Ion type")
 @click.option("--gwp", default=1.0, help="Global Warming Potential")
-def score(smiles, solvent, salt, ion, gwp):
+def score(smiles: str, solvent: str, salt: str, ion: str, gwp: float) -> None:
     """Compute the Aurelius v5.2 score for a molecule (quick mode)."""
     config = get_config()
     env_vars = config.apply_environment()
@@ -201,7 +201,7 @@ def score(smiles, solvent, salt, ion, gwp):
 @click.option("--batch-size", type=int, default=16, help="Mini-batch size")
 @click.option("--learning-rate", type=float, default=0.005, help="Learning rate")
 @click.option("--csv-path", type=str, default=None, help="Path to local CSV file")
-def train(dataset, epochs, batch_size, learning_rate, csv_path):
+def train(dataset: str, epochs: int, batch_size: int, learning_rate: float, csv_path: str | None) -> None:
     """Train Tier 1 model on a dataset (esol or qm9).
 
     Wraps scripts/train_tier1.py as a native CLI subcommand.
@@ -220,7 +220,7 @@ def train(dataset, epochs, batch_size, learning_rate, csv_path):
 
 @cli.command("validate")
 @click.option("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to validate")
-def validate(smiles):
+def validate(smiles: str) -> None:
     """Run physics validation on a molecule.
 
     Wraps scripts/validate_physics.py as a native CLI subcommand.
@@ -234,7 +234,7 @@ def validate(smiles):
 
 
 @cli.command("status")
-def status():
+def status() -> None:
     """Show pipeline status and memory partition."""
     config = get_config()
     env_vars = config.apply_environment()
@@ -251,7 +251,7 @@ def status():
 @click.option("--tier", type=click.Choice(["1", "2"]), default=None, help="Benchmark only a specific tier (1 or 2). Omit for all tiers.")
 @click.option("--quick/--detailed", default=True, help="Quick mode with fewer repeats (default: enabled)")
 @click.option("--output", type=click.Path(), default=None, help="Save results to JSON file")
-def benchmark(tier, quick, output):
+def benchmark(tier: str | None, quick: bool, output: str | None) -> None:
     """Run hardware benchmark and validation.
 
     Verifies that the user's Apple Silicon hardware is properly

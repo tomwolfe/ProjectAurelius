@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
-import mlx.core as mx
 import numpy as np
 import pytest
 import torch
+
+try:
+    import mlx.core as mx
+    HAS_MLX = True
+except ImportError:
+    mx = None  # type: ignore
+    HAS_MLX = False
 
 from aurelius.config import M5ProConfig
 from aurelius.memory.manager import (

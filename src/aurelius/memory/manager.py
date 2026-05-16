@@ -102,7 +102,7 @@ class ZeroCopyMemoryManager:
     def _detect_total_ram() -> float:
         """Detect total system RAM in GB using psutil."""
         total_bytes = psutil.virtual_memory().total
-        return total_bytes / (1024 ** 3)
+        return float(total_bytes / (1024 ** 3))
 
     # ------------------------------------------------------------------
     # PyTorch 2.12 Accelerator API
@@ -205,7 +205,7 @@ class ZeroCopyMemoryManager:
         block_size = self.quant_config.bits
 
         try:
-            quantized_model = torch.ao.quantization.quantize_dynamic(
+            quantized_model = torch.ao.quantization.quantize_dynamic(  # type: ignore[no-untyped-call]
                 model,
                 {torch.nn.Linear},
                 dtype=torch.int8 if bits <= 4 else torch.uint8,
@@ -246,7 +246,7 @@ class ZeroCopyMemoryManager:
         total_params = sum(p.numel() for p in model.parameters())
         bytes_per_param = bits / 8.0
         footprint_bytes = total_params * bytes_per_param
-        return (footprint_bytes * 1.1) / (1024 ** 3)
+        return float((footprint_bytes * 1.1) / (1024 ** 3))
 
     # ------------------------------------------------------------------
     # Model Loading
@@ -304,7 +304,7 @@ class ZeroCopyMemoryManager:
     # Utility
     # ------------------------------------------------------------------
 
-    def get_memory_budget(self) -> dict:
+    def get_memory_budget(self) -> dict[str, Any]:
         """Report current memory allocation status."""
         remaining = self._total_ram_gb - self._memory_footprint_gb
         return {
@@ -330,12 +330,12 @@ class ZeroCopyMemoryManager:
                 self._params = np.zeros(1, dtype=np.float32)
 
             @property
-            def parameters(self):
+            def parameters(self) -> Any:
                 class ParamList:
-                    def __iter__(self):
+                    def __iter__(self) -> Any:
                         class Param:
                             def __init__(self) -> None:
-                                self.numel = lambda: 1
+                                self.numel: Any = lambda: 1
                         yield Param()
                 return ParamList()
 

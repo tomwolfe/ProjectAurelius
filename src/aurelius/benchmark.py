@@ -96,7 +96,7 @@ def _detect_hardware() -> HardwareInfo:
     try:
         import mlx
         info.has_mlx = True
-        info.mlx_version = mlx.__version__
+        info.mlx_version = mlx.__version__  # type: ignore[attr-defined]
     except ImportError:
         pass
 
@@ -121,10 +121,10 @@ def _benchmark_tier1_quick(repeats: int = 5, n_molecules: int = 100) -> Benchmar
         import mlx.core as mx
         import mlx.nn as nn
 
-        model = nn.Sequential(
-            nn.Linear(2048, 128),
-            nn.ReLU(),
-            nn.Linear(128, 1),
+        model = nn.Sequential(  # type: ignore[attr-defined]
+            nn.Linear(2048, 128),  # type: ignore[attr-defined]
+            nn.ReLU(),  # type: ignore[attr-defined]
+            nn.Linear(128, 1),  # type: ignore[attr-defined]
         )
         X_mx = mx.array(X)
 

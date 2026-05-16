@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import Any
 
 
-def validate_tier2() -> dict:
+def validate_tier2() -> dict[str, Any]:
     """Validate Tier 2 physics engine behavior."""
-    results = {"passed": 0, "failed": 0, "errors": []}
+    results: dict[str, Any] = {"passed": 0, "failed": 0, "errors": []}
 
     try:
         import torch
@@ -101,9 +102,9 @@ def validate_tier2() -> dict:
     return results
 
 
-def validate_tier3() -> dict:
+def validate_tier3() -> dict[str, Any]:
     """Validate Tier 3 Arrhenius kMC behavior."""
-    results = {"passed": 0, "failed": 0, "errors": []}
+    results: dict[str, Any] = {"passed": 0, "failed": 0, "errors": []}
 
     try:
         from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin
@@ -236,9 +237,9 @@ def validate_tier3() -> dict:
     return results
 
 
-def validate_solvation() -> dict:
+def validate_solvation() -> dict[str, Any]:
     """Validate solvation engine behavior."""
-    results = {"passed": 0, "failed": 0, "errors": []}
+    results: dict[str, Any] = {"passed": 0, "failed": 0, "errors": []}
 
     try:
         import numpy as np

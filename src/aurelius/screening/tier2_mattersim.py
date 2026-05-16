@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 # Force field parameter loading
 # ---------------------------------------------------------------------------
 
-def _load_force_field_params(path: str | None = None) -> dict:
+def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
     """Load force field parameters from JSON config.
 
     Args:
@@ -69,7 +69,7 @@ def _load_force_field_params(path: str | None = None) -> dict:
     )
     if os.path.isfile(ff_path):
         with open(ff_path) as f:
-            return json.load(f)
+            return json.load(f)  # type: ignore[no-any-return]
     return {}
 
 
@@ -338,7 +338,7 @@ class MatterSimMPEngine(nn.Module):
         # Readout: sum node features and project to energy
         h_readout = h.sum(dim=0)  # (hidden_dim,)
         energy = self.readout(h_readout).squeeze(-1)  # scalar
-        return energy
+        return energy  # type: ignore[no-any-return]
 
     def compute_forces(
         self,
@@ -440,7 +440,7 @@ class MatterSimMTSimulator:
         Priority: CUDA > MPS (Apple Silicon) > CPU.
         Returns the device string for PyTorch tensor placement.
         """
-        if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():
+        if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call]
             return "cuda"
 
         if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
@@ -758,7 +758,7 @@ class MatterSimMTSimulator:
             lj_total = torch.sum(lj_per_atom * cutoff_mask.float())
 
             coul_total = torch.zeros((), device=device)
-            qi = self._CHARGES.get(atomic_numbers[ion_idx].item(), 0.0)
+            qi = self._CHARGES.get(int(atomic_numbers[ion_idx].item()), 0.0)
 
             if qi != 0.0:
                 q_j_vals = torch.zeros(n_solvent, device=device, dtype=torch.float32)
