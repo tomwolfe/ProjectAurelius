@@ -49,6 +49,16 @@ env/
 # Build artifacts
 .metal_shader_cache/
 
+# Trained model weights (large binary files)
+models/
+*.npy
+
+# Local data files used for training
+esol.csv
+
+# Batch screening output
+discovery_results.json
+
 # OS
 .DS_Store
 Thumbs.db

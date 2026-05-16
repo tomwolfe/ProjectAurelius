@@ -606,8 +606,8 @@ def train_mlx(
         nn.Linear(128, 1),  # type: ignore[attr-defined]
     )
 
-    _optimizer = mx.optimizers.SGD(learning_rate=lr)  # type: ignore[attr-defined]
-    loss_fn = nn.MSELoss  # type: ignore[attr-defined]
+    def loss_fn(x, y):
+        return nn.losses.mse_loss(model(x), y, reduction="mean")  # type: ignore[attr-defined]
 
     X_train_mx = mx.array(X_train)
     y_train_mx = mx.array(y_train)
@@ -630,16 +630,25 @@ def train_mlx(
         for start in range(0, n_samples, batch_size):
             end = min(start + batch_size, n_samples)
             x_batch = X_shuffled[start:end]
-            y_batch = y_shuffled[start:end]
+            y_batch = y_shuffled[start:end].reshape(-1, 1)
 
             loss, grads = nn.value_and_grad(model, loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
-            model.apply_gradients(grads)
 
-        val_loss = float(loss_fn(model, X_val_mx, y_val_mx))
+            # Update model with gradients - nested structure: {'layers': [layer0, layer1, ...]}
+            grad_layers = grads['layers']
+            model_layers = model['layers']
+            for layer_idx, grad_layer in enumerate(grad_layers):
+                model_layer = model_layers[layer_idx]
+                for param_name in grad_layer.keys():
+                    grad_val = grad_layer[param_name]
+                    model_param = model_layer[param_name]
+                    model_layer[param_name] = model_param - lr * grad_val
+
+        val_loss = float(loss_fn(X_val_mx, y_val_mx.reshape(-1, 1)))
         history["val_loss"].append(val_loss)
 
         if (epoch + 1) % 20 == 0:
-            train_loss = float(loss_fn(model, X_train_mx, y_train_mx))
+            train_loss = float(loss_fn(X_train_mx, y_train_mx.reshape(-1, 1)))
             history["train_loss"].append(train_loss)
             print(f"[train_tier1] Epoch {epoch + 1}/{epochs}: "
                   f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
@@ -762,7 +771,7 @@ def train_main(
 
     # Save model
     save_path = save_path or os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        os.path.dirname(os.path.dirname(__file__)),
         "models",
         "tier1",
         f"{dataset}_solubility",

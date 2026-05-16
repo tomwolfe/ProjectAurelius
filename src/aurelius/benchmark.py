@@ -96,8 +96,9 @@ def _detect_hardware() -> HardwareInfo:
     try:
         import mlx
         info.has_mlx = True
-        info.mlx_version = mlx.__version__  # type: ignore[attr-defined]
-    except ImportError:
+        import importlib.metadata
+        info.mlx_version = importlib.metadata.version("mlx")
+    except (ImportError, Exception):
         pass
 
     # macOS version
