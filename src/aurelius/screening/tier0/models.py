@@ -336,3 +336,30 @@ if HAS_TORCH:
                         )
 
             self.load_state_dict(state_dict)
+
+
+else:
+
+    class MPNNEdgeBlock:  # type: ignore[misc, no-redef]
+        """Stub class when PyTorch is not available."""
+
+        def __init__(self, node_dim: int = 4, edge_dim: int = 8, hidden_dim: int = 64) -> None:
+            raise RuntimeError("PyTorch is required for MPNNEdgeBlock. Install with: pip install torch")
+
+    class MPNNReadoutMLP:  # type: ignore[misc, no-redef]
+        """Stub class when PyTorch is not available."""
+
+        def __init__(self, input_dim: int = 64, output_dim: int = 4, hidden_dim: int = 128) -> None:
+            raise RuntimeError("PyTorch is required for MPNNReadoutMLP. Install with: pip install torch")
+
+    class Tier0MPNN:  # type: ignore[misc, no-redef]
+        """Stub class when PyTorch is not available."""
+
+        def __init__(
+            self,
+            node_dim: int = 4,
+            edge_dim: int = 8,
+            hidden_dim: int = 64,
+            output_dim: int = 4,
+        ) -> None:
+            raise RuntimeError("PyTorch is required for Tier0MPNN. Install with: pip install torch")
