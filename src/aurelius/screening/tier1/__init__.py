@@ -1,24 +1,11 @@
-"""Phase 3: Tier 1 - MLX-NA (Neural Accelerator) Filter.
+"""Tier 1: MLX-NA Filter package.
 
-Backward-compatible re-export module. All implementation code has been
-refactored into submodules under screening/tier1/:
-
-    - models.py   -> _ChemVLM2MLP, _FallbackMLP, PyTorchFallbackFilter
-    - training.py -> train_on_esol, train_on_qm9, synthetic training helpers
-    - loaders.py  -> HuggingFaceWeightLoader, weight conversion utilities
-    - filter.py   -> MLXNAFilter class and fingerprint generation
-
-This file preserves the original public API for existing imports.
-
-References:
-    - ESOL dataset: Delaney, S. JACS 2004, 126(23), 7108-7109.
-    - QM9 dataset: Ramakrishnan et al. Sci. Data 2014, 1, 140035.
-    - Morgan fingerprints: Morgan, H. JChem. Doc. 1965, 5, 107-117.
+Accelerated molecular viability screening using pre-trained models
+loaded from Hugging Face Hub or locally trained on real datasets.
 """
 
 from __future__ import annotations
 
-# Re-export everything from the modular submodules
 from aurelius.screening.tier1.filter import (
     HAS_MLX,
     HAS_RDKIT,

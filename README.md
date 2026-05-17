@@ -65,13 +65,15 @@ Aurelius is a high-performance screening pipeline for battery electrolyte molecu
 
 ```
 Python >= 3.11
-torch >= 2.3.0          # Stable release; nightly pins avoided
-mlx >= 0.15.0           # Stable release; nightly pins avoided
-rdkit >= 2023.9.0
-numpy >= 1.26.0
-scipy >= 1.12.0
-huggingface-hub >= 0.20.0
-datasets >= 2.16.0
+numpy >= 1.26.0          # Core dependency
+scipy >= 1.12.0          # Core dependency
+psutil >= 5.9.0          # Core dependency (RAM detection)
+
+# Optional (install via .[apple], .[ml], .[chem])
+torch >= 2.3.0           # .[ml] group
+torchvision >= 0.17.0    # .[ml] group
+mlx >= 0.15.0            # .[apple] group
+rdkit >= 2023.9.0        # .[chem] group
 ```
 
 ## Installation
@@ -83,9 +85,42 @@ cd ProjectAurelius
 
 # Install in development mode
 pip install -e ".[dev]"
+```
 
-# Optional: configure persistent environment variables for advanced usage
-./setup_env.sh
+### Optional Dependencies
+
+Aurelius splits large framework dependencies into optional groups to
+keep the base install lightweight and allow installation on constrained
+platforms (Linux CPU-only, Windows, etc.).
+
+| Group | Dependencies | Use Case |
+|-------|-------------|----------|
+| `apple` | `mlx>=0.15.0` | Apple Silicon Neural Engine acceleration |
+| `ml` | `torch>=2.3.0`, `torchvision>=0.17.0` | PyTorch-based Tier 2/3 physics |
+| `chem` | `rdkit>=2023.9.0` | RDKit molecular fingerprints and descriptors |
+
+**Recommended full installation:**
+
+```bash
+pip install -e ".[dev,apple,ml,chem]"
+```
+
+**Apple Silicon (recommended):**
+
+```bash
+pip install -e ".[dev,apple,ml,chem]"
+```
+
+**Linux/Windows (CPU-only):**
+
+```bash
+pip install -e ".[dev,ml,chem]"
+```
+
+**Minimal (no ML frameworks):**
+
+```bash
+pip install -e ".[dev]"
 ```
 
 > **Note:** Environment variables (`PYTORCH_MPS_ENABLE_ASYNC_COMPILATION`, `MLX_MAX_MEM_CACHE`) are automatically set on first import via `aurelius.config.initialize_environment()`. The `setup_env.sh` script is only needed for persistent shell-level configuration (e.g., cluster environments, long-running services).
@@ -228,24 +263,34 @@ MatterSim-MT uses **fully vectorized tensor operations** for pairwise interactio
 ProjectAurelius/
 ├── src/aurelius/
 │   ├── screening/
-│   │   ├── tier1_mlx_filter.py    # MLX-NA Filter (SchNet/MLP)
-│   │   ├── tier2_mattersim.py     # MatterSim-MT physics engine
-│   │   └── tier3_gcmtwin.py       # GCMD Digital Twin
+│   │   ├── tier1/
+│   │   │   ├── __init__.py     # Re-exports
+│   │   │   ├── models.py       # _ChemVLM2MLP, _FallbackMLP, PyTorchFallbackFilter
+│   │   │   ├── training.py     # train_on_esol, train_on_qm9
+│   │   │   ├── loaders.py      # HuggingFaceWeightLoader, weight conversion
+│   │   │   └── filter.py       # MLXNAFilter, fingerprint generation
+│   │   ├── tier0/
+│   │   │   ├── __init__.py     # Re-exports
+│   │   │   ├── models.py       # Tier0MPNN, MPNNEdgeBlock, MPNNReadoutMLP
+│   │   │   ├── data.py         # _build_molecular_graph, generate_synthetic_training_data, train_tier0_model
+│   │   │   └── predictor.py    # Tier0ActivationPredictor, _LinearFallbackPredictor
+│   │   ├── tier2_mattersim.py  # MatterSim-MT physics engine
+│   │   └── tier3_gcmtwin.py    # GCMD Digital Twin
 │   ├── solvation/
-│   │   └── engine.py              # MWSE solvation engine (GBSA)
+│   │   └── engine.py           # MWSE solvation engine (GBSA)
 │   ├── scoring/
-│   │   └── engine.py              # Aurelius Score computation
-│   ├── bridge.py                  # Zero-copy MLX<->PyTorch bridging
-│   ├── config.py                  # Dynamic memory configuration
-│   └── pipeline.py                # Pipeline orchestrator
+│   │   └── engine.py           # Aurelius Score computation
+│   ├── bridge.py               # Zero-copy MLX<->PyTorch bridging
+│   ├── config.py               # Dynamic memory configuration
+│   └── pipeline.py             # Pipeline orchestrator
 ├── scripts/
-│   ├── train_tier1.py             # Train Tier 1 on ESOL/QM9
-│   └── download_data.py           # Download datasets from HF Hub
+│   ├── train_tier1.py          # Train Tier 1 on ESOL/QM9
+│   └── download_data.py        # Download datasets from HF Hub
 ├── benchmarks/
-│   ├── benchmark_tier1.py         # MLX vs PyTorch vs CPU
-│   └── benchmark_tier2.py         # Vectorized vs loop physics
+│   ├── benchmark_tier1.py      # MLX vs PyTorch vs CPU
+│   └── benchmark_tier2.py      # Vectorized vs loop physics
 ├── tests/
-│   └── test_aurelius.py           # Physics-based validation tests
+│   └── test_aurelius.py        # Physics-based validation tests
 └── pyproject.toml
 ```
 

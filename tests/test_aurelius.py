@@ -19,7 +19,7 @@ from aurelius.memory.manager import (
     ZeroCopyMemoryManager,
 )
 from aurelius.scoring.engine import AureliusScoringEngine
-from aurelius.screening.tier1_mlx_filter import MLXNAFilter
+from aurelius.screening.tier1 import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMPEngine, MatterSimMTSimulator
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig
 from aurelius.solvation.engine import MWSESolvationEngine
@@ -222,7 +222,7 @@ class TestMLXNAFilter:
 
     def test_fingerprint_generation(self):
         """Test that ECFP4 fingerprints are generated correctly."""
-        from aurelius.screening.tier1_mlx_filter import _generate_ecfp4_fingerprint
+        from aurelius.screening.tier1.filter import _generate_ecfp4_fingerprint
 
         smiles = "CC(=O)OC1=CC(=O)O1"
         fp = _generate_ecfp4_fingerprint(smiles)
@@ -232,7 +232,7 @@ class TestMLXNAFilter:
 
     def test_fingerprint_deterministic(self):
         """Fingerprint generation must be deterministic."""
-        from aurelius.screening.tier1_mlx_filter import _generate_ecfp4_fingerprint
+        from aurelius.screening.tier1.filter import _generate_ecfp4_fingerprint
 
         smiles = "C1=CC(=O)OC1"
         fp1 = _generate_ecfp4_fingerprint(smiles)
@@ -828,7 +828,7 @@ class TestShapeCompatibility:
         """Verify ECFP4 fingerprint (2048-bit) bridges correctly to PyTorch."""
         if not torch:
             pytest.skip("PyTorch not available")
-        from aurelius.screening.tier1_mlx_filter import _generate_ecfp4_fingerprint
+        from aurelius.screening.tier1.filter import _generate_ecfp4_fingerprint
 
         smiles = "CC(=O)OC1=CC(=O)O1"
         fp = _generate_ecfp4_fingerprint(smiles)
@@ -1118,7 +1118,7 @@ class TestRealModelIntegration:
 
     def test_hf_weight_loader_exists(self):
         """Verify HuggingFaceWeightLoader class exists."""
-        from aurelius.screening.tier1_mlx_filter import HuggingFaceWeightLoader
+        from aurelius.screening.tier1.loaders import HuggingFaceWeightLoader
 
         loader = HuggingFaceWeightLoader()
         assert loader is not None
@@ -1127,7 +1127,7 @@ class TestRealModelIntegration:
 
     def test_real_model_filter_creation(self):
         """Verify MLXNAFilter can be created with use_real_models=True."""
-        from aurelius.screening.tier1_mlx_filter import MLXNAFilter
+        from aurelius.screening.tier1 import MLXNAFilter
 
         # Should work without training on init
         f = MLXNAFilter(quantization_format="MX4", use_real_models=True, train_on_init=False)
@@ -1136,14 +1136,14 @@ class TestRealModelIntegration:
 
     def test_demo_mode_filter_creation(self):
         """Verify MLXNAFilter works in demo (synthetic) mode."""
-        from aurelius.screening.tier1_mlx_filter import MLXNAFilter
+        from aurelius.screening.tier1 import MLXNAFilter
 
         f = MLXNAFilter(quantization_format="MX4", use_real_models=False, train_on_init=False)
         assert f._use_real_models is False
 
     def test_screening_produces_viability_score(self):
         """Verify that screening produces meaningful viability scores."""
-        from aurelius.screening.tier1_mlx_filter import MLXNAFilter
+        from aurelius.screening.tier1 import MLXNAFilter
 
         f = MLXNAFilter(quantization_format="MX4", use_real_models=True, train_on_init=False)
         result = f.screen_molecule("CCO")  # ethanol
@@ -1155,7 +1155,7 @@ class TestRealModelIntegration:
 
     def test_ecfp4_fingerprint_properties(self):
         """Verify ECFP4 fingerprints have correct properties."""
-        from aurelius.screening.tier1_mlx_filter import _generate_ecfp4_fingerprint
+        from aurelius.screening.tier1.filter import _generate_ecfp4_fingerprint
 
         smiles = "CC(=O)OC1=CC(=O)O1"
         fp = _generate_ecfp4_fingerprint(smiles)
@@ -1169,13 +1169,13 @@ class TestRealModelIntegration:
 
     def test_esol_training_function_exists(self):
         """Verify train_on_esol function exists and is callable."""
-        from aurelius.screening.tier1_mlx_filter import train_on_esol
+        from aurelius.screening.tier1.training import train_on_esol
 
         assert callable(train_on_esol)
 
     def test_qm9_training_function_exists(self):
         """Verify train_on_qm9 function exists and is callable."""
-        from aurelius.screening.tier1_mlx_filter import train_on_qm9
+        from aurelius.screening.tier1.training import train_on_qm9
 
         assert callable(train_on_qm9)
 
@@ -1266,7 +1266,7 @@ class TestTier0MPNN:
 
     def test_tier0_gnn_model_exists(self):
         """Verify Tier0MPNN GNN model class exists and is trainable."""
-        from aurelius.screening.tier0_gnn import Tier0MPNN
+        from aurelius.screening.tier0.models import Tier0MPNN
 
         model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
         assert model is not None
@@ -1276,7 +1276,7 @@ class TestTier0MPNN:
 
     def test_tier0_gnn_save_load_weights(self, tmp_path):
         """Verify Tier0MPNN GNN can save and load weights."""
-        from aurelius.screening.tier0_gnn import Tier0MPNN
+        from aurelius.screening.tier0.models import Tier0MPNN
 
         model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
         weight_path = str(tmp_path / "tier0_gnn_weights.pth")
@@ -1292,7 +1292,7 @@ class TestTier0MPNN:
 
     def test_tier0_activation_predictor_linear_fallback(self):
         """Verify Tier0ActivationPredictor works with linear fallback (no GNN)."""
-        from aurelius.screening.tier0_gnn import Tier0ActivationPredictor
+        from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
 
         predictor = Tier0ActivationPredictor()
         assert predictor._use_gnn is False
@@ -1306,7 +1306,8 @@ class TestTier0MPNN:
 
     def test_tier0_activation_predictor_gnn_available(self):
         """Verify Tier0ActivationPredictor uses GNN when model is provided."""
-        from aurelius.screening.tier0_gnn import Tier0ActivationPredictor, Tier0MPNN
+        from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
+        from aurelius.screening.tier0.models import Tier0MPNN
 
         predictor = Tier0ActivationPredictor()
         gnn_model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
@@ -1318,7 +1319,7 @@ class TestTier0MPNN:
 
     def test_mpnn_edge_block_exists(self):
         """Verify MPNNEdgeBlock class exists."""
-        from aurelius.screening.tier0_gnn import MPNNEdgeBlock
+        from aurelius.screening.tier0.models import MPNNEdgeBlock
 
         block = MPNNEdgeBlock(node_dim=4, edge_dim=0, hidden_dim=64)
         assert block is not None
@@ -1327,7 +1328,7 @@ class TestTier0MPNN:
 
     def test_mpnn_readout_mlp_exists(self):
         """Verify MPNNReadoutMLP class exists."""
-        from aurelius.screening.tier0_gnn import MPNNReadoutMLP
+        from aurelius.screening.tier0.models import MPNNReadoutMLP
 
         readout = MPNNReadoutMLP(input_dim=64, output_dim=4, hidden_dim=128)
         assert readout is not None
@@ -1566,7 +1567,7 @@ class TestRDKitFallbackWarnings:
 
     def test_hash_fallback_uses_json_params(self):
         """Verify hash fallback loads parameters from force_field_params.json."""
-        from aurelius.screening.tier1_mlx_filter import _hash_fallback
+        from aurelius.screening.tier1.filter import _hash_fallback
 
         fp = _hash_fallback("CCO")
         assert fp.shape == (2048,)
@@ -1578,7 +1579,7 @@ class TestRDKitFallbackWarnings:
 
     def test_hash_fallback_deterministic(self):
         """Verify hash fallback produces deterministic results."""
-        from aurelius.screening.tier1_mlx_filter import _hash_fallback
+        from aurelius.screening.tier1.filter import _hash_fallback
 
         fp1 = _hash_fallback("CC(=O)OC1=CC(=O)O1")
         fp2 = _hash_fallback("CC(=O)OC1=CC(=O)O1")
@@ -1586,7 +1587,7 @@ class TestRDKitFallbackWarnings:
 
     def test_different_smiles_different_fallback(self):
         """Verify different SMILES produce different hash fallbacks."""
-        from aurelius.screening.tier1_mlx_filter import _hash_fallback
+        from aurelius.screening.tier1.filter import _hash_fallback
 
         fp_ethanol = _hash_fallback("CCO")
         fp_acetic = _hash_fallback("CC(=O)O")
@@ -1654,7 +1655,7 @@ class TestPyTorchFallbackFilter:
 
     def test_pytorch_fallback_filter_exists(self):
         """Verify PyTorchFallbackFilter class exists and is trainable."""
-        from aurelius.screening.tier1_mlx_filter import PyTorchFallbackFilter
+        from aurelius.screening.tier1.models import PyTorchFallbackFilter
 
         model = PyTorchFallbackFilter()
         assert model is not None
@@ -1664,7 +1665,7 @@ class TestPyTorchFallbackFilter:
 
     def test_pytorch_fallback_filter_inference(self):
         """Verify PyTorch fallback filter produces valid inference output."""
-        from aurelius.screening.tier1_mlx_filter import PyTorchFallbackFilter
+        from aurelius.screening.tier1.models import PyTorchFallbackFilter
 
         model = PyTorchFallbackFilter()
         fp = np.random.randn(2048).astype(np.float32)
@@ -1676,14 +1677,14 @@ class TestPyTorchFallbackFilter:
 
     def test_convert_mlx_to_torch_weights_empty_on_missing_dir(self):
         """Verify convert_mlx_to_torch_weights returns empty dict for missing directory."""
-        from aurelius.screening.tier1_mlx_filter import convert_mlx_to_torch_weights
+        from aurelius.screening.tier1.loaders import convert_mlx_to_torch_weights
 
         result = convert_mlx_to_torch_weights("/nonexistent/path")
         assert result == {}
 
     def test_convert_mlx_to_torch_weights_valid(self, tmp_path):
         """Verify convert_mlx_to_torch_weights correctly loads .npy files."""
-        from aurelius.screening.tier1_mlx_filter import convert_mlx_to_torch_weights
+        from aurelius.screening.tier1.loaders import convert_mlx_to_torch_weights
 
         # Create mock MLX weight files
         W1 = np.random.randn(2048, 128).astype(np.float32)
@@ -1708,7 +1709,7 @@ class TestPyTorchFallbackFilter:
 
     def test_convert_mlx_to_torch_weights_shape_mismatch(self, tmp_path):
         """Verify convert_mlx_to_torch_weights returns empty dict on shape mismatch."""
-        from aurelius.screening.tier1_mlx_filter import convert_mlx_to_torch_weights
+        from aurelius.screening.tier1.loaders import convert_mlx_to_torch_weights
 
         # Create weight files with wrong shape
         W1 = np.random.randn(1024, 64).astype(np.float32)  # Wrong shape
@@ -1719,7 +1720,8 @@ class TestPyTorchFallbackFilter:
 
     def test_mlxna_filter_uses_pytorch_fallback_without_mlx(self):
         """Verify MLXNAFilter instantiates PyTorch fallback when MLX is unavailable."""
-        from aurelius.screening.tier1_mlx_filter import HAS_MLX, MLXNAFilter, PyTorchFallbackFilter
+        from aurelius.screening.tier1 import HAS_MLX, MLXNAFilter
+        from aurelius.screening.tier1.models import PyTorchFallbackFilter
 
         if HAS_MLX:
             pytest.skip("MLX is available; testing PyTorch fallback requires MLX absence")
@@ -1731,7 +1733,7 @@ class TestPyTorchFallbackFilter:
 
     def test_screening_works_without_mlx(self):
         """Verify screening pipeline works when MLX is unavailable."""
-        from aurelius.screening.tier1_mlx_filter import HAS_MLX, MLXNAFilter
+        from aurelius.screening.tier1 import HAS_MLX, MLXNAFilter
 
         if HAS_MLX:
             pytest.skip("MLX is available; testing fallback requires MLX absence")

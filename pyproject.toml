@@ -13,12 +13,9 @@ authors = [
     {name = "Thomas Wolfe", email = "tomwolfe@gmail.com"}
 ]
 dependencies = [
-    # Pinned to stable releases; nightly pins are avoided for reproducibility.
-    "torch>=2.3.0",
-    "mlx>=0.15.0",
+    # Core dependencies available on all platforms
     "numpy>=1.26.0",
     "scipy>=1.12.0",
-    "torchvision>=0.17.0",
     "pandas>=2.2.0",
     "pydantic>=2.8.0",
     "tqdm>=4.66.0",
@@ -26,12 +23,21 @@ dependencies = [
     "click>=8.1.0",
     "structlog>=24.1.0",
     "psutil>=5.9.0",
-    "rdkit>=2023.9.0",
     "huggingface-hub>=0.20.0",
     "datasets>=2.16.0",
 ]
 
 [project.optional-dependencies]
+apple = [
+    "mlx>=0.15.0",
+]
+ml = [
+    "torch>=2.3.0",
+    "torchvision>=0.17.0",
+]
+chem = [
+    "rdkit>=2023.9.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.1.0",
@@ -50,6 +56,8 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "aurelius.data" = ["force_field_params.json"]
+"aurelius.screening.tier1" = ["*.py"]
+"aurelius.screening.tier0" = ["*.py"]
 
 [tool.ruff]
 line-length = 120

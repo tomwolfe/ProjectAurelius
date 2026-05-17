@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import psutil
 
 
-@dataclass(frozen=True, init=False)
+@dataclass
 class M5ProConfig:
     """Dynamic memory configuration for Apple M-series chips.
 
@@ -30,8 +30,9 @@ class M5ProConfig:
     tiered allocations accordingly. User-provided non-zero values
     override computed defaults.
 
-    Uses a __new__ constructor pattern to set all fields before
-    __init__ runs, eliminating the need for __setattr__ workarounds.
+    Uses a standard mutable @dataclass with __post_init__ validation.
+    Dynamic RAM detection via psutil runs in __post_init__ after all
+    fields are initialized by the dataclass __init__.
     """
 
     # Dynamically set from psutil at construction time
@@ -76,46 +77,20 @@ class M5ProConfig:
     use_neighbor_list: bool = False
     neighbor_list_cutoff: float = 12.0
 
-    def __new__(
-        cls,
-        *,
-        total_memory_gb: float = 0.0,
-        mlx_max_mem_gb: float = 0.0,
-        metal_shader_cache_gb: float = 0.0,
-        pytorch_mps_async: bool = True,
-        turquant_max_context: int = 8192,
-        desolvation_barrier_threshold_eV: float = 0.5,
-        kex_screening_window_ps: float = 10.0,
-        weight_sigma: float = 0.3,
-        weight_desolvation_barrier: float = 0.2,
-        weight_sei_homogeneity: float = 0.2,
-        weight_mx_synthesis_score: float = 0.2,
-        weight_gwp: float = 0.1,
-        chemvlm_quantization: str = "MX4",
-        mattersim_quantization: str = "MX4",
-        gcmd_quantization: str = "standard",
-        tier1_mlxfilter_enabled: bool = True,
-        tier2_mattersim_enabled: bool = True,
-        tier3_gcmtwin_enabled: bool = True,
-        use_neighbor_list: bool = False,
-        neighbor_list_cutoff: float = 12.0,
-    ) -> M5ProConfig:
-        """Compute dynamic memory allocations during construction.
+    def __post_init__(self) -> None:
+        """Compute dynamic memory allocations after dataclass initialization.
 
         Detects system RAM via psutil and computes MLX / shader cache
         allocations. User-provided non-zero values override computed
-        defaults. All fields are set via object.__setattr__ once at
-        construction time, before __init__ runs.
+        defaults.
         """
-        instance = object.__new__(cls)
-
         # Detect total system RAM
         total_bytes = psutil.virtual_memory().total
         total_gb = total_bytes / (1024 ** 3)
 
         # Use user override if provided
-        if total_memory_gb > 0:
-            total_gb = total_memory_gb
+        if self.total_memory_gb > 0:
+            total_gb = self.total_memory_gb
 
         # MLX: 50% of RAM, capped at 12GB
         mlx_alloc = min(total_gb * 0.5, 12.0)
@@ -124,32 +99,11 @@ class M5ProConfig:
         shader_alloc = min(total_gb * 0.1, 2.0)
 
         # Only apply computed defaults when user hasn't provided non-zero values
-        final_mlx = mlx_alloc if mlx_max_mem_gb == 0.0 else mlx_max_mem_gb
-        final_shader = shader_alloc if metal_shader_cache_gb == 0.0 else metal_shader_cache_gb
-
-        # Set all fields at construction time
-        object.__setattr__(instance, "total_memory_gb", round(total_gb, 1))
-        object.__setattr__(instance, "mlx_max_mem_gb", round(final_mlx, 1))
-        object.__setattr__(instance, "metal_shader_cache_gb", round(final_shader, 1))
-        object.__setattr__(instance, "pytorch_mps_async", pytorch_mps_async)
-        object.__setattr__(instance, "turquant_max_context", turquant_max_context)
-        object.__setattr__(instance, "desolvation_barrier_threshold_eV", desolvation_barrier_threshold_eV)
-        object.__setattr__(instance, "kex_screening_window_ps", kex_screening_window_ps)
-        object.__setattr__(instance, "weight_sigma", weight_sigma)
-        object.__setattr__(instance, "weight_desolvation_barrier", weight_desolvation_barrier)
-        object.__setattr__(instance, "weight_sei_homogeneity", weight_sei_homogeneity)
-        object.__setattr__(instance, "weight_mx_synthesis_score", weight_mx_synthesis_score)
-        object.__setattr__(instance, "weight_gwp", weight_gwp)
-        object.__setattr__(instance, "chemvlm_quantization", chemvlm_quantization)
-        object.__setattr__(instance, "mattersim_quantization", mattersim_quantization)
-        object.__setattr__(instance, "gcmd_quantization", gcmd_quantization)
-        object.__setattr__(instance, "tier1_mlxfilter_enabled", tier1_mlxfilter_enabled)
-        object.__setattr__(instance, "tier2_mattersim_enabled", tier2_mattersim_enabled)
-        object.__setattr__(instance, "tier3_gcmtwin_enabled", tier3_gcmtwin_enabled)
-        object.__setattr__(instance, "use_neighbor_list", use_neighbor_list)
-        object.__setattr__(instance, "neighbor_list_cutoff", neighbor_list_cutoff)
-
-        return instance
+        object.__setattr__(self, "total_memory_gb", round(total_gb, 1))
+        if self.mlx_max_mem_gb == 0.0:
+            object.__setattr__(self, "mlx_max_mem_gb", round(mlx_alloc, 1))
+        if self.metal_shader_cache_gb == 0.0:
+            object.__setattr__(self, "metal_shader_cache_gb", round(shader_alloc, 1))
 
     def apply_environment(self) -> dict[str, str]:
         """Return environment variables to set (thread-safe).

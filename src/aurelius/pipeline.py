@@ -35,7 +35,7 @@ from aurelius.memory.manager import (
     ZeroCopyMemoryManager,
 )
 from aurelius.scoring.engine import AureliusScoringEngine
-from aurelius.screening.tier1_mlx_filter import MLXNAFilter
+from aurelius.screening.tier1 import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig  # type: ignore[attr-defined]
 from aurelius.solvation.engine import MWSESolvationEngine

@@ -21,8 +21,9 @@ from aurelius.memory.manager import (
 from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.engine import AureliusScoringEngine
+from aurelius.screening.tier0 import MPNNEdgeBlock, MPNNReadoutMLP
 from aurelius.screening.tier0_gnn import Tier0ActivationPredictor, Tier0MPNN
-from aurelius.screening.tier1_mlx_filter import MLXNAFilter
+from aurelius.screening.tier1 import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin
 from aurelius.types import (
@@ -57,6 +58,8 @@ __all__ = [
     "SEIEvolution",
     "Tier0ActivationPredictor",
     "Tier0MPNN",
+    "MPNNEdgeBlock",
+    "MPNNReadoutMLP",
     "Tier2Result",
     "ZeroCopyMemoryManager",
     "apply_global_config",
