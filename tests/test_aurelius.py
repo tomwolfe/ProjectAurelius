@@ -252,7 +252,12 @@ class TestMLXNAFilter:
         params_list = list(params)
         for i in (0, 2):
             p = params_list[i]
-            p_np = np.array(p) if HAS_MLX and isinstance(p, mx.array) else p
+            if HAS_MLX and isinstance(p, mx.array):
+                p_np = np.array(p)
+            elif hasattr(p, "detach"):
+                p_np = np.array(p.detach())
+            else:
+                p_np = p
             assert np.any(np.abs(p_np) > 1e-10), "Model weights should have non-zero values"
 
 

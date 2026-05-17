@@ -87,9 +87,9 @@ def _build_molecular_graph(
 
     # Ensure hydrogens are added for proper feature extraction
     mol_with_h = Chem.AddHs(mol)
-    Chem.EmbedMolecule(mol_with_h, randomSeed=42)
+    Chem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined]
 
-    atoms = mol_with_h.GetAtoms()
+    atoms = mol_with_h.GetAtoms()  # type: ignore[no-untyped-call]
     n_atoms = mol_with_h.GetNumAtoms()
 
     # Node features: [atomic_number, degree, formal_charge, is_aromatic]
@@ -224,7 +224,7 @@ class MPNNEdgeBlock(nn.Module):
         node_updates = self.node_mlp(node_input)  # (N_nodes, node_dim)
 
         # Residual connection + LayerNorm
-        return self.norm(node_features + node_updates)
+        return self.norm(node_features + node_updates)  # type: ignore[no-any-return]
 
 
 class MPNNReadoutMLP(nn.Module):
@@ -275,8 +275,8 @@ class MPNNReadoutMLP(nn.Module):
             Predicted activation energies (batch_size, output_dim) or (output_dim,).
         """
         if pooled.dim() == 1:
-            return self.network(pooled)
-        return self.network(pooled)
+            return self.network(pooled)  # type: ignore[no-any-return, unused-ignore]
+        return self.network(pooled)  # type: ignore[no-any-return, unused-ignore]
 
 
 class Tier0MPNN(nn.Module):
@@ -361,12 +361,12 @@ class Tier0MPNN(nn.Module):
         n_nodes = node_features.shape[0]
 
         if n_nodes == 0:
-            return torch.zeros(self.readout.network[-1].out_features, device=node_features.device)
+            return torch.zeros(self.readout.network[-1].out_features, device=node_features.device)  # type: ignore[no-any-return, call-overload]
 
         if edge_index.shape[1] == 0:
             # No edges: use node features directly
             pooled = node_features.sum(dim=0)
-            return self.readout(pooled)
+            return self.readout(pooled)  # type: ignore[no-any-return, unused-ignore]
 
         # Compute initial edge features
         src_idx = edge_index[0]
@@ -385,7 +385,7 @@ class Tier0MPNN(nn.Module):
         pooled = h.sum(dim=0)
 
         # Readout
-        return self.readout(pooled)
+        return self.readout(pooled)  # type: ignore[no-any-return, unused-ignore]
 
     def save_weights(self, path: str) -> None:
         """Save model weights to file along with metadata.
@@ -574,14 +574,14 @@ def generate_synthetic_training_data(
     for smi in valid_smiles:
         mol = Chem.MolFromSmiles(smi)
         mol_with_h = Chem.AddHs(mol)
-        Chem.EmbedMolecule(mol_with_h, randomSeed=42)
+        Chem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined]
 
         # Compute descriptors
-        logp = float(Descriptors.MolLogP(mol_with_h))
-        hba = int(Descriptors.NumHAcceptors(mol_with_h))
-        hbd = int(Descriptors.NumHDonors(mol_with_h))
-        tpsa = float(Descriptors.TPSA(mol_with_h))
-        aromatic_count = sum(1 for a in mol_with_h.GetAtoms() if a.GetIsAromatic())
+        logp = float(Descriptors.MolLogP(mol_with_h))  # type: ignore[attr-defined]
+        hba = int(Descriptors.NumHAcceptors(mol_with_h))  # type: ignore[attr-defined]
+        hbd = int(Descriptors.NumHDonors(mol_with_h))  # type: ignore[attr-defined]
+        tpsa = float(Descriptors.TPSA(mol_with_h))  # type: ignore[attr-defined]
+        aromatic_count = sum(1 for a in mol_with_h.GetAtoms() if a.GetIsAromatic())  # type: ignore[misc, no-untyped-call]
         aromatic_ratio = aromatic_count / max(mol_with_h.GetNumAtoms(), 1)
 
         # Literature-calibrated activation energies (deterministic, no noise)
@@ -668,7 +668,7 @@ def train_tier0_model(
                 raise ValueError(f"CSV file '{train_csv_path}' appears to be empty or has no headers.")
 
             # Validate schema
-            actual_columns = set(reader.fieldnames)  # type: ignore[union-attr]
+            actual_columns = set(reader.fieldnames)
             missing_columns = required_columns - actual_columns
             if missing_columns:
                 raise ValueError(
@@ -936,7 +936,7 @@ class Tier0ActivationPredictor:
                 - pf6_decomposition: Salt decomposition Ea (eV)
                 - polymerization: Polymerization Ea (eV)
         """
-        if self._use_gnn and smiles is not None:
+        if self._use_gnn and smiles is not None and self._gnn_model is not None:
             try:
                 nf, ei = _build_molecular_graph(smiles)
                 with torch.no_grad():

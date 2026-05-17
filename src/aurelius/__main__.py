@@ -472,7 +472,8 @@ def hf_upload(
 
     # Authenticate
     try:
-        api.login(add_to_git_credential=True)
+        from huggingface_hub import login as hf_login
+        hf_login(add_to_git_credential=True)
     except Exception as e:
         click.echo(f"[ERROR] HuggingFace authentication failed: {e}", err=True)
         click.echo("Ensure HF_TOKEN is set in your environment or run 'huggingface-cli login'.", err=True)
@@ -504,19 +505,7 @@ def hf_upload(
         "qm9": "qm9_energy",
     }
 
-    model_card = ModelCard(
-        ModelCardData(
-            language="en",
-            license="mit",
-            pipeline_tag="regression",
-            tags=[
-                "aurelius",
-                "battery-electrolyte",
-                "molecular-screening",
-                task_descriptions_short.get(task, task),
-            ],
-        )
-    )
+    model_card = ModelCard("# Aurelius Model")
     model_card.content = f"""# Aurelius Model: {task_descriptions.get(task, task)}
 
 ## Model Description
@@ -548,8 +537,8 @@ aurelius train --task {task}
 
     # Save README.md to model directory
     readme_path = os.path.join(model_dir, "README.md")
-    with open(readme_path, "w") as f:
-        f.write(model_card.content)
+    with open(readme_path, "w") as readme_file:
+        readme_file.write(model_card.content)
     click.echo(f"  Generated README.md at {readme_path}")
 
     # Upload folder

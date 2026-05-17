@@ -261,14 +261,13 @@ class GCMDigitalTwin:
 
         # Tier 0 activation energy predictor (optional)
         self._use_tier0_prediction = use_tier0_prediction
+        self._tier0_predictor: Tier0ActivationPredictor | None = None
         if use_tier0_prediction:
-            from aurelius.screening.tier0_gnn import Tier0ActivationPredictor
+            from aurelius.screening.tier0_gnn import Tier0ActivationPredictor as _Tier0Predictor
 
-            self._tier0_predictor: Tier0ActivationPredictor = Tier0ActivationPredictor(
+            self._tier0_predictor = _Tier0Predictor(  # type: ignore[assignment]
                 model_path=tier0_model_path,
             )
-        else:
-            self._tier0_predictor = None
 
         # Pre-exponential factors (1/ps) at standard conditions
         self._A_SOLVENT_BASE = self._pre_exponential_factors.get("solvent", 5.0)

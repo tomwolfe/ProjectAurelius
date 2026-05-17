@@ -43,11 +43,11 @@ except ImportError:
 
 try:
     import torch
-    import torch.nn as nn
+    import torch.nn as torch_nn
     HAS_TORCH = True
 except ImportError:
     torch = None  # type: ignore
-    nn = None  # type: ignore
+    torch_nn = None  # type: ignore
     HAS_TORCH = False
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ class _FallbackMLP:
         return [self.W1, self.b1, self.W2, self.b2]
 
 
-class PyTorchFallbackFilter(nn.Module):
+class PyTorchFallbackFilter(torch_nn.Module):
     """PyTorch-based MLP fallback replicating the ChemVLM2MLP architecture.
 
     Provides a 2-layer MLP (2048->128->1) using torch.nn when MLX is
@@ -228,18 +228,18 @@ class PyTorchFallbackFilter(nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
 
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_dim, 1)
+        self.fc1 = torch_nn.Linear(input_dim, hidden_dim)
+        self.relu = torch_nn.ReLU()
+        self.fc2 = torch_nn.Linear(hidden_dim, 1)
 
         self._init_weights()
 
     def _init_weights(self) -> None:
         """Initialize all weights using Xavier uniform initialization."""
-        nn.init.xavier_uniform_(self.fc1.weight)
-        nn.init.zeros_(self.fc1.bias)
-        nn.init.xavier_uniform_(self.fc2.weight)
-        nn.init.zeros_(self.fc2.bias)
+        torch_nn.init.xavier_uniform_(self.fc1.weight)
+        torch_nn.init.zeros_(self.fc1.bias)
+        torch_nn.init.xavier_uniform_(self.fc2.weight)
+        torch_nn.init.zeros_(self.fc2.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through the 2-layer MLP.
@@ -1151,7 +1151,7 @@ class MLXNAFilter:
         y_val_split = y_train[perm[n_samples - n_val :]]
 
         model = PyTorchFallbackFilter()
-        criterion = nn.MSELoss()
+        criterion = torch_nn.MSELoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
         best_val_loss = float("inf")

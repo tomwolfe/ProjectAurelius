@@ -13,9 +13,9 @@ try:
 
     HAS_RDKIT = True
 except ImportError:
-    HAS_RDKIT = False  # type: ignore[assignment]
-    Chem = None  # type: ignore
-    Descriptors = None  # type: ignore
+    HAS_RDKIT = False
+    Chem = None  # type: ignore[assignment]
+    Descriptors = None  # type: ignore[assignment]
 
 import numpy as np
 
@@ -35,7 +35,7 @@ def _generate_molecular_descriptors(smiles: str) -> dict[str, float]:
         Dictionary of descriptor name -> value.
     """
     if HAS_RDKIT:
-        mol = Chem.MolFromSmiles(smiles)  # type: ignore[union-attr]
+        mol = Chem.MolFromSmiles(smiles)
         if mol is not None:
             return {
                 "mw": float(Descriptors.MolWt(mol)),  # type: ignore[attr-defined]
@@ -44,7 +44,7 @@ def _generate_molecular_descriptors(smiles: str) -> dict[str, float]:
                 "hbd": int(Descriptors.NumHDonors(mol)),  # type: ignore[attr-defined]
                 "tpsa": float(Descriptors.TPSA(mol)),  # type: ignore[attr-defined]
                 "rot_bonds": int(Descriptors.NumRotatableBonds(mol)),  # type: ignore[attr-defined]
-                "aromatic_ratio": float(sum(1 for a in mol.GetAtoms() if a.GetIsAromatic()) / max(mol.GetNumAtoms(), 1)),
+                "aromatic_ratio": float(sum(1 for a in mol.GetAtoms() if a.GetIsAromatic()) / max(mol.GetNumAtoms(), 1)),  # type: ignore[misc, no-untyped-call]
                 "heavy_atom_count": float(Descriptors.HeavyAtomCount(mol)),  # type: ignore[no-untyped-call]
             }
 
