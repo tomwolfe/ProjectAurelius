@@ -20,14 +20,14 @@ try:
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
-    torch = None  # type: ignore[assignment]
+    torch = None  # type: ignore[assignment, unused-ignore]
 
 try:
     import mlx.core as mx
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
-    mx = None  # type: ignore[assignment]
+    mx = None  # type: ignore[assignment, unused-ignore]
 
 
 @dataclass
@@ -205,7 +205,7 @@ class ZeroCopyMemoryManager:
         block_size = self.quant_config.bits
 
         try:
-            quantized_model = torch.ao.quantization.quantize_dynamic(  # type: ignore[no-untyped-call]
+            quantized_model = torch.ao.quantization.quantize_dynamic(  # type: ignore[no-untyped-call, unused-ignore]
                 model,
                 {torch.nn.Linear},
                 dtype=torch.int8 if bits <= 4 else torch.uint8,

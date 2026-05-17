@@ -44,8 +44,8 @@ try:
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
-    torch = None  # type: ignore[assignment]
-    nn = None  # type: ignore[assignment]
+    torch = None  # type: ignore[assignment, unused-ignore]
+    nn = None  # type: ignore[assignment, unused-ignore]
 
 if TYPE_CHECKING:
     pass
@@ -79,7 +79,8 @@ def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
 
 
 if HAS_TORCH:
-    class ContinuousFilterConv1d(nn.Module):
+
+    class ContinuousFilterConv1d(nn.Module):  # type: ignore[misc]
         """Continuous-filter 1D convolution for SchNet-style message passing.
 
         Applies a distance-dependent filter to edge features in a
@@ -149,7 +150,7 @@ if HAS_TORCH:
             return h_new
 
 
-    class ContinuousFilterConv1dBatched(nn.Module):
+    class ContinuousFilterConv1dBatched(nn.Module):  # type: ignore[misc]
         """Batched version of continuous-filter convolution.
 
         Handles (B, N, hidden_dim) inputs with (B, N, N) distances.
@@ -198,7 +199,7 @@ if HAS_TORCH:
             return h_new
 
 
-    class SchNetInteractionBlock(nn.Module):
+    class SchNetInteractionBlock(nn.Module):  # type: ignore[misc]
         """SchNet interaction block with continuous-filter convolution.
 
         Combines distance-based message passing with readout for
@@ -243,7 +244,7 @@ if HAS_TORCH:
             return h
 
 
-    class MatterSimMPEngine(nn.Module):
+    class MatterSimMPEngine(nn.Module):  # type: ignore[misc]
         """SchNet-style physics engine for MatterSim on Apple Silicon MPS.
 
         Processes real geometric graph networks with explicit 3D atomic
@@ -340,7 +341,7 @@ if HAS_TORCH:
             # Readout: sum node features and project to energy
             h_readout = h.sum(dim=0)  # (hidden_dim,)
             energy = self.readout(h_readout).squeeze(-1)  # scalar
-            return energy  # type: ignore[no-any-return]
+            return energy  # type: ignore[no-any-return, unused-ignore]
 
         def compute_forces(
             self,
@@ -458,7 +459,7 @@ class MatterSimMTSimulator:
         Priority: CUDA > MPS (Apple Silicon) > CPU.
         Returns the device string for PyTorch tensor placement.
         """
-        if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call]
+        if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
             return "cuda"
 
         if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():

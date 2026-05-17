@@ -27,10 +27,11 @@ try:
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
-    torch = None  # type: ignore[assignment]
-    nn = None  # type: ignore[assignment]
+    torch = None  # type: ignore[assignment, unused-ignore]
+    nn = None  # type: ignore[assignment, unused-ignore]
 
-from aurelius.screening.tier0.models import Tier0MPNN
+if HAS_TORCH:
+    from aurelius.screening.tier0.models import Tier0MPNN
 
 
 def _build_molecular_graph(
@@ -69,9 +70,9 @@ def _build_molecular_graph(
         raise ValueError(f"Invalid SMILES: {smiles}")
 
     mol_with_h = Chem.AddHs(mol)
-    Chem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined]
+    Chem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
 
-    atoms = mol_with_h.GetAtoms()  # type: ignore[no-untyped-call]
+    atoms = mol_with_h.GetAtoms()  # type: ignore[no-untyped-call, unused-ignore]
     n_atoms = mol_with_h.GetNumAtoms()
 
     node_features = torch.zeros(n_atoms, 4, dtype=torch.float32, device=device)
@@ -196,13 +197,13 @@ def generate_synthetic_training_data(
     for smi in valid_smiles:
         mol = Chem.MolFromSmiles(smi)
         mol_with_h = Chem.AddHs(mol)
-        Chem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined]
+        Chem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
 
-        logp = float(Descriptors.MolLogP(mol_with_h))  # type: ignore[attr-defined]
-        hba = int(Descriptors.NumHAcceptors(mol_with_h))  # type: ignore[attr-defined]
-        hbd = int(Descriptors.NumHDonors(mol_with_h))  # type: ignore[attr-defined]
-        tpsa = float(Descriptors.TPSA(mol_with_h))  # type: ignore[attr-defined]
-        aromatic_count = sum(1 for a in mol_with_h.GetAtoms() if a.GetIsAromatic())  # type: ignore[no-untyped-call, misc]
+        logp = float(Descriptors.MolLogP(mol_with_h))  # type: ignore[attr-defined, unused-ignore]
+        hba = int(Descriptors.NumHAcceptors(mol_with_h))  # type: ignore[attr-defined, unused-ignore]
+        hbd = int(Descriptors.NumHDonors(mol_with_h))  # type: ignore[attr-defined, unused-ignore]
+        tpsa = float(Descriptors.TPSA(mol_with_h))  # type: ignore[attr-defined, unused-ignore]
+        aromatic_count = sum(1 for a in mol_with_h.GetAtoms() if a.GetIsAromatic())  # type: ignore[no-untyped-call, misc, unused-ignore]
         aromatic_ratio = aromatic_count / max(mol_with_h.GetNumAtoms(), 1)
 
         ec_base = 0.65 + 0.08 * logp - 0.02 * hba - 0.03 * hbd - 0.003 * tpsa + 0.15 * aromatic_ratio

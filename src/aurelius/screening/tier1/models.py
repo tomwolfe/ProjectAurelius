@@ -25,8 +25,8 @@ try:
     import mlx.core as mx
     HAS_MLX = True
 except ImportError:
-    mx = None  # type: ignore[assignment]
     HAS_MLX = False
+    mx = None  # type: ignore[assignment, unused-ignore]
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -49,8 +49,8 @@ try:
     import torch.nn as torch_nn
     HAS_TORCH = True
 except ImportError:
-    torch = None  # type: ignore[assignment]
-    torch_nn = None  # type: ignore[assignment]
+    torch = None  # type: ignore[assignment, unused-ignore]
+    torch_nn = None  # type: ignore[assignment, unused-ignore]
     HAS_TORCH = False
 
 try:
@@ -173,7 +173,8 @@ class _FallbackMLP:
 
 
 if HAS_TORCH:
-    class PyTorchFallbackFilter(torch_nn.Module):
+
+    class PyTorchFallbackFilter(torch_nn.Module):  # type: ignore[misc]
         """PyTorch-based MLP fallback replicating the ChemVLM2MLP architecture.
 
         Provides a 2-layer MLP (2048->128->1) using torch.nn when MLX is

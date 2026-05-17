@@ -26,13 +26,13 @@ try:
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
-    torch = None  # type: ignore[assignment]
-    nn = None  # type: ignore[assignment]
+    torch = None  # type: ignore[assignment, unused-ignore]
+    nn = None  # type: ignore[assignment, unused-ignore]
 
 
 if HAS_TORCH:
 
-    class MPNNEdgeBlock(nn.Module):
+    class MPNNEdgeBlock(nn.Module):  # type: ignore[misc]
         """2-layer message passing block for molecular graphs.
 
         Implements edge-based message passing with:
@@ -121,9 +121,9 @@ if HAS_TORCH:
             node_input = torch.cat([node_features, aggregated], dim=-1)
             node_updates = self.node_mlp(node_input)
 
-            return self.norm(node_features + node_updates)  # type: ignore[no-any-return]
+            return self.norm(node_features + node_updates)  # type: ignore[no-any-return, unused-ignore]
 
-    class MPNNReadoutMLP(nn.Module):
+    class MPNNReadoutMLP(nn.Module):  # type: ignore[misc]
         """Readout MLP for MPNN.
 
         Takes pooled node embeddings and produces output predictions
@@ -168,10 +168,10 @@ if HAS_TORCH:
                 Predicted activation energies (batch_size, output_dim) or (output_dim,).
             """
             if pooled.dim() == 1:
-                return self.network(pooled)  # type: ignore[no-any-return]
-            return self.network(pooled)  # type: ignore[no-any-return]
+                return self.network(pooled)  # type: ignore[no-any-return, unused-ignore]
+            return self.network(pooled)  # type: ignore[no-any-return, unused-ignore]
 
-    class Tier0MPNN(nn.Module):
+    class Tier0MPNN(nn.Module):  # type: ignore[misc]
         """Lightweight Message Passing Neural Network for activation energy prediction.
 
         Takes a molecular graph (node features + edge index) and predicts
@@ -250,11 +250,11 @@ if HAS_TORCH:
             n_nodes = node_features.shape[0]
 
             if n_nodes == 0:
-                return torch.zeros(self.readout.network[-1].out_features, device=node_features.device)  # type: ignore[call-overload, no-any-return]
+                return torch.zeros(self.readout.network[-1].out_features, device=node_features.device)  # type: ignore[call-overload, no-any-return, unused-ignore]
 
             if edge_index.shape[1] == 0:
                 pooled = node_features.sum(dim=0)
-                return self.readout(pooled)  # type: ignore[no-any-return]
+                return self.readout(pooled)  # type: ignore[no-any-return, unused-ignore]
 
             src_idx = edge_index[0]
             tgt_idx = edge_index[1]
@@ -269,7 +269,7 @@ if HAS_TORCH:
 
             pooled = h.sum(dim=0)
 
-            return self.readout(pooled)  # type: ignore[no-any-return]
+            return self.readout(pooled)  # type: ignore[no-any-return, unused-ignore]
 
         def save_weights(self, path: str) -> None:
             """Save model weights to file along with metadata.

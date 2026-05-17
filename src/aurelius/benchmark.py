@@ -119,10 +119,10 @@ def _benchmark_tier1_quick(repeats: int = 5, n_molecules: int = 100) -> Benchmar
         import mlx.core as mx
         import mlx.nn as nn
 
-        model = nn.Sequential(  # type: ignore[attr-defined]
-            nn.Linear(2048, 128),  # type: ignore[attr-defined]
-            nn.ReLU(),  # type: ignore[attr-defined]
-            nn.Linear(128, 1),  # type: ignore[attr-defined]
+        model = nn.Sequential(  # type: ignore[attr-defined, unused-ignore]
+            nn.Linear(2048, 128),  # type: ignore[attr-defined, unused-ignore]
+            nn.ReLU(),  # type: ignore[attr-defined, unused-ignore]
+            nn.Linear(128, 1),  # type: ignore[attr-defined, unused-ignore]
         )
         X_mx = mx.array(X)
 

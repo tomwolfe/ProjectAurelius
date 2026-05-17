@@ -45,8 +45,8 @@ try:
     import mlx.core as mx
     HAS_MLX = True
 except ImportError:
-    mx = None  # type: ignore[assignment]
     HAS_MLX = False
+    mx = None  # type: ignore[assignment, unused-ignore]
 
 try:
     from rdkit import Chem
@@ -60,8 +60,8 @@ try:
     import torch.nn as torch_nn
     HAS_TORCH = True
 except ImportError:
-    torch = None  # type: ignore[assignment]
-    torch_nn = None  # type: ignore[assignment]
+    torch = None  # type: ignore[assignment, unused-ignore]
+    torch_nn = None  # type: ignore[assignment, unused-ignore]
     HAS_TORCH = False
 
 
@@ -324,7 +324,7 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
                 f"using hash fallback. This fingerprint is NOT chemically valid."
             )
             return _hash_fallback(smiles)
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined]
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined, unused-ignore]
         bit_list = fp.ToList()
         arr = np.array(bit_list, dtype=np.float32)
         if len(arr) < 2048:

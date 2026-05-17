@@ -23,7 +23,7 @@ try:
     import torch
     HAS_TORCH = True
 except ImportError:
-    torch = None  # type: ignore[assignment]
+    torch = None  # type: ignore[assignment, unused-ignore]
     HAS_TORCH = False
 
 

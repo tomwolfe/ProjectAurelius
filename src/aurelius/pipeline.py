@@ -18,14 +18,14 @@ try:
     import mlx.core as mx
     HAS_MLX = True
 except ImportError:
-    mx = None  # type: ignore[assignment]
     HAS_MLX = False
+    mx = None  # type: ignore[assignment, unused-ignore]
 
 try:
     import torch
     HAS_TORCH = True
 except ImportError:
-    torch = None  # type: ignore[assignment]
+    torch = None  # type: ignore[assignment, unused-ignore]
     HAS_TORCH = False
 
 from aurelius.config import M5ProConfig, apply_global_config
@@ -296,7 +296,7 @@ class AureliusPipeline:
         if self.has_torch:
             if torch.backends.mps.is_available():
                 torch.mps.empty_cache()
-            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call]
+            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
                 torch.cuda.empty_cache()
 
         # Tier 3: GCMD Digital Twin
@@ -323,7 +323,7 @@ class AureliusPipeline:
         if self.has_torch:
             if torch.backends.mps.is_available():
                 torch.mps.empty_cache()
-            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call]
+            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
                 torch.cuda.empty_cache()
 
         # Final consolidated score compilation

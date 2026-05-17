@@ -14,8 +14,8 @@ try:
     HAS_RDKIT = True
 except ImportError:
     HAS_RDKIT = False
-    Chem = None  # type: ignore[assignment]
-    Descriptors = None  # type: ignore[assignment]
+    Chem = None  # type: ignore[assignment, unused-ignore]
+    Descriptors = None  # type: ignore[assignment, unused-ignore]
 
 import numpy as np
 
@@ -38,14 +38,14 @@ def _generate_molecular_descriptors(smiles: str) -> dict[str, float]:
         mol = Chem.MolFromSmiles(smiles)
         if mol is not None:
             return {
-                "mw": float(Descriptors.MolWt(mol)),  # type: ignore[attr-defined]
-                "logp": float(Descriptors.MolLogP(mol)),  # type: ignore[attr-defined]
-                "hba": int(Descriptors.NumHAcceptors(mol)),  # type: ignore[attr-defined]
-                "hbd": int(Descriptors.NumHDonors(mol)),  # type: ignore[attr-defined]
-                "tpsa": float(Descriptors.TPSA(mol)),  # type: ignore[attr-defined]
-                "rot_bonds": int(Descriptors.NumRotatableBonds(mol)),  # type: ignore[attr-defined]
-                "aromatic_ratio": float(sum(1 for a in mol.GetAtoms() if a.GetIsAromatic()) / max(mol.GetNumAtoms(), 1)),  # type: ignore[unused-ignore, misc, no-untyped-call]
-                "heavy_atom_count": float(Descriptors.HeavyAtomCount(mol)),  # type: ignore[no-untyped-call]
+                "mw": float(Descriptors.MolWt(mol)),  # type: ignore[attr-defined, unused-ignore]
+                "logp": float(Descriptors.MolLogP(mol)),  # type: ignore[attr-defined, unused-ignore]
+                "hba": int(Descriptors.NumHAcceptors(mol)),  # type: ignore[attr-defined, unused-ignore]
+                "hbd": int(Descriptors.NumHDonors(mol)),  # type: ignore[attr-defined, unused-ignore]
+                "tpsa": float(Descriptors.TPSA(mol)),  # type: ignore[attr-defined, unused-ignore]
+                "rot_bonds": int(Descriptors.NumRotatableBonds(mol)),  # type: ignore[attr-defined, unused-ignore]
+                "aromatic_ratio": float(sum(1 for a in mol.GetAtoms() if a.GetIsAromatic()) / max(mol.GetNumAtoms(), 1)),  # type: ignore[no-untyped-call, misc, unused-ignore]
+                "heavy_atom_count": float(Descriptors.HeavyAtomCount(mol)),  # type: ignore[no-untyped-call, unused-ignore]
             }
 
     return _hash_descriptors(smiles)

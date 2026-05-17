@@ -23,14 +23,14 @@ try:
     import mlx.core as mx
     HAS_MLX = True
 except ImportError:
-    mx = None  # type: ignore[assignment]
     HAS_MLX = False
+    mx = None  # type: ignore[assignment, unused-ignore]
 
 try:
     import torch
     HAS_TORCH = True
 except ImportError:
-    torch = None  # type: ignore[assignment]
+    torch = None  # type: ignore[assignment, unused-ignore]
     HAS_TORCH = False
 
 # Runtime error messages for graceful degradation
@@ -84,12 +84,12 @@ def bridge_mlx_to_pytorch(mlx_array: mx.array) -> torch.Tensor:
 
     # Export the MLX array memory view into a DLPack capsule
     try:
-        capsule = mx.to_dlpack(mlx_array)  # type: ignore[attr-defined]
+        capsule = mx.to_dlpack(mlx_array)  # type: ignore[attr-defined, unused-ignore]
     except AttributeError as err:
         raise AttributeError(_DLPACK_UNSUPPORTED_MSG) from err
 
     # Consume the capsule natively inside PyTorch
-    torch_tensor = torch.from_dlpack(capsule)  # type: ignore[attr-defined]
+    torch_tensor = torch.from_dlpack(capsule)  # type: ignore[attr-defined, unused-ignore]
 
     # Preserve the device from the source MLX array's underlying storage.
     # MLX arrays on Apple Silicon map to MPS in PyTorch; on CPU, they
@@ -127,17 +127,17 @@ def bridge_pytorch_to_mlx(torch_tensor: torch.Tensor) -> mx.array:
 
     # Export the PyTorch tensor memory view into a DLPack capsule
     try:
-        capsule = torch.utils.dlpack.to_dlpack(torch_tensor)  # type: ignore[attr-defined]
+        capsule = torch.utils.dlpack.to_dlpack(torch_tensor)  # type: ignore[attr-defined, unused-ignore]
     except AttributeError as err:
         raise AttributeError(_TORCH_DLPACK_UNSUPPORTED_MSG) from err
 
     # Consume the capsule natively inside MLX
     try:
-        mlx_array = mx.from_dlpack(capsule)  # type: ignore[attr-defined]
+        mlx_array = mx.from_dlpack(capsule)  # type: ignore[attr-defined, unused-ignore]
     except AttributeError as err:
         raise AttributeError(_DLPACK_UNSUPPORTED_MSG) from err
 
-    return mlx_array  # type: ignore[no-any-return]
+    return mlx_array  # type: ignore[no-any-return, unused-ignore]
 
 
 class CrossFrameworkBridge:
