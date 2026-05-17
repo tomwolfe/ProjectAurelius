@@ -39,8 +39,8 @@ from aurelius.constants import COULOMB_EV_A
 from aurelius.types import DesolvationPathResult, Tier2Result
 
 try:
-    import torch
-    import torch.nn as nn
+    import torch  # type: ignore[import-not-found, unused-ignore]
+    import torch.nn as nn  # type: ignore[import-not-found, unused-ignore]
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
@@ -80,7 +80,7 @@ def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
 
 if HAS_TORCH:
 
-    class ContinuousFilterConv1d(nn.Module):
+    class ContinuousFilterConv1d(nn.Module):  # type: ignore[misc, unused-ignore]
         """Continuous-filter 1D convolution for SchNet-style message passing.
 
         Applies a distance-dependent filter to edge features in a
@@ -150,7 +150,7 @@ if HAS_TORCH:
             return h_new
 
 
-    class ContinuousFilterConv1dBatched(nn.Module):
+    class ContinuousFilterConv1dBatched(nn.Module):  # type: ignore[misc, unused-ignore]
         """Batched version of continuous-filter convolution.
 
         Handles (B, N, hidden_dim) inputs with (B, N, N) distances.
@@ -199,7 +199,7 @@ if HAS_TORCH:
             return h_new
 
 
-    class SchNetInteractionBlock(nn.Module):
+    class SchNetInteractionBlock(nn.Module):  # type: ignore[misc, unused-ignore]
         """SchNet interaction block with continuous-filter convolution.
 
         Combines distance-based message passing with readout for
@@ -244,7 +244,7 @@ if HAS_TORCH:
             return h
 
 
-    class MatterSimMPEngine(nn.Module):
+    class MatterSimMPEngine(nn.Module):  # type: ignore[misc, unused-ignore]
         """SchNet-style physics engine for MatterSim on Apple Silicon MPS.
 
         Processes real geometric graph networks with explicit 3D atomic
@@ -364,6 +364,33 @@ if HAS_TORCH:
                 create_graph=True, only_inputs=True,
             )[0]
             return -forces  # Force = -gradient of energy
+
+
+else:
+
+    class ContinuousFilterConv1d:  # type: ignore[no-redef]
+        """Stub class when PyTorch is not available."""
+
+        def __init__(self, input_dim: int, output_dim: int, num_filters: int = 32) -> None:
+            raise RuntimeError("PyTorch is required for ContinuousFilterConv1d. Install with: pip install torch")
+
+    class ContinuousFilterConv1dBatched:  # type: ignore[no-redef]
+        """Stub class when PyTorch is not available."""
+
+        def __init__(self, input_dim: int, output_dim: int, num_filters: int = 32) -> None:
+            raise RuntimeError("PyTorch is required for ContinuousFilterConv1dBatched. Install with: pip install torch")
+
+    class SchNetInteractionBlock:  # type: ignore[no-redef]
+        """Stub class when PyTorch is not available."""
+
+        def __init__(self, hidden_dim: int = 128, num_filters: int = 32) -> None:
+            raise RuntimeError("PyTorch is required for SchNetInteractionBlock. Install with: pip install torch")
+
+    class MatterSimMPEngine:  # type: ignore[no-redef]
+        """Stub class when PyTorch is not available."""
+
+        def __init__(self, hidden_dim: int = 128, num_filters: int = 32) -> None:
+            raise RuntimeError("PyTorch is required for MatterSimMPEngine. Install with: pip install torch")
 
 
 class MatterSimMTSimulator:

@@ -45,8 +45,8 @@ HUGGINGFACE_MODELS: dict[str, str] = {
 }
 
 try:
-    import torch
-    import torch.nn as torch_nn
+    import torch  # type: ignore[import-not-found, unused-ignore]
+    import torch.nn as torch_nn  # type: ignore[import-not-found, unused-ignore]
     HAS_TORCH = True
 except ImportError:
     torch = None  # type: ignore[assignment, unused-ignore]
@@ -174,7 +174,7 @@ class _FallbackMLP:
 
 if HAS_TORCH:
 
-    class PyTorchFallbackFilter(torch_nn.Module):
+    class PyTorchFallbackFilter(torch_nn.Module):  # type: ignore[misc, unused-ignore]
         """PyTorch-based MLP fallback replicating the ChemVLM2MLP architecture.
 
         Provides a 2-layer MLP (2048->128->1) using torch.nn when MLX is

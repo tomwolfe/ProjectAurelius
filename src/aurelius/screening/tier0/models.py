@@ -21,8 +21,8 @@ import os
 from typing import Any
 
 try:
-    import torch
-    import torch.nn as nn
+    import torch  # type: ignore[import-not-found, unused-ignore]
+    import torch.nn as nn  # type: ignore[import-not-found, unused-ignore]
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
@@ -32,7 +32,7 @@ except ImportError:
 
 if HAS_TORCH:
 
-    class MPNNEdgeBlock(nn.Module):
+    class MPNNEdgeBlock(nn.Module):  # type: ignore[misc, unused-ignore]
         """2-layer message passing block for molecular graphs.
 
         Implements edge-based message passing with:
@@ -123,7 +123,7 @@ if HAS_TORCH:
 
             return self.norm(node_features + node_updates)  # type: ignore[no-any-return, unused-ignore]
 
-    class MPNNReadoutMLP(nn.Module):
+    class MPNNReadoutMLP(nn.Module):  # type: ignore[misc, unused-ignore]
         """Readout MLP for MPNN.
 
         Takes pooled node embeddings and produces output predictions
@@ -171,7 +171,7 @@ if HAS_TORCH:
                 return self.network(pooled)  # type: ignore[no-any-return, unused-ignore]
             return self.network(pooled)  # type: ignore[no-any-return, unused-ignore]
 
-    class Tier0MPNN(nn.Module):
+    class Tier0MPNN(nn.Module):  # type: ignore[misc, unused-ignore]
         """Lightweight Message Passing Neural Network for activation energy prediction.
 
         Takes a molecular graph (node features + edge index) and predicts
