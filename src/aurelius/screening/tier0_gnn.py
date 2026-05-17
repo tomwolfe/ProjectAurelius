@@ -50,7 +50,9 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 
-def _build_molecular_graph(smiles: str) -> tuple[torch.Tensor, torch.Tensor]:
+def _build_molecular_graph(
+    smiles: str, device: str = "cpu",
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Build a molecular graph from a SMILES string.
 
     Uses RDKit to extract atomic features and adjacency information,
@@ -59,11 +61,12 @@ def _build_molecular_graph(smiles: str) -> tuple[torch.Tensor, torch.Tensor]:
 
     Args:
         smiles: SMILES string of the molecule.
+        device: PyTorch device for tensor placement (default: "cpu").
 
     Returns:
         Tuple of (node_features, edge_index).
-        - node_features: (N_nodes, N_features) tensor
-        - edge_index: (2, N_edges) tensor of source/target node indices
+        - node_features: (N_nodes, N_features) tensor on the specified device
+        - edge_index: (2, N_edges) tensor on the specified device
 
     Raises:
         RuntimeError: If RDKit is not available.
@@ -93,7 +96,7 @@ def _build_molecular_graph(smiles: str) -> tuple[torch.Tensor, torch.Tensor]:
 
     # Node features: [atomic_number, degree, formal_charge, is_aromatic]
     # Normalize atomic number to [0, 1] range (max Z ~ 100)
-    node_features = torch.zeros(n_atoms, 4, dtype=torch.float32)
+    node_features = torch.zeros(n_atoms, 4, dtype=torch.float32, device=device)
     for i, atom in enumerate(atoms):
         node_features[i, 0] = atom.GetAtomicNum() / 100.0
         node_features[i, 1] = atom.GetDegree() / 10.0
@@ -110,9 +113,9 @@ def _build_molecular_graph(smiles: str) -> tuple[torch.Tensor, torch.Tensor]:
                 edge_list.append((j, i))  # Bidirectional for undirected graph
 
     if edge_list:
-        edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
+        edge_index = torch.tensor(edge_list, dtype=torch.long, device=device).t().contiguous()
     else:
-        edge_index = torch.empty((2, 0), dtype=torch.long)
+        edge_index = torch.empty((2, 0), dtype=torch.long, device=device)
 
     return node_features, edge_index
 
@@ -387,20 +390,83 @@ class Tier0MPNN(nn.Module):
         return self.readout(pooled)
 
     def save_weights(self, path: str) -> None:
-        """Save model weights to file.
+        """Save model weights to file along with metadata.
+
+        Saves the model state dict and a metadata.json containing
+        model_version, architecture info, and tensor shapes for
+        integrity verification on load.
 
         Args:
             path: File path to save weights (state dict).
         """
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         torch.save(self.state_dict(), path)
 
+        # Save metadata alongside the weights file
+        meta_path = path.rsplit(".", 1)[0] + "_metadata.json"
+        shape_info: dict[str, list[int]] = {}
+        for name, tensor in self.state_dict().items():
+            shape_info[name] = list(tensor.shape)
+
+        meta = {
+            "model_version": __import__("importlib").metadata.version("aurelius"),
+            "architecture": "Tier0MPNN",
+            "node_dim": self.node_dim,
+            "edge_dim": self.edge_dim,
+            "hidden_dim": self.hidden_dim,
+            "output_dim": self.readout.network[-1].out_features,
+            "tensor_shapes": shape_info,
+        }
+        with open(meta_path, "w") as f:
+            json.dump(meta, f, indent=2)
+
     def load_weights(self, path: str) -> None:
-        """Load model weights from file.
+        """Load model weights from file with shape validation.
+
+        Compares the loaded tensor shapes against the current model
+        architecture and warns if they differ. Also checks model
+        version against the installed package version.
 
         Args:
             path: File path to load weights from.
         """
+        try:
+            import importlib
+            current_version = importlib.metadata.version("aurelius")
+        except Exception:
+            current_version = "unknown"
+
+        # Load metadata if available
+        meta_path = path.rsplit(".", 1)[0] + "_metadata.json"
+        metadata: dict[str, Any] = {}
+        if os.path.isfile(meta_path):
+            with open(meta_path) as f:
+                metadata = json.load(f)
+
+        # Version check
+        saved_version = metadata.get("model_version", "unknown")
+        if saved_version != "unknown" and current_version != "unknown":
+            if saved_version != current_version:
+                print(
+                    f"[Tier0MPNN] WARNING: Model version ({saved_version}) does not match "
+                    f"installed package version ({current_version}). "
+                    "Consider retraining with `aurelius train --task tier0`."
+                )
+
+        # Load state dict
         state_dict = torch.load(path, map_location="cpu", weights_only=True)
+
+        # Shape validation: compare loaded tensor shapes with current model
+        for name, loaded_tensor in state_dict.items():
+            if hasattr(self, name) and hasattr(getattr(self, name), "shape"):
+                current_tensor = getattr(self, name)
+                if loaded_tensor.shape != current_tensor.shape:
+                    print(
+                        f"[Tier0MPNN] WARNING: Shape mismatch for '{name}': "
+                        f"loaded {list(loaded_tensor.shape)} vs current model {list(current_tensor.shape)}. "
+                        "The model may not function correctly."
+                    )
+
         self.load_state_dict(state_dict)
 
 
@@ -598,10 +664,24 @@ def train_tier0_model(
 
     # Generate or load training data
     if train_csv_path:
-        # Load from CSV
+        # Load from CSV with schema validation
+        required_columns = {"smiles", "ec_reduction", "dm_reduction", "pf6_decomposition", "polymerization"}
         training_data: list[dict[str, Any]] = []
+
         with open(train_csv_path) as f:
             reader = csv.DictReader(f)
+            if reader.fieldnames is None:
+                raise ValueError(f"CSV file '{train_csv_path}' appears to be empty or has no headers.")
+
+            # Validate schema
+            actual_columns = set(reader.fieldnames)  # type: ignore[union-attr]
+            missing_columns = required_columns - actual_columns
+            if missing_columns:
+                raise ValueError(
+                    f"CSV file '{train_csv_path}' is missing required columns: {sorted(missing_columns)}. "
+                    f"Required columns: {sorted(required_columns)}."
+                )
+
             for row in reader:
                 training_data.append({
                     "smiles": row["smiles"],
@@ -623,13 +703,13 @@ def train_tier0_model(
     targets_list: list[torch.Tensor] = []
 
     for entry in training_data:
-        nf, ei = _build_molecular_graph(entry["smiles"])
+        nf, ei = _build_molecular_graph(entry["smiles"], device=device)
         target = torch.tensor([
             entry["ec_reduction"],
             entry["dm_reduction"],
             entry["pf6_decomposition"],
             entry["polymerization"],
-        ], dtype=torch.float32)
+        ], dtype=torch.float32, device=device)
         node_features_list.append(nf)
         edge_index_list.append(ei)
         targets_list.append(target)
@@ -832,6 +912,15 @@ class Tier0ActivationPredictor:
                           "Falling back to linear predictor.")
                     self._gnn_model = None
                     self._use_gnn = False
+        elif model_path is None or not os.path.isfile(model_path):
+            if model_path is not None:
+                print(f"[Tier0] WARNING: Model path '{model_path}' is invalid or file not found. "
+                      "Loading default linear predictor. For better accuracy, train via "
+                      "`aurelius train --task tier0`.")
+            else:
+                print("[Tier0] WARNING: No model path provided. "
+                      "Loading default linear predictor. For better accuracy, train via "
+                      "`aurelius train --task tier0`.")
 
         # Always keep the linear predictor as fallback
         self._linear_predictor = _LinearFallbackPredictor()

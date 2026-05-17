@@ -5,6 +5,12 @@ activation energy prediction, cutoff-aware neighbor lists, and
 HuggingFace integration, optimized for Apple M-series Neural Accelerators.
 """
 
+from __future__ import annotations
+
+from importlib import metadata
+
+__version__: str = metadata.version("aurelius")
+
 from aurelius import bridge
 from aurelius.config import M5ProConfig, apply_global_config, get_config, initialize_environment
 from aurelius.memory.manager import (
@@ -33,6 +39,7 @@ from aurelius.types import (
 initialize_environment()
 
 __all__ = [
+    "__version__",
     "AureliusPipeline",
     "AureliusScoreResult",
     "DesolvationPathResult",

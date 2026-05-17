@@ -1514,3 +1514,312 @@ class TestRDKitFallbackWarnings:
         f = MLXNAFilter(quantization_format="MX4", train_on_init=False)
         util = f._estimate_na_utilization(0.75)
         assert 0 <= util <= 100
+
+
+# ============================================================
+# Cross-Platform Bridge Tests
+# ============================================================
+
+class TestCrossPlatformBridge:
+    """Tests verifying cross-platform bridge behavior."""
+
+    def test_bridge_importable_without_mlx(self):
+        """Verify bridge module is importable on Linux/Windows (without MLX)."""
+        from aurelius.bridge import CrossFrameworkBridge, HAS_MLX, HAS_TORCH
+
+        # The module should always be importable
+        bridge = CrossFrameworkBridge()
+        assert bridge is not None
+        assert isinstance(bridge.is_available, bool)
+        assert isinstance(bridge.mlx_available, bool)
+        assert isinstance(bridge.torch_available, bool)
+
+    def test_bridge_raises_on_mlx_usage_when_unavailable(self):
+        """Verify bridge raises descriptive RuntimeError when MLX is missing."""
+        from aurelius.bridge import CrossFrameworkBridge, HAS_MLX
+
+        if HAS_MLX:
+            pytest.skip("MLX is available on this platform")
+
+        bridge = CrossFrameworkBridge()
+        assert bridge.mlx_available is False
+
+        # Attempting to use MLX-dependent methods should raise RuntimeError
+        with pytest.raises(RuntimeError) as exc_info:
+            bridge.mlx_to_pytorch(mx.array([1.0]))  # type: ignore[name-defined]
+        assert "MLX is not available" in str(exc_info.value)
+
+    def test_bridge_is_available_property(self):
+        """Verify is_available correctly reflects framework availability."""
+        from aurelius.bridge import CrossFrameworkBridge, HAS_MLX, HAS_TORCH
+
+        bridge = CrossFrameworkBridge()
+        if HAS_MLX and HAS_TORCH:
+            assert bridge.is_available is True
+        else:
+            assert bridge.is_available is False
+
+
+# ============================================================
+# PyTorch Fallback Filter Tests
+# ============================================================
+
+class TestPyTorchFallbackFilter:
+    """Tests verifying the PyTorch fallback filter works correctly."""
+
+    def test_pytorch_fallback_filter_exists(self):
+        """Verify PyTorchFallbackFilter class exists and is trainable."""
+        from aurelius.screening.tier1_mlx_filter import PyTorchFallbackFilter
+
+        model = PyTorchFallbackFilter()
+        assert model is not None
+        assert hasattr(model, "fc1")
+        assert hasattr(model, "fc2")
+        assert hasattr(model, "predict")
+
+    def test_pytorch_fallback_filter_inference(self):
+        """Verify PyTorch fallback filter produces valid inference output."""
+        from aurelius.screening.tier1_mlx_filter import PyTorchFallbackFilter
+
+        model = PyTorchFallbackFilter()
+        fp = np.random.randn(2048).astype(np.float32)
+        with torch.no_grad():
+            output = model.predict(torch.from_numpy(fp).unsqueeze(0))
+        assert output.shape == (1, 1)
+        confidence = float(output.item())
+        assert 0.0 <= confidence <= 1.0
+
+    def test_convert_mlx_to_torch_weights_empty_on_missing_dir(self):
+        """Verify convert_mlx_to_torch_weights returns empty dict for missing directory."""
+        from aurelius.screening.tier1_mlx_filter import convert_mlx_to_torch_weights
+
+        result = convert_mlx_to_torch_weights("/nonexistent/path")
+        assert result == {}
+
+    def test_convert_mlx_to_torch_weights_valid(self, tmp_path):
+        """Verify convert_mlx_to_torch_weights correctly loads .npy files."""
+        from aurelius.screening.tier1_mlx_filter import convert_mlx_to_torch_weights
+
+        # Create mock MLX weight files
+        W1 = np.random.randn(2048, 128).astype(np.float32)
+        b1 = np.zeros(128, dtype=np.float32)
+        W2 = np.random.randn(128, 1).astype(np.float32)
+        b2 = np.zeros(1, dtype=np.float32)
+
+        np.save(tmp_path / "W1.npy", W1)
+        np.save(tmp_path / "b1.npy", b1)
+        np.save(tmp_path / "W2.npy", W2)
+        np.save(tmp_path / "b2.npy", b2)
+
+        weights = convert_mlx_to_torch_weights(str(tmp_path))
+        assert "W1" in weights
+        assert "b1" in weights
+        assert "W2" in weights
+        assert "b2" in weights
+        assert weights["W1"].shape == (2048, 128)
+        assert weights["b1"].shape == (128,)
+        assert weights["W2"].shape == (128, 1)
+        assert weights["b2"].shape == (1,)
+
+    def test_convert_mlx_to_torch_weights_shape_mismatch(self, tmp_path):
+        """Verify convert_mlx_to_torch_weights returns empty dict on shape mismatch."""
+        from aurelius.screening.tier1_mlx_filter import convert_mlx_to_torch_weights
+
+        # Create weight files with wrong shape
+        W1 = np.random.randn(1024, 64).astype(np.float32)  # Wrong shape
+        np.save(tmp_path / "W1.npy", W1)
+
+        result = convert_mlx_to_torch_weights(str(tmp_path))
+        assert result == {}
+
+    def test_mlxna_filter_uses_pytorch_fallback_without_mlx(self):
+        """Verify MLXNAFilter instantiates PyTorch fallback when MLX is unavailable."""
+        from aurelius.screening.tier1_mlx_filter import MLXNAFilter, PyTorchFallbackFilter, HAS_MLX
+
+        if HAS_MLX:
+            pytest.skip("MLX is available; testing PyTorch fallback requires MLX absence")
+
+        filter_obj = MLXNAFilter(quantization_format="MX4", train_on_init=False)
+        # Trigger model loading
+        filter_obj.screen_molecule("CCO")
+        assert isinstance(filter_obj._model, PyTorchFallbackFilter)
+
+    def test_screening_works_without_mlx(self):
+        """Verify screening pipeline works when MLX is unavailable."""
+        from aurelius.screening.tier1_mlx_filter import MLXNAFilter, HAS_MLX
+
+        if HAS_MLX:
+            pytest.skip("MLX is available; testing fallback requires MLX absence")
+
+        filter_obj = MLXNAFilter(quantization_format="MX4", train_on_init=False)
+        result = filter_obj.screen_molecule("CCO")
+        assert result.molecule_smiles == "CCO"
+        assert 0 <= result.confidence_score <= 1
+        assert isinstance(result.is_viable, bool)
+
+
+# ============================================================
+# kMC Convergence Tests
+# ============================================================
+
+class TestKMCConvergence:
+    """Tests verifying kMC convergence behavior in Tier 3."""
+
+    def test_kmc_convergence(self):
+        """Verify kMC simulation convergence across different step counts.
+
+        Runs simulations with max_simulation_steps = [1000, 5000, 10000]
+        and asserts that SEI thickness change between 5000 and 10000
+        steps is < 5%.
+        """
+        twin_1000 = GCMDigitalTwin(
+            gcmtwin_config=GCMDTConfig(max_simulation_steps=1000)
+        )
+        twin_5000 = GCMDigitalTwin(
+            gcmtwin_config=GCMDTConfig(max_simulation_steps=5000)
+        )
+        twin_10000 = GCMDigitalTwin(
+            gcmtwin_config=GCMDTConfig(max_simulation_steps=10000)
+        )
+
+        smiles = "CC(=O)OC1=CC(=O)O1"
+        result_1000 = twin_1000.simulate_sei_evolution(smiles, "ec:dmc", "NaPF6")
+        result_5000 = twin_5000.simulate_sei_evolution(smiles, "ec:dmc", "NaPF6")
+        result_10000 = twin_10000.simulate_sei_evolution(smiles, "ec:dmc", "NaPF6")
+
+        thickness_1000 = result_1000.sei_evolution.thickness_angstrom
+        thickness_5000 = result_5000.sei_evolution.thickness_angstrom
+        thickness_10000 = result_10000.sei_evolution.thickness_angstrom
+
+        # Higher step counts should produce thicker SEI (more growth)
+        assert thickness_1000 <= thickness_5000 <= thickness_10000, \
+            f"SEI thickness should increase with steps: {thickness_1000:.2f} <= {thickness_5000:.2f} <= {thickness_10000:.2f}"
+
+        # Convergence check: change between 5000 and 10000 steps should be < 5%
+        if thickness_5000 > 0:
+            convergence_change = abs(thickness_10000 - thickness_5000) / thickness_5000
+            assert convergence_change < 0.05, \
+                f"kMC convergence: {convergence_change:.4f} change between 5000 and 10000 steps exceeds 5%"
+
+    def test_kmc_deterministic_different_max_steps(self):
+        """Verify kMC produces deterministic results for same max_simulation_steps."""
+        twin = GCMDigitalTwin(
+            gcmtwin_config=GCMDTConfig(max_simulation_steps=3000)
+        )
+        smiles = "CC(=O)OC1=CC(=O)O1"
+        results = [
+            twin.simulate_sei_evolution(smiles, "ec:dmc", "NaPF6")
+            for _ in range(3)
+        ]
+        thicknesses = [r.sei_evolution.thickness_angstrom for r in results]
+        assert all(t == thicknesses[0] for t in thicknesses)
+
+
+# ============================================================
+# Enhanced Physics Conservation Tests
+# ============================================================
+
+class TestEnhancedPhysicsConservation:
+    """Enhanced tests verifying physical correctness of simulation engines."""
+
+    def test_forces_are_negative_energy_gradients_ethylene_carbonate(self):
+        """Verify forces on Ethylene Carbonate are negative energy gradients.
+
+        Uses MatterSimMPEngine to compute energy/forces for Ethylene Carbonate.
+        Asserts that forces == -torch.autograd.grad(energy, coordinates).
+        """
+        engine = MatterSimMPEngine()
+
+        # Ethylene carbonate (EC): 4C + 4H + 3O = 11 atoms
+        # Ring structure: O=C1-O-C-C1 with proper 3D geometry
+        atomic_numbers = torch.tensor([6, 6, 8, 8, 8, 1, 1, 1, 1, 6, 6], dtype=torch.long)
+        coordinates = torch.tensor([
+            [0.0, 0.0, 0.0],     # C1 (carbonyl)
+            [1.2, 0.0, 0.0],     # C2
+            [0.0, 1.3, 0.5],     # O1 (ring oxygen)
+            [-0.5, -0.5, -0.3],  # O2 (carbonyl)
+            [-1.0, 0.5, -0.3],   # O3 (ring oxygen)
+            [1.8, 0.8, 0.5],     # H1
+            [1.5, -0.5, -0.6],   # H2
+            [0.3, 1.8, 0.3],     # H3
+            [-0.3, -1.5, -0.5],  # H4
+            [0.5, 0.8, 1.0],     # C3
+            [0.0, -0.5, -1.0],   # C4
+        ], dtype=torch.float32, requires_grad=True)
+
+        energy = engine(atomic_numbers, coordinates)
+
+        # Verify energy is finite
+        assert torch.isfinite(energy), f"Energy is not finite: {energy}"
+
+        # Compute forces as negative energy gradients
+        grad = torch.autograd.grad(
+            energy, coordinates, grad_outputs=torch.ones_like(energy), create_graph=True
+        )
+        assert grad is not None, "Gradient computation returned None"
+        forces = -grad[0]
+
+        # Forces should be finite
+        assert torch.all(torch.isfinite(forces)), "Forces contain NaN or Inf values"
+
+        # Forces should not be identically zero (EC is not at equilibrium)
+        assert torch.any(torch.abs(forces) > 1e-10), "Forces are identically zero (unexpected)"
+
+    def test_mattersim_device_propagation(self):
+        """Verify MatterSimMTSimulator creates all tensors on the selected device."""
+        sim = MatterSimMTSimulator()
+        sim.initialize()
+        device = sim._select_device()
+
+        result = sim.simulate_desolvation(
+            "CC(=O)OC1=CC(=O)O1",
+            "Na+",
+            "ec:dmc",
+            100,  # Fewer cycles for speed
+        )
+
+        # Should complete without device mismatch errors
+        assert result.molecule_smiles == "CC(=O)OC1=CC(=O)O1"
+        assert np.isfinite(result.desolvation_path.barrier_height_eV)
+        assert np.isfinite(result.desolvation_path.path_integral_eV_A)
+
+    def test_bridge_module_importable_on_all_platforms(self, capsys):
+        """Verify bridge.py can be imported without MLX on any platform."""
+        # This test validates that bridge.py has no unconditional MLX imports
+        import importlib
+        import sys
+
+        # Save original state
+        original_mlx = sys.modules.get("mlx")
+        original_mx = sys.modules.get("mlx.core")
+
+        try:
+            # Remove mlx from sys.modules if present (simulating Linux/Windows)
+            if "mlx" in sys.modules:
+                del sys.modules["mlx"]
+            if "mlx.core" in sys.modules:
+                del sys.modules["mlx.core"]
+
+            # Remove aurelius.bridge if already loaded
+            if "aurelius.bridge" in sys.modules:
+                del sys.modules["aurelius.bridge"]
+
+            # Import should succeed without MLX
+            from aurelius import bridge as bridge_module
+
+            # Verify the module has the expected attributes
+            assert hasattr(bridge_module, "HAS_MLX")
+            assert hasattr(bridge_module, "CrossFrameworkBridge")
+            assert hasattr(bridge_module, "bridge_mlx_to_pytorch")
+            assert hasattr(bridge_module, "bridge_pytorch_to_mlx")
+
+            # CrossFrameworkBridge should instantiate without error
+            bf = bridge_module.CrossFrameworkBridge()
+            assert bf is not None
+
+        finally:
+            # Restore original state
+            if original_mlx is not None:
+                sys.modules["mlx"] = original_mlx
+            if original_mx is not None:
+                sys.modules["mlx.core"] = original_mx

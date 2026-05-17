@@ -41,6 +41,15 @@ try:
 except ImportError:
     HAS_RDKIT = False
 
+try:
+    import torch
+    import torch.nn as nn
+    HAS_TORCH = True
+except ImportError:
+    torch = None  # type: ignore
+    nn = None  # type: ignore
+    HAS_TORCH = False
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -186,6 +195,231 @@ class _FallbackMLP:
 
     def parameters(self) -> list[np.ndarray]:
         return [self.W1, self.b1, self.W2, self.b2]
+
+
+class PyTorchFallbackFilter(nn.Module):
+    """PyTorch-based MLP fallback replicating the ChemVLM2MLP architecture.
+
+    Provides a 2-layer MLP (2048->128->1) using torch.nn when MLX is
+    unavailable. This ensures consistent gradient computation and
+    device handling across all tiers of the pipeline.
+
+    The architecture matches _ChemVLM2MLP:
+        - Input: 2048-bit ECFP4 fingerprint (float tensor)
+        - Hidden: 128 units with ReLU activation
+        - Output: 1 scalar viability score via sigmoid
+
+    Weights are loaded from MLX model directories containing .npy files
+    via convert_mlx_to_torch_weights(). If loading fails, random
+    Xavier-initialized weights are used with a WARNING.
+
+    This class is fully compatible with torch.autograd for gradient
+    computation and supports device placement (CPU/CUDA/MPS).
+    """
+
+    def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
+        """Initialize the PyTorch fallback MLP.
+
+        Args:
+            input_dim: Input dimension (default: 2048 for ECFP4).
+            hidden_dim: Hidden layer dimension (default: 128).
+        """
+        super().__init__()
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(hidden_dim, 1)
+
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        """Initialize all weights using Xavier uniform initialization."""
+        nn.init.xavier_uniform_(self.fc1.weight)
+        nn.init.zeros_(self.fc1.bias)
+        nn.init.xavier_uniform_(self.fc2.weight)
+        nn.init.zeros_(self.fc2.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass through the 2-layer MLP.
+
+        Args:
+            x: Input tensor of shape (batch_size, input_dim) or (input_dim,).
+
+        Returns:
+            Output tensor of shape (batch_size, 1) or () with sigmoid output.
+        """
+        h = self.fc1(x)
+        h = self.relu(h)
+        out = self.fc2(h)
+        return torch.sigmoid(out)
+
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
+        """Run inference and return scalar confidence score.
+
+        Args:
+            x: Input tensor of shape (batch_size, input_dim) or (input_dim,).
+
+        Returns:
+            Confidence score tensor (sigmoid output, clipped to [0, 1]).
+        """
+        output = self(x)
+        if output.dim() == 0:
+            return torch.clamp(output, 0.0, 1.0)
+        return torch.clamp(output, 0.0, 1.0)
+
+    def save_weights(self, path: str) -> None:
+        """Save model weights to individual .npy files (MLX-compatible format).
+
+        Args:
+            path: Directory path to save weights.
+        """
+        os.makedirs(path, exist_ok=True)
+        state_dict = self.state_dict()
+        # Save each parameter as .npy for cross-framework compatibility
+        for name, tensor in state_dict.items():
+            np.save(os.path.join(path, f"{name}.npy"), tensor.cpu().numpy())
+        # Save architecture metadata
+        meta = {
+            "input_dim": self.input_dim,
+            "hidden_dim": self.hidden_dim,
+            "architecture": "MLP-2048-128-1",
+            "fp_type": "ECFP4_2048",
+            "framework": "pytorch",
+        }
+        with open(os.path.join(path, "metadata.json"), "w") as f:
+            json.dump(meta, f, indent=2)
+
+    def load_weights(self, path: str) -> None:
+        """Load model weights from .npy files.
+
+        Args:
+            path: Directory path containing saved weights.
+        """
+        state_dict = torch.load(
+            path, map_location="cpu", weights_only=True,
+        )
+        self.load_state_dict(state_dict)
+
+
+def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, torch.Tensor]:
+    """Convert MLX model weights (stored as .npy files) to PyTorch tensors.
+
+    Loads .npy files from the MLX model directory and converts them
+    directly to PyTorch tensors using torch.from_numpy(). Since the
+    architecture is a standard MLP (2048->128->1), no complex topology
+    mapping is needed - the NumPy arrays map directly to PyTorch tensor
+    shapes.
+
+    If weights cannot be loaded (e.g., shape mismatch or missing files),
+    this function returns an empty dictionary and logs a WARNING
+    suggesting the user run `aurelius train --task tier1` to train properly.
+
+    Args:
+        mlx_weights_dir: Path to the directory containing MLX model weights
+            (.npy files for W1, b1, W2, b2).
+
+    Returns:
+        Dictionary mapping parameter names to PyTorch tensors.
+        Returns empty dict if loading fails.
+    """
+    if not os.path.isdir(mlx_weights_dir):
+        print(f"[Aurelius v6.0 Tier1] WARNING: MLX weights directory not found: {mlx_weights_dir}")
+        return {}
+
+    weight_files = {
+        "W1": None,
+        "b1": None,
+        "W2": None,
+        "b2": None,
+    }
+
+    for fname in weight_files:
+        fpath = os.path.join(mlx_weights_dir, f"{fname}.npy")
+        if os.path.isfile(fpath):
+            weight_files[fname] = np.load(fpath)
+        else:
+            print(f"[Aurelius v6.0 Tier1] WARNING: Missing weight file: {fpath}")
+            return {}
+
+    # Validate shapes: W1 (2048, hidden_dim), b1 (hidden_dim,), W2 (hidden_dim, 1), b2 (1,)
+    expected_shapes = {
+        "W1": (2048, 128),
+        "b1": (128,),
+        "W2": (128, 1),
+        "b2": (1,),
+    }
+
+    torch_weights: dict[str, torch.Tensor] = {}
+    for name, arr in weight_files.items():
+        if arr is None:
+            continue
+        expected = expected_shapes.get(name)
+        if expected and arr.shape != expected:
+            print(
+                f"[Aurelius v6.0 Tier1] WARNING: Shape mismatch for {name}: "
+                f"expected {expected}, got {arr.shape}. "
+                "Using uninitialized PyTorch fallback weights. "
+                "Run `aurelius train --task tier1` to train properly."
+            )
+            return {}
+        torch_weights[name] = torch.from_numpy(arr.astype(np.float32))
+
+    return torch_weights
+
+
+def load_pytorch_fallback_with_mlx_weights(
+    model: PyTorchFallbackFilter,
+    mlx_weights_dir: str,
+) -> PyTorchFallbackFilter:
+    """Load PyTorch fallback model with weights converted from MLX format.
+
+    Attempts to load .npy weights from the MLX model directory and
+    apply them to the PyTorch model. If conversion fails (shape mismatch
+    or missing files), initializes random weights with a WARNING.
+
+    Args:
+        model: The PyTorchFallbackFilter instance to load weights into.
+        mlx_weights_dir: Path to the MLX model weights directory.
+
+    Returns:
+        The PyTorchFallbackFilter with loaded (or randomly initialized) weights.
+    """
+    torch_weights = convert_mlx_to_torch_weights(mlx_weights_dir)
+
+    if not torch_weights:
+        print(
+            "[Aurelius v6.0 Tier1] WARNING: Using uninitialized PyTorch fallback weights. "
+            "Run `aurelius train --task tier1` to train properly."
+        )
+        # Re-initialize with random weights (already done by __init__)
+        return model
+
+    # Map MLX weight names to PyTorch state_dict keys
+    # MLX uses W1, b1, W2, b2; PyTorch uses fc1.weight, fc1.bias, fc2.weight, fc2.bias
+    state_mapping = {
+        "W1": "fc1.weight",
+        "b1": "fc1.bias",
+        "W2": "fc2.weight",
+        "b2": "fc2.bias",
+    }
+
+    state_dict: dict[str, torch.Tensor] = {}
+    for mlx_name, torch_key in state_mapping.items():
+        if mlx_name in torch_weights:
+            state_dict[torch_key] = torch_weights[mlx_name]
+
+    if state_dict:
+        model.load_state_dict(state_dict, strict=False)
+        print(f"[Aurelius v6.0 Tier1] Loaded PyTorch fallback weights from MLX: {mlx_weights_dir}")
+    else:
+        print(
+            "[Aurelius v6.0 Tier1] WARNING: Could not map any weights from MLX format. "
+            "Using random initialization."
+        )
+
+    return model
 
 
 class HuggingFaceWeightLoader:
@@ -741,8 +975,29 @@ class MLXNAFilter:
     def _train_default_model(self) -> None:
         """Train the model on real solubility or synthetic data."""
         if not self._use_mlx:
-            print("[Aurelius v5.2 Tier1] MLX unavailable, using numpy fallback")
-            self._model = _FallbackMLP()
+            if not HAS_TORCH:
+                print("[Aurelius v6.0 Tier1] WARNING: Both MLX and PyTorch unavailable. "
+                      "Using numpy-only fallback.")
+                self._model = _FallbackMLP()
+                self._model_loaded = True
+                return
+
+            print("[Aurelius v6.0 Tier1] MLX unavailable, initializing PyTorch fallback filter...")
+            self._model = PyTorchFallbackFilter()
+
+            # Try to load weights from MLX model directory if available
+            if self._use_real_models and os.path.isdir(self._weight_loader.model_dir):
+                local_task_dir = os.path.join(self._weight_loader.model_dir, "esol_solubility")
+                if os.path.isdir(local_task_dir):
+                    self._model = load_pytorch_fallback_with_mlx_weights(
+                        self._model, local_task_dir
+                    )
+                    self._model_loaded = True
+                    return
+
+            # Train on synthetic data using PyTorch
+            print("[Aurelius v6.0 Tier1] Training PyTorch fallback on synthetic data...")
+            self._model = self._train_synthetic_pytorch()
             self._model_loaded = True
             return
 
@@ -840,7 +1095,115 @@ class MLXNAFilter:
 
             if (epoch + 1) % 20 == 0:
                 current_loss = float(loss_fn(model.parameters(), X_mx, y_mx))
-                print(f"[Aurelius v5.2 Tier1] Synthetic epoch {epoch + 1}/100: loss={current_loss:.4f}")
+                print(f"[Aurelius v6.0 Tier1] Synthetic epoch {epoch + 1}/100: loss={current_loss:.4f}")
+
+        return model
+
+    def _train_synthetic_pytorch(self) -> PyTorchFallbackFilter:
+        """Train PyTorch fallback on synthetic solubility dataset.
+
+        Generates synthetic molecules with known solubility labels and
+        trains the PyTorch fallback MLP via MSE loss with early stopping.
+
+        This provides a trained PyTorch model when MLX is unavailable,
+        ensuring the pipeline can run on Linux/Windows/CPU-only systems.
+
+        Returns:
+            The trained PyTorchFallbackFilter instance.
+        """
+        training_data: list[tuple[str, float]] = [
+            ("CCO", 1.0),           # ethanol
+            ("CC(=O)OC", 1.0),      # methyl acetate
+            ("CN(C)C=O", 1.0),      # DMF
+            ("C1=CC=CC=C1", 1.0),   # benzene
+            ("CC(=O)O", 1.0),       # acetic acid
+            ("COCCOC", 1.0),        # diethyl ether
+            ("CCC", 1.0),           # propane
+            ("CC(C)O", 1.0),        # isopropanol
+            ("C=CC", 1.0),          # propene
+            ("CC(=O)CC(=O)C", 1.0), # acetone
+            ("C1CCCCC1C2CCCCC2C3CCCCC3", 0.0),   # tricyclic
+            ("C1CCC2C3CCC4CC5CC6CC7CCCCC7CC6CC5CC4C3CCC21", 0.0),  # steroids
+            ("CCCCCCCCCCCCCCCCCC", 0.0),         # long alkane
+            ("C1=CC2=C(C=C1)C3=CC=CC=C3C4=CC=CC=C4C2", 0.0),  # PAH
+            ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C", 0.0),  # branched alkane
+            ("CCCCCCCCCCCCCCCCCCO", 0.0),        # long alcohol
+            ("C1CCCCC1C2CCCCC2C3CCCCC3C4CCCCC4", 0.0),  # tetra-cyclic
+            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C", 0.0),  # pentacyclic
+        ]
+
+        X_train = np.zeros((len(training_data), 2048), dtype=np.float32)
+        y_train = np.zeros(len(training_data), dtype=np.float32)
+
+        for i, (smiles, label) in enumerate(training_data):
+            fp = _generate_ecfp4_fingerprint(smiles, use_real_models=False)
+            X_train[i] = fp
+            y_train[i] = label
+
+        n_samples = X_train.shape[0]
+        n_val = int(n_samples * 0.15)
+
+        rng = np.random.RandomState(42)
+        perm = rng.permutation(n_samples)
+        X_train_split = X_train[perm[: n_samples - n_val]]
+        y_train_split = y_train[perm[: n_samples - n_val]]
+        X_val_split = X_train[perm[n_samples - n_val :]]
+        y_val_split = y_train[perm[n_samples - n_val :]]
+
+        model = PyTorchFallbackFilter()
+        criterion = nn.MSELoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+        best_val_loss = float("inf")
+        best_state: dict[str, Any] = {}
+        patience = 20
+        patience_counter = 0
+
+        for epoch in range(100):
+            # Shuffle training data
+            epoch_perm = rng.permutation(n_samples - n_val)
+            X_shuffled = X_train_split[epoch_perm]
+            y_shuffled = y_train_split[epoch_perm]
+
+            # Mini-batch training
+            for start in range(0, n_samples - n_val, 16):
+                end = min(start + 16, n_samples - n_val)
+                x_batch = torch.from_numpy(X_shuffled[start:end]).float()
+                y_batch = torch.from_numpy(y_shuffled[start:end]).float()
+
+                optimizer.zero_grad()
+                pred = model(x_batch).squeeze(-1)
+                loss = criterion(pred, y_batch)
+                loss.backward()
+                optimizer.step()
+
+            # Validation
+            with torch.no_grad():
+                val_pred = model(torch.from_numpy(X_val_split).float()).squeeze(-1)
+                val_loss = criterion(val_pred, torch.from_numpy(y_val_split).float()).item()
+
+            if (epoch + 1) % 20 == 0:
+                with torch.no_grad():
+                    train_pred = model(torch.from_numpy(X_train_split).float()).squeeze(-1)
+                    train_loss = criterion(train_pred, torch.from_numpy(y_train_split).float()).item()
+                print(f"[Aurelius v6.0 Tier1] PyTorch synthetic epoch {epoch + 1}/100: "
+                      f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
+
+            # Early stopping
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                patience_counter = 0
+                best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            else:
+                patience_counter += 1
+                if patience_counter >= patience:
+                    print(f"[Aurelius v6.0 Tier1] PyTorch early stopping at epoch {epoch + 1} "
+                          f"(best val_loss={best_val_loss:.4f})")
+                    break
+
+        # Restore best weights
+        if best_state:
+            model.load_state_dict(best_state)
 
         return model
 
@@ -854,14 +1217,23 @@ class MLXNAFilter:
             model_path: Path to model weights directory.
         """
         if self._use_mlx:
-            print(f"[Aurelius v5.2 Tier1] Loading model from {model_path}")
+            print(f"[Aurelius v6.0 Tier1] Loading model from {model_path}")
             self._model = _ChemVLM2MLP()
             self._train_default_model()
         else:
-            print("[Aurelius v5.2 Tier1] MLX unavailable, using numpy fallback MLP")
-            self._model = _FallbackMLP()
+            if not HAS_TORCH:
+                print("[Aurelius v6.0 Tier1] MLX and PyTorch unavailable, using numpy fallback MLP")
+                self._model = _FallbackMLP()
+            else:
+                print("[Aurelius v6.0 Tier1] MLX unavailable, using PyTorch fallback filter")
+                self._model = PyTorchFallbackFilter()
+                # Try to load weights from the provided path
+                if os.path.isdir(model_path):
+                    self._model = load_pytorch_fallback_with_mlx_weights(
+                        self._model, model_path
+                    )
         self._model_loaded = True
-        print("[Aurelius v5.2 Tier1] Model ready")
+        print("[Aurelius v6.0 Tier1] Model ready")
 
     def screen_molecule(self, smiles: str) -> MLXFilterResult:
         """Screen a single molecule through the MLX-NA filter.
@@ -881,7 +1253,10 @@ class MLXNAFilter:
                 self._model = _ChemVLM2MLP()
                 self._train_default_model()
             else:
-                self._model = _FallbackMLP()
+                if not HAS_TORCH:
+                    self._model = _FallbackMLP()
+                else:
+                    self._model = PyTorchFallbackFilter()
             self._model_loaded = True
 
         import time
@@ -937,13 +1312,18 @@ class MLXNAFilter:
         return 4
 
     def _run_inference(self, fingerprint: np.ndarray, smiles: str) -> dict[str, Any]:
-        """Run molecular viability inference via MLX or numpy fallback."""
+        """Run molecular viability inference via MLX, PyTorch, or numpy fallback."""
         if self._use_mlx and self._model is not None:
             fp_array = mx.array(fingerprint, dtype=mx.float32)
             if fp_array.ndim == 1:
                 fp_array = fp_array.reshape(1, -1)
             logits = self._model(fp_array)
             confidence = float(mx.squeeze(logits))
+        elif HAS_TORCH and isinstance(self._model, PyTorchFallbackFilter):
+            fp_tensor = torch.from_numpy(fingerprint).float().unsqueeze(0)
+            with torch.no_grad():
+                output = self._model.predict(fp_tensor)
+            confidence = float(output.squeeze().item())
         else:
             output = self._model(fingerprint)  # type: ignore[misc]
             confidence = float(np.squeeze(output))

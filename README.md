@@ -36,8 +36,30 @@ Aurelius is a high-performance screening pipeline for battery electrolyte molecu
 ## Hardware Requirements
 
 - **Apple Silicon Mac** (M1, M2, M3, or M4 series)
+- **Linux x86_64** (with NVIDIA GPU for CUDA support)
+- **Windows 10/11** (with NVIDIA GPU for CUDA support)
 - **Minimum 8GB RAM** (16GB+ recommended)
 - **macOS 13+** (Ventura or later)
+
+### Platform Support Matrix
+
+| Platform | Tier 1 (MLX Filter) | Tier 2 (MatterSim-MT) | Tier 3 (GCMD Twin) |
+|----------|---------------------|----------------------|---------------------|
+| **Apple Silicon** (macOS) | *Optimized* (MLX + MPS) | *Optimized* (MPS) | Supported (NumPy) |
+| **Linux x86_64** (CUDA) | PyTorch Fallback | *Optimized* (CUDA) | Supported (NumPy) |
+| **Linux x86_64** (CPU-only) | PyTorch Fallback | Supported (CPU) | Supported (NumPy) |
+| **Windows** (CUDA) | PyTorch Fallback | *Optimized* (CUDA) | Supported (NumPy) |
+| **Windows** (CPU-only) | PyTorch Fallback | Supported (CPU) | Supported (NumPy) |
+
+### Apple Silicon: *Optimized* (MLX + MPS)
+- Tier 1 runs natively on MLX with Neural Engine acceleration
+- Tier 2 uses PyTorch MPS backend for vectorized physics
+- Cross-framework zero-copy bridging via DLpack
+
+### Linux/Windows: *Supported* (CUDA/CPU)
+- Tier 1 uses PyTorch fallback MLP when MLX is unavailable
+- Tier 2/3 run on CUDA (GPU) or CPU as needed
+- `bridge.py` imports successfully on all platforms; MLX-dependent methods raise `RuntimeError` with clear messaging
 
 ### Software Dependencies
 
