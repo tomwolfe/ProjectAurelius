@@ -289,6 +289,7 @@ class MLXNAFilter:
                 output = self._model.predict(fp_tensor)
             confidence = float(output.squeeze().item())
         else:
+            assert self._model is not None
             output = self._model(fingerprint)
             confidence = float(np.squeeze(output))
 
@@ -323,7 +324,7 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
                 f"using hash fallback. This fingerprint is NOT chemically valid."
             )
             return _hash_fallback(smiles)
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined]
         bit_list = fp.ToList()
         arr = np.array(bit_list, dtype=np.float32)
         if len(arr) < 2048:

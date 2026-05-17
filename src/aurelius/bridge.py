@@ -23,14 +23,14 @@ try:
     import mlx.core as mx
     HAS_MLX = True
 except ImportError:
-    mx = None  # type: ignore
+    mx = None  # type: ignore[assignment]
     HAS_MLX = False
 
 try:
     import torch
     HAS_TORCH = True
 except ImportError:
-    torch = None  # type: ignore
+    torch = None  # type: ignore[assignment]
     HAS_TORCH = False
 
 # Runtime error messages for graceful degradation

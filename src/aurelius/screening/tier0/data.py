@@ -69,9 +69,9 @@ def _build_molecular_graph(
         raise ValueError(f"Invalid SMILES: {smiles}")
 
     mol_with_h = Chem.AddHs(mol)
-    Chem.EmbedMolecule(mol_with_h, randomSeed=42)
+    Chem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined]
 
-    atoms = mol_with_h.GetAtoms()
+    atoms = mol_with_h.GetAtoms()  # type: ignore[no-untyped-call]
     n_atoms = mol_with_h.GetNumAtoms()
 
     node_features = torch.zeros(n_atoms, 4, dtype=torch.float32, device=device)
@@ -196,13 +196,13 @@ def generate_synthetic_training_data(
     for smi in valid_smiles:
         mol = Chem.MolFromSmiles(smi)
         mol_with_h = Chem.AddHs(mol)
-        Chem.EmbedMolecule(mol_with_h, randomSeed=42)
+        Chem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined]
 
-        logp = float(Descriptors.MolLogP(mol_with_h))
-        hba = int(Descriptors.NumHAcceptors(mol_with_h))
-        hbd = int(Descriptors.NumHDonors(mol_with_h))
-        tpsa = float(Descriptors.TPSA(mol_with_h))
-        aromatic_count = sum(1 for a in mol_with_h.GetAtoms() if a.GetIsAromatic())
+        logp = float(Descriptors.MolLogP(mol_with_h))  # type: ignore[attr-defined]
+        hba = int(Descriptors.NumHAcceptors(mol_with_h))  # type: ignore[attr-defined]
+        hbd = int(Descriptors.NumHDonors(mol_with_h))  # type: ignore[attr-defined]
+        tpsa = float(Descriptors.TPSA(mol_with_h))  # type: ignore[attr-defined]
+        aromatic_count = sum(1 for a in mol_with_h.GetAtoms() if a.GetIsAromatic())  # type: ignore[no-untyped-call, misc]
         aromatic_ratio = aromatic_count / max(mol_with_h.GetNumAtoms(), 1)
 
         ec_base = 0.65 + 0.08 * logp - 0.02 * hba - 0.03 * hbd - 0.003 * tpsa + 0.15 * aromatic_ratio

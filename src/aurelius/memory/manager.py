@@ -20,14 +20,14 @@ try:
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
-    torch = None  # type: ignore
+    torch = None  # type: ignore[assignment]
 
 try:
     import mlx.core as mx
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
-    mx = None  # type: ignore
+    mx = None  # type: ignore[assignment]
 
 
 @dataclass

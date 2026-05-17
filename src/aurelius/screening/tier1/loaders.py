@@ -272,6 +272,8 @@ class HuggingFaceWeightLoader:
 
 
 __all__ = [
+    "DEFAULT_MODEL_DIR",
+    "HUGGINGFACE_MODELS",
     "HuggingFaceWeightLoader",
     "convert_mlx_to_torch_weights",
     "load_pytorch_fallback_with_mlx_weights",

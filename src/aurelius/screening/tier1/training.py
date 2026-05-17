@@ -133,7 +133,7 @@ def train_on_esol(
 
     # Load ESOL dataset via huggingface datasets library
     try:
-        from datasets import load_dataset  # type: ignore[import-untyped]
+        from datasets import load_dataset
         _ds = load_dataset("deepchem/esol", split="train")
     except ImportError:
         training_data: list[tuple[str, float]] = [
@@ -250,7 +250,7 @@ def train_on_esol(
             train_loss = float(loss_fn(model.parameters(), X_train_split, y_train_split))
             preds = model(X_val_split)
             preds_binary = mx.squeeze(preds) > 0.5
-            accuracy = float(mx.mean(preds_binary == y_val_split))
+            accuracy = float(mx.mean(preds_binary == y_val_split))  # type: ignore[arg-type]
             print(f"[Aurelius v5.2 Tier1] Epoch {epoch + 1}/{epochs}: "
                   f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, "
                   f"val_accuracy={accuracy:.2f}")

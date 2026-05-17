@@ -44,8 +44,8 @@ try:
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
-    torch = None  # type: ignore
-    nn = None  # type: ignore  # noqa: F811
+    torch = None  # type: ignore[assignment]
+    nn = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
     pass
@@ -77,290 +77,292 @@ def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
 # SchNet-style Message Passing Layers
 # ---------------------------------------------------------------------------
 
-class ContinuousFilterConv1d(nn.Module):
-    """Continuous-filter 1D convolution for SchNet-style message passing.
 
-    Applies a distance-dependent filter to edge features in a
-    molecular graph, enabling smooth interpolation of atomic
-    interactions as a function of interatomic distance.
+if HAS_TORCH:
+    class ContinuousFilterConv1d(nn.Module):
+        """Continuous-filter 1D convolution for SchNet-style message passing.
 
-    Reference:
-        Schutt, K. T. et al. "Schnet: A Continuous-filter
-        Convolutional Neural Network for Quantum Chemistry."
-        NeurIPS 2018.
-    """
+        Applies a distance-dependent filter to edge features in a
+        molecular graph, enabling smooth interpolation of atomic
+        interactions as a function of interatomic distance.
 
-    def __init__(self, input_dim: int, output_dim: int, num_filters: int = 32) -> None:
-        super().__init__()
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.num_filters = num_filters
-
-        # Distance filter: maps distances to filter weights
-        # Outputs num_filters values per distance pair
-        self.distance_proj = nn.Sequential(
-            nn.Linear(1, num_filters),
-            nn.ReLU(),
-            nn.Linear(num_filters, num_filters),
-            nn.ReLU(),
-            nn.Linear(num_filters, num_filters),
-        )
-
-        # Project filter weights to input/output dimensions
-        self.filter_proj = nn.Linear(num_filters, input_dim * output_dim)
-
-    def forward(
-        self,
-        h: torch.Tensor,
-        distances: torch.Tensor,
-        edge_index: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        """Forward pass of continuous filter convolution.
-
-        Args:
-            h: Node features (N, input_dim).
-            distances: Pairwise distances (N, N).
-            edge_index: Optional edge index tensor (unused).
-
-        Returns:
-            Updated node features (N, output_dim).
+        Reference:
+            Schutt, K. T. et al. "Schnet: A Continuous-filter
+            Convolutional Neural Network for Quantum Chemistry."
+            NeurIPS 2018.
         """
-        N, _ = h.shape
 
-        # distances: (N, N) -> (N, N, 1)
-        dist_expanded = distances.unsqueeze(-1)
-        # Filter weights: (N, N, num_filters)
-        filters = self.distance_proj(dist_expanded)
-        # Project to input_dim * output_dim: (N, N, input_dim * output_dim)
-        filters = self.filter_proj(filters)
-        # Reshape: (N, N, input_dim, output_dim)
-        filters = filters.view(N, N, self.input_dim, self.output_dim)
-        # Transpose: (N, N, output_dim, input_dim)
-        filters_t = filters.transpose(2, 3)
-        # h: (N, input_dim) -> (N, input_dim, 1)
-        h_expanded = h.unsqueeze(-1)
-        # Matmul: (N, N, output_dim, 1)
-        messages = torch.matmul(filters_t, h_expanded).squeeze(-1)
-        # Sum over neighbors: (N, output)
-        h_new = torch.sum(messages, dim=1)
+        def __init__(self, input_dim: int, output_dim: int, num_filters: int = 32) -> None:
+            super().__init__()
+            self.input_dim = input_dim
+            self.output_dim = output_dim
+            self.num_filters = num_filters
 
-        return h_new
+            # Distance filter: maps distances to filter weights
+            # Outputs num_filters values per distance pair
+            self.distance_proj = nn.Sequential(
+                nn.Linear(1, num_filters),
+                nn.ReLU(),
+                nn.Linear(num_filters, num_filters),
+                nn.ReLU(),
+                nn.Linear(num_filters, num_filters),
+            )
+
+            # Project filter weights to input/output dimensions
+            self.filter_proj = nn.Linear(num_filters, input_dim * output_dim)
+
+        def forward(
+            self,
+            h: torch.Tensor,
+            distances: torch.Tensor,
+            edge_index: torch.Tensor | None = None,
+        ) -> torch.Tensor:
+            """Forward pass of continuous filter convolution.
+
+            Args:
+                h: Node features (N, input_dim).
+                distances: Pairwise distances (N, N).
+                edge_index: Optional edge index tensor (unused).
+
+            Returns:
+                Updated node features (N, output_dim).
+            """
+            N, _ = h.shape
+
+            # distances: (N, N) -> (N, N, 1)
+            dist_expanded = distances.unsqueeze(-1)
+            # Filter weights: (N, N, num_filters)
+            filters = self.distance_proj(dist_expanded)
+            # Project to input_dim * output_dim: (N, N, input_dim * output_dim)
+            filters = self.filter_proj(filters)
+            # Reshape: (N, N, input_dim, output_dim)
+            filters = filters.view(N, N, self.input_dim, self.output_dim)
+            # Transpose: (N, N, output_dim, input_dim)
+            filters_t = filters.transpose(2, 3)
+            # h: (N, input_dim) -> (N, input_dim, 1)
+            h_expanded = h.unsqueeze(-1)
+            # Matmul: (N, N, output_dim, 1)
+            messages = torch.matmul(filters_t, h_expanded).squeeze(-1)
+            # Sum over neighbors: (N, output)
+            h_new = torch.sum(messages, dim=1)
+
+            return h_new
 
 
-class ContinuousFilterConv1dBatched(nn.Module):
-    """Batched version of continuous-filter convolution.
+    class ContinuousFilterConv1dBatched(nn.Module):
+        """Batched version of continuous-filter convolution.
 
-    Handles (B, N, hidden_dim) inputs with (B, N, N) distances.
-    """
-
-    def __init__(self, input_dim: int, output_dim: int, num_filters: int = 32) -> None:
-        super().__init__()
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.num_filters = num_filters
-
-        self.distance_proj = nn.Sequential(
-            nn.Linear(1, num_filters),
-            nn.ReLU(),
-            nn.Linear(num_filters, num_filters),
-            nn.ReLU(),
-            nn.Linear(num_filters, num_filters),
-        )
-        self.filter_proj = nn.Linear(num_filters, input_dim * output_dim)
-
-    def forward(
-        self,
-        h: torch.Tensor,
-        distances: torch.Tensor,
-    ) -> torch.Tensor:
-        """Forward pass for batched inputs.
-
-        Args:
-            h: Node features (B, N, input_dim).
-            distances: Pairwise distances (B, N, N).
-
-        Returns:
-            Updated node features (B, N, output_dim).
+        Handles (B, N, hidden_dim) inputs with (B, N, N) distances.
         """
-        B, N, _ = h.shape
 
-        dist_expanded = distances.unsqueeze(-1)
-        filters = self.distance_proj(dist_expanded)
-        filters = self.filter_proj(filters)
-        filters = filters.view(B, N, N, self.input_dim, self.output_dim)
-        filters_t = filters.permute(0, 1, 2, 4, 3)
-        h_expanded = h.unsqueeze(2).unsqueeze(-1)
-        messages = torch.matmul(filters_t, h_expanded).squeeze(-1)
-        h_new = torch.sum(messages, dim=2)
+        def __init__(self, input_dim: int, output_dim: int, num_filters: int = 32) -> None:
+            super().__init__()
+            self.input_dim = input_dim
+            self.output_dim = output_dim
+            self.num_filters = num_filters
 
-        return h_new
+            self.distance_proj = nn.Sequential(
+                nn.Linear(1, num_filters),
+                nn.ReLU(),
+                nn.Linear(num_filters, num_filters),
+                nn.ReLU(),
+                nn.Linear(num_filters, num_filters),
+            )
+            self.filter_proj = nn.Linear(num_filters, input_dim * output_dim)
+
+        def forward(
+            self,
+            h: torch.Tensor,
+            distances: torch.Tensor,
+        ) -> torch.Tensor:
+            """Forward pass for batched inputs.
+
+            Args:
+                h: Node features (B, N, input_dim).
+                distances: Pairwise distances (B, N, N).
+
+            Returns:
+                Updated node features (B, N, output_dim).
+            """
+            B, N, _ = h.shape
+
+            dist_expanded = distances.unsqueeze(-1)
+            filters = self.distance_proj(dist_expanded)
+            filters = self.filter_proj(filters)
+            filters = filters.view(B, N, N, self.input_dim, self.output_dim)
+            filters_t = filters.permute(0, 1, 2, 4, 3)
+            h_expanded = h.unsqueeze(2).unsqueeze(-1)
+            messages = torch.matmul(filters_t, h_expanded).squeeze(-1)
+            h_new = torch.sum(messages, dim=2)
+
+            return h_new
 
 
-class SchNetInteractionBlock(nn.Module):
-    """SchNet interaction block with continuous-filter convolution.
+    class SchNetInteractionBlock(nn.Module):
+        """SchNet interaction block with continuous-filter convolution.
 
-    Combines distance-based message passing with readout for
-    energy prediction. Each block updates node embeddings
-    based on pairwise distances.
+        Combines distance-based message passing with readout for
+        energy prediction. Each block updates node embeddings
+        based on pairwise distances.
 
-    Reference:
-        Schutt, K. T. et al. "Schnet: A Continuous-filter
-        Convolutional Neural Network for Quantum Chemistry."
-        NeurIPS 2018.
-    """
-
-    def __init__(self, hidden_dim: int = 128, num_filters: int = 32) -> None:
-        super().__init__()
-        self.conv = ContinuousFilterConv1d(hidden_dim, hidden_dim, num_filters)
-        self.norm1 = nn.LayerNorm(hidden_dim)
-        self.norm2 = nn.LayerNorm(hidden_dim)
-        self.ffn = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim * 2),
-            nn.SiLU(),
-            nn.Linear(hidden_dim * 2, hidden_dim),
-        )
-
-    def forward(
-        self,
-        h: torch.Tensor,
-        distances: torch.Tensor,
-    ) -> torch.Tensor:
-        """Forward pass of SchNet interaction block.
-
-        Args:
-            h: Node embeddings (N, hidden_dim).
-            distances: Pairwise distances (N, N).
-
-        Returns:
-            Updated node embeddings (N, hidden_dim).
+        Reference:
+            Schutt, K. T. et al. "Schnet: A Continuous-filter
+            Convolutional Neural Network for Quantum Chemistry."
+            NeurIPS 2018.
         """
-        h_msg = self.conv(h, distances)
-        h = self.norm1(h + h_msg)
-        h_ffn = self.ffn(h)
-        h = self.norm2(h + h_ffn)
-        return h
+
+        def __init__(self, hidden_dim: int = 128, num_filters: int = 32) -> None:
+            super().__init__()
+            self.conv = ContinuousFilterConv1d(hidden_dim, hidden_dim, num_filters)
+            self.norm1 = nn.LayerNorm(hidden_dim)
+            self.norm2 = nn.LayerNorm(hidden_dim)
+            self.ffn = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim * 2),
+                nn.SiLU(),
+                nn.Linear(hidden_dim * 2, hidden_dim),
+            )
+
+        def forward(
+            self,
+            h: torch.Tensor,
+            distances: torch.Tensor,
+        ) -> torch.Tensor:
+            """Forward pass of SchNet interaction block.
+
+            Args:
+                h: Node embeddings (N, hidden_dim).
+                distances: Pairwise distances (N, N).
+
+            Returns:
+                Updated node embeddings (N, hidden_dim).
+            """
+            h_msg = self.conv(h, distances)
+            h = self.norm1(h + h_msg)
+            h_ffn = self.ffn(h)
+            h = self.norm2(h + h_ffn)
+            return h
 
 
-class MatterSimMPEngine(nn.Module):
-    """SchNet-style physics engine for MatterSim on Apple Silicon MPS.
+    class MatterSimMPEngine(nn.Module):
+        """SchNet-style physics engine for MatterSim on Apple Silicon MPS.
 
-    Processes real geometric graph networks with explicit 3D atomic
-    coordinates (N x 3), structural atomic element mappings (N),
-    and boundary constraints.
+        Processes real geometric graph networks with explicit 3D atomic
+        coordinates (N x 3), structural atomic element mappings (N),
+        and boundary constraints.
 
-    Uses continuous-filter convolution (SchNet) for message passing
-    over pairwise atomic distances, enabling smooth interpolation
-    of atomic interactions.
+        Uses continuous-filter convolution (SchNet) for message passing
+        over pairwise atomic distances, enabling smooth interpolation
+        of atomic interactions.
 
-    Fully vectorized: computes all pairwise interactions via O(N^2)
-    tensor operations (O(N^2) time/space), with O(1) Python interpreter
-    overhead per step. Enables gradients via torch.autograd.grad.
+        Fully vectorized: computes all pairwise interactions via O(N^2)
+        tensor operations (O(N^2) time/space), with O(1) Python interpreter
+        overhead per step. Enables gradients via torch.autograd.grad.
 
-    Supports batched inputs: (B, N, 3) for coordinates and (B, N)
-    for atomic numbers.
+        Supports batched inputs: (B, N, 3) for coordinates and (B, N)
+        for atomic numbers.
 
-    Reference:
-        SchNet: Schutt, K. T. et al. NeurIPS 2018.
-        MatterSim: Butler, K. T. et al. Nature 2023.
-    """
-
-    def __init__(self, hidden_dim: int = 128, num_filters: int = 32) -> None:
-        super().__init__()
-        self.hidden_dim = hidden_dim
-
-        # Element embedding
-        self.embedding = nn.Embedding(118, hidden_dim)
-
-        # SchNet interaction blocks
-        self.interactions = nn.ModuleList([
-            SchNetInteractionBlock(hidden_dim, num_filters)
-            for _ in range(3)  # 3 interaction blocks
-        ])
-
-        # Readout: project final embeddings to scalar energy
-        self.readout = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.SiLU(),
-            nn.Linear(hidden_dim // 2, 1),
-        )
-
-    def forward(
-        self,
-        atomic_numbers: torch.Tensor,
-        coordinates: torch.Tensor,
-    ) -> torch.Tensor:
-        """Compute interaction energy from 3D atomic structure.
-
-        Args:
-            atomic_numbers: (N,) or (B, N) LongTensor representing elements.
-            coordinates: (N, 3) or (B, N, 3) FloatTensor tracking physical positions.
-
-        Returns:
-            Scalar energy tensor (or batch of scalars for B>1).
+        Reference:
+            SchNet: Schutt, K. T. et al. NeurIPS 2018.
+            MatterSim: Butler, K. T. et al. Nature 2023.
         """
-        batched = coordinates.dim() == 3
 
-        if batched:
-            # Handle batched inputs by iterating over batch dimension
-            energies = []
-            for i in range(coordinates.shape[0]):
-                e = self._forward_single(atomic_numbers[i], coordinates[i])
-                energies.append(e)
-            return torch.stack(energies).mean()
-        else:
-            return self._forward_single(atomic_numbers, coordinates)
+        def __init__(self, hidden_dim: int = 128, num_filters: int = 32) -> None:
+            super().__init__()
+            self.hidden_dim = hidden_dim
 
-    def _forward_single(
-        self,
-        atomic_numbers: torch.Tensor,
-        coordinates: torch.Tensor,
-    ) -> torch.Tensor:
-        """Forward pass for a single molecule (non-batched).
+            # Element embedding
+            self.embedding = nn.Embedding(118, hidden_dim)
 
-        Args:
-            atomic_numbers: (N,) LongTensor.
-            coordinates: (N, 3) FloatTensor.
+            # SchNet interaction blocks
+            self.interactions = nn.ModuleList([
+                SchNetInteractionBlock(hidden_dim, num_filters)
+                for _ in range(3)  # 3 interaction blocks
+            ])
 
-        Returns:
-            Scalar energy tensor.
-        """
-        # Embed elements: (N, hidden_dim)
-        h = self.embedding(atomic_numbers)  # (N, hidden_dim)
+            # Readout: project final embeddings to scalar energy
+            self.readout = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.SiLU(),
+                nn.Linear(hidden_dim // 2, 1),
+            )
 
-        # Pairwise distance computation: (N, N)
-        diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)  # (N, N, 3)
-        distances = torch.norm(diffs, dim=-1)  # (N, N)
+        def forward(
+            self,
+            atomic_numbers: torch.Tensor,
+            coordinates: torch.Tensor,
+        ) -> torch.Tensor:
+            """Compute interaction energy from 3D atomic structure.
 
-        # SchNet interaction blocks
-        for interaction in self.interactions:
-            h = interaction(h, distances)  # (N, hidden_dim)
+            Args:
+                atomic_numbers: (N,) or (B, N) LongTensor representing elements.
+                coordinates: (N, 3) or (B, N, 3) FloatTensor tracking physical positions.
 
-        # Readout: sum node features and project to energy
-        h_readout = h.sum(dim=0)  # (hidden_dim,)
-        energy = self.readout(h_readout).squeeze(-1)  # scalar
-        return energy  # type: ignore[no-any-return]
+            Returns:
+                Scalar energy tensor (or batch of scalars for B>1).
+            """
+            batched = coordinates.dim() == 3
 
-    def compute_forces(
-        self,
-        atomic_numbers: torch.Tensor,
-        coordinates: torch.Tensor,
-    ) -> torch.Tensor:
-        """Compute atomic forces as negative gradient of energy.
+            if batched:
+                # Handle batched inputs by iterating over batch dimension
+                energies = []
+                for i in range(coordinates.shape[0]):
+                    e = self._forward_single(atomic_numbers[i], coordinates[i])
+                    energies.append(e)
+                return torch.stack(energies).mean()
+            else:
+                return self._forward_single(atomic_numbers, coordinates)
 
-        Args:
-            atomic_numbers: (N,) LongTensor.
-            coordinates: (N, 3) FloatTensor.
+        def _forward_single(
+            self,
+            atomic_numbers: torch.Tensor,
+            coordinates: torch.Tensor,
+        ) -> torch.Tensor:
+            """Forward pass for a single molecule (non-batched).
 
-        Returns:
-            Forces (N, 3) FloatTensor.
-        """
-        coordinates.requires_grad_(True)
-        energy = self(atomic_numbers, coordinates)
-        forces = torch.autograd.grad(
-            energy, coordinates, grad_outputs=torch.ones_like(energy),
-            create_graph=True, only_inputs=True,
-        )[0]
-        return -forces  # Force = -gradient of energy
+            Args:
+                atomic_numbers: (N,) LongTensor.
+                coordinates: (N, 3) FloatTensor.
+
+            Returns:
+                Scalar energy tensor.
+            """
+            # Embed elements: (N, hidden_dim)
+            h = self.embedding(atomic_numbers)  # (N, hidden_dim)
+
+            # Pairwise distance computation: (N, N)
+            diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)  # (N, N, 3)
+            distances = torch.norm(diffs, dim=-1)  # (N, N)
+
+            # SchNet interaction blocks
+            for interaction in self.interactions:
+                h = interaction(h, distances)  # (N, hidden_dim)
+
+            # Readout: sum node features and project to energy
+            h_readout = h.sum(dim=0)  # (hidden_dim,)
+            energy = self.readout(h_readout).squeeze(-1)  # scalar
+            return energy  # type: ignore[no-any-return]
+
+        def compute_forces(
+            self,
+            atomic_numbers: torch.Tensor,
+            coordinates: torch.Tensor,
+        ) -> torch.Tensor:
+            """Compute atomic forces as negative gradient of energy.
+
+            Args:
+                atomic_numbers: (N,) LongTensor.
+                coordinates: (N, 3) FloatTensor.
+
+            Returns:
+                Forces (N, 3) FloatTensor.
+            """
+            coordinates.requires_grad_(True)
+            energy = self(atomic_numbers, coordinates)
+            forces = torch.autograd.grad(
+                energy, coordinates, grad_outputs=torch.ones_like(energy),
+                create_graph=True, only_inputs=True,
+            )[0]
+            return -forces  # Force = -gradient of energy
 
 
 class MatterSimMTSimulator:

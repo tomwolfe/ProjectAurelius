@@ -169,6 +169,7 @@ class _LinearFallbackPredictor:
             }
 
         if descriptors is None:
+            assert smiles is not None
             descriptors = _generate_molecular_descriptors(smiles)
 
         def _predict_single(desc: dict[str, float], weights: np.ndarray, bias: float) -> float:
