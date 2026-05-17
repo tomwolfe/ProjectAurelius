@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import torch
+
+try:
+    import torch
+
+    HAS_TORCH = True
+except ImportError:
+    torch = None  # type: ignore
+    HAS_TORCH = False
 
 try:
     import mlx.core as mx
@@ -19,6 +26,8 @@ from aurelius.memory.manager import (
     ZeroCopyMemoryManager,
 )
 from aurelius.scoring.engine import AureliusScoringEngine
+from aurelius.screening.tier0.models import Tier0MPNN
+from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
 from aurelius.screening.tier1 import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMPEngine, MatterSimMTSimulator
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig
@@ -31,9 +40,6 @@ from aurelius.types import (
     SEIEvolution,
     Tier2Result,
 )
-
-HAS_TORCH = torch is not None
-
 
 # ============================================================
 # Config Tests
@@ -1306,9 +1312,6 @@ class TestTier0MPNN:
 
     def test_tier0_activation_predictor_gnn_available(self):
         """Verify Tier0ActivationPredictor uses GNN when model is provided."""
-        from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
-        from aurelius.screening.tier0.models import Tier0MPNN
-
         predictor = Tier0ActivationPredictor()
         gnn_model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
 
