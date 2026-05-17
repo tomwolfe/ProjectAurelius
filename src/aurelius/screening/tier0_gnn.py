@@ -33,6 +33,8 @@ from typing import Any
 
 import numpy as np
 
+from aurelius.utils.descriptors import _generate_molecular_descriptors, _hash_descriptors
+
 try:
     import torch
     import torch.nn as nn
@@ -960,10 +962,7 @@ class _LinearFallbackPredictor:
         }
 
     def _generate_descriptors(self, smiles: str) -> dict[str, float]:
-        """Generate molecular descriptors from SMILES (inline to avoid circular imports).
-
-        When RDKit is available, uses real descriptors; otherwise falls back to
-        a deterministic hash-based approximation.
+        """Generate molecular descriptors from SMILES (delegated to shared module).
 
         Args:
             smiles: SMILES string of the molecule.
@@ -971,26 +970,7 @@ class _LinearFallbackPredictor:
         Returns:
             Dictionary of descriptor name -> value.
         """
-        try:
-            from rdkit import Chem
-            from rdkit.Chem import Descriptors
-
-            mol = Chem.MolFromSmiles(smiles)
-            if mol is None:
-                return self._hash_descriptors(smiles)
-
-            return {
-                "mw": float(Descriptors.MolWt(mol)),
-                "logp": float(Descriptors.MolLogP(mol)),
-                "hba": int(Descriptors.NumHAcceptors(mol)),
-                "hbd": int(Descriptors.NumHDonors(mol)),
-                "tpsa": float(Descriptors.TPSA(mol)),
-                "rot_bonds": int(Descriptors.NumRotatableBonds(mol)),
-                "aromatic_ratio": float(sum(1 for a in mol.GetAtoms() if a.GetIsAromatic()) / max(mol.GetNumAtoms(), 1)),
-                "heavy_atom_count": float(Descriptors.HeavyAtomCount(mol)),
-            }
-        except ImportError:
-            return self._hash_descriptors(smiles)
+        return _generate_molecular_descriptors(smiles)
 
     def _hash_descriptors(self, smiles: str) -> dict[str, float]:
         """Fallback descriptor generation using deterministic hashing.
@@ -1001,15 +981,4 @@ class _LinearFallbackPredictor:
         Returns:
             Dictionary of approximate descriptor values.
         """
-        seed = hash(smiles) % (2**31)
-        rng = np.random.RandomState(seed)
-        return {
-            "mw": float(rng.uniform(50, 500)),
-            "logp": float(rng.uniform(-2, 5)),
-            "hba": int(rng.randint(0, 10)),
-            "hbd": int(rng.randint(0, 5)),
-            "tpsa": float(rng.uniform(0, 200)),
-            "rot_bonds": int(rng.randint(0, 10)),
-            "aromatic_ratio": float(rng.uniform(0, 1)),
-            "heavy_atom_count": float(rng.uniform(5, 50)),
-        }
+        return _hash_descriptors(smiles)

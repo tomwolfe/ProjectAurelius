@@ -13,9 +13,13 @@ Usage:
     aurelius hf-upload               Upload model to HuggingFace Hub
 """
 
+from __future__ import annotations
+
+import importlib.util
 import json
 import os
 import sys
+from pathlib import Path
 
 import click
 
@@ -263,14 +267,18 @@ def _run_tier1_train(
     csv_path: str | None,
 ) -> None:
     """Run Tier 1 model training via train_tier1.py."""
-    import os
-    import sys
-    _scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "scripts")
-    if _scripts_dir not in sys.path:
-        sys.path.insert(0, _scripts_dir)
-    from train_tier1 import train_main  # type: ignore[import-not-found]
-
-    train_main(
+    script_path = Path(__file__).resolve().parent.parent / "scripts" / "train_tier1.py"
+    if not script_path.exists():
+        raise FileNotFoundError(
+            f"Training script not found: {script_path}. "
+            "Ensure the package is installed (e.g., pip install -e .)."
+        )
+    spec = importlib.util.spec_from_file_location("train_tier1", script_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module from {script_path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.train_main(
         dataset=dataset,
         epochs=epochs,
         batch_size=batch_size,
@@ -286,14 +294,18 @@ def _run_tier0_train(
     csv_path: str | None,
 ) -> None:
     """Run Tier 0 MPNN model training via train_tier0.py."""
-    import os
-    import sys
-    _scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "scripts")
-    if _scripts_dir not in sys.path:
-        sys.path.insert(0, _scripts_dir)
-    from train_tier0 import train_main  # type: ignore[import-not-found]
-
-    train_main(
+    script_path = Path(__file__).resolve().parent.parent / "scripts" / "train_tier0.py"
+    if not script_path.exists():
+        raise FileNotFoundError(
+            f"Training script not found: {script_path}. "
+            "Ensure the package is installed (e.g., pip install -e .)."
+        )
+    spec = importlib.util.spec_from_file_location("train_tier0", script_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module from {script_path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.train_main(
         epochs=epochs,
         batch_size=batch_size,
         learning_rate=learning_rate,
@@ -308,16 +320,19 @@ def validate(smiles: str) -> None:
 
     Wraps scripts/validate_physics.py as a native CLI subcommand.
     """
-
-    import os
-    import sys
-    _scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "scripts")
-    if _scripts_dir not in sys.path:
-        sys.path.insert(0, _scripts_dir)
-    from validate_physics import main as validate_main  # type: ignore[import-not-found]
-
+    script_path = Path(__file__).resolve().parent.parent / "scripts" / "validate_physics.py"
+    if not script_path.exists():
+        raise FileNotFoundError(
+            f"Validation script not found: {script_path}. "
+            "Ensure the package is installed (e.g., pip install -e .)."
+        )
+    spec = importlib.util.spec_from_file_location("validate_physics", script_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module from {script_path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
     sys.argv = ["validate_physics.py"]
-    validate_main()
+    mod.main()
 
 
 @cli.command("status")

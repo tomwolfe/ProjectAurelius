@@ -74,7 +74,7 @@ def _get_mps_memory_gb() -> float:
 def _get_mlx_memory_gb() -> float:
     """Get current MLX Metal memory in GB.
 
-    Uses mx.get_active_memory() (or mx.metal.get_active_memory for
+    Uses mx.metal.get_active_memory() (or mx.get_active_memory for
     older versions) when available. Falls back to 0.0 if MLX is
     unavailable.
 
@@ -83,17 +83,16 @@ def _get_mlx_memory_gb() -> float:
     """
     try:
         import mlx.core as mx
-        # Try newer API first, fall back to deprecated one
+        # Try newer API first (MLX >= 0.15/0.20)
         if hasattr(mx.metal, "get_active_memory"):
-            mem_bytes = mx.metal.get_active_memory()
+            return float(mx.metal.get_active_memory()) / (1024 ** 3)
+        # Fallback to legacy API
         elif hasattr(mx, "get_active_memory"):
-            mem_bytes = mx.get_active_memory()
+            return float(mx.get_active_memory()) / (1024 ** 3)
         else:
             return 0.0
-        return float(mem_bytes) / (1024 ** 3)
     except Exception:
-        pass
-    return 0.0
+        return 0.0
 
 
 class MemoryProfiler:
