@@ -28,7 +28,7 @@ import csv
 import os
 import time
 import tracemalloc
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import psutil
@@ -205,7 +205,7 @@ class MemoryProfiler:
         out_dir = output_dir or self._output_dir
         os.makedirs(out_dir, exist_ok=True)
 
-        timestamp = datetime.now(datetime.UTC).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         csv_path = os.path.join(out_dir, f"memory_profile_{timestamp}.csv")
 
         if not self._samples:
