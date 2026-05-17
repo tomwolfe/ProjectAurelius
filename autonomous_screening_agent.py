@@ -16,15 +16,15 @@ Dependencies:
 
 from __future__ import annotations
 
+import argparse
+import contextlib
 import gc
 import json
+import logging
 import os
 import sys
 import time
-import hashlib
-import logging
-import argparse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +32,7 @@ import numpy as np
 
 try:
     from rdkit import Chem
-    from rdkit.Chem import AllChem, Descriptors, BRICS, rdFingerprintGenerator
+    from rdkit.Chem import BRICS, AllChem, Descriptors, rdFingerprintGenerator  # noqa: N816
     from rdkit.DataStructs import FingerprintSimilarity
     HAS_RDKIT = True
 except ImportError:
@@ -40,7 +40,7 @@ except ImportError:
     AllChem = None
     Descriptors = None
     BRICS = None
-    rdFingerprintGenerator = None  # type: ignore
+    rdFingerprintGenerator = None  # type: ignore  # noqa: N816
     HAS_RDKIT = False
 
 import rdkit.DataStructs as DataStructs
@@ -63,23 +63,29 @@ _error_handler.setFormatter(logging.Formatter("%(asctime)s [ERROR] %(message)s")
 log.addHandler(_error_handler)
 
 # ---------------------------------------------------------------------------
+# Aurelius imports
+# ---------------------------------------------------------------------------
+
+from aurelius.config import M5ProConfig, initialize_environment  # noqa: E402
+from aurelius.memory.profiler import MemoryProfiler  # noqa: E402
+from aurelius.pipeline import AureliusPipeline  # noqa: E402
+from aurelius.screening.tier0_gnn import Tier0ActivationPredictor  # noqa: E402
+from aurelius.screening.tier1_mlx_filter import MLXNAFilter  # noqa: E402, F401
+from aurelius.screening.tier2_mattersim import MatterSimMTSimulator  # noqa: E402, F401
+from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin  # noqa: E402, F401
+from aurelius.types import MoleculeInput  # noqa: E402, F401
+
+# ---------------------------------------------------------------------------
+# Module-level state for exception handling
+# ---------------------------------------------------------------------------
+
+_checkpoint: CheckpointManager | None = None
+
+# ---------------------------------------------------------------------------
 # Determinism
 # ---------------------------------------------------------------------------
 
 np.random.seed(42)
-
-# ---------------------------------------------------------------------------
-# Aurelius imports
-# ---------------------------------------------------------------------------
-
-from aurelius.config import M5ProConfig, initialize_environment
-from aurelius.pipeline import AureliusPipeline
-from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin
-from aurelius.screening.tier0_gnn import Tier0ActivationPredictor
-from aurelius.types import MoleculeInput
-from aurelius.screening.tier1_mlx_filter import MLXNAFilter
-from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
-from aurelius.memory.profiler import MemoryProfiler
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -183,10 +189,8 @@ class MutationEngine:
         self.seed_pool: list[str] = list(set(seed_smiles))
         self.known_fps: list = []
         for h in (known_fps_hex or []):
-            try:
+            with contextlib.suppress(Exception):
                 self.known_fps.append(_deserialize_fp(h))
-            except Exception:
-                pass
         self._rng = np.random.RandomState(42)
 
     def fingerprint_db_size(self) -> int:
@@ -200,10 +204,7 @@ class MutationEngine:
     def _novelty_check(self, mol) -> bool:
         """Return True if molecule is novel (Tanimoto < 0.75 vs all known)."""
         fp = _mol_to_fp(mol)
-        for known in self.known_fps:
-            if _tanimoto(fp, known) >= 0.75:
-                return False
-        return True
+        return all(_tanimoto(fp, known) < 0.75 for known in self.known_fps)
 
     # _is_valid is now a module-level function (_is_valid_mol)
 
@@ -382,7 +383,7 @@ class FeedbackAdapter:
         """Write accumulated rationale to markdown file."""
         with open(path, "w") as f:
             f.write("# Mutation Rationale Log\n\n")
-            f.write(f"**Generated:** {datetime.now(timezone.utc).isoformat()}\n\n")
+            f.write(f"**Generated:** {datetime.now(UTC).isoformat()}\n\n")
             f.write("## Adaptation Decisions\n\n")
             for entry in self.rationale_log:
                 f.write(f"- {entry}\n")
@@ -509,7 +510,7 @@ class CheckpointManager:
             "total_generated": 0,
             "invalid_discarded": 0,
             "discoveries": [],
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": datetime.now(UTC).isoformat(),
             "last_updated": None,
         }
 
@@ -526,7 +527,7 @@ class CheckpointManager:
         return self.state
 
     def save(self):
-        self.state["last_updated"] = datetime.now(timezone.utc).isoformat()
+        self.state["last_updated"] = datetime.now(UTC).isoformat()
         tmp_path = self.path + ".tmp"
         with open(tmp_path, "w") as f:
             json.dump(self.state, f, indent=2)
@@ -614,11 +615,10 @@ def generate_screening_statistics(convergence: ConvergenceChecker, all_results: 
                                   path: str = "screening_statistics.md"):
     """Generate convergence plots, pass rates, exhaustion proof."""
     scores = [r["score"].total_score for r in all_results if r.get("score")]
-    viable = [s for s in scores if s >= 65.0]
 
     with open(path, "w") as f:
         f.write("# Screening Statistics — Project Aurelius v5.2\n\n")
-        f.write(f"**Generated:** {datetime.now(timezone.utc).isoformat()}\n\n")
+        f.write(f"**Generated:** {datetime.now(UTC).isoformat()}\n\n")
 
         f.write("## Overview\n\n")
         f.write(f"- **Total screened:** {convergence.total_screened}\n")
@@ -639,7 +639,7 @@ def generate_screening_statistics(convergence: ConvergenceChecker, all_results: 
             for i in range(len(bins) - 1):
                 count = sum(1 for s in scores if bins[i] <= s < bins[i + 1])
                 bar = "#" * count
-                line = "  [{:>3.0f}-{:>3.0f}): {} ({}))".format(bins[i], bins[i+1], bar, count)
+                line = f"  [{bins[i]:>3.0f}-{bins[i+1]:>3.0f}): {bar} ({count}))"
                 f.write(line + "\n")
             f.write("\n")
 
@@ -686,7 +686,7 @@ def generate_chemical_insights(all_results: list[dict[str, Any]], discoveries: l
     """Generate structural correlations, failure analysis, experimental next steps."""
     with open(path, "w") as f:
         f.write("# Chemical Insights — Project Aurelius v5.2\n\n")
-        f.write(f"**Generated:** {datetime.now(timezone.utc).isoformat()}\n\n")
+        f.write(f"**Generated:** {datetime.now(UTC).isoformat()}\n\n")
 
         f.write("## Structural Correlations\n\n")
         f.write("Analysis of molecular features correlated with high Aurelius scores.\n\n")
@@ -870,17 +870,16 @@ def run_screening(args):
     engine = MutationEngine(seed_smiles)
 
     # ---- Phase 5: Checkpoint & Resume ----
-    checkpoint = CheckpointManager()
+    global _checkpoint
+    _checkpoint = checkpoint = CheckpointManager()
     state = checkpoint.load()
 
     # Rebuild known fingerprints from checkpoint
     known_fps_hex = state.get("known_fps_hex", [])
     engine.known_fps = []
     for h in known_fps_hex:
-        try:
+        with contextlib.suppress(Exception):
             engine.known_fps.append(_deserialize_fp(h))
-        except Exception:
-            pass
 
     resumed = state["screened_count"] > 0
     start_batch = state.get("batch", 0)
@@ -1132,15 +1131,15 @@ def run_screening(args):
     print(f"  Best score:         {checkpoint.state['best_score']:.1f}")
     print(f"  Invalid discarded:  {checkpoint.state['invalid_discarded']}")
     print(f"  Wall time:          {time.time() - wall_start:.0f}s")
-    print(f"\n  Output files:")
-    print(f"    - discovery_results_final.json")
-    print(f"    - top_discoveries.smi")
-    print(f"    - screening_statistics.md")
-    print(f"    - chemical_insights.md")
-    print(f"    - agent_discovery_manifest.json")
-    print(f"    - agent_state.json")
-    print(f"    - mutation_rationale.md")
-    print(f"    - errors.log")
+    print("\n  Output files:")
+    print("    - discovery_results_final.json")
+    print("    - top_discoveries.smi")
+    print("    - screening_statistics.md")
+    print("    - chemical_insights.md")
+    print("    - agent_discovery_manifest.json")
+    print("    - agent_state.json")
+    print("    - mutation_rationale.md")
+    print("    - errors.log")
     print()
 
 
@@ -1157,17 +1156,16 @@ def main():
     except KeyboardInterrupt:
         print("\n[AGENT] Interrupted by user. Saving state and exiting.")
         # Save whatever we have
-        if "checkpoint" in dir():
-            checkpoint.save()
+        if _checkpoint is not None:
+            _checkpoint.save()
         sys.exit(1)
     except Exception as e:
         log.error("Fatal error: %s", e, exc_info=True)
         print(f"\n[FATAL] {e}")
         # Save partial state
-        try:
-            checkpoint.save()
-        except Exception:
-            pass
+        if _checkpoint is not None:
+            with contextlib.suppress(Exception):
+                _checkpoint.save()
         sys.exit(1)
 
 

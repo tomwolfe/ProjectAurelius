@@ -16,7 +16,6 @@ Cross-Platform Compatibility:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ _TORCH_DLPACK_UNSUPPORTED_MSG = (
 )
 
 
-def bridge_mlx_to_pytorch(mlx_array: "mx.array") -> "torch.Tensor":
+def bridge_mlx_to_pytorch(mlx_array: mx.array) -> torch.Tensor:
     """Bridge MLX array memory to PyTorch via DLPack.
 
     Uses DLpack to export the MLX array memory view into a DLPack
@@ -106,7 +105,7 @@ def bridge_mlx_to_pytorch(mlx_array: "mx.array") -> "torch.Tensor":
     return torch_tensor
 
 
-def bridge_pytorch_to_mlx(torch_tensor: "torch.Tensor") -> "mx.array":
+def bridge_pytorch_to_mlx(torch_tensor: torch.Tensor) -> mx.array:
     """Bridge PyTorch tensor memory to MLX via DLPack.
 
     Uses DLpack to export the PyTorch tensor memory view into a
@@ -182,7 +181,7 @@ class CrossFrameworkBridge:
         """Return True if PyTorch is available on this platform."""
         return self._torch_available
 
-    def mlx_to_pytorch(self, mlx_array: "mx.array") -> "torch.Tensor":
+    def mlx_to_pytorch(self, mlx_array: mx.array) -> torch.Tensor:
         """Bridge an MLX array to a PyTorch tensor on the same device.
 
         Raises:
@@ -193,7 +192,7 @@ class CrossFrameworkBridge:
             raise RuntimeError(_MLX_NOT_AVAILABLE_MSG)
         return bridge_mlx_to_pytorch(mlx_array)
 
-    def pytorch_to_mlx(self, torch_tensor: "torch.Tensor") -> "mx.array":
+    def pytorch_to_mlx(self, torch_tensor: torch.Tensor) -> mx.array:
         """Bridge a PyTorch tensor to an MLX array.
 
         Raises:

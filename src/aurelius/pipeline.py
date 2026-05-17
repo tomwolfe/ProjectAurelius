@@ -88,7 +88,7 @@ class AureliusPipeline:
                     "Install with: pip install rdkit\n\n"
                     "To run without RDKit, create the pipeline with "
                     "use_real_models=False, or use --demo mode."
-                )
+                ) from None
 
         print("\n" + "=" * 60)
         print("  PROJECT AURELIUS v6.0 - Pipeline Initialization")

@@ -249,8 +249,9 @@ class TestMLXNAFilter:
         # (they should not be exactly zero or all identical)
         # Only check weight matrices (W1, W2), not biases which may be zero
         # in the numpy fallback path
+        params_list = list(params)
         for i in (0, 2):
-            p = params[i]
+            p = params_list[i]
             p_np = np.array(p) if HAS_MLX and isinstance(p, mx.array) else p
             assert np.any(np.abs(p_np) > 1e-10), "Model weights should have non-zero values"
 
@@ -1525,7 +1526,7 @@ class TestCrossPlatformBridge:
 
     def test_bridge_importable_without_mlx(self):
         """Verify bridge module is importable on Linux/Windows (without MLX)."""
-        from aurelius.bridge import CrossFrameworkBridge, HAS_MLX, HAS_TORCH
+        from aurelius.bridge import CrossFrameworkBridge
 
         # The module should always be importable
         bridge = CrossFrameworkBridge()
@@ -1536,7 +1537,7 @@ class TestCrossPlatformBridge:
 
     def test_bridge_raises_on_mlx_usage_when_unavailable(self):
         """Verify bridge raises descriptive RuntimeError when MLX is missing."""
-        from aurelius.bridge import CrossFrameworkBridge, HAS_MLX
+        from aurelius.bridge import HAS_MLX, CrossFrameworkBridge
 
         if HAS_MLX:
             pytest.skip("MLX is available on this platform")
@@ -1546,12 +1547,13 @@ class TestCrossPlatformBridge:
 
         # Attempting to use MLX-dependent methods should raise RuntimeError
         with pytest.raises(RuntimeError) as exc_info:
-            bridge.mlx_to_pytorch(mx.array([1.0]))  # type: ignore[name-defined]
+            # Use a plain list since mx is None when MLX is unavailable
+            bridge.mlx_to_pytorch([1.0])  # type: ignore[arg-type]
         assert "MLX is not available" in str(exc_info.value)
 
     def test_bridge_is_available_property(self):
         """Verify is_available correctly reflects framework availability."""
-        from aurelius.bridge import CrossFrameworkBridge, HAS_MLX, HAS_TORCH
+        from aurelius.bridge import HAS_MLX, HAS_TORCH, CrossFrameworkBridge
 
         bridge = CrossFrameworkBridge()
         if HAS_MLX and HAS_TORCH:
@@ -1634,7 +1636,7 @@ class TestPyTorchFallbackFilter:
 
     def test_mlxna_filter_uses_pytorch_fallback_without_mlx(self):
         """Verify MLXNAFilter instantiates PyTorch fallback when MLX is unavailable."""
-        from aurelius.screening.tier1_mlx_filter import MLXNAFilter, PyTorchFallbackFilter, HAS_MLX
+        from aurelius.screening.tier1_mlx_filter import HAS_MLX, MLXNAFilter, PyTorchFallbackFilter
 
         if HAS_MLX:
             pytest.skip("MLX is available; testing PyTorch fallback requires MLX absence")
@@ -1646,7 +1648,7 @@ class TestPyTorchFallbackFilter:
 
     def test_screening_works_without_mlx(self):
         """Verify screening pipeline works when MLX is unavailable."""
-        from aurelius.screening.tier1_mlx_filter import MLXNAFilter, HAS_MLX
+        from aurelius.screening.tier1_mlx_filter import HAS_MLX, MLXNAFilter
 
         if HAS_MLX:
             pytest.skip("MLX is available; testing fallback requires MLX absence")
@@ -1769,7 +1771,7 @@ class TestEnhancedPhysicsConservation:
         """Verify MatterSimMTSimulator creates all tensors on the selected device."""
         sim = MatterSimMTSimulator()
         sim.initialize()
-        device = sim._select_device()
+        _device = sim._select_device()
 
         result = sim.simulate_desolvation(
             "CC(=O)OC1=CC(=O)O1",
@@ -1786,7 +1788,6 @@ class TestEnhancedPhysicsConservation:
     def test_bridge_module_importable_on_all_platforms(self, capsys):
         """Verify bridge.py can be imported without MLX on any platform."""
         # This test validates that bridge.py has no unconditional MLX imports
-        import importlib
         import sys
 
         # Save original state

@@ -9,10 +9,9 @@ and extracts viable molecules (score >= 65.0).
 
 import gc
 import json
-import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,12 +20,12 @@ import numpy as np
 sys.path.insert(0, "src")
 
 from rdkit import Chem
-from rdkit.Chem import AllChem, Descriptors, BRICS, Lipinski, rdFingerprintGenerator
-from rdkit.DataStructs import FingerprintSimilarity, BitVectToText, CreateFromBitString
+from rdkit.Chem import BRICS, Descriptors, rdFingerprintGenerator
+from rdkit.DataStructs import BitVectToText, CreateFromBitString, FingerprintSimilarity
 
 from aurelius.config import M5ProConfig, initialize_environment
 from aurelius.pipeline import AureliusPipeline
-from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig, Tier0ActivationPredictor
+from aurelius.screening.tier3_gcmtwin import Tier0ActivationPredictor
 
 # ---------------------------------------------------------------------------
 # Determinism
@@ -115,10 +114,7 @@ class CandidateGenerator:
         if mol is None:
             return False
         fp = mol_to_fp(mol)
-        for known in self.known_fps:
-            if tanimoto(fp, known) >= 0.75:
-                return False
-        return True
+        return all(tanimoto(fp, known) < 0.75 for known in self.known_fps)
 
     def _add_fluorine(self, mol) -> list[str]:
         """Add fluorine to non-carbonyl carbons."""
@@ -376,7 +372,7 @@ def run_discovery():
     discoveries = []
     start_time = time.time()
 
-    for i, smi in enumerate(all_candidates):
+    for _i, smi in enumerate(all_candidates):
         try:
             result = pipeline.screen_molecule(smi)
             score = result.get("score")
@@ -439,7 +435,7 @@ def run_discovery():
 
     # 3. agent_state.json
     agent_state = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "total_screened": len(results),
         "viable_count": len(discoveries),
         "best_score": max(r["total_score"] for r in results) if results else 0.0,
@@ -449,7 +445,7 @@ def run_discovery():
     }
     with open("agent_state.json", "w") as f:
         json.dump(agent_state, f, indent=2)
-    print(f"[DISCOVERY] Saved agent_state.json")
+    print("[DISCOVERY] Saved agent_state.json")
 
     # Summary
     print(f"\n{'=' * 70}")
@@ -460,13 +456,13 @@ def run_discovery():
     print(f"  Screening time:      {elapsed:.1f}s")
 
     if results:
-        print(f"\n  Top 10 Molecules by Score:")
+        print("\n  Top 10 Molecules by Score:")
         for i, r in enumerate(results[:10], 1):
             v = "VIABLE" if r["is_viable"] else "rejected"
             print(f"    {i}. {r['smiles'][:45]:45s} Score={r['total_score']:5.1f} Homog={r['sei_homogeneity_score']:5.1f}  ({v})")
 
     if discoveries:
-        print(f"\n  Viable Discoveries (Score >= 65.0):")
+        print("\n  Viable Discoveries (Score >= 65.0):")
         for i, d in enumerate(discoveries[:10], 1):
             print(f"    {i}. {d['smiles'][:45]:45s} Score={d['total_score']:5.1f} Homog={d['sei_homogeneity_score']:5.1f}")
     else:

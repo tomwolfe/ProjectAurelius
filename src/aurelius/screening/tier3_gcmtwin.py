@@ -31,7 +31,7 @@ import numpy as np
 
 from aurelius.constants import BOLTZMANN_EV_K
 from aurelius.types import GCMDTConfig, GCMDTwinResult, SEIEvolution
-from aurelius.utils.descriptors import _generate_molecular_descriptors, _hash_descriptors
+from aurelius.utils.descriptors import _generate_molecular_descriptors
 
 
 class Tier0ActivationPredictor:

@@ -25,12 +25,10 @@ References:
 from __future__ import annotations
 
 import csv
-import gc
 import os
 import time
 import tracemalloc
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import datetime
 from typing import Any
 
 import psutil
@@ -176,13 +174,8 @@ class MemoryProfiler:
         self._peak_mlx_gb = max(self._peak_mlx_gb, mlx_mem)
 
         # Get tracemalloc top allocations if snapshot is available
-        tracemalloc_top: list[tuple[str, int, int]] = []
         if self._tracemalloc_snapshot:
-            top_stats = self._tracemalloc_snapshot.statistics("lineno")[:5]
-            tracemalloc_top = [
-                (str(stat.traceback), stat.size, stat.count)
-                for stat in top_stats
-            ]
+            _ = self._tracemalloc_snapshot.statistics("lineno")[:5]
 
         sample_entry = {
             "generation": generation,
@@ -212,7 +205,7 @@ class MemoryProfiler:
         out_dir = output_dir or self._output_dir
         os.makedirs(out_dir, exist_ok=True)
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
         csv_path = os.path.join(out_dir, f"memory_profile_{timestamp}.csv")
 
         if not self._samples:

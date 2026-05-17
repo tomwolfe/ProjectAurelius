@@ -27,8 +27,8 @@ References:
 from __future__ import annotations
 
 import csv
+import json
 import os
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -38,7 +38,6 @@ from aurelius.utils.descriptors import _generate_molecular_descriptors, _hash_de
 try:
     import torch
     import torch.nn as nn
-    import torch.nn.functional as F
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
@@ -76,12 +75,11 @@ def _build_molecular_graph(
 
     try:
         from rdkit import Chem
-        from rdkit.Chem import rdMolTransforms
     except ImportError:
         raise RuntimeError(
             "RDKit is required for molecular graph construction. "
             "Install with: pip install rdkit"
-        )
+        ) from None
 
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -445,9 +443,8 @@ class Tier0MPNN(nn.Module):
 
         # Version check
         saved_version = metadata.get("model_version", "unknown")
-        if saved_version != "unknown" and current_version != "unknown":
-            if saved_version != current_version:
-                print(
+        if saved_version != "unknown" and current_version != "unknown" and saved_version != current_version:
+            print(
                     f"[Tier0MPNN] WARNING: Model version ({saved_version}) does not match "
                     f"installed package version ({current_version}). "
                     "Consider retraining with `aurelius train --task tier0`."
@@ -503,7 +500,7 @@ def generate_synthetic_training_data(
         raise RuntimeError(
             "RDKit is required for synthetic data generation. "
             "Install with: pip install rdkit"
-        )
+        ) from None
 
     # Known battery electrolyte molecules (diverse set)
     base_smiles = [
@@ -580,15 +577,12 @@ def generate_synthetic_training_data(
         Chem.EmbedMolecule(mol_with_h, randomSeed=42)
 
         # Compute descriptors
-        mw = float(Descriptors.MolWt(mol_with_h))
         logp = float(Descriptors.MolLogP(mol_with_h))
         hba = int(Descriptors.NumHAcceptors(mol_with_h))
         hbd = int(Descriptors.NumHDonors(mol_with_h))
         tpsa = float(Descriptors.TPSA(mol_with_h))
-        rot_bonds = int(Descriptors.NumRotatableBonds(mol_with_h))
         aromatic_count = sum(1 for a in mol_with_h.GetAtoms() if a.GetIsAromatic())
         aromatic_ratio = aromatic_count / max(mol_with_h.GetNumAtoms(), 1)
-        heavy_atoms = float(Descriptors.HeavyAtomCount(mol_with_h))
 
         # Literature-calibrated activation energies (deterministic, no noise)
         ec_base = 0.65 + 0.08 * logp - 0.02 * hba - 0.03 * hbd - 0.003 * tpsa + 0.15 * aromatic_ratio
@@ -702,6 +696,8 @@ def train_tier0_model(
     edge_index_list: list[torch.Tensor] = []
     targets_list: list[torch.Tensor] = []
 
+    device = "cpu"  # Training on CPU for CI compatibility
+
     for entry in training_data:
         nf, ei = _build_molecular_graph(entry["smiles"], device=device)
         target = torch.tensor([
@@ -714,9 +710,7 @@ def train_tier0_model(
         edge_index_list.append(ei)
         targets_list.append(target)
 
-    # Create tensors for training
     n_train = len(training_data)
-    device = "cpu"  # Training on CPU for CI compatibility
 
     # Convert variable-length graphs to padded batches
     def _collate_fn(batch_indices: list[int]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
@@ -754,10 +748,7 @@ def train_tier0_model(
         padded_nf = torch.cat(batch_nf, dim=0)
 
         # Concatenate edge indices
-        if batch_ei:
-            padded_ei = torch.cat(batch_ei, dim=1)
-        else:
-            padded_ei = torch.empty((2, 0), dtype=torch.long)
+        padded_ei = torch.cat(batch_ei, dim=1) if batch_ei else torch.empty((2, 0), dtype=torch.long)
 
         batch_tgt = torch.stack(batch_targets)
 
@@ -902,7 +893,6 @@ class Tier0ActivationPredictor:
         if model_path and os.path.isfile(model_path):
             if HAS_TORCH:
                 try:
-                    device = "cpu"
                     self._gnn_model = Tier0MPNN(node_dim=4, edge_dim=8, hidden_dim=64, output_dim=4)
                     self._gnn_model.load_weights(model_path)
                     self._gnn_model.eval()

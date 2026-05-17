@@ -123,7 +123,7 @@ def screen(
                 "Install with: pip install rdkit\n\n"
                 "To use hash-based fallback (demo/CI only), add --allow-fallback.\n"
                 "To run in demo mode without RDKit, use: aurelius screen <smiles> --demo"
-            )
+            ) from None
 
     config = get_config()
     env_vars = config.apply_environment()
@@ -169,7 +169,7 @@ def batch(file: str, solvent: str, salt: str, output: str | None, allow_fallback
                 "RDKit is required for batch screening. "
                 "Install with: pip install rdkit\n\n"
                 "To use hash-based fallback (demo/CI only), add --allow-fallback."
-            )
+            ) from None
 
     config = get_config()
     env_vars = config.apply_environment()
@@ -404,8 +404,8 @@ def hf_upload(
             ModelCard,
             ModelCardData,
             create_repo,
-            upload_folder,
             repo_exists,
+            upload_folder,
         )
     except ImportError:
         click.echo("[ERROR] huggingface_hub is required for hf-upload.", err=True)
