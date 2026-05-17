@@ -966,7 +966,7 @@ class MatterSimMTSimulator:
         centers = self._fallback_centers
         widths = self._fallback_widths
 
-        for _h, (h, c, w) in enumerate(zip(heights, centers, widths, strict=True)):
+        for _h, (h, c, w) in enumerate(zip(heights, centers, widths)):
             energies += h * np.exp(-0.5 * ((positions - c) / w) ** 2)
 
         if len(heights) >= 4:

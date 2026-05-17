@@ -133,7 +133,7 @@ def train_on_esol(
 
     # Load ESOL dataset via huggingface datasets library
     try:
-        from datasets import load_dataset  # type: ignore[import-untyped]
+        from datasets import load_dataset
         _ds = load_dataset("deepchem/esol", split="train")
     except ImportError:
         training_data: list[tuple[str, float]] = [
@@ -309,7 +309,7 @@ def train_on_qm9(
     generate_fp = _get_fingerprint_fn()
 
     try:
-        from datasets import load_dataset  # type: ignore[import-untyped, unused-ignore]
+        from datasets import load_dataset
         ds = load_dataset("maastrichtuniversity/qm9", split="train")
     except ImportError as err:
         raise RuntimeError(

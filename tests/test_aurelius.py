@@ -20,16 +20,19 @@ except ImportError:
     mx = None  # type: ignore
     HAS_MLX = False
 
+try:
+    from rdkit import Chem
+    HAS_RDKIT = True
+except ImportError:
+    HAS_RDKIT = False
+    Chem = None  # type: ignore[assignment, unused-ignore]
+
 from aurelius.config import M5ProConfig
 from aurelius.memory.manager import (
     QuantizationConfig,
     ZeroCopyMemoryManager,
 )
 from aurelius.scoring.engine import AureliusScoringEngine
-from aurelius.screening.tier0.models import Tier0MPNN
-from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
-from aurelius.screening.tier1 import MLXNAFilter
-from aurelius.screening.tier2_mattersim import MatterSimMPEngine, MatterSimMTSimulator
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig
 from aurelius.solvation.engine import MWSESolvationEngine
 from aurelius.types import (
@@ -184,9 +187,12 @@ class TestMWSESolvationEngine:
 class TestMLXNAFilter:
     def setup_method(self):
         # Disable training on init for faster tests
+        from aurelius.screening.tier1 import MLXNAFilter
         self.filter = MLXNAFilter(quantization_format="MX4", train_on_init=False)
 
     def test_screen_molecule(self):
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for MLXNAFilter with use_real_models=True")
         result = self.filter.screen_molecule("CC(=O)OC1=CC(=O)O1")
         assert result.molecule_smiles == "CC(=O)OC1=CC(=O)O1"
         assert 0 <= result.confidence_score <= 1
@@ -195,6 +201,8 @@ class TestMLXNAFilter:
 
     def test_deterministic_output_same_smiles(self):
         """Tier 1 must produce consistent results for the same SMILES."""
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for MLXNAFilter with use_real_models=True")
         smiles = "CC(=O)OC1=CC(=O)O1"
         results = [self.filter.screen_molecule(smiles) for _ in range(5)]
         confidences = [r.confidence_score for r in results]
@@ -206,6 +214,8 @@ class TestMLXNAFilter:
 
     def test_different_smiles_different_output(self):
         """Different SMILES should produce different confidence scores."""
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for MLXNAFilter with use_real_models=True")
         smiles_list = [
             "CC(=O)OC1=CC(=O)O1",
             "C1CC(=O)OC1",
@@ -217,6 +227,8 @@ class TestMLXNAFilter:
         assert len(set(confidences)) >= 1  # At minimum, valid scores
 
     def test_screen_batch(self):
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for MLXNAFilter with use_real_models=True")
         molecules = [
             "CC(=O)OC1=CC(=O)O1",
             "C1CC(=O)OC1",
@@ -228,6 +240,8 @@ class TestMLXNAFilter:
 
     def test_fingerprint_generation(self):
         """Test that ECFP4 fingerprints are generated correctly."""
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for fingerprint generation")
         from aurelius.screening.tier1.filter import _generate_ecfp4_fingerprint
 
         smiles = "CC(=O)OC1=CC(=O)O1"
@@ -238,6 +252,8 @@ class TestMLXNAFilter:
 
     def test_fingerprint_deterministic(self):
         """Fingerprint generation must be deterministic."""
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for fingerprint generation")
         from aurelius.screening.tier1.filter import _generate_ecfp4_fingerprint
 
         smiles = "C1=CC(=O)OC1"
@@ -247,6 +263,7 @@ class TestMLXNAFilter:
 
     def test_model_trains_on_init(self):
         """Verify that train_on_init=True produces a trained model."""
+        from aurelius.screening.tier1 import MLXNAFilter
         filter_trained = MLXNAFilter(quantization_format="MX4", train_on_init=True)
         # After training, the model should have non-trivial weights
         assert filter_trained._model is not None
@@ -273,9 +290,12 @@ class TestMLXNAFilter:
 
 class TestMatterSimMTSimulator:
     def setup_method(self):
+        from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
         self.sim = MatterSimMTSimulator(barrier_threshold_eV=0.5)
 
     def test_simulate_desolvation(self):
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMTSimulator")
         result = self.sim.simulate_desolvation(
             "CC(=O)OC1=CC(=O)O1",
             "Na+",
@@ -291,6 +311,8 @@ class TestMatterSimMTSimulator:
 
     def test_energies_are_finite(self):
         """Tier 2 energies must be finite (no NaN/Inf from physics)."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMTSimulator")
         result = self.sim.simulate_desolvation(
             "CC(=O)OC1=CC(=O)O1",
             "Na+",
@@ -307,6 +329,8 @@ class TestMatterSimMTSimulator:
         With real physics, the ion-solvent interactions are predominantly
         attractive (negative energy), which is expected for a solvated ion.
         """
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMTSimulator")
         result = self.sim.simulate_desolvation(
             "CC(=O)OC1=CC(=O)O1",
             "Na+",
@@ -324,6 +348,8 @@ class TestMatterSimMTSimulator:
 
     def test_mps_device_check(self):
         """Verify that MPS device detection works correctly."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MPS device check")
         if torch.backends.mps.is_available():
             assert torch.backends.mps.is_available() is True
         else:
@@ -335,6 +361,8 @@ class TestMatterSimMTSimulator:
         For a 100-atom system, energies from sparse (neighbor list) and
         dense pairwise computations should match within 1e-5 tolerance.
         """
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMTSimulator")
         device = "mps" if torch.backends.mps.is_available() else "cpu"
 
         # Build a 100-atom system with Na+ ions and solvent molecules
@@ -359,6 +387,7 @@ class TestMatterSimMTSimulator:
         coordinates = torch.tensor(coords_list, dtype=torch.float32, device=device)
 
         # Dense path
+        from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
         sim_dense = MatterSimMTSimulator(barrier_threshold_eV=0.5, use_neighbor_list=False)
         sim_dense.initialize()
         distances_dense = torch.norm(coordinates.unsqueeze(1) - coordinates.unsqueeze(0), dim=-1)
@@ -560,6 +589,8 @@ class TestAureliusScoringEngine:
 
 class TestAureliusPipeline:
     def test_pipeline_initialization(self):
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for pipeline with use_real_models=True")
         from aurelius.pipeline import AureliusPipeline
 
         config = M5ProConfig()
@@ -571,6 +602,8 @@ class TestAureliusPipeline:
         assert pipeline._scoring_engine is not None
 
     def test_single_molecule_screen(self):
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for pipeline with use_real_models=True")
         from aurelius.pipeline import AureliusPipeline
 
         config = M5ProConfig()
@@ -585,6 +618,8 @@ class TestAureliusPipeline:
         assert "tier3" in results
 
     def test_batch_screen(self):
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for pipeline with use_real_models=True")
         from aurelius.pipeline import AureliusPipeline
 
         config = M5ProConfig()
@@ -671,6 +706,10 @@ class TestCrossFrameworkBridge:
 class TestMatterSimMPEngine:
     def test_3d_vector_forward_pass(self):
         """Test that the 3D physics engine processes proper (N, 3) coordinates."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMPEngine")
+        from aurelius.screening.tier2_mattersim import MatterSimMPEngine
+
         engine = MatterSimMPEngine()
 
         # N=5 atoms with 3D coordinates
@@ -688,6 +727,10 @@ class TestMatterSimMPEngine:
 
     def test_vectorized_batch(self):
         """Test 3D engine with multiple molecules in batch."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMPEngine")
+        from aurelius.screening.tier2_mattersim import MatterSimMPEngine
+
         engine = MatterSimMPEngine()
 
         # Batch of 2 molecules, each with 4 atoms
@@ -716,6 +759,10 @@ class TestMatterSimMPEngine:
 
     def test_pairwise_distance_computation(self):
         """Verify pairwise distance matrix is computed correctly."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMPEngine")
+        from aurelius.screening.tier2_mattersim import MatterSimMPEngine
+
         engine = MatterSimMPEngine()
 
         # Two atoms at known separation
@@ -736,6 +783,10 @@ class TestMatterSimMPEngine:
         must be computable as the negative gradient of the potential
         energy with respect to atomic coordinates.
         """
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMPEngine")
+        from aurelius.screening.tier2_mattersim import MatterSimMPEngine
+
         engine = MatterSimMPEngine()
 
         atomic_numbers = torch.tensor([6, 6, 8, 1, 1], dtype=torch.long)
@@ -776,6 +827,7 @@ class TestShapeCompatibility:
         hidden_dim = 1024
 
         # Instantiate model without training for shape test
+        from aurelius.screening.tier1 import MLXNAFilter
         model = MLXNAFilter(quantization_format="MX4", train_on_init=False)
 
         # Create placeholder input
@@ -798,6 +850,10 @@ class TestShapeCompatibility:
 
     def test_tier2_3d_tensor_shapes(self):
         """Validate that 3D physics engine requires proper (N, 3) coordinate tensors."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMPEngine")
+        from aurelius.screening.tier2_mattersim import MatterSimMPEngine
+
         engine = MatterSimMPEngine()
 
         # Realistic water molecule: 3 atoms with 3D coordinates
@@ -861,6 +917,10 @@ class TestPhysicsConservation:
         coordinates. This test verifies that the MatterSim engine
         produces computable, finite gradients.
         """
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMPEngine")
+        from aurelius.screening.tier2_mattersim import MatterSimMPEngine
+
         engine = MatterSimMPEngine()
 
         # Small water cluster around Na+
@@ -898,6 +958,10 @@ class TestPhysicsConservation:
         that the potential energy function is well-behaved and
         produces consistent results for identical configurations.
         """
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMPEngine")
+        from aurelius.screening.tier2_mattersim import MatterSimMPEngine
+
         engine = MatterSimMPEngine()
 
         # Fixed atomic configuration
@@ -1035,6 +1099,10 @@ class TestVectorizationSpeed:
         physics engine uses vectorized tensor operations for maximum
         throughput on Apple Silicon hardware.
         """
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMTSimulator")
+        from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
+
         sim = MatterSimMTSimulator(barrier_threshold_eV=0.5)
 
         # Run simulation with a moderately sized system
@@ -1051,6 +1119,10 @@ class TestVectorizationSpeed:
 
     def test_batched_forward_pass(self):
         """Verify that MatterSimMPEngine handles batched inputs."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMPEngine")
+        from aurelius.screening.tier2_mattersim import MatterSimMPEngine
+
         engine = MatterSimMPEngine()
 
         # Batch of 4 molecules with 6 atoms each
@@ -1149,6 +1221,8 @@ class TestRealModelIntegration:
 
     def test_screening_produces_viability_score(self):
         """Verify that screening produces meaningful viability scores."""
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for screening with use_real_models=True")
         from aurelius.screening.tier1 import MLXNAFilter
 
         f = MLXNAFilter(quantization_format="MX4", use_real_models=True, train_on_init=False)
@@ -1161,6 +1235,8 @@ class TestRealModelIntegration:
 
     def test_ecfp4_fingerprint_properties(self):
         """Verify ECFP4 fingerprints have correct properties."""
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for fingerprint generation")
         from aurelius.screening.tier1.filter import _generate_ecfp4_fingerprint
 
         smiles = "CC(=O)OC1=CC(=O)O1"
@@ -1225,6 +1301,7 @@ class TestSchNetLayers:
         """Test MatterSimMPEngine forward pass with SchNet layers."""
         if not HAS_TORCH:
             pytest.skip("PyTorch not available")
+        from aurelius.screening.tier2_mattersim import MatterSimMPEngine
 
         engine = MatterSimMPEngine(hidden_dim=128, num_filters=32)
 
@@ -1244,6 +1321,7 @@ class TestSchNetLayers:
         """Test that forces can be computed as energy gradients."""
         if not HAS_TORCH:
             pytest.skip("PyTorch not available")
+        from aurelius.screening.tier2_mattersim import MatterSimMPEngine
 
         engine = MatterSimMPEngine(hidden_dim=128, num_filters=32)
 
@@ -1272,6 +1350,8 @@ class TestTier0MPNN:
 
     def test_tier0_gnn_model_exists(self):
         """Verify Tier0MPNN GNN model class exists and is trainable."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for Tier0MPNN")
         from aurelius.screening.tier0.models import Tier0MPNN
 
         model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
@@ -1282,6 +1362,8 @@ class TestTier0MPNN:
 
     def test_tier0_gnn_save_load_weights(self, tmp_path):
         """Verify Tier0MPNN GNN can save and load weights."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for Tier0MPNN")
         from aurelius.screening.tier0.models import Tier0MPNN
 
         model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
@@ -1312,6 +1394,11 @@ class TestTier0MPNN:
 
     def test_tier0_activation_predictor_gnn_available(self):
         """Verify Tier0ActivationPredictor uses GNN when model is provided."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for Tier0MPNN")
+        from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
+        from aurelius.screening.tier0.models import Tier0MPNN
+
         predictor = Tier0ActivationPredictor()
         gnn_model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
 
@@ -1322,6 +1409,8 @@ class TestTier0MPNN:
 
     def test_mpnn_edge_block_exists(self):
         """Verify MPNNEdgeBlock class exists."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MPNNEdgeBlock")
         from aurelius.screening.tier0.models import MPNNEdgeBlock
 
         block = MPNNEdgeBlock(node_dim=4, edge_dim=0, hidden_dim=64)
@@ -1331,6 +1420,8 @@ class TestTier0MPNN:
 
     def test_mpnn_readout_mlp_exists(self):
         """Verify MPNNReadoutMLP class exists."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MPNNReadoutMLP")
         from aurelius.screening.tier0.models import MPNNReadoutMLP
 
         readout = MPNNReadoutMLP(input_dim=64, output_dim=4, hidden_dim=128)
@@ -1378,6 +1469,10 @@ class TestCrossPlatformSupport:
 
     def test_device_selection_cpu_fallback(self):
         """Verify that CPU is selected when no GPU is available."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for device selection")
+        from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
+
         sim = MatterSimMTSimulator()
         device = sim._select_device()
         assert device in ("cpu", "mps", "cuda")
@@ -1387,6 +1482,7 @@ class TestCrossPlatformSupport:
         """Verify CUDA is preferred over MPS when both are available."""
         if not HAS_TORCH:
             pytest.skip("PyTorch not available")
+        from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
 
         sim = MatterSimMTSimulator()
         device = sim._select_device()
@@ -1406,6 +1502,7 @@ class TestCrossPlatformSupport:
 
     def test_memory_estimation_device_aware(self):
         """Verify memory estimation varies by device type."""
+        from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
         mem_cpu = MatterSimMTSimulator._estimate_memory_usage(500, "cpu")
         mem_mps = MatterSimMTSimulator._estimate_memory_usage(500, "mps")
         mem_cuda = MatterSimMTSimulator._estimate_memory_usage(500, "cuda")
@@ -1415,6 +1512,10 @@ class TestCrossPlatformSupport:
 
     def test_tier2_initialization_logs_device(self, capsys):
         """Verify that Tier 2 initialization logs the selected device."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSim-MT")
+        from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
+
         sim = MatterSimMTSimulator()
         sim.initialize()
         captured = capsys.readouterr()
@@ -1541,6 +1642,7 @@ class TestParameterLoading:
 
     def test_mattersim_loads_params_from_json(self):
         """Verify MatterSimMTSimulator loads parameters from JSON instead of hardcoded."""
+        from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
         sim = MatterSimMTSimulator()
         # LJ params should come from JSON now
         assert len(sim._LJ_PARAMS) > 0
@@ -1599,6 +1701,7 @@ class TestRDKitFallbackWarnings:
 
     def test_na_utilization_uses_json_params(self):
         """Verify NA utilization estimation uses JSON parameters."""
+        from aurelius.screening.tier1 import MLXNAFilter
         f = MLXNAFilter(quantization_format="MX4", train_on_init=False)
         util = f._estimate_na_utilization(0.75)
         assert 0 <= util <= 100
@@ -1658,6 +1761,8 @@ class TestPyTorchFallbackFilter:
 
     def test_pytorch_fallback_filter_exists(self):
         """Verify PyTorchFallbackFilter class exists and is trainable."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for PyTorchFallbackFilter")
         from aurelius.screening.tier1.models import PyTorchFallbackFilter
 
         model = PyTorchFallbackFilter()
@@ -1668,6 +1773,8 @@ class TestPyTorchFallbackFilter:
 
     def test_pytorch_fallback_filter_inference(self):
         """Verify PyTorch fallback filter produces valid inference output."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for PyTorchFallbackFilter")
         from aurelius.screening.tier1.models import PyTorchFallbackFilter
 
         model = PyTorchFallbackFilter()
@@ -1680,6 +1787,8 @@ class TestPyTorchFallbackFilter:
 
     def test_convert_mlx_to_torch_weights_empty_on_missing_dir(self):
         """Verify convert_mlx_to_torch_weights returns empty dict for missing directory."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for weight conversion")
         from aurelius.screening.tier1.loaders import convert_mlx_to_torch_weights
 
         result = convert_mlx_to_torch_weights("/nonexistent/path")
@@ -1687,6 +1796,8 @@ class TestPyTorchFallbackFilter:
 
     def test_convert_mlx_to_torch_weights_valid(self, tmp_path):
         """Verify convert_mlx_to_torch_weights correctly loads .npy files."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for weight conversion")
         from aurelius.screening.tier1.loaders import convert_mlx_to_torch_weights
 
         # Create mock MLX weight files
@@ -1712,6 +1823,8 @@ class TestPyTorchFallbackFilter:
 
     def test_convert_mlx_to_torch_weights_shape_mismatch(self, tmp_path):
         """Verify convert_mlx_to_torch_weights returns empty dict on shape mismatch."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for weight conversion")
         from aurelius.screening.tier1.loaders import convert_mlx_to_torch_weights
 
         # Create weight files with wrong shape
@@ -1729,6 +1842,9 @@ class TestPyTorchFallbackFilter:
         if HAS_MLX:
             pytest.skip("MLX is available; testing PyTorch fallback requires MLX absence")
 
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for screening")
+
         filter_obj = MLXNAFilter(quantization_format="MX4", train_on_init=False)
         # Trigger model loading
         filter_obj.screen_molecule("CCO")
@@ -1740,6 +1856,9 @@ class TestPyTorchFallbackFilter:
 
         if HAS_MLX:
             pytest.skip("MLX is available; testing fallback requires MLX absence")
+
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required for screening")
 
         filter_obj = MLXNAFilter(quantization_format="MX4", train_on_init=False)
         result = filter_obj.screen_molecule("CCO")
@@ -1818,6 +1937,10 @@ class TestEnhancedPhysicsConservation:
         Uses MatterSimMPEngine to compute energy/forces for Ethylene Carbonate.
         Asserts that forces == -torch.autograd.grad(energy, coordinates).
         """
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSimMPEngine")
+        from aurelius.screening.tier2_mattersim import MatterSimMPEngine
+
         engine = MatterSimMPEngine()
 
         # Ethylene carbonate (EC): 4C + 4H + 3O = 11 atoms
@@ -1857,6 +1980,10 @@ class TestEnhancedPhysicsConservation:
 
     def test_mattersim_device_propagation(self):
         """Verify MatterSimMTSimulator creates all tensors on the selected device."""
+        if not HAS_TORCH:
+            pytest.skip("PyTorch is required for MatterSim-MT")
+        from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
+
         sim = MatterSimMTSimulator()
         sim.initialize()
         _device = sim._select_device()

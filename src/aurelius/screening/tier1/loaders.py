@@ -27,7 +27,7 @@ except ImportError:
     HAS_TORCH = False
 
 
-def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, torch.Tensor]:
+def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, "torch.Tensor"]:
     """Convert MLX model weights (stored as .npy files) to PyTorch tensors.
 
     Loads .npy files from the MLX model directory and converts them
@@ -42,8 +42,12 @@ def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, torch.Tensor
 
     Returns:
         Dictionary mapping parameter names to PyTorch tensors.
-        Returns empty dict if loading fails.
+        Returns empty dict if loading fails or torch is unavailable.
     """
+    if not HAS_TORCH:
+        print("[Aurelius v6.0 Tier1] WARNING: PyTorch is not available. Cannot convert MLX weights.")
+        return {}
+
     if not os.path.isdir(mlx_weights_dir):
         print(f"[Aurelius v6.0 Tier1] WARNING: MLX weights directory not found: {mlx_weights_dir}")
         return {}
