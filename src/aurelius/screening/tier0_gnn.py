@@ -89,7 +89,7 @@ def _build_molecular_graph(
     mol_with_h = Chem.AddHs(mol)
     Chem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined]
 
-    atoms = mol_with_h.GetAtoms()  # type: ignore[no-untyped-call]
+    atoms = mol_with_h.GetAtoms()  # type: ignore[unused-ignore, no-untyped-call]
     n_atoms = mol_with_h.GetNumAtoms()
 
     # Node features: [atomic_number, degree, formal_charge, is_aromatic]
@@ -581,7 +581,7 @@ def generate_synthetic_training_data(
         hba = int(Descriptors.NumHAcceptors(mol_with_h))  # type: ignore[attr-defined]
         hbd = int(Descriptors.NumHDonors(mol_with_h))  # type: ignore[attr-defined]
         tpsa = float(Descriptors.TPSA(mol_with_h))  # type: ignore[attr-defined]
-        aromatic_count = sum(1 for a in mol_with_h.GetAtoms() if a.GetIsAromatic())  # type: ignore[misc, no-untyped-call]
+        aromatic_count = sum(1 for a in mol_with_h.GetAtoms() if a.GetIsAromatic())  # type: ignore[unused-ignore, misc, no-untyped-call]
         aromatic_ratio = aromatic_count / max(mol_with_h.GetNumAtoms(), 1)
 
         # Literature-calibrated activation energies (deterministic, no noise)

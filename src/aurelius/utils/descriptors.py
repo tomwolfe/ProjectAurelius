@@ -44,7 +44,7 @@ def _generate_molecular_descriptors(smiles: str) -> dict[str, float]:
                 "hbd": int(Descriptors.NumHDonors(mol)),  # type: ignore[attr-defined]
                 "tpsa": float(Descriptors.TPSA(mol)),  # type: ignore[attr-defined]
                 "rot_bonds": int(Descriptors.NumRotatableBonds(mol)),  # type: ignore[attr-defined]
-                "aromatic_ratio": float(sum(1 for a in mol.GetAtoms() if a.GetIsAromatic()) / max(mol.GetNumAtoms(), 1)),  # type: ignore[misc, no-untyped-call]
+                "aromatic_ratio": float(sum(1 for a in mol.GetAtoms() if a.GetIsAromatic()) / max(mol.GetNumAtoms(), 1)),  # type: ignore[unused-ignore, misc, no-untyped-call]
                 "heavy_atom_count": float(Descriptors.HeavyAtomCount(mol)),  # type: ignore[no-untyped-call]
             }
 
