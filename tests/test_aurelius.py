@@ -1257,6 +1257,84 @@ class TestSchNetLayers:
 
 
 # ============================================================
+# Tier 0 / MPNN / GNN Tests
+# ============================================================
+
+
+class TestTier0MPNN:
+    """Tests for Tier 0 MPNN (GNN) activation energy predictor."""
+
+    def test_tier0_gnn_model_exists(self):
+        """Verify Tier0MPNN GNN model class exists and is trainable."""
+        from aurelius.screening.tier0_gnn import Tier0MPNN
+
+        model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
+        assert model is not None
+        assert hasattr(model, "mp_layers")
+        assert hasattr(model, "readout")
+        assert hasattr(model, "edge_transform")
+
+    def test_tier0_gnn_save_load_weights(self, tmp_path):
+        """Verify Tier0MPNN GNN can save and load weights."""
+        from aurelius.screening.tier0_gnn import Tier0MPNN
+
+        model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
+        weight_path = str(tmp_path / "tier0_gnn_weights.pth")
+        model.save_weights(weight_path)
+
+        new_model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
+        new_model.load_weights(weight_path)
+
+        # Weights should be identical
+        for (n1, p1), (n2, p2) in zip(model.state_dict().items(), new_model.state_dict().items(), strict=True):
+            assert n1 == n2
+            assert torch.allclose(p1, p2)
+
+    def test_tier0_activation_predictor_linear_fallback(self):
+        """Verify Tier0ActivationPredictor works with linear fallback (no GNN)."""
+        from aurelius.screening.tier0_gnn import Tier0ActivationPredictor
+
+        predictor = Tier0ActivationPredictor()
+        assert predictor._use_gnn is False
+        assert predictor._linear_predictor is not None
+
+        result = predictor.predict(smiles="CC(=O)OC1=CC(=O)O1")
+        assert "ec_reduction" in result
+        assert "dm_reduction" in result
+        assert "pf6_decomposition" in result
+        assert "polymerization" in result
+
+    def test_tier0_activation_predictor_gnn_available(self):
+        """Verify Tier0ActivationPredictor uses GNN when model is provided."""
+        from aurelius.screening.tier0_gnn import Tier0ActivationPredictor, Tier0MPNN
+
+        predictor = Tier0ActivationPredictor()
+        gnn_model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
+
+        # Set GNN model explicitly
+        predictor.set_gnn_model(gnn_model, "/tmp/fake_path.pth")
+        assert predictor._use_gnn is True
+        assert predictor._gnn_model is not None
+
+    def test_mpnn_edge_block_exists(self):
+        """Verify MPNNEdgeBlock class exists."""
+        from aurelius.screening.tier0_gnn import MPNNEdgeBlock
+
+        block = MPNNEdgeBlock(node_dim=4, edge_dim=0, hidden_dim=64)
+        assert block is not None
+        assert hasattr(block, "edge_mlp")
+        assert hasattr(block, "node_mlp")
+
+    def test_mpnn_readout_mlp_exists(self):
+        """Verify MPNNReadoutMLP class exists."""
+        from aurelius.screening.tier0_gnn import MPNNReadoutMLP
+
+        readout = MPNNReadoutMLP(input_dim=64, output_dim=4, hidden_dim=128)
+        assert readout is not None
+        assert hasattr(readout, "network")
+
+
+# ============================================================
 # CLI Flag Tests
 # ============================================================
 

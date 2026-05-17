@@ -402,7 +402,6 @@ def hf_upload(
         from huggingface_hub import (
             HfApi,
             ModelCard,
-            ModelCardData,
             create_repo,
             repo_exists,
             upload_folder,
@@ -499,12 +498,6 @@ def hf_upload(
         "esol": "Tier 1 ESOL Solubility Filter",
         "qm9": "Tier 1 QM9 Energy Filter",
     }
-    task_descriptions_short = {
-        "tier0": "mpnn_activation_energy",
-        "esol": "esol_solubility",
-        "qm9": "qm9_energy",
-    }
-
     model_card = ModelCard("# Aurelius Model")
     model_card.content = f"""# Aurelius Model: {task_descriptions.get(task, task)}
 
