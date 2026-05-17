@@ -80,7 +80,7 @@ def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
 
 if HAS_TORCH:
 
-    class ContinuousFilterConv1d(nn.Module):  # type: ignore[misc]
+    class ContinuousFilterConv1d(nn.Module):
         """Continuous-filter 1D convolution for SchNet-style message passing.
 
         Applies a distance-dependent filter to edge features in a
@@ -150,7 +150,7 @@ if HAS_TORCH:
             return h_new
 
 
-    class ContinuousFilterConv1dBatched(nn.Module):  # type: ignore[misc]
+    class ContinuousFilterConv1dBatched(nn.Module):
         """Batched version of continuous-filter convolution.
 
         Handles (B, N, hidden_dim) inputs with (B, N, N) distances.
@@ -199,7 +199,7 @@ if HAS_TORCH:
             return h_new
 
 
-    class SchNetInteractionBlock(nn.Module):  # type: ignore[misc]
+    class SchNetInteractionBlock(nn.Module):
         """SchNet interaction block with continuous-filter convolution.
 
         Combines distance-based message passing with readout for
@@ -244,7 +244,7 @@ if HAS_TORCH:
             return h
 
 
-    class MatterSimMPEngine(nn.Module):  # type: ignore[misc]
+    class MatterSimMPEngine(nn.Module):
         """SchNet-style physics engine for MatterSim on Apple Silicon MPS.
 
         Processes real geometric graph networks with explicit 3D atomic

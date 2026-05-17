@@ -32,7 +32,7 @@ except ImportError:
 
 if HAS_TORCH:
 
-    class MPNNEdgeBlock(nn.Module):  # type: ignore[misc]
+    class MPNNEdgeBlock(nn.Module):
         """2-layer message passing block for molecular graphs.
 
         Implements edge-based message passing with:
@@ -123,7 +123,7 @@ if HAS_TORCH:
 
             return self.norm(node_features + node_updates)  # type: ignore[no-any-return, unused-ignore]
 
-    class MPNNReadoutMLP(nn.Module):  # type: ignore[misc]
+    class MPNNReadoutMLP(nn.Module):
         """Readout MLP for MPNN.
 
         Takes pooled node embeddings and produces output predictions
@@ -171,7 +171,7 @@ if HAS_TORCH:
                 return self.network(pooled)  # type: ignore[no-any-return, unused-ignore]
             return self.network(pooled)  # type: ignore[no-any-return, unused-ignore]
 
-    class Tier0MPNN(nn.Module):  # type: ignore[misc]
+    class Tier0MPNN(nn.Module):
         """Lightweight Message Passing Neural Network for activation energy prediction.
 
         Takes a molecular graph (node features + edge index) and predicts
@@ -340,19 +340,19 @@ if HAS_TORCH:
 
 else:
 
-    class MPNNEdgeBlock:  # type: ignore[misc, no-redef]
+    class MPNNEdgeBlock:  # type: ignore[no-redef]
         """Stub class when PyTorch is not available."""
 
         def __init__(self, node_dim: int = 4, edge_dim: int = 8, hidden_dim: int = 64) -> None:
             raise RuntimeError("PyTorch is required for MPNNEdgeBlock. Install with: pip install torch")
 
-    class MPNNReadoutMLP:  # type: ignore[misc, no-redef]
+    class MPNNReadoutMLP:  # type: ignore[no-redef]
         """Stub class when PyTorch is not available."""
 
         def __init__(self, input_dim: int = 64, output_dim: int = 4, hidden_dim: int = 128) -> None:
             raise RuntimeError("PyTorch is required for MPNNReadoutMLP. Install with: pip install torch")
 
-    class Tier0MPNN:  # type: ignore[misc, no-redef]
+    class Tier0MPNN:  # type: ignore[no-redef]
         """Stub class when PyTorch is not available."""
 
         def __init__(

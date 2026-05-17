@@ -174,7 +174,7 @@ class _FallbackMLP:
 
 if HAS_TORCH:
 
-    class PyTorchFallbackFilter(torch_nn.Module):  # type: ignore[misc]
+    class PyTorchFallbackFilter(torch_nn.Module):
         """PyTorch-based MLP fallback replicating the ChemVLM2MLP architecture.
 
         Provides a 2-layer MLP (2048->128->1) using torch.nn when MLX is
@@ -278,13 +278,22 @@ if HAS_TORCH:
             self.load_state_dict(state_dict)
 
 
-    __all__ = [
-        "DEFAULT_MODEL_DIR",
-        "HAS_MLX",
-        "HAS_RDKIT",
-        "HAS_TORCH",
-        "HUGGINGFACE_MODELS",
-        "PyTorchFallbackFilter",
-        "_ChemVLM2MLP",
-        "_FallbackMLP",
-    ]
+else:
+
+    class PyTorchFallbackFilter:  # type: ignore[no-redef]
+        """Stub class when PyTorch is not available."""
+
+        def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
+            raise RuntimeError("PyTorch is required for PyTorchFallbackFilter. Install with: pip install torch")
+
+
+__all__ = [
+    "DEFAULT_MODEL_DIR",
+    "HAS_MLX",
+    "HAS_RDKIT",
+    "HAS_TORCH",
+    "HUGGINGFACE_MODELS",
+    "PyTorchFallbackFilter",
+    "_ChemVLM2MLP",
+    "_FallbackMLP",
+]
