@@ -172,6 +172,26 @@ aurelius benchmark --tier 1 --quick
 
 **Out-of-the-box, the pipeline trains a fresh model on real experimental data each time.** For production use, you should train and save a model once, then reuse it.
 
+### Preparing for Autonomous Discovery
+
+Before running the autonomous screening agent, ensure all models are trained and validated:
+
+```bash
+# Prepare all models for discovery (Tier 0 MPNN + Tier 1 MLP)
+python scripts/prep_discovery.py
+
+# With custom hyperparameters
+python scripts/prep_discovery.py --tier0-epochs 500 --tier1-epochs 300
+
+# Use numpy-only training (no MLX required)
+python scripts/prep_discovery.py --no-mlx
+
+# Use a local CSV for Tier 1 training
+python scripts/prep_discovery.py --csv-path ./data/esol.csv
+```
+
+This script checks for existing model weights and triggers automated training if missing. After training, it runs a deterministic inference check on Ethylene Carbonate (`O=C1OCCO1`) to verify model integrity.
+
 ### Tier 1: MLX-NA Filter
 
 The Tier 1 filter uses a 2-layer MLP (2048->128->1) trained on ECFP4 (Morgan radius=2) fingerprints.
@@ -311,8 +331,12 @@ ProjectAurelius/
 │   ├── config.py               # Dynamic memory configuration
 │   └── pipeline.py             # Pipeline orchestrator
 ├── scripts/
+│   ├── prep_discovery.py        # Train & validate all models for discovery
+│   ├── train_tier0.py          # Train Tier 0 MPNN model
 │   ├── train_tier1.py          # Train Tier 1 on ESOL/QM9
 │   └── download_data.py        # Download datasets from HF Hub
+├── config/
+│   └── discovery_config.yaml   # Hydra configuration for autonomous agent
 ├── benchmarks/
 │   ├── benchmark_tier1.py      # MLX vs PyTorch vs CPU
 │   └── benchmark_tier2.py      # Vectorized vs loop physics
@@ -376,6 +400,14 @@ aurelius hf-upload               Upload model to HuggingFace Hub
   --private/--public             Repository visibility (default: private)
   --commit-message MSG           Commit message
   --dry-run                      Validate without uploading
+python scripts/prep_discovery.py  Prepare all models for autonomous discovery
+  --tier0-epochs N               Epochs for Tier 0 MPNN training (default: 200)
+  --tier1-epochs N               Epochs for Tier 1 MLP training (default: 200)
+  --batch-size N                 Mini-batch size for both tiers (default: 16)
+  --learning-rate LR             Learning rate for Tier 1 (default: 0.005)
+  --dataset DATASET              Dataset for Tier 1 (default: esol)
+  --csv-path PATH                Local CSV file path for Tier 1
+  --no-mlx                       Train Tier 1 with numpy only
 ```
 aurelius init                    Initialize pipeline
 aurelius screen <smiles>         Screen a single molecule
