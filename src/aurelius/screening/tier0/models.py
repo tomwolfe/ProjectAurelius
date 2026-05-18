@@ -55,7 +55,8 @@ if HAS_TORCH:
             self.edge_dim = edge_dim
             self.hidden_dim = hidden_dim
 
-            self.edge_input_dim = node_dim * 2 + edge_dim
+            self.edge_proj = nn.Linear(2 * node_dim, hidden_dim)
+            self.edge_input_dim = hidden_dim
             self.edge_mlp = nn.Sequential(
                 nn.Linear(self.edge_input_dim, hidden_dim),
                 nn.ReLU(),
@@ -111,7 +112,8 @@ if HAS_TORCH:
             tgt_features = torch.index_select(node_features, 0, tgt_idx)
 
             if edge_features is None:
-                edge_features = torch.cat([src_features, tgt_features], dim=-1)
+                raw_edge = torch.cat([src_features, tgt_features], dim=-1)
+                edge_features = torch.relu(self.edge_proj(raw_edge))
 
             messages = self.edge_mlp(edge_features)
 
@@ -210,7 +212,7 @@ if HAS_TORCH:
             self.edge_dim = edge_dim
             self.hidden_dim = hidden_dim
 
-            self.edge_input_dim = node_dim * 2 + edge_dim
+            self.edge_input_dim = 2 * node_dim
             self.edge_transform = nn.Sequential(
                 nn.Linear(self.edge_input_dim, hidden_dim),
                 nn.ReLU(),
