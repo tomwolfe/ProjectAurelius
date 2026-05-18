@@ -59,6 +59,7 @@ def _build_molecular_graph(
 
     try:
         from rdkit import Chem
+        from rdkit.Chem import AllChem
     except ImportError:
         raise RuntimeError(
             "RDKit is required for molecular graph construction. "
@@ -70,7 +71,7 @@ def _build_molecular_graph(
         raise ValueError(f"Invalid SMILES: {smiles}")
 
     mol_with_h = Chem.AddHs(mol)
-    Chem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
+    AllChem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
 
     atoms = mol_with_h.GetAtoms()  # type: ignore[no-untyped-call, unused-ignore]
     n_atoms = mol_with_h.GetNumAtoms()
@@ -193,11 +194,13 @@ def generate_synthetic_training_data(
 
     rng = np.random.RandomState(42)
 
+    from rdkit.Chem import AllChem
+
     training_data: list[dict[str, Any]] = []
     for smi in valid_smiles:
         mol = Chem.MolFromSmiles(smi)
         mol_with_h = Chem.AddHs(mol)
-        Chem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
+        AllChem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
 
         logp = float(Descriptors.MolLogP(mol_with_h))  # type: ignore[attr-defined, unused-ignore]
         hba = int(Descriptors.NumHAcceptors(mol_with_h))  # type: ignore[attr-defined, unused-ignore]

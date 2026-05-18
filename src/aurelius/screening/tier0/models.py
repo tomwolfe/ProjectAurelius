@@ -42,7 +42,7 @@ if HAS_TORCH:
         - Node update via residual connection + LayerNorm
         """
 
-        def __init__(self, node_dim: int = 4, edge_dim: int = 8, hidden_dim: int = 64) -> None:
+        def __init__(self, node_dim: int = 4, edge_dim: int = 0, hidden_dim: int = 64) -> None:
             """Initialize MPNN edge block.
 
             Args:
@@ -193,7 +193,7 @@ if HAS_TORCH:
         def __init__(
             self,
             node_dim: int = 4,
-            edge_dim: int = 8,
+            edge_dim: int = 0,
             hidden_dim: int = 64,
             output_dim: int = 4,
         ) -> None:
@@ -343,7 +343,7 @@ else:
     class MPNNEdgeBlock:  # type: ignore[no-redef]
         """Stub class when PyTorch is not available."""
 
-        def __init__(self, node_dim: int = 4, edge_dim: int = 8, hidden_dim: int = 64) -> None:
+        def __init__(self, node_dim: int = 4, edge_dim: int = 0, hidden_dim: int = 64) -> None:
             raise RuntimeError("PyTorch is required for MPNNEdgeBlock. Install with: pip install torch")
 
     class MPNNReadoutMLP:  # type: ignore[no-redef]
@@ -358,7 +358,7 @@ else:
         def __init__(
             self,
             node_dim: int = 4,
-            edge_dim: int = 8,
+            edge_dim: int = 0,
             hidden_dim: int = 64,
             output_dim: int = 4,
         ) -> None:

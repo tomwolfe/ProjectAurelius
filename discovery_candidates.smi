@@ -1,8 +1,11 @@
-FCCOC(=O)OC
-CS(=O)(=O)C
-N#CCCC#N
-COC(=O)OC(F)(F)F
-CCOC(=O)OC(C)(C)C
-COC(=O)OCC(F)(F)F
-C1COC(=O)O1
-CC(C)OC(=O)OC(C)C
+# High-Potential Complex Seeds (Borates, Fluorinated Carbonates, Sulfone-Nitriles)
+COC(=O)OC(F)(C(F)F)C(F)(F)F
+B1OB(OB(OCC(F)F)(OCC(F)F))O1
+B1OB(OCC(F)F)OB(OCC(F)F)O1
+COC(=O)OC(F)=C(F)C(F)(F)F
+N#CCS(=O)(=O)C
+FCC(F)(F)S(=O)(=O)OC=C
+COC(=O)OB1OC(C(F)F)(OCC(F)F)O1
+O1B(OCC(F)F)(OCC)OC1
+COC(=O)OCC=C
+COC(=O)OC(F)C=C

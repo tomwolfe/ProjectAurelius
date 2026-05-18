@@ -48,7 +48,7 @@ class Tier0ActivationPredictor:
         if model_path and os.path.isfile(model_path):
             if HAS_TORCH:
                 try:
-                    self._gnn_model = Tier0MPNN(node_dim=4, edge_dim=8, hidden_dim=64, output_dim=4)
+                    self._gnn_model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
                     self._gnn_model.load_weights(model_path)
                     self._gnn_model.eval()
                     self._use_gnn = True
