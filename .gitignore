@@ -75,3 +75,6 @@ screening_statistics.md
 chemical_insights.md
 mutation_rationale.md
 candidates_batch_*.smi
+
+# Memory profiling output
+memory_profile_*.csv

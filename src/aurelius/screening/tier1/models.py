@@ -299,7 +299,7 @@ if HAS_TORCH:
 
     else:
 
-        class PyTorchFallbackFilter:
+        class PyTorchFallbackFilter(_torch_nn.Module):  # type: ignore[misc]
             """PyTorch-based MLP fallback (runtime)."""
 
             def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
@@ -352,7 +352,7 @@ if HAS_TORCH:
                 )
                 self.load_state_dict(state_dict)
 
-        PyTorchFallbackFilter.__bases__ = (_torch_nn.Module,)
+        # No need to set __bases__ — class already defined with correct base
 
 
 else:
