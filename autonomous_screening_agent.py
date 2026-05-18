@@ -32,15 +32,14 @@ import numpy as np
 
 try:
     from rdkit import Chem
-    from rdkit.Chem import BRICS, AllChem, Descriptors, rd_fingerprint_generator
-    from rdkit.DataStructs import FingerprintSimilarity
+    from rdkit.Chem import BRICS, AllChem, Descriptors
+    from rdkit.DataStructs import ExplicitBitVect, FingerprintSimilarity
     HAS_RDKIT = True
 except ImportError:
     Chem = None  # type: ignore[assignment, unused-ignore]
     AllChem = None
     Descriptors = None
     BRICS = None
-    rd_fingerprint_generator = None  # type: ignore[assignment, unused-ignore]
     HAS_RDKIT = False
     FingerprintSimilarity = None  # type: ignore[assignment, unused-ignore]
 
@@ -134,7 +133,10 @@ def _serialize_fp(fp: Any) -> str:
     Returns:
         Serialized fingerprint string.
     """
-    return DataStructs.BitVectToText(fp)
+    ev = ExplicitBitVect(2048)
+    for idx in fp.GetNonzeroElements().keys():
+        ev.SetBit(idx)
+    return DataStructs.BitVectToText(ev)
 
 
 def _deserialize_fp(hex_str: str) -> Any:
@@ -161,6 +163,17 @@ def _tanimoto(fp1: Any, fp2: Any) -> float:
     """
     if FingerprintSimilarity is None:
         return 0.0
+    # Convert UIntSparseIntVect to ExplicitBitVect for compatibility
+    if not hasattr(fp1, 'GetNumBits'):
+        ev1 = ExplicitBitVect(2048)
+        for idx in fp1.GetNonzeroElements().keys():
+            ev1.SetBit(idx)
+        fp1 = ev1
+    if not hasattr(fp2, 'GetNumBits'):
+        ev2 = ExplicitBitVect(2048)
+        for idx in fp2.GetNonzeroElements().keys():
+            ev2.SetBit(idx)
+        fp2 = ev2
     return FingerprintSimilarity(fp1, fp2)
 
 
@@ -466,107 +479,102 @@ class MutationEngine:
         return all(_tanimoto(fp, known) < 0.75 for known in self.known_fps)
 
     def _brics_reassemble(self, mol: Any) -> list[str]:
-        """BRICS decomposition + random reassembly.
-
-        Args:
-            mol: RDKit Mol object.
-
-        Returns:
-            List of generated SMILES strings.
-        """
+        """BRICS decomposition + random reassembly using proper RDKit types."""
         generated: list[str] = []
         try:
-            fragments = list(BRICS.BRICSDecompose(mol))
-            if len(fragments) < 2:
+            frag_smiles = list(BRICS.BRICSDecompose(mol))
+            if len(frag_smiles) < 2:
                 return generated
+            
+            frag_mols = [Chem.MolFromSmiles(s) for s in frag_smiles]
+            frag_mols = [m for m in frag_mols if m is not None]
+            if len(frag_mols) < 2:
+                return generated
+
             for _ in range(20):
                 rng = np.random.RandomState(self._rng.randint(0, 2**31))
-                idx = rng.choice(len(fragments), size=min(2, len(fragments)), replace=False)
+                idx = rng.choice(len(frag_mols), size=min(2, len(frag_mols)), replace=False)
                 try:
-                    result = BRICS.BRICSBuild(fragments[idx[0]], fragments[idx[1]])
-                    # BRICSBuild may return a generator, set, tuple, or single molecule
-                    # Convert to list to iterate safely
-                    results_list = list(result) if hasattr(result, '__iter__') else [result] if result else []
-                    for r in results_list:
-                        if r:
-                            generated.append(r)
+                    result_gen = BRICS.BRICSBuild([frag_mols[idx[0]], frag_mols[idx[1]]])
+                    for r_mol in result_gen:
+                        if r_mol is not None:
+                            try:
+                                Chem.SanitizeMol(r_mol)
+                                s = Chem.MolToSmiles(r_mol, isomericSmiles=True)
+                                generated.append(s)
+                            except Exception:
+                                pass
                 except Exception:
                     pass
         except Exception:
             pass
-        return generated
+        return list(set(generated))
 
     def _fluorinate(self, mol: Any) -> list[str]:
-        """Add fluorine to non-carbonyl carbons.
-
-        Args:
-            mol: RDKit Mol object.
-
-        Returns:
-            List of generated SMILES strings.
-        """
+        """Add fluorine to non-carbonyl carbons using RDKit RWMol."""
         generated: list[str] = []
         try:
-            # Replace first non-hydrogen atom's SMILES with fluorinated variant
-            smiles = Chem.MolToSmiles(mol, isomericSmiles=True)
-            # Simple fluorination: add F to end of SMILES if not already fluorinated
-            if 'F' not in smiles and len(smiles) > 1:
-                fluorinated = smiles[:-1] + 'F' if smiles[-1] not in ('F', 'O', 'N', 'S') else smiles
-                mol_f = Chem.MolFromSmiles(fluorinated)
-                if mol_f is not None:
-                    Chem.SanitizeMol(mol_f)
-                    mw = Descriptors.ExactMolWt(mol_f)
-                    if mw < 350:
-                        generated.append(fluorinated)
+            mol_h = Chem.AddHs(mol)
+            c_atoms = [atom.GetIdx() for atom in mol_h.GetAtoms() 
+                       if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4]
+            if not c_atoms:
+                return generated
+            
+            rng = np.random.RandomState(self._rng.randint(0, 2**31))
+            for idx in rng.choice(c_atoms, size=min(5, len(c_atoms)), replace=False):
+                rw_mol = Chem.RWMol(mol_h)
+                h_idx = None
+                for neighbor in rw_mol.GetNeighbors(rw_mol.GetAtomWithIdx(idx)):
+                    if neighbor.GetAtomicNum() == 1:
+                        h_idx = neighbor.GetIdx()
+                        break
+                if h_idx is not None:
+                    rw_mol.ReplaceAtom(h_idx, Chem.Atom(9)) # 9 = Fluorine
+                    try:
+                        Chem.SanitizeMol(rw_mol)
+                        final_mol = Chem.RemoveHs(rw_mol)
+                        s = Chem.MolToSmiles(final_mol, isomericSmiles=True)
+                        if Descriptors.ExactMolWt(final_mol) < 350:
+                            generated.append(s)
+                    except Exception:
+                        pass
         except Exception:
             pass
         return generated
 
     def _add_unsaturation(self, mol: Any) -> list[str]:
-        """Introduce C=C double bonds where single bonds exist.
-
-        Args:
-            mol: RDKit Mol object.
-
-        Returns:
-            List of generated SMILES strings.
-        """
-        generated: list[str] = []
-        try:
-            smiles = Chem.MolToSmiles(mol, isomericSmiles=True)
-            # Replace single C-C with C=C in first carbon chain
-            if 'CC' in smiles:
-                unsaturated = smiles.replace('CC', 'CC', 1)  # First occurrence
-                mol_u = Chem.MolFromSmiles(unsaturated)
-                if mol_u is not None:
-                    Chem.SanitizeMol(mol_u)
-                    mw = Descriptors.ExactMolWt(mol_u)
-                    if mw < 350:
-                        generated.append(unsaturated)
-        except Exception:
-            pass
-        return generated
+        """Disable naive string-based unsaturation to prevent invalid SMILES.
+        BRICS reassembly naturally handles structural diversity."""
+        return []
 
     def _methylate(self, mol: Any) -> list[str]:
-        """Add methyl groups to replace hydrogens.
-
-        Args:
-            mol: RDKit Mol object.
-
-        Returns:
-            List of generated SMILES strings.
-        """
+        """Add methyl groups using RDKit RWMol."""
         generated: list[str] = []
         try:
-            smiles = Chem.MolToSmiles(mol, isomericSmiles=True)
-            # Simple methylation: append C to SMILES
-            methylated = smiles + 'C'
-            mol_m = Chem.MolFromSmiles(methylated)
-            if mol_m is not None:
-                Chem.SanitizeMol(mol_m)
-                mw = Descriptors.ExactMolWt(mol_m)
-                if mw < 350:
-                    generated.append(methylated)
+            mol_h = Chem.AddHs(mol)
+            c_atoms = [atom.GetIdx() for atom in mol_h.GetAtoms() 
+                       if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4]
+            if not c_atoms:
+                return generated
+            
+            rng = np.random.RandomState(self._rng.randint(0, 2**31))
+            for idx in rng.choice(c_atoms, size=min(5, len(c_atoms)), replace=False):
+                rw_mol = Chem.RWMol(mol_h)
+                h_idx = None
+                for neighbor in rw_mol.GetNeighbors(rw_mol.GetAtomWithIdx(idx)):
+                    if neighbor.GetAtomicNum() == 1:
+                        h_idx = neighbor.GetIdx()
+                        break
+                if h_idx is not None:
+                    rw_mol.ReplaceAtom(h_idx, Chem.Atom(6)) # 6 = Carbon (Methyl)
+                    try:
+                        Chem.SanitizeMol(rw_mol)
+                        final_mol = Chem.RemoveHs(rw_mol)
+                        s = Chem.MolToSmiles(final_mol, isomericSmiles=True)
+                        if Descriptors.ExactMolWt(final_mol) < 350:
+                            generated.append(s)
+                    except Exception:
+                        pass
         except Exception:
             pass
         return generated
