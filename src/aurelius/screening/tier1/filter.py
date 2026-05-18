@@ -44,17 +44,6 @@ from aurelius.types import MLXFilterResult
 
 logger = logging.getLogger(__name__)
 
-# Conditional RDKit imports for _generate_ecfp4_fingerprint
-_Chem: Any = None
-_AllChem: Any = None
-if HAS_RDKIT:
-    try:
-        from rdkit import Chem as _Chem  # noqa: F401
-        from rdkit.Chem import AllChem as _AllChem  # noqa: F401
-    except Exception:
-        pass
-
-
 class MLXNAFilter:
     """Tier 1: MLX Neural Accelerator filter for rapid molecular screening.
 
@@ -340,6 +329,9 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
         RuntimeError: If use_real_models=True and RDKit is unavailable.
     """
     if HAS_RDKIT:
+        from rdkit import Chem as _Chem
+        from rdkit.Chem import AllChem as _AllChem
+
         mol = _Chem.MolFromSmiles(smiles)
         if mol is None:
             logger.warning(
@@ -348,7 +340,7 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
                 smiles,
             )
             return _hash_fallback(smiles)
-        fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined, unused-ignore]
+        fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined]
         bit_list = fp.ToList()
         arr = np.array(bit_list, dtype=np.float32)
         if len(arr) < 2048:
