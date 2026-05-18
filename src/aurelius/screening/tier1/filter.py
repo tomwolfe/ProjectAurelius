@@ -77,6 +77,7 @@ class MLXNAFilter:
         self.quantization_format = quantization_format
         self._model_loaded = False
         self._model: Any | None = None
+        self._mx: Any = None
         self._use_mlx = HAS_MLX
         self._use_real_models = use_real_models
         self._weight_loader = HuggingFaceWeightLoader()
@@ -340,7 +341,7 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
                 smiles,
             )
             return _hash_fallback(smiles)
-        fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+        fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined]
         bit_list = fp.ToList()
         arr = np.array(bit_list, dtype=np.float32)
         if len(arr) < 2048:
