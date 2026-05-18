@@ -1396,8 +1396,8 @@ class TestTier0MPNN:
         """Verify Tier0ActivationPredictor uses GNN when model is provided."""
         if not HAS_TORCH:
             pytest.skip("PyTorch is required for Tier0MPNN")
-        from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
         from aurelius.screening.tier0.models import Tier0MPNN
+        from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
 
         predictor = Tier0ActivationPredictor()
         gnn_model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)

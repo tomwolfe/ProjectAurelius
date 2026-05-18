@@ -27,7 +27,7 @@ except ImportError:
     HAS_TORCH = False
 
 
-def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, "torch.Tensor"]:
+def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, torch.Tensor]:
     """Convert MLX model weights (stored as .npy files) to PyTorch tensors.
 
     Loads .npy files from the MLX model directory and converts them
