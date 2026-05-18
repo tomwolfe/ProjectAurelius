@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import os
 from importlib import resources
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -191,7 +191,12 @@ class _FallbackMLP:
 
 if HAS_TORCH:
 
-    class PyTorchFallbackFilter(_torch_nn.Module):  # type: ignore[misc]
+    if TYPE_CHECKING:
+        from torch.nn import Module as _TorchModuleBase  # type: ignore[import-not-found, unused-ignore]
+    else:
+        _TorchModuleBase: Any = _torch_nn.Module  # type: ignore[misc]
+
+    class PyTorchFallbackFilter(_TorchModuleBase):
         """PyTorch-based MLP fallback replicating the ChemVLM2MLP architecture.
 
         Provides a 2-layer MLP (2048->128->1) using torch.nn when MLX is
