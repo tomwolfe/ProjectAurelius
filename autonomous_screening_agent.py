@@ -178,20 +178,20 @@ def _tanimoto(fp1: Any, fp2: Any) -> float:
 
 
 def _is_valid_mol(mol: Any) -> bool:
-    """Check chemical validity and molecular weight < 350 Da.
+    """Check chemical validity and molecular weight < 450 Da.
 
     Args:
         mol: RDKit Mol object.
 
     Returns:
-        True if molecule is valid and MW < 350.
+        True if molecule is valid and MW < 450.
     """
     try:
         Chem.SanitizeMol(mol)
     except Exception:
         return False
     mw = Descriptors.ExactMolWt(mol)
-    return mw < 350.0
+    return mw < 450.0
 
 
 def _load_smiles_file(path: str) -> list[str]:
