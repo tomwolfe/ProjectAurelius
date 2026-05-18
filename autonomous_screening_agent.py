@@ -134,7 +134,7 @@ def _serialize_fp(fp: Any) -> str:
         Serialized fingerprint string.
     """
     ev = ExplicitBitVect(2048)
-    for idx in fp.GetNonzeroElements().keys():
+    for idx in fp.GetNonzeroElements():
         ev.SetBit(idx)
     return DataStructs.BitVectToText(ev)
 
@@ -166,12 +166,12 @@ def _tanimoto(fp1: Any, fp2: Any) -> float:
     # Convert UIntSparseIntVect to ExplicitBitVect for compatibility
     if not hasattr(fp1, 'GetNumBits'):
         ev1 = ExplicitBitVect(2048)
-        for idx in fp1.GetNonzeroElements().keys():
+        for idx in fp1.GetNonzeroElements():
             ev1.SetBit(idx)
         fp1 = ev1
     if not hasattr(fp2, 'GetNumBits'):
         ev2 = ExplicitBitVect(2048)
-        for idx in fp2.GetNonzeroElements().keys():
+        for idx in fp2.GetNonzeroElements():
             ev2.SetBit(idx)
         fp2 = ev2
     return FingerprintSimilarity(fp1, fp2)
@@ -485,7 +485,7 @@ class MutationEngine:
             frag_smiles = list(BRICS.BRICSDecompose(mol))
             if len(frag_smiles) < 2:
                 return generated
-            
+
             frag_mols = [Chem.MolFromSmiles(s) for s in frag_smiles]
             frag_mols = [m for m in frag_mols if m is not None]
             if len(frag_mols) < 2:
@@ -515,11 +515,11 @@ class MutationEngine:
         generated: list[str] = []
         try:
             mol_h = Chem.AddHs(mol)
-            c_atoms = [atom.GetIdx() for atom in mol_h.GetAtoms() 
+            c_atoms = [atom.GetIdx() for atom in mol_h.GetAtoms()
                        if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4]
             if not c_atoms:
                 return generated
-            
+
             rng = np.random.RandomState(self._rng.randint(0, 2**31))
             for idx in rng.choice(c_atoms, size=min(5, len(c_atoms)), replace=False):
                 rw_mol = Chem.RWMol(mol_h)
@@ -552,11 +552,11 @@ class MutationEngine:
         generated: list[str] = []
         try:
             mol_h = Chem.AddHs(mol)
-            c_atoms = [atom.GetIdx() for atom in mol_h.GetAtoms() 
+            c_atoms = [atom.GetIdx() for atom in mol_h.GetAtoms()
                        if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4]
             if not c_atoms:
                 return generated
-            
+
             rng = np.random.RandomState(self._rng.randint(0, 2**31))
             for idx in rng.choice(c_atoms, size=min(5, len(c_atoms)), replace=False):
                 rw_mol = Chem.RWMol(mol_h)
