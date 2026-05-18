@@ -86,9 +86,9 @@ class MLXNAFilter:
                 self._mx = mx
             except Exception:
                 self._use_mlx = False
-                self._mx = None
+                self._mx = None  # type: ignore[assignment]
         else:
-            self._mx = None
+            self._mx = None  # type: ignore[assignment]
 
         # Conditional torch/torch_nn imports
         self._torch: Any = None
@@ -340,7 +340,7 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
                 smiles,
             )
             return _hash_fallback(smiles)
-        fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+        fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined]
         bit_list = fp.ToList()
         arr = np.array(bit_list, dtype=np.float32)
         if len(arr) < 2048:
