@@ -47,6 +47,9 @@ dev = [
     "hypothesis>=6.100.0",
     "types-psutil",
 ]
+full = [
+    "aurelius[apple,ml,chem]",
+]
 
 [project.scripts]
 aurelius = "aurelius.__main__:cli"

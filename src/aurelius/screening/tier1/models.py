@@ -21,12 +21,22 @@ from typing import Any
 
 import numpy as np
 
-try:
-    import mlx.core as mx
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore[assignment, unused-ignore]
+# ---------------------------------------------------------------------------
+# Centralized dependency detection
+# ---------------------------------------------------------------------------
+from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
+
+# Re-export for backward compatibility (modules that check these booleans)
+__all__: list[str] = [
+    "DEFAULT_MODEL_DIR",
+    "HAS_MLX",
+    "HAS_RDKIT",
+    "HAS_TORCH",
+    "HUGGINGFACE_MODELS",
+    "PyTorchFallbackFilter",
+    "_ChemVLM2MLP",
+    "_FallbackMLP",
+]
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -44,21 +54,28 @@ HUGGINGFACE_MODELS: dict[str, str] = {
     "qm9_energy": "aurelius/tier1-qm9-mlp",
 }
 
-try:
-    import torch  # type: ignore[import-not-found, unused-ignore]
-    import torch.nn as torch_nn  # type: ignore[import-not-found, unused-ignore]
-    HAS_TORCH = True
-except ImportError:
-    torch = None  # type: ignore[assignment, unused-ignore]
-    torch_nn = None  # type: ignore[assignment, unused-ignore]
-    HAS_TORCH = False
+# ---------------------------------------------------------------------------
+# Conditional imports (framework availability from central manager)
+# ---------------------------------------------------------------------------
 
-try:
-    from rdkit import Chem  # noqa: F401
-    from rdkit.Chem import AllChem  # noqa: F401
-    HAS_RDKIT = True
-except ImportError:
-    HAS_RDKIT = False
+_mx: Any = None
+if HAS_MLX:
+    try:
+        import mlx.core as mx  # noqa: F401
+        _mx = mx
+    except Exception:
+        pass
+
+_torch: Any = None
+_torch_nn: Any = None
+if HAS_TORCH:
+    try:
+        import torch  # type: ignore[import-not-found, unused-ignore]
+        import torch.nn as torch_nn  # type: ignore[import-not-found, unused-ignore]
+        _torch = torch
+        _torch_nn = torch_nn
+    except Exception:
+        pass
 
 
 class _ChemVLM2MLP:
@@ -86,19 +103,19 @@ class _ChemVLM2MLP:
         across layers, preventing vanishing/exploding gradients.
         """
         scale1 = np.sqrt(2.0 / (self.input_dim + self.hidden_dim))
-        self.W1 = mx.random.normal((self.input_dim, self.hidden_dim), scale=scale1)
-        self.b1 = mx.zeros((self.hidden_dim,))
+        self.W1 = _mx.random.normal((self.input_dim, self.hidden_dim), scale=scale1)
+        self.b1 = _mx.zeros((self.hidden_dim,))
 
         scale2 = np.sqrt(2.0 / (self.hidden_dim + 1))
-        self.W2 = mx.random.normal((self.hidden_dim, 1), scale=scale2)
-        self.b2 = mx.zeros((1,))
+        self.W2 = _mx.random.normal((self.hidden_dim, 1), scale=scale2)
+        self.b2 = _mx.zeros((1,))
 
     def __call__(self, x: Any) -> Any:
         """Forward pass through the 2-layer MLP."""
-        h = mx.addmm(self.b1, x, self.W1, alpha=1.0, beta=1.0)
-        h = mx.maximum(h, 0.0)
-        out = mx.addmm(self.b2, h, self.W2, alpha=1.0, beta=1.0)
-        return mx.sigmoid(out)
+        h = _mx.addmm(self.b1, x, self.W1, alpha=1.0, beta=1.0)
+        h = _mx.maximum(h, 0.0)
+        out = _mx.addmm(self.b2, h, self.W2, alpha=1.0, beta=1.0)
+        return _mx.sigmoid(out)
 
     def parameters(self) -> list[Any]:
         return [self.W1, self.b1, self.W2, self.b2]
@@ -136,10 +153,10 @@ class _ChemVLM2MLP:
         b1 = np.load(os.path.join(path, "b1.npy"))
         W2 = np.load(os.path.join(path, "W2.npy"))
         b2 = np.load(os.path.join(path, "b2.npy"))
-        self.W1 = mx.array(W1)
-        self.b1 = mx.array(b1)
-        self.W2 = mx.array(W2)
-        self.b2 = mx.array(b2)
+        self.W1 = _mx.array(W1)
+        self.b1 = _mx.array(b1)
+        self.W2 = _mx.array(W2)
+        self.b2 = _mx.array(b2)
 
 
 class _FallbackMLP:
@@ -174,7 +191,7 @@ class _FallbackMLP:
 
 if HAS_TORCH:
 
-    class PyTorchFallbackFilter(torch_nn.Module):  # type: ignore[misc, unused-ignore]
+    class PyTorchFallbackFilter(_torch_nn.Module):  # type: ignore[misc, unused-ignore]
         """PyTorch-based MLP fallback replicating the ChemVLM2MLP architecture.
 
         Provides a 2-layer MLP (2048->128->1) using torch.nn when MLX is
@@ -205,18 +222,18 @@ if HAS_TORCH:
             self.input_dim = input_dim
             self.hidden_dim = hidden_dim
 
-            self.fc1 = torch_nn.Linear(input_dim, hidden_dim)
-            self.relu = torch_nn.ReLU()
-            self.fc2 = torch_nn.Linear(hidden_dim, 1)
+            self.fc1 = _torch_nn.Linear(input_dim, hidden_dim)
+            self.relu = _torch_nn.ReLU()
+            self.fc2 = _torch_nn.Linear(hidden_dim, 1)
 
             self._init_weights()
 
         def _init_weights(self) -> None:
             """Initialize all weights using Xavier uniform initialization."""
-            torch_nn.init.xavier_uniform_(self.fc1.weight)
-            torch_nn.init.zeros_(self.fc1.bias)
-            torch_nn.init.xavier_uniform_(self.fc2.weight)
-            torch_nn.init.zeros_(self.fc2.bias)
+            _torch_nn.init.xavier_uniform_(self.fc1.weight)
+            _torch_nn.init.zeros_(self.fc1.bias)
+            _torch_nn.init.xavier_uniform_(self.fc2.weight)
+            _torch_nn.init.zeros_(self.fc2.bias)
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
             """Forward pass through the 2-layer MLP.
@@ -230,7 +247,7 @@ if HAS_TORCH:
             h = self.fc1(x)
             h = self.relu(h)
             out = self.fc2(h)
-            return torch.sigmoid(out)
+            return _torch.sigmoid(out)  # type: ignore[no-any-return]
 
         def predict(self, x: torch.Tensor) -> torch.Tensor:
             """Run inference and return scalar confidence score.
@@ -243,8 +260,8 @@ if HAS_TORCH:
             """
             output = self(x)
             if output.dim() == 0:
-                return torch.clamp(output, 0.0, 1.0)
-            return torch.clamp(output, 0.0, 1.0)
+                return _torch.clamp(output, 0.0, 1.0)  # type: ignore[no-any-return]
+            return _torch.clamp(output, 0.0, 1.0)  # type: ignore[no-any-return]
 
         def save_weights(self, path: str) -> None:
             """Save model weights to individual .npy files (MLX-compatible format).
@@ -272,7 +289,7 @@ if HAS_TORCH:
             Args:
                 path: Directory path containing saved weights.
             """
-            state_dict = torch.load(
+            state_dict = _torch.load(
                 path, map_location="cpu", weights_only=True,
             )
             self.load_state_dict(state_dict)
@@ -287,13 +304,4 @@ else:
             raise RuntimeError("PyTorch is required for PyTorchFallbackFilter. Install with: pip install torch")
 
 
-__all__ = [
-    "DEFAULT_MODEL_DIR",
-    "HAS_MLX",
-    "HAS_RDKIT",
-    "HAS_TORCH",
-    "HUGGINGFACE_MODELS",
-    "PyTorchFallbackFilter",
-    "_ChemVLM2MLP",
-    "_FallbackMLP",
-]
+

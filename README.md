@@ -131,6 +131,9 @@ pip install -e ".[dev]"
 # Initialize the pipeline
 aurelius init
 
+# Check system readiness (dependencies, hardware, config)
+aurelius doctor --verbose
+
 # Screen a single molecule (uses real models by default)
 aurelius screen "CC(=O)OC1=CC=CC=C1"
 
@@ -210,13 +213,37 @@ Models can be loaded from:
 
 ### Disk Usage Considerations
 
-When downloading models from Hugging Face Hub, Aurelius uses `local_dir_use_symlinks=False` for compatibility and portability. This means:
+When downloading models from Hugging Face Hub, Aurelius uses `local_dir_use_symlinks=False` by default for compatibility and portability. This means:
 
 - **Disk usage:** Each downloaded model is stored as full copies (not symlinks), which may consume more disk space than a symlinked HF cache.
 - **Cache location:** Models are stored under `AURELIUS_MODEL_DIR/<task>/hf_cache/`.
+- **Pre-flight check:** Aurelius checks for at least 10GB free space before downloading. If insufficient, the download is skipped with a warning.
 - **Cleanup:** Use `huggingface-cli delete-cache` to manage the shared HF cache, or manually remove model directories under `AURELIUS_MODEL_DIR`.
 
-For users with limited disk space, consider training locally and reusing the model rather than downloading from HF repeatedly.
+#### Reducing Disk Usage with Symlinks
+
+For users with limited disk space, set the environment variable:
+
+```bash
+export AURELIUS_HF_USE_SYMLINKS=1
+```
+
+This uses `local_dir_use_symlinks=True` in `snapshot_download`, which creates symlinks to the shared HF cache instead of full copies. This significantly reduces disk usage when multiple tasks download from the same repository.
+
+#### Local Training + Caching Workflow
+
+For production use with limited disk:
+
+```bash
+# Train locally once
+aurelius train --dataset esol --epochs 200
+
+# Reuse via environment variable
+export AURELIUS_MODEL_DIR=./models/tier1
+
+# Subsequent runs load from local cache without HF download
+aurelius screen "CC(=O)OC1=CC=CC=C1"
+```
 
 ## Aurelius Score v5.2
 
@@ -308,6 +335,47 @@ python benchmarks/benchmark_tier2.py --n-atoms 50 --n-cycles 500
 
 ## CLI Reference
 
+```
+aurelius init                    Initialize pipeline
+aurelius doctor                  Validate dependencies and hardware
+  --verbose (-v)                 Show detailed framework versions
+aurelius screen <smiles>         Screen a single molecule
+  --solvent TYPE                 Solvent type (default: ec:dmc)
+  --salt TYPE                    Salt type (default: NaPF6)
+  --ion TYPE                     Ion type (default: Na+)
+  --temperature K                Temperature in Kelvin
+  --voltage CUTOFF               Voltage cutoff
+  --cycles N                     MD simulation cycles
+  --gwp VALUE                    Global Warming Potential
+  --use-real-models              Use real models (default: enabled)
+  --demo                         Use synthetic data (demo mode)
+  --allow-fallback               Allow hash fallback without RDKit (demo/CI)
+aurelius batch <file>            Screen molecules from SMILES file
+  --solvent TYPE                 Solvent type
+  --salt TYPE                    Salt type
+  --output PATH                  Output JSON file
+  --allow-fallback               Allow hash fallback without RDKit (demo/CI)
+aurelius score <smiles>          Compute Aurelius score only
+aurelius train                   Train model
+  --task tier1|tier0             Task: tier1 (MLX filter) or tier0 (MPNN)
+  --dataset esol|qm9             Dataset to train on (for --task tier1)
+  --epochs N                     Number of epochs
+  --batch-size N                 Mini-batch size
+  --learning-rate LR             Learning rate
+  --csv-path PATH                Local CSV file path
+aurelius validate <smiles>       Run physics validation
+aurelius benchmark               Run hardware benchmark
+  --tier 1|2                     Benchmark specific tier only
+  --quick/--detailed             Quick mode (default: enabled)
+  --output PATH                  Save results to JSON
+aurelius status                  Show pipeline status and memory
+aurelius hf-upload               Upload model to HuggingFace Hub
+  --model-dir PATH               Local model directory (required)
+  --repo-id ID                   HF repository ID (required)
+  --task tier0|esol|qm9          Model task type
+  --private/--public             Repository visibility (default: private)
+  --commit-message MSG           Commit message
+  --dry-run                      Validate without uploading
 ```
 aurelius init                    Initialize pipeline
 aurelius screen <smiles>         Screen a single molecule

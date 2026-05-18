@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import time
 from importlib import resources
@@ -41,28 +42,17 @@ from aurelius.screening.tier1.training import (
 )
 from aurelius.types import MLXFilterResult
 
-try:
-    import mlx.core as mx
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore[assignment, unused-ignore]
+logger = logging.getLogger(__name__)
 
-try:
-    from rdkit import Chem
-    from rdkit.Chem import AllChem
-    HAS_RDKIT = True
-except ImportError:
-    HAS_RDKIT = False
-
-try:
-    import torch
-    import torch.nn as torch_nn
-    HAS_TORCH = True
-except ImportError:
-    torch = None  # type: ignore[assignment, unused-ignore]
-    torch_nn = None  # type: ignore[assignment, unused-ignore]
-    HAS_TORCH = False
+# Conditional RDKit imports for _generate_ecfp4_fingerprint
+_Chem: Any = None
+_AllChem: Any = None
+if HAS_RDKIT:
+    try:
+        from rdkit import Chem as _Chem  # noqa: F401
+        from rdkit.Chem import AllChem as _AllChem  # noqa: F401
+    except Exception:
+        pass
 
 
 class MLXNAFilter:
@@ -101,6 +91,39 @@ class MLXNAFilter:
         self._use_mlx = HAS_MLX
         self._use_real_models = use_real_models
         self._weight_loader = HuggingFaceWeightLoader()
+        if HAS_MLX:
+            try:
+                import mlx.core as mx  # noqa: F401
+                self._mx = mx
+            except Exception:
+                self._use_mlx = False
+                self._mx = None  # type: ignore[assignment]
+        else:
+            self._mx = None  # type: ignore[assignment]
+
+        # Conditional torch/torch_nn imports
+        self._torch: Any = None
+        self._torch_nn: Any = None
+        if HAS_TORCH:
+            try:
+                import torch  # noqa: F401
+                import torch.nn as torch_nn  # noqa: F401
+                self._torch = torch
+                self._torch_nn = torch_nn
+            except Exception:
+                pass
+
+        # Conditional RDKit imports
+        self._rdkit_chem: Any = None
+        self._rdkit_allchem: Any = None
+        if HAS_RDKIT:
+            try:
+                from rdkit import Chem as _rdkit_chem  # noqa: F401, N813
+                from rdkit.Chem import AllChem as _rdkit_allchem  # noqa: F401, N813
+                self._rdkit_chem = _rdkit_chem
+                self._rdkit_allchem = _rdkit_allchem
+            except Exception:
+                pass
 
         if train_on_init:
             self._load_or_train_model()
@@ -277,15 +300,15 @@ class MLXNAFilter:
 
     def _run_inference(self, fingerprint: np.ndarray, smiles: str) -> dict[str, Any]:
         """Run molecular viability inference via MLX, PyTorch, or numpy fallback."""
-        if self._use_mlx and self._model is not None:
-            fp_array = mx.array(fingerprint, dtype=mx.float32)
+        if self._use_mlx and self._model is not None and self._mx is not None:
+            fp_array = self._mx.array(fingerprint, dtype=self._mx.float32)
             if fp_array.ndim == 1:
                 fp_array = fp_array.reshape(1, -1)
             logits = self._model(fp_array)
-            confidence = float(mx.squeeze(logits))
-        elif HAS_TORCH and isinstance(self._model, PyTorchFallbackFilter):
-            fp_tensor = torch.from_numpy(fingerprint).float().unsqueeze(0)
-            with torch.no_grad():
+            confidence = float(self._mx.squeeze(logits))
+        elif HAS_TORCH and isinstance(self._model, PyTorchFallbackFilter) and self._torch is not None:
+            fp_tensor = self._torch.from_numpy(fingerprint).float().unsqueeze(0)
+            with self._torch.no_grad():
                 output = self._model.predict(fp_tensor)
             confidence = float(output.squeeze().item())
         else:
@@ -317,14 +340,15 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
         RuntimeError: If use_real_models=True and RDKit is unavailable.
     """
     if HAS_RDKIT:
-        mol = Chem.MolFromSmiles(smiles)
+        mol = _Chem.MolFromSmiles(smiles)
         if mol is None:
-            print(
-                f"[Aurelius v5.2 Tier1] WARNING: RDKit failed to parse SMILES '{smiles}', "
-                f"using hash fallback. This fingerprint is NOT chemically valid."
+            logger.warning(
+                "RDKit failed to parse SMILES '%s', using hash fallback. "
+                "This fingerprint is NOT chemically valid.",
+                smiles,
             )
             return _hash_fallback(smiles)
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined, unused-ignore]
+        fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined, unused-ignore]
         bit_list = fp.ToList()
         arr = np.array(bit_list, dtype=np.float32)
         if len(arr) < 2048:

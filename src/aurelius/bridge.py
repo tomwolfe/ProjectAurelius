@@ -16,22 +16,27 @@ Cross-Platform Compatibility:
 from __future__ import annotations
 
 import logging
+from typing import Any
+
+from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
 
 logger = logging.getLogger(__name__)
 
-try:
-    import mlx.core as mx
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore[assignment, unused-ignore]
-
-try:
-    import torch
-    HAS_TORCH = True
-except ImportError:
-    torch = None  # type: ignore[assignment, unused-ignore]
-    HAS_TORCH = False
+# Conditional framework imports (for runtime use when available)
+_mx: Any = None
+_torch: Any = None
+if HAS_MLX:
+    try:
+        import mlx.core as mx  # noqa: F401
+        _mx = mx
+    except Exception:
+        pass
+if HAS_TORCH:
+    try:
+        import torch  # noqa: F401
+        _torch = torch
+    except Exception:
+        pass
 
 # Runtime error messages for graceful degradation
 _MLX_NOT_AVAILABLE_MSG = (
@@ -58,7 +63,7 @@ _TORCH_DLPACK_UNSUPPORTED_MSG = (
 )
 
 
-def bridge_mlx_to_pytorch(mlx_array: mx.array) -> torch.Tensor:
+def bridge_mlx_to_pytorch(mlx_array: _mx.array) -> _torch.Tensor:
     """Bridge MLX array memory to PyTorch via DLPack.
 
     Uses DLpack to export the MLX array memory view into a DLPack
@@ -84,18 +89,18 @@ def bridge_mlx_to_pytorch(mlx_array: mx.array) -> torch.Tensor:
 
     # Export the MLX array memory view into a DLPack capsule
     try:
-        capsule = mx.to_dlpack(mlx_array)  # type: ignore[attr-defined, unused-ignore]
+        capsule = _mx.to_dlpack(mlx_array)  # type: ignore[attr-defined, unused-ignore]
     except AttributeError as err:
         raise AttributeError(_DLPACK_UNSUPPORTED_MSG) from err
 
     # Consume the capsule natively inside PyTorch
-    torch_tensor = torch.from_dlpack(capsule)  # type: ignore[attr-defined, unused-ignore]
+    torch_tensor = _torch.from_dlpack(capsule)  # type: ignore[attr-defined, unused-ignore]
 
     # Preserve the device from the source MLX array's underlying storage.
     # MLX arrays on Apple Silicon map to MPS in PyTorch; on CPU, they
     # stay on CPU. This avoids the previous hardcoded .to("mps") which
     # would silently fail or error on Linux/Windows.
-    if torch.backends.mps.is_available():
+    if _torch.backends.mps.is_available():
         try:
             torch_tensor = torch_tensor.to("mps")
         except RuntimeError:
@@ -105,7 +110,7 @@ def bridge_mlx_to_pytorch(mlx_array: mx.array) -> torch.Tensor:
     return torch_tensor
 
 
-def bridge_pytorch_to_mlx(torch_tensor: torch.Tensor) -> mx.array:
+def bridge_pytorch_to_mlx(torch_tensor: _torch.Tensor) -> _mx.array:
     """Bridge PyTorch tensor memory to MLX via DLPack.
 
     Uses DLpack to export the PyTorch tensor memory view into a
@@ -127,13 +132,13 @@ def bridge_pytorch_to_mlx(torch_tensor: torch.Tensor) -> mx.array:
 
     # Export the PyTorch tensor memory view into a DLPack capsule
     try:
-        capsule = torch.utils.dlpack.to_dlpack(torch_tensor)  # type: ignore[attr-defined, unused-ignore]
+        capsule = _torch.utils.dlpack.to_dlpack(torch_tensor)  # type: ignore[attr-defined, unused-ignore]
     except AttributeError as err:
         raise AttributeError(_TORCH_DLPACK_UNSUPPORTED_MSG) from err
 
     # Consume the capsule natively inside MLX
     try:
-        mlx_array = mx.from_dlpack(capsule)  # type: ignore[attr-defined, unused-ignore]
+        mlx_array = _mx.from_dlpack(capsule)  # type: ignore[attr-defined, unused-ignore]
     except AttributeError as err:
         raise AttributeError(_DLPACK_UNSUPPORTED_MSG) from err
 
@@ -181,7 +186,7 @@ class CrossFrameworkBridge:
         """Return True if PyTorch is available on this platform."""
         return self._torch_available
 
-    def mlx_to_pytorch(self, mlx_array: mx.array) -> torch.Tensor:
+    def mlx_to_pytorch(self, mlx_array: _mx.array) -> _torch.Tensor:
         """Bridge an MLX array to a PyTorch tensor on the same device.
 
         Raises:
@@ -192,7 +197,7 @@ class CrossFrameworkBridge:
             raise RuntimeError(_MLX_NOT_AVAILABLE_MSG)
         return bridge_mlx_to_pytorch(mlx_array)
 
-    def pytorch_to_mlx(self, torch_tensor: torch.Tensor) -> mx.array:
+    def pytorch_to_mlx(self, torch_tensor: _torch.Tensor) -> _mx.array:
         """Bridge a PyTorch tensor to an MLX array.
 
         Raises:

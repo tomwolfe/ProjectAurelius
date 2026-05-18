@@ -11,22 +11,9 @@ Then computes the Aurelius Score v5.2 (S_A_v5.2).
 from __future__ import annotations
 
 import gc
+import logging
 import time
 from typing import Any
-
-try:
-    import mlx.core as mx
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore[assignment, unused-ignore]
-
-try:
-    import torch
-    HAS_TORCH = True
-except ImportError:
-    torch = None  # type: ignore[assignment, unused-ignore]
-    HAS_TORCH = False
 
 from aurelius.config import M5ProConfig, apply_global_config
 from aurelius.memory.manager import (
@@ -45,6 +32,9 @@ from aurelius.types import (
     MoleculeInput,
     Tier2Result,
 )
+from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
+
+logger = logging.getLogger(__name__)
 
 
 class AureliusPipeline:
@@ -292,12 +282,20 @@ class AureliusPipeline:
         # CROSS-TIER HARDWARE CLEANUP
         gc.collect()
         if self.has_mlx:
-            mx.metal.clear_cache()
+            try:
+                import mlx.core as _mx  # noqa: F401
+                _mx.metal.clear_cache()
+            except Exception:
+                pass
         if self.has_torch:
-            if torch.backends.mps.is_available():
-                torch.mps.empty_cache()
-            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
-                torch.cuda.empty_cache()
+            try:
+                import torch  # noqa: F401
+                if torch.backends.mps.is_available():
+                    torch.mps.empty_cache()
+                if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
 
         # Tier 3: GCMD Digital Twin
         t3_result = None
@@ -319,12 +317,20 @@ class AureliusPipeline:
         # POST-TIER-3 MEMORY CLEANUP
         gc.collect()
         if self.has_mlx:
-            mx.metal.clear_cache()
+            try:
+                import mlx.core as _mx  # noqa: F401
+                _mx.metal.clear_cache()
+            except Exception:
+                pass
         if self.has_torch:
-            if torch.backends.mps.is_available():
-                torch.mps.empty_cache()
-            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
-                torch.cuda.empty_cache()
+            try:
+                import torch  # noqa: F401
+                if torch.backends.mps.is_available():
+                    torch.mps.empty_cache()
+                if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
 
         # Final consolidated score compilation
         gwp = kwargs.get("gwp_value", 1.0)

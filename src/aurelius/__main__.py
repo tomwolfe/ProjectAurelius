@@ -2,6 +2,7 @@
 
 Usage:
     aurelius init                    Initialize pipeline
+    aurelius doctor                  Validate dependencies and hardware
     aurelius screen <smiles>         Screen a single molecule
     aurelius batch <file>            Screen molecules from SMILES file
     aurelius score <smiles>          Compute Aurelius score only
@@ -61,6 +62,129 @@ def init() -> None:
     click.echo("\nPipeline initialized successfully.")
 
 
+@cli.command()
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Show detailed framework versions")
+def doctor(verbose: bool) -> None:
+    """Validate dependencies, hardware, and configuration.
+
+    Checks availability of MLX, PyTorch, RDKit, and HuggingFace Hub.
+    Validates GPU/MPS/CUDA hardware detection. Reports any configuration
+    mismatches between environment variables and runtime config.
+
+    This command is useful for:
+    - Diagnosing setup issues before running screening
+    - CI pipelines to verify the fallback-only environment
+    - Quick system readiness assessment
+    """
+    from aurelius.config import validate_environment
+    from aurelius.utils.dependencies import (
+        HAS_MLX,
+        HAS_RDKIT,
+        HAS_TORCH,
+        DependencyManager,
+    )
+
+    click.echo("\n=== Aurelius v6.0 Doctor ===")
+    click.echo("")
+
+    # Framework status
+    deps = DependencyManager()
+    status = deps.report_status()
+
+    click.echo("[Frameworks]")
+    for fw, info in status.items():
+        icon = "OK" if info["available"] else "MISSING"
+        version_str = f" (v{info['version']})" if info["version"] else ""
+        click.echo(f"  [{icon:>7}] {fw}{version_str}")
+        if verbose and info["version"]:
+            click.echo(f"           Minimum required: {info['min_version']}")
+            if not info["meets_minimum"]:
+                click.echo("           WARNING: Version below minimum!")
+
+    click.echo("")
+
+    # Hardware detection
+    click.echo("[Hardware]")
+
+    # MLX Metal
+    if HAS_MLX:
+        try:
+            import mlx.core as _mx  # noqa: F401
+            click.echo("  MLX:      Metal backend available")
+        except Exception:
+            click.echo("  MLX:      Metal backend unavailable")
+    else:
+        click.echo("  MLX:      Not installed (will use PyTorch fallback)")
+
+    # PyTorch device detection
+    if HAS_TORCH:
+        try:
+            import torch  # noqa: F401
+            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built():  # type: ignore[no-untyped-call, unused-ignore]
+                if torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
+                    click.echo(f"  PyTorch:  CUDA available ({torch.cuda.get_device_name(0)})")  # type: ignore[no-untyped-call, unused-ignore]
+                else:
+                    click.echo("  PyTorch:  CUDA not available")
+            if torch.backends.mps.is_available():
+                click.echo("  PyTorch:  MPS (Apple Silicon) available")
+            else:
+                click.echo("  PyTorch:  MPS not available")
+            click.echo("  PyTorch:  Device will auto-select at runtime")
+        except Exception:
+            click.echo("  PyTorch:  Framework check failed")
+    else:
+        click.echo("  PyTorch:  Not installed")
+
+    # RDKit
+    if HAS_RDKIT:
+        click.echo("  RDKit:    Available")
+    else:
+        click.echo("  RDKit:    Not installed (hash fallback only)")
+
+    # HuggingFace
+    if deps.is_hf_hub_available():
+        click.echo("  HuggingFace Hub: Available")
+    else:
+        click.echo("  HuggingFace Hub: Not installed (local training only)")
+
+    click.echo("")
+
+    # Environment validation
+    config = get_config()
+    env_result = validate_environment(config, strict=True)
+
+    if env_result["mismatches"]:
+        click.echo("[Environment Mismatches]")
+        for m in env_result["mismatches"]:
+            click.echo(f"  {m['env_var']}: expected={m['expected']!r}, actual={m['actual']!r}")
+    elif env_result["missing"]:
+        click.echo("[Missing Environment Variables]")
+        for var in env_result["missing"]:
+            click.echo(f"  {var} (will be set automatically)")
+    else:
+        click.echo("[Environment] All variables match config defaults.")
+
+    click.echo("")
+
+    # Summary
+    click.echo("[Summary]")
+    issues = []
+    if not HAS_MLX:
+        issues.append("MLX (Apple Silicon optimization)")
+    if not HAS_TORCH:
+        issues.append("PyTorch (Tier 2 physics)")
+    if not HAS_RDKIT:
+        issues.append("RDKit (real model screening)")
+
+    if issues:
+        click.echo(f"  WARNING: Missing {len(issues)} framework(s): {', '.join(issues)}")
+        click.echo("  Pipeline will use fallback paths. Some features may be degraded.")
+    else:
+        click.echo("  All core frameworks available. System ready for full pipeline.")
+
+    click.echo("")
+
+
 @cli.command("screen")
 @click.argument("smiles")
 @click.option("--solvent", default="ec:dmc", help="Solvent type (default: ec:dmc)")
@@ -113,14 +237,30 @@ def screen(
     if demo:
         use_real_models = False
 
+    # Production-risk warning for --allow-fallback
+    if allow_fallback:
+        click.echo(
+            "\n[WARNING] --allow-fallback is enabled. "
+            "Molecular screening will use hash-based pseudo-fingerprints "
+            "which are NOT chemically valid. This should NOT be used in "
+            "production workflows.\n",
+        )
+
     # Enforce RDKit for real models (unless --allow-fallback is set)
     if use_real_models and not allow_fallback:
         try:
             from rdkit import Chem  # noqa: F401
         except ImportError:
             raise RuntimeError(
-                "RDKit is required for real model screening. "
-                "Install with: pip install rdkit\n\n"
+                "RDKit is required for real model screening.\n\n"
+                "Install RDKit:\n"
+                "  pip install rdkit\n"
+                "  conda install -c conda-forge rdkit\n\n"
+                "Platform notes:\n"
+                "  - macOS: pip install rdkit (or conda install -c conda-forge rdkit)\n"
+                "  - Linux: pip install rdkit (requires libcdt5, libgtsb0, libgl1)\n"
+                "  - Windows: pip install rdkit (pre-built wheels available)\n\n"
+                "Dependency guide: https://github.com/rdkit/rdkit#installation\n\n"
                 "To use hash-based fallback (demo/CI only), add --allow-fallback.\n"
                 "To run in demo mode without RDKit, use: aurelius screen <smiles> --demo"
             ) from None
@@ -166,8 +306,10 @@ def batch(file: str, solvent: str, salt: str, output: str | None, allow_fallback
             from rdkit import Chem  # noqa: F401
         except ImportError:
             raise RuntimeError(
-                "RDKit is required for batch screening. "
-                "Install with: pip install rdkit\n\n"
+                "RDKit is required for batch screening.\n\n"
+                "Install RDKit:\n"
+                "  pip install rdkit\n"
+                "  conda install -c conda-forge rdkit\n\n"
                 "To use hash-based fallback (demo/CI only), add --allow-fallback."
             ) from None
 

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 import os
 from importlib import resources
 from typing import TYPE_CHECKING, Any
@@ -37,15 +38,21 @@ import numpy as np
 
 from aurelius.constants import COULOMB_EV_A
 from aurelius.types import DesolvationPathResult, Tier2Result
+from aurelius.utils.dependencies import HAS_TORCH
 
-try:
-    import torch  # type: ignore[import-not-found, unused-ignore]
-    import torch.nn as nn  # type: ignore[import-not-found, unused-ignore]
-    HAS_TORCH = True
-except ImportError:
-    HAS_TORCH = False
-    torch = None  # type: ignore[assignment, unused-ignore]
-    nn = None  # type: ignore[assignment, unused-ignore]
+logger = logging.getLogger(__name__)
+
+# Conditional torch/nn imports (framework availability from central manager)
+_torch: Any = None
+_nn: Any = None
+if HAS_TORCH:
+    try:
+        import torch  # type: ignore[import-not-found, unused-ignore]
+        import torch.nn as nn  # type: ignore[import-not-found, unused-ignore]
+        _torch = torch
+        _nn = nn
+    except Exception:
+        pass
 
 if TYPE_CHECKING:
     pass
@@ -80,7 +87,7 @@ def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
 
 if HAS_TORCH:
 
-    class ContinuousFilterConv1d(nn.Module):  # type: ignore[misc, unused-ignore]
+    class ContinuousFilterConv1d(_nn.Module):  # type: ignore[misc, unused-ignore]
         """Continuous-filter 1D convolution for SchNet-style message passing.
 
         Applies a distance-dependent filter to edge features in a
@@ -101,23 +108,23 @@ if HAS_TORCH:
 
             # Distance filter: maps distances to filter weights
             # Outputs num_filters values per distance pair
-            self.distance_proj = nn.Sequential(
-                nn.Linear(1, num_filters),
-                nn.ReLU(),
-                nn.Linear(num_filters, num_filters),
-                nn.ReLU(),
-                nn.Linear(num_filters, num_filters),
+            self.distance_proj = _nn.Sequential(
+                _nn.Linear(1, num_filters),
+                _nn.ReLU(),
+                _nn.Linear(num_filters, num_filters),
+                _nn.ReLU(),
+                _nn.Linear(num_filters, num_filters),
             )
 
             # Project filter weights to input/output dimensions
-            self.filter_proj = nn.Linear(num_filters, input_dim * output_dim)
+            self.filter_proj = _nn.Linear(num_filters, input_dim * output_dim)
 
         def forward(
             self,
-            h: torch.Tensor,
-            distances: torch.Tensor,
-            edge_index: torch.Tensor | None = None,
-        ) -> torch.Tensor:
+            h: _torch.Tensor,
+            distances: _torch.Tensor,
+            edge_index: _torch.Tensor | None = None,
+        ) -> _torch.Tensor:
             """Forward pass of continuous filter convolution.
 
             Args:
@@ -143,14 +150,14 @@ if HAS_TORCH:
             # h: (N, input_dim) -> (N, input_dim, 1)
             h_expanded = h.unsqueeze(-1)
             # Matmul: (N, N, output_dim, 1)
-            messages = torch.matmul(filters_t, h_expanded).squeeze(-1)
+            messages = _torch.matmul(filters_t, h_expanded).squeeze(-1)
             # Sum over neighbors: (N, output)
-            h_new = torch.sum(messages, dim=1)
+            h_new = _torch.sum(messages, dim=1)
 
             return h_new
 
 
-    class ContinuousFilterConv1dBatched(nn.Module):  # type: ignore[misc, unused-ignore]
+    class ContinuousFilterConv1dBatched(_nn.Module):  # type: ignore[misc, unused-ignore]
         """Batched version of continuous-filter convolution.
 
         Handles (B, N, hidden_dim) inputs with (B, N, N) distances.
@@ -162,20 +169,20 @@ if HAS_TORCH:
             self.output_dim = output_dim
             self.num_filters = num_filters
 
-            self.distance_proj = nn.Sequential(
-                nn.Linear(1, num_filters),
-                nn.ReLU(),
-                nn.Linear(num_filters, num_filters),
-                nn.ReLU(),
-                nn.Linear(num_filters, num_filters),
+            self.distance_proj = _nn.Sequential(
+                _nn.Linear(1, num_filters),
+                _nn.ReLU(),
+                _nn.Linear(num_filters, num_filters),
+                _nn.ReLU(),
+                _nn.Linear(num_filters, num_filters),
             )
-            self.filter_proj = nn.Linear(num_filters, input_dim * output_dim)
+            self.filter_proj = _nn.Linear(num_filters, input_dim * output_dim)
 
         def forward(
             self,
-            h: torch.Tensor,
-            distances: torch.Tensor,
-        ) -> torch.Tensor:
+            h: _torch.Tensor,
+            distances: _torch.Tensor,
+        ) -> _torch.Tensor:
             """Forward pass for batched inputs.
 
             Args:
@@ -193,13 +200,13 @@ if HAS_TORCH:
             filters = filters.view(B, N, N, self.input_dim, self.output_dim)
             filters_t = filters.permute(0, 1, 2, 4, 3)
             h_expanded = h.unsqueeze(2).unsqueeze(-1)
-            messages = torch.matmul(filters_t, h_expanded).squeeze(-1)
-            h_new = torch.sum(messages, dim=2)
+            messages = _torch.matmul(filters_t, h_expanded).squeeze(-1)
+            h_new = _torch.sum(messages, dim=2)
 
             return h_new
 
 
-    class SchNetInteractionBlock(nn.Module):  # type: ignore[misc, unused-ignore]
+    class SchNetInteractionBlock(_nn.Module):  # type: ignore[misc, unused-ignore]
         """SchNet interaction block with continuous-filter convolution.
 
         Combines distance-based message passing with readout for
@@ -215,19 +222,19 @@ if HAS_TORCH:
         def __init__(self, hidden_dim: int = 128, num_filters: int = 32) -> None:
             super().__init__()
             self.conv = ContinuousFilterConv1d(hidden_dim, hidden_dim, num_filters)
-            self.norm1 = nn.LayerNorm(hidden_dim)
-            self.norm2 = nn.LayerNorm(hidden_dim)
-            self.ffn = nn.Sequential(
-                nn.Linear(hidden_dim, hidden_dim * 2),
-                nn.SiLU(),
-                nn.Linear(hidden_dim * 2, hidden_dim),
+            self.norm1 = _nn.LayerNorm(hidden_dim)
+            self.norm2 = _nn.LayerNorm(hidden_dim)
+            self.ffn = _nn.Sequential(
+                _nn.Linear(hidden_dim, hidden_dim * 2),
+                _nn.SiLU(),
+                _nn.Linear(hidden_dim * 2, hidden_dim),
             )
 
         def forward(
             self,
-            h: torch.Tensor,
-            distances: torch.Tensor,
-        ) -> torch.Tensor:
+            h: _torch.Tensor,
+            distances: _torch.Tensor,
+        ) -> _torch.Tensor:
             """Forward pass of SchNet interaction block.
 
             Args:
@@ -244,7 +251,7 @@ if HAS_TORCH:
             return h
 
 
-    class MatterSimMPEngine(nn.Module):  # type: ignore[misc, unused-ignore]
+    class MatterSimMPEngine(_nn.Module):  # type: ignore[misc, unused-ignore]
         """SchNet-style physics engine for MatterSim on Apple Silicon MPS.
 
         Processes real geometric graph networks with explicit 3D atomic
@@ -257,7 +264,7 @@ if HAS_TORCH:
 
         Fully vectorized: computes all pairwise interactions via O(N^2)
         tensor operations (O(N^2) time/space), with O(1) Python interpreter
-        overhead per step. Enables gradients via torch.autograd.grad.
+        overhead per step. Enables gradients via _torch.autograd.grad.
 
         Supports batched inputs: (B, N, 3) for coordinates and (B, N)
         for atomic numbers.
@@ -272,26 +279,26 @@ if HAS_TORCH:
             self.hidden_dim = hidden_dim
 
             # Element embedding
-            self.embedding = nn.Embedding(118, hidden_dim)
+            self.embedding = _nn.Embedding(118, hidden_dim)
 
             # SchNet interaction blocks
-            self.interactions = nn.ModuleList([
+            self.interactions = _nn.ModuleList([
                 SchNetInteractionBlock(hidden_dim, num_filters)
                 for _ in range(3)  # 3 interaction blocks
             ])
 
             # Readout: project final embeddings to scalar energy
-            self.readout = nn.Sequential(
-                nn.Linear(hidden_dim, hidden_dim // 2),
-                nn.SiLU(),
-                nn.Linear(hidden_dim // 2, 1),
+            self.readout = _nn.Sequential(
+                _nn.Linear(hidden_dim, hidden_dim // 2),
+                _nn.SiLU(),
+                _nn.Linear(hidden_dim // 2, 1),
             )
 
         def forward(
             self,
-            atomic_numbers: torch.Tensor,
-            coordinates: torch.Tensor,
-        ) -> torch.Tensor:
+            atomic_numbers: _torch.Tensor,
+            coordinates: _torch.Tensor,
+        ) -> _torch.Tensor:
             """Compute interaction energy from 3D atomic structure.
 
             Args:
@@ -309,15 +316,15 @@ if HAS_TORCH:
                 for i in range(coordinates.shape[0]):
                     e = self._forward_single(atomic_numbers[i], coordinates[i])
                     energies.append(e)
-                return torch.stack(energies).mean()
+                return _torch.stack(energies).mean()
             else:
                 return self._forward_single(atomic_numbers, coordinates)
 
         def _forward_single(
             self,
-            atomic_numbers: torch.Tensor,
-            coordinates: torch.Tensor,
-        ) -> torch.Tensor:
+            atomic_numbers: _torch.Tensor,
+            coordinates: _torch.Tensor,
+        ) -> _torch.Tensor:
             """Forward pass for a single molecule (non-batched).
 
             Args:
@@ -332,7 +339,7 @@ if HAS_TORCH:
 
             # Pairwise distance computation: (N, N)
             diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)  # (N, N, 3)
-            distances = torch.norm(diffs, dim=-1)  # (N, N)
+            distances = _torch.norm(diffs, dim=-1)  # (N, N)
 
             # SchNet interaction blocks
             for interaction in self.interactions:
@@ -345,9 +352,9 @@ if HAS_TORCH:
 
         def compute_forces(
             self,
-            atomic_numbers: torch.Tensor,
-            coordinates: torch.Tensor,
-        ) -> torch.Tensor:
+            atomic_numbers: _torch.Tensor,
+            coordinates: _torch.Tensor,
+        ) -> _torch.Tensor:
             """Compute atomic forces as negative gradient of energy.
 
             Args:
@@ -359,8 +366,8 @@ if HAS_TORCH:
             """
             coordinates.requires_grad_(True)
             energy = self(atomic_numbers, coordinates)
-            forces = torch.autograd.grad(
-                energy, coordinates, grad_outputs=torch.ones_like(energy),
+            forces = _torch.autograd.grad(
+                energy, coordinates, grad_outputs=_torch.ones_like(energy),
                 create_graph=True, only_inputs=True,
             )[0]
             return -forces  # Force = -gradient of energy
@@ -411,6 +418,7 @@ class MatterSimMTSimulator:
         force_field_path: str | None = None,
         use_neighbor_list: bool = False,
         neighbor_list_cutoff: float = 12.0,
+        use_pbc: bool = False,
     ) -> None:
         """Initialize MatterSim-MT simulator.
 
@@ -423,7 +431,15 @@ class MatterSimMTSimulator:
                 dense computation for small systems (n_atoms < 50).
             neighbor_list_cutoff: Cutoff radius in Angstroms for neighbor
                 list (default: 12.0). Must be >= self._cutoff.
+            use_pbc: Periodic Boundary Conditions flag. Currently reserved
+                for v7.0. Setting to True raises NotImplementedError.
         """
+        # Periodic Boundary Conditions placeholder (v7.0)
+        if use_pbc:
+            raise NotImplementedError(
+                "Periodic Boundary Conditions are reserved for v7.0. "
+                "Set use_pbc=False for current functionality."
+            )
         # Load parameters from force field JSON
         self._LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {}
         self._CHARGES: dict[int, float] = {}
@@ -474,7 +490,7 @@ class MatterSimMTSimulator:
         # Neighbor list settings
         self._use_neighbor_list = use_neighbor_list
         self._neighbor_list_cutoff = max(neighbor_list_cutoff, self._cutoff)
-        self._neighbor_list: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
+        self._neighbor_list: tuple[_torch.Tensor, _torch.Tensor, _torch.Tensor] | None = None
         self._nl_rebuild_counter = 0
         self._nl_rebuild_interval = 10  # Rebuild every N steps
         self._max_displacement_threshold = 0.5  # Angstroms
@@ -486,10 +502,10 @@ class MatterSimMTSimulator:
         Priority: CUDA > MPS (Apple Silicon) > CPU.
         Returns the device string for PyTorch tensor placement.
         """
-        if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
+        if hasattr(_torch.backends, "cuda") and _torch.backends.cuda.is_built() and _torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
             return "cuda"
 
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        if hasattr(_torch.backends, "mps") and _torch.backends.mps.is_available():
             return "mps"
 
         return "cpu"
@@ -602,12 +618,12 @@ class MatterSimMTSimulator:
             ])
 
         _n_atoms = len(atomic_numbers_list)
-        atomic_numbers = torch.tensor(atomic_numbers_list, dtype=torch.long, device=device)
-        coordinates = torch.tensor(coords_list, dtype=torch.float32, device=device)
+        atomic_numbers = _torch.tensor(atomic_numbers_list, dtype=_torch.long, device=device)
+        coordinates = _torch.tensor(coords_list, dtype=_torch.float32, device=device)
 
         # Compute pairwise distances
         diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
-        distances = torch.norm(diffs, dim=-1)
+        distances = _torch.norm(diffs, dim=-1)
 
         # Compute LJ + Coulomb energies
         if self._use_neighbor_list:
@@ -623,9 +639,9 @@ class MatterSimMTSimulator:
         energies = self._compute_energy_profile(atomic_numbers, coordinates, n_cycles)
 
         local_maxima = self._find_local_maxima(energies.cpu().numpy())
-        max_barrier = float(torch.max(energies).item())
+        max_barrier = float(_torch.max(energies).item())
         max_local = float(max(local_maxima)) if local_maxima else 0.0
-        path_integral = float(torch.trapezoid(energies, torch.linspace(0, 8.0, n_cycles, device=device)).item())
+        path_integral = float(_torch.trapezoid(energies, _torch.linspace(0, 8.0, n_cycles, device=device)).item())
 
         rejected = max_local > self.barrier_threshold_eV
         reason = None
@@ -643,8 +659,8 @@ class MatterSimMTSimulator:
         )
 
     def _compute_lj_potential(
-        self, atomic_numbers: torch.Tensor, distances: torch.Tensor
-    ) -> torch.Tensor:
+        self, atomic_numbers: _torch.Tensor, distances: _torch.Tensor
+    ) -> _torch.Tensor:
         """Compute Lennard-Jones potential between all atom pairs.
 
         Uses OPLS-AA / GAFF parameters loaded from force field JSON.
@@ -661,29 +677,29 @@ class MatterSimMTSimulator:
         device = atomic_numbers.device
 
         # Dense mode (O(N^2) path)
-        mask = torch.triu(torch.ones(n, n, device=device, dtype=torch.bool), diagonal=1)
+        mask = _torch.triu(_torch.ones(n, n, device=device, dtype=_torch.bool), diagonal=1)
 
         z_i = atomic_numbers.unsqueeze(0)
         z_j = atomic_numbers.unsqueeze(1)
-        z_min = torch.minimum(z_i, z_j)
-        z_max = torch.maximum(z_i, z_j)
+        z_min = _torch.minimum(z_i, z_j)
+        z_max = _torch.maximum(z_i, z_j)
 
-        eps_tensor = torch.zeros(n, n, device=device)
-        sig_tensor = torch.zeros(n, n, device=device)
+        eps_tensor = _torch.zeros(n, n, device=device)
+        sig_tensor = _torch.zeros(n, n, device=device)
 
         for (zi, zj), (eps, sig) in self._LJ_PARAMS.items():
             pair_mask = (z_min == zi) & (z_max == zj)
-            eps_tensor = torch.where(pair_mask, torch.full_like(eps_tensor, eps), eps_tensor)
-            sig_tensor = torch.where(pair_mask, torch.full_like(sig_tensor, sig), sig_tensor)
+            eps_tensor = _torch.where(pair_mask, _torch.full_like(eps_tensor, eps), eps_tensor)
+            sig_tensor = _torch.where(pair_mask, _torch.full_like(sig_tensor, sig), sig_tensor)
 
         # Default parameters for unknown pairs
-        eps_tensor = torch.where(eps_tensor == 0, torch.full_like(eps_tensor, self._default_eps), eps_tensor)
-        sig_tensor = torch.where(sig_tensor == 0, torch.full_like(sig_tensor, self._default_sig), sig_tensor)
+        eps_tensor = _torch.where(eps_tensor == 0, _torch.full_like(eps_tensor, self._default_eps), eps_tensor)
+        sig_tensor = _torch.where(sig_tensor == 0, _torch.full_like(sig_tensor, self._default_sig), sig_tensor)
 
         cutoff_mask = (distances < self._cutoff) & mask  # OPLS-AA cutoff
 
         # Shifted LJ potential
-        r_soft = torch.sqrt(distances * distances + sig_tensor ** 2)
+        r_soft = _torch.sqrt(distances * distances + sig_tensor ** 2)
         sig_over_r = sig_tensor / r_soft
         sig_over_r6 = sig_over_r ** 6
         sig_over_r12 = sig_over_r6 ** 2
@@ -691,24 +707,24 @@ class MatterSimMTSimulator:
         lj_per_pair = 4.0 * eps_tensor * (sig_over_r12 - sig_over_r6)
 
         # Shift to zero at cutoff
-        r_cutoff_soft = torch.sqrt(torch.full_like(distances, 144.0) + sig_tensor ** 2)
+        r_cutoff_soft = _torch.sqrt(_torch.full_like(distances, 144.0) + sig_tensor ** 2)
         sig_over_r_cutoff = sig_tensor / r_cutoff_soft
         sig_over_r6_cutoff = sig_over_r_cutoff ** 6
         sig_over_r12_cutoff = sig_over_r6_cutoff ** 2
         lj_cutoff = 4.0 * eps_tensor * (sig_over_r12_cutoff - sig_over_r6_cutoff)
 
         lj_per_pair = lj_per_pair - lj_cutoff
-        lj_total = torch.sum(lj_per_pair * cutoff_mask.float())
+        lj_total = _torch.sum(lj_per_pair * cutoff_mask.float())
 
         return lj_total
 
     def _compute_lj_sparse(
         self,
-        atomic_numbers: torch.Tensor,
-        src_idx: torch.Tensor,
-        dst_idx: torch.Tensor,
-        distances: torch.Tensor,
-    ) -> torch.Tensor:
+        atomic_numbers: _torch.Tensor,
+        src_idx: _torch.Tensor,
+        dst_idx: _torch.Tensor,
+        distances: _torch.Tensor,
+    ) -> _torch.Tensor:
         """Compute Lennard-Jones potential using sparse neighbor list.
 
         Args:
@@ -726,20 +742,20 @@ class MatterSimMTSimulator:
         # Build LJ parameter tensors for all pairs
         z_i = atomic_numbers.unsqueeze(0)
         z_j = atomic_numbers.unsqueeze(1)
-        z_min = torch.minimum(z_i, z_j)
-        z_max = torch.maximum(z_i, z_j)
+        z_min = _torch.minimum(z_i, z_j)
+        z_max = _torch.maximum(z_i, z_j)
 
-        eps_tensor = torch.zeros(n, n, device=device)
-        sig_tensor = torch.zeros(n, n, device=device)
+        eps_tensor = _torch.zeros(n, n, device=device)
+        sig_tensor = _torch.zeros(n, n, device=device)
 
         for (zi, zj), (eps, sig) in self._LJ_PARAMS.items():
             pair_mask = (z_min == zi) & (z_max == zj)
-            eps_tensor = torch.where(pair_mask, torch.full_like(eps_tensor, eps), eps_tensor)
-            sig_tensor = torch.where(pair_mask, torch.full_like(sig_tensor, sig), sig_tensor)
+            eps_tensor = _torch.where(pair_mask, _torch.full_like(eps_tensor, eps), eps_tensor)
+            sig_tensor = _torch.where(pair_mask, _torch.full_like(sig_tensor, sig), sig_tensor)
 
         # Default parameters for unknown pairs
-        eps_tensor = torch.where(eps_tensor == 0, torch.full_like(eps_tensor, self._default_eps), eps_tensor)
-        sig_tensor = torch.where(sig_tensor == 0, torch.full_like(sig_tensor, self._default_sig), sig_tensor)
+        eps_tensor = _torch.where(eps_tensor == 0, _torch.full_like(eps_tensor, self._default_eps), eps_tensor)
+        sig_tensor = _torch.where(sig_tensor == 0, _torch.full_like(sig_tensor, self._default_sig), sig_tensor)
 
         # Advanced indexing: gather parameters for neighbor pairs
         eps_neighbors = eps_tensor[src_idx, dst_idx]
@@ -749,27 +765,27 @@ class MatterSimMTSimulator:
         cutoff_mask = (distances < self._cutoff).float()
 
         # Shifted LJ potential for neighbor distances
-        r_soft = torch.sqrt(distances ** 2 + sig_neighbors ** 2)
+        r_soft = _torch.sqrt(distances ** 2 + sig_neighbors ** 2)
         sig_over_r = sig_neighbors / r_soft
         sig_over_r6 = sig_over_r ** 6
         sig_over_r12 = sig_over_r6 ** 2
         lj_per_neighbor = 4.0 * eps_neighbors * (sig_over_r12 - sig_over_r6)
 
         # Shift to zero at cutoff
-        r_cutoff_soft = torch.sqrt(torch.full_like(distances, 144.0) + sig_neighbors ** 2)
+        r_cutoff_soft = _torch.sqrt(_torch.full_like(distances, 144.0) + sig_neighbors ** 2)
         sig_over_r_cutoff = sig_neighbors / r_cutoff_soft
         sig_over_r6_cutoff = sig_over_r_cutoff ** 6
         sig_over_r12_cutoff = sig_over_r6_cutoff ** 2
         lj_cutoff = 4.0 * eps_neighbors * (sig_over_r12_cutoff - sig_over_r6_cutoff)
 
         lj_per_neighbor = lj_per_neighbor - lj_cutoff
-        lj_total = torch.sum(lj_per_neighbor * cutoff_mask)
+        lj_total = _torch.sum(lj_per_neighbor * cutoff_mask)
 
         return lj_total
 
     def _compute_coulomb_potential(
-        self, atomic_numbers: torch.Tensor, distances: torch.Tensor
-    ) -> torch.Tensor:
+        self, atomic_numbers: _torch.Tensor, distances: _torch.Tensor
+    ) -> _torch.Tensor:
         """Compute Coulombic potential between charged pairs.
 
         Uses OPLS-AA / GAFF partial charges.
@@ -784,31 +800,31 @@ class MatterSimMTSimulator:
         n = atomic_numbers.shape[0]
         device = atomic_numbers.device
 
-        mask = torch.triu(torch.ones(n, n, device=device, dtype=torch.bool), diagonal=1)
+        mask = _torch.triu(_torch.ones(n, n, device=device, dtype=_torch.bool), diagonal=1)
 
-        charges = torch.zeros(n, device=device, dtype=torch.float32)
+        charges = _torch.zeros(n, device=device, dtype=_torch.float32)
         for z, q in self._CHARGES.items():
-            charges = torch.where(atomic_numbers == z, torch.full_like(charges, q), charges)
+            charges = _torch.where(atomic_numbers == z, _torch.full_like(charges, q), charges)
 
         q_i = charges.unsqueeze(0)
         q_j = charges.unsqueeze(1)
         q_product = q_i * q_j
 
         charge_mask = (q_product != 0.0)
-        r_soft = torch.sqrt(distances * distances + 1.0)
+        r_soft = _torch.sqrt(distances * distances + 1.0)
 
         coulomb_per_pair = COULOMB_EV_A * q_product / r_soft
-        coulomb_total = torch.sum(coulomb_per_pair * mask.float() * charge_mask.float())
+        coulomb_total = _torch.sum(coulomb_per_pair * mask.float() * charge_mask.float())
 
         return coulomb_total
 
     def _compute_coulomb_sparse(
         self,
-        atomic_numbers: torch.Tensor,
-        src_idx: torch.Tensor,
-        dst_idx: torch.Tensor,
-        distances: torch.Tensor,
-    ) -> torch.Tensor:
+        atomic_numbers: _torch.Tensor,
+        src_idx: _torch.Tensor,
+        dst_idx: _torch.Tensor,
+        distances: _torch.Tensor,
+    ) -> _torch.Tensor:
         """Compute Coulombic potential using sparse neighbor list.
 
         Args:
@@ -823,9 +839,9 @@ class MatterSimMTSimulator:
         n = atomic_numbers.shape[0]
         device = atomic_numbers.device
 
-        charges = torch.zeros(n, device=device, dtype=torch.float32)
+        charges = _torch.zeros(n, device=device, dtype=_torch.float32)
         for z, q in self._CHARGES.items():
-            charges = torch.where(atomic_numbers == z, torch.full_like(charges, q), charges)
+            charges = _torch.where(atomic_numbers == z, _torch.full_like(charges, q), charges)
 
         # Advanced indexing: gather charges for neighbor pairs
         q_src = charges[src_idx]
@@ -839,18 +855,18 @@ class MatterSimMTSimulator:
         charge_mask = ((q_src != 0.0) & (q_dst != 0.0)).float()
 
         # Coulomb energy for neighbor distances
-        r_soft = torch.sqrt(distances ** 2 + 1.0)
+        r_soft = _torch.sqrt(distances ** 2 + 1.0)
         coulomb_per_neighbor = COULOMB_EV_A * q_product / r_soft
-        coulomb_total = torch.sum(coulomb_per_neighbor * cutoff_mask * charge_mask)
+        coulomb_total = _torch.sum(coulomb_per_neighbor * cutoff_mask * charge_mask)
 
         return coulomb_total
 
     def _compute_energy_profile(
         self,
-        atomic_numbers: torch.Tensor,
-        coordinates: torch.Tensor,
+        atomic_numbers: _torch.Tensor,
+        coordinates: _torch.Tensor,
         n_cycles: int,
-    ) -> torch.Tensor:
+    ) -> _torch.Tensor:
         """Compute energy profile along the desolvation path.
 
         Fully vectorized implementation: computes LJ + Coulomb energies
@@ -869,10 +885,10 @@ class MatterSimMTSimulator:
         ion_idx = 0
         n_solvent = coordinates.shape[0] - 1
 
-        positions = torch.linspace(0, 8.0, n_cycles, device=device)
+        positions = _torch.linspace(0, 8.0, n_cycles, device=device)
 
         # Displace ion along x-axis: (n_cycles, 3)
-        ion_coords = torch.zeros(n_cycles, 3, device=device, dtype=torch.float32)
+        ion_coords = _torch.zeros(n_cycles, 3, device=device, dtype=_torch.float32)
         ion_coords[:, 0] = positions
 
         # Solvent coordinates: (1, n_solvent, 3)
@@ -882,24 +898,24 @@ class MatterSimMTSimulator:
         # Solvent coords broadcast to (n_cycles, n_solvent, 3)
         # Result: (n_cycles, n_solvent, 3)
         diffs = ion_coords.unsqueeze(1) - solvent_coords
-        ion_solvent_distances = torch.norm(diffs, dim=-1)  # (n_cycles, n_solvent)
+        ion_solvent_distances = _torch.norm(diffs, dim=-1)  # (n_cycles, n_solvent)
 
         # Build LJ parameter tensors for ion (z=11) vs solvent pairs
         solvent_z = atomic_numbers[1:]  # (n_solvent,)
-        eps_vals = torch.zeros(n_solvent, device=device)
-        sig_vals = torch.zeros(n_solvent, device=device)
+        eps_vals = _torch.zeros(n_solvent, device=device)
+        sig_vals = _torch.zeros(n_solvent, device=device)
 
         for (zi, zj), (eps, sig) in self._LJ_PARAMS.items():
             pair_mask = ((solvent_z == zi) & (zi == 11)) | ((solvent_z == zj) & (zj == 11))
-            eps_vals = torch.where(pair_mask, torch.full_like(eps_vals, eps), eps_vals)
-            sig_vals = torch.where(pair_mask, torch.full_like(sig_vals, sig), sig_vals)
+            eps_vals = _torch.where(pair_mask, _torch.full_like(eps_vals, eps), eps_vals)
+            sig_vals = _torch.where(pair_mask, _torch.full_like(sig_vals, sig), sig_vals)
 
         # Apply defaults for unknown pairs: (n_solvent,)
-        eps_vals = torch.where(
-            eps_vals == 0, torch.full_like(eps_vals, self._default_eps), eps_vals
+        eps_vals = _torch.where(
+            eps_vals == 0, _torch.full_like(eps_vals, self._default_eps), eps_vals
         )
-        sig_vals = torch.where(
-            sig_vals == 0, torch.full_like(sig_vals, self._default_sig), sig_vals
+        sig_vals = _torch.where(
+            sig_vals == 0, _torch.full_like(sig_vals, self._default_sig), sig_vals
         )
 
         # Broadcast to (n_cycles, n_solvent) for all steps
@@ -910,38 +926,38 @@ class MatterSimMTSimulator:
         cutoff_mask = ion_solvent_distances < self._cutoff
 
         # Shifted LJ potential: fully vectorized over all steps
-        r_soft = torch.sqrt(ion_solvent_distances ** 2 + sig_broadcast ** 2)
+        r_soft = _torch.sqrt(ion_solvent_distances ** 2 + sig_broadcast ** 2)
         sig_over_r = sig_broadcast / r_soft
         sig_over_r6 = sig_over_r ** 6
         sig_over_r12 = sig_over_r6 ** 2
         lj_per_atom = 4.0 * eps_broadcast * (sig_over_r12 - sig_over_r6)
 
         # Shift to zero at cutoff
-        r_cutoff_soft = torch.sqrt(torch.full_like(ion_solvent_distances, 144.0) + sig_broadcast ** 2)
+        r_cutoff_soft = _torch.sqrt(_torch.full_like(ion_solvent_distances, 144.0) + sig_broadcast ** 2)
         sig_over_r_cutoff = sig_broadcast / r_cutoff_soft
         sig_over_r6_cutoff = sig_over_r_cutoff ** 6
         sig_over_r12_cutoff = sig_over_r6_cutoff ** 2
         lj_cutoff = 4.0 * eps_broadcast * (sig_over_r12_cutoff - sig_over_r6_cutoff)
         lj_per_atom = lj_per_atom - lj_cutoff
 
-        lj_total = torch.sum(lj_per_atom * cutoff_mask.float(), dim=1)  # (n_cycles,)
+        lj_total = _torch.sum(lj_per_atom * cutoff_mask.float(), dim=1)  # (n_cycles,)
 
         # Coulomb: ion charge (scalar) vs solvent charges
         qi = self._CHARGES.get(int(atomic_numbers[ion_idx].item()), 0.0)
 
         if qi != 0.0:
-            q_j_vals = torch.zeros(n_solvent, device=device, dtype=torch.float32)
+            q_j_vals = _torch.zeros(n_solvent, device=device, dtype=_torch.float32)
             for z, q in self._CHARGES.items():
-                q_j_vals = torch.where(solvent_z == z, torch.full_like(q_j_vals, q), q_j_vals)
+                q_j_vals = _torch.where(solvent_z == z, _torch.full_like(q_j_vals, q), q_j_vals)
 
             # Broadcast charge products: (n_cycles, n_solvent)
             qi_broadcast = qi * q_j_vals.unsqueeze(0).expand(n_cycles, -1)
             charge_mask = (q_j_vals != 0.0).unsqueeze(0).expand(n_cycles, -1)
-            r_soft_c = torch.sqrt(ion_solvent_distances ** 2 + 1.0)
+            r_soft_c = _torch.sqrt(ion_solvent_distances ** 2 + 1.0)
             coul_per_atom = 14.3996 * qi_broadcast / r_soft_c
-            coul_total = torch.sum(coul_per_atom * charge_mask.float(), dim=1)  # (n_cycles,)
+            coul_total = _torch.sum(coul_per_atom * charge_mask.float(), dim=1)  # (n_cycles,)
         else:
-            coul_total = torch.zeros(n_cycles, device=device)
+            coul_total = _torch.zeros(n_cycles, device=device)
 
         return lj_total + coul_total
 
@@ -1023,9 +1039,9 @@ class MatterSimMTSimulator:
 
     def _build_neighbor_list(
         self,
-        coordinates: torch.Tensor,
+        coordinates: _torch.Tensor,
         cutoff: float | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[_torch.Tensor, _torch.Tensor, _torch.Tensor]:
         """Build a cutoff-based neighbor list using fixed-cell spatial binning.
 
         Uses fixed-cell spatial binning (cell size = cutoff) to compute
@@ -1036,8 +1052,8 @@ class MatterSimMTSimulator:
         or when max displacement exceeds `max_displacement_threshold`.
 
         MPS Optimization:
-            - Prefers index-based masking (torch.gather/torch.index_select)
-              over torch.sparse for MPS compatibility.
+            - Prefers index-based masking (_torch.gather/_torch.index_select)
+              over _torch.sparse for MPS compatibility.
             - Falls back to dense computation if n_atoms < 50 for maximum
               MPS throughput.
 
@@ -1057,9 +1073,9 @@ class MatterSimMTSimulator:
         """
         if not HAS_TORCH:
             return (
-                torch.empty(0, dtype=torch.long),
-                torch.empty(0, dtype=torch.long),
-                torch.empty(0, dtype=torch.float32),
+                _torch.empty(0, dtype=_torch.long),
+                _torch.empty(0, dtype=_torch.long),
+                _torch.empty(0, dtype=_torch.float32),
             )
 
         n_atoms = coordinates.shape[0]
@@ -1075,9 +1091,9 @@ class MatterSimMTSimulator:
         cell_size = cl
         coords_shifted = coordinates - coordinates.min(dim=0, keepdim=True).values
         max_coords = coords_shifted.max(dim=0).values
-        n_cells_x = int(torch.ceil(max_coords[0] / cell_size).item()) + 1
-        n_cells_y = int(torch.ceil(max_coords[1] / cell_size).item()) + 1
-        n_cells_z = int(torch.ceil(max_coords[2] / cell_size).item()) + 1
+        n_cells_x = int(_torch.ceil(max_coords[0] / cell_size).item()) + 1
+        n_cells_y = int(_torch.ceil(max_coords[1] / cell_size).item()) + 1
+        n_cells_z = int(_torch.ceil(max_coords[2] / cell_size).item()) + 1
 
         # Assign each atom to a cell
         cell_x = (coords_shifted[:, 0] / cell_size).long().clamp(0, n_cells_x - 1)
@@ -1089,18 +1105,18 @@ class MatterSimMTSimulator:
 
         # Build cell contents using bincount
         n_cells = n_cells_x * n_cells_y * n_cells_z
-        cell_contents = torch.zeros(n_cells, n_atoms, dtype=torch.long, device=device)
-        cell_count = torch.zeros(n_cells, dtype=torch.long, device=device)
+        cell_contents = _torch.zeros(n_cells, n_atoms, dtype=_torch.long, device=device)
+        cell_count = _torch.zeros(n_cells, dtype=_torch.long, device=device)
 
         # Place atoms in cells using scatter_add
         cell_offsets = cell_ids * n_atoms
-        atom_indices = torch.arange(n_atoms, device=device)
+        atom_indices = _torch.arange(n_atoms, device=device)
         flat_indices = cell_offsets + atom_indices
-        cell_contents = torch.zeros(n_cells * n_atoms, dtype=torch.long, device=device)
+        cell_contents = _torch.zeros(n_cells * n_atoms, dtype=_torch.long, device=device)
         cell_contents.scatter_add_(0, flat_indices, atom_indices)
 
         # Count atoms per cell
-        cell_count.scatter_add_(0, cell_ids, torch.ones(n_atoms, dtype=torch.long, device=device))
+        cell_count.scatter_add_(0, cell_ids, _torch.ones(n_atoms, dtype=_torch.long, device=device))
 
         # For each atom, find neighbors in adjacent cells
         src_list: list[int] = []
@@ -1134,21 +1150,21 @@ class MatterSimMTSimulator:
                                 dist_list.append(dist)
 
         if src_list:
-            src_indices = torch.tensor(src_list, dtype=torch.long, device=device)
-            dst_indices = torch.tensor(dst_list, dtype=torch.long, device=device)
-            distances = torch.tensor(dist_list, dtype=torch.float32, device=device)
+            src_indices = _torch.tensor(src_list, dtype=_torch.long, device=device)
+            dst_indices = _torch.tensor(dst_list, dtype=_torch.long, device=device)
+            distances = _torch.tensor(dist_list, dtype=_torch.float32, device=device)
         else:
-            src_indices = torch.empty(0, dtype=torch.long, device=device)
-            dst_indices = torch.empty(0, dtype=torch.long, device=device)
-            distances = torch.empty(0, dtype=torch.float32, device=device)
+            src_indices = _torch.empty(0, dtype=_torch.long, device=device)
+            dst_indices = _torch.empty(0, dtype=_torch.long, device=device)
+            distances = _torch.empty(0, dtype=_torch.float32, device=device)
 
         return src_indices, dst_indices, distances
 
     def _dense_neighbor_list(
         self,
-        coordinates: torch.Tensor,
+        coordinates: _torch.Tensor,
         cutoff: float,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[_torch.Tensor, _torch.Tensor, _torch.Tensor]:
         """Compute full pairwise neighbor list (O(N^2)).
 
         Used as fallback for small systems (< 50 atoms) where dense
@@ -1163,23 +1179,23 @@ class MatterSimMTSimulator:
         """
         n = coordinates.shape[0]
         diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)  # (N, N, 3)
-        distances = torch.norm(diffs, dim=-1)  # (N, N)
+        distances = _torch.norm(diffs, dim=-1)  # (N, N)
 
         # Upper triangle mask
-        mask = torch.triu(torch.ones(n, n, device=coordinates.device, dtype=torch.bool), diagonal=1)
+        mask = _torch.triu(_torch.ones(n, n, device=coordinates.device, dtype=_torch.bool), diagonal=1)
         cutoff_mask = distances < cutoff
 
         # Combine masks
         valid_mask = mask & cutoff_mask
 
-        # Use torch.nonzero to get neighbor pairs (MPS-compatible)
-        neighbor_pairs = torch.nonzero(valid_mask, as_tuple=False)  # (N_pairs, 2)
+        # Use _torch.nonzero to get neighbor pairs (MPS-compatible)
+        neighbor_pairs = _torch.nonzero(valid_mask, as_tuple=False)  # (N_pairs, 2)
 
         if neighbor_pairs.numel() == 0:
             return (
-                torch.empty(0, dtype=torch.long, device=coordinates.device),
-                torch.empty(0, dtype=torch.long, device=coordinates.device),
-                torch.empty(0, dtype=torch.float32, device=coordinates.device),
+                _torch.empty(0, dtype=_torch.long, device=coordinates.device),
+                _torch.empty(0, dtype=_torch.long, device=coordinates.device),
+                _torch.empty(0, dtype=_torch.float32, device=coordinates.device),
             )
 
         # Extract indices and distances
@@ -1189,7 +1205,7 @@ class MatterSimMTSimulator:
 
         return row_idx, col_idx, dist_vals
 
-    def update_displacement(self, old_coords: torch.Tensor, new_coords: torch.Tensor) -> None:
+    def update_displacement(self, old_coords: _torch.Tensor, new_coords: _torch.Tensor) -> None:
         """Track atomic displacement to trigger neighbor list rebuild.
 
         Args:
@@ -1199,7 +1215,7 @@ class MatterSimMTSimulator:
         if not self._use_neighbor_list:
             return
 
-        displacement = torch.norm(new_coords - old_coords, dim=-1).max().item()
+        displacement = _torch.norm(new_coords - old_coords, dim=-1).max().item()
         self._total_displacement += displacement
         self._nl_rebuild_counter += 1
 
@@ -1211,8 +1227,8 @@ class MatterSimMTSimulator:
 
     def _get_neighbor_list(
         self,
-        coordinates: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        coordinates: _torch.Tensor,
+    ) -> tuple[_torch.Tensor, _torch.Tensor, _torch.Tensor]:
         """Get or build neighbor list.
 
         Args:
@@ -1225,16 +1241,16 @@ class MatterSimMTSimulator:
             # Dense path: return all pairs as 3-tuple
             n = coordinates.shape[0]
             diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
-            distances = torch.norm(diffs, dim=-1)
-            mask = torch.triu(torch.ones(n, n, device=coordinates.device, dtype=torch.bool), diagonal=1)
+            distances = _torch.norm(diffs, dim=-1)
+            mask = _torch.triu(_torch.ones(n, n, device=coordinates.device, dtype=_torch.bool), diagonal=1)
             cutoff_mask = distances < self._cutoff
             valid = mask & cutoff_mask
-            pairs = torch.nonzero(valid, as_tuple=False)
+            pairs = _torch.nonzero(valid, as_tuple=False)
             if pairs.numel() == 0:
                 return (
-                    torch.empty(0, dtype=torch.long, device=coordinates.device),
-                    torch.empty(0, dtype=torch.long, device=coordinates.device),
-                    torch.empty(0, dtype=torch.float32, device=coordinates.device),
+                    _torch.empty(0, dtype=_torch.long, device=coordinates.device),
+                    _torch.empty(0, dtype=_torch.long, device=coordinates.device),
+                    _torch.empty(0, dtype=_torch.float32, device=coordinates.device),
                 )
             return pairs[:, 0], pairs[:, 1], distances[pairs[:, 0], pairs[:, 1]]
 
