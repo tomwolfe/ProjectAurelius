@@ -382,7 +382,7 @@ def _is_electrochemically_stable(smiles: str) -> tuple[bool, list[str]]:
 def _apply_diversity_filter(
     candidate_smiles: str,
     known_fps: list[Any],
-    diversity_threshold: float = 0.85,
+    diversity_threshold: float = 0.75,
     max_history: int = 5000,
 ) -> bool:
     """Check if a candidate is sufficiently diverse from recent history.
@@ -534,7 +534,7 @@ class MutationEngine:
                         Chem.SanitizeMol(rw_mol)
                         final_mol = Chem.RemoveHs(rw_mol)
                         s = Chem.MolToSmiles(final_mol, isomericSmiles=True)
-                        if Descriptors.ExactMolWt(final_mol) < 350:
+                        if Descriptors.ExactMolWt(final_mol) < 450:
                             generated.append(s)
                     except Exception:
                         pass
@@ -553,7 +553,7 @@ class MutationEngine:
         try:
             mol_h = Chem.AddHs(mol)
             c_atoms = [atom.GetIdx() for atom in mol_h.GetAtoms()
-                       if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4]
+                        if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4]
             if not c_atoms:
                 return generated
 
@@ -571,7 +571,7 @@ class MutationEngine:
                         Chem.SanitizeMol(rw_mol)
                         final_mol = Chem.RemoveHs(rw_mol)
                         s = Chem.MolToSmiles(final_mol, isomericSmiles=True)
-                        if Descriptors.ExactMolWt(final_mol) < 350:
+                        if Descriptors.ExactMolWt(final_mol) < 450:
                             generated.append(s)
                     except Exception:
                         pass
@@ -1329,6 +1329,9 @@ def run_screening(args: Any) -> None:
 
     seed_smiles = _load_smiles_file("discovery_candidates.smi")
     seed_smiles.extend(_load_smiles_file("examples/molecules.smi"))
+    seed_smiles.extend(_load_smiles_file("homogeneity_targeted_candidates.smi"))
+    seed_smiles.extend(_load_smiles_file("phase6_refined_candidates.smi"))
+    seed_smiles.extend(_load_smiles_file("refined_candidates.smi"))
     seed_smiles = list(set(s for s in seed_smiles if s.strip()))
     print(f"[AGENT] Seed pool: {len(seed_smiles)} unique molecules")
 
@@ -1369,7 +1372,7 @@ def run_screening(args: Any) -> None:
     # ---- Main Loop ----
     max_generations = args.max_generations or 50
     batch_size = args.batch_size or 50
-    max_wall_time = 7200  # 2 hours
+    max_wall_time = 43200  # 12 hours
 
     wall_start = time.time()
     current_batch = start_batch
@@ -1377,7 +1380,7 @@ def run_screening(args: Any) -> None:
 
     print(f"\n[AGENT] Starting screening loop. Batch size: {batch_size}, "
           f"Max generations: {max_generations}")
-    print(f"[AGENT] Time limit: {max_wall_time}s (2 hours)\n")
+    print(f"[AGENT] Time limit: {max_wall_time}s (12 hours)\n")
 
     screened_smiles: set[str] = set()
 
