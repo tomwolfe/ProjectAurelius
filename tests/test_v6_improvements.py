@@ -13,12 +13,8 @@ Tests for:
 from __future__ import annotations
 
 import os
-import sys
-from unittest.mock import patch
 
-import numpy as np
 import pytest
-
 
 # ============================================================
 # DependencyManager Tests
@@ -50,7 +46,7 @@ class TestDependencyManager:
 
     def test_check_framework_mlx(self):
         """Verify check_framework returns correct info for MLX."""
-        from aurelius.utils.dependencies import DependencyManager, HAS_MLX
+        from aurelius.utils.dependencies import HAS_MLX, DependencyManager
         deps = DependencyManager()
         info = deps.check_framework("mlx")
         assert "available" in info
@@ -61,14 +57,14 @@ class TestDependencyManager:
 
     def test_check_framework_torch(self):
         """Verify check_framework returns correct info for PyTorch."""
-        from aurelius.utils.dependencies import DependencyManager, HAS_TORCH
+        from aurelius.utils.dependencies import HAS_TORCH, DependencyManager
         deps = DependencyManager()
         info = deps.check_framework("torch")
         assert info["available"] == HAS_TORCH
 
     def test_check_framework_rdkit(self):
         """Verify check_framework returns correct info for RDKit."""
-        from aurelius.utils.dependencies import DependencyManager, HAS_RDKIT
+        from aurelius.utils.dependencies import HAS_RDKIT, DependencyManager
         deps = DependencyManager()
         info = deps.check_framework("rdkit")
         assert info["available"] == HAS_RDKIT
@@ -89,7 +85,7 @@ class TestDependencyManager:
         from aurelius.utils.dependencies import DependencyManager
         deps = DependencyManager()
         routing = deps.routing_info()
-        for fw, route in routing.items():
+        for _fw, route in routing.items():
             assert route in ("native", "fallback", "unavailable")
 
     def test_clear_cache(self):
@@ -258,9 +254,10 @@ class TestEnvironmentValidation:
 
     def test_print_env_diff(self):
         """Verify print_env_diff produces output."""
-        from aurelius.config import get_config, print_env_diff
         import io
         from contextlib import redirect_stdout
+
+        from aurelius.config import get_config, print_env_diff
         config = get_config()
         f = io.StringIO()
         with redirect_stdout(f):
