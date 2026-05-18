@@ -24,7 +24,6 @@ import logging
 import os
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -33,7 +32,7 @@ import numpy as np
 
 try:
     from rdkit import Chem
-    from rdkit.Chem import BRICS, AllChem, Descriptors, rdFingerprintGenerator
+    from rdkit.Chem import BRICS, AllChem, Descriptors, rd_fingerprint_generator
     from rdkit.DataStructs import FingerprintSimilarity
     HAS_RDKIT = True
 except ImportError:
@@ -41,7 +40,7 @@ except ImportError:
     AllChem = None
     Descriptors = None
     BRICS = None
-    rdFingerprintGenerator = None  # type: ignore[assignment, unused-ignore]
+    rd_fingerprint_generator = None  # type: ignore[assignment, unused-ignore]
     HAS_RDKIT = False
     FingerprintSimilarity = None  # type: ignore[assignment, unused-ignore]
 
@@ -122,9 +121,9 @@ def _mol_to_fp(mol: Any) -> Any:
     Returns:
         Morgan fingerprint object (radius=2).
     """
-    if rdFingerprintGenerator is None:
+    if rd_fingerprint_generator is None:
         raise RuntimeError("RDKit is required for fingerprint generation.")
-    gen = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+    gen = rd_fingerprint_generator.GetMorganGenerator(radius=2, fpSize=2048)
     return gen.GetFingerprint(mol)
 
 
@@ -313,8 +312,8 @@ def _compute_sas_score(smiles: str) -> float:
         A penalty value in [0, 1], where 0 is easy to synthesize.
     """
     try:
-        from rdkit.Chem import SA_Score
         from rdkit import Chem as _Chem
+        from rdkit.Chem import SA_Score
         mol = _Chem.MolFromSmiles(smiles)
         if mol is None:
             return 1.0

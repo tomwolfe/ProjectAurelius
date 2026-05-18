@@ -42,8 +42,8 @@ log = logging.getLogger("prep_discovery")
 # ---------------------------------------------------------------------------
 
 try:
-    from rdkit import Chem
-    HAS_RDKIT = True
+    import importlib.util
+    HAS_RDKIT = importlib.util.find_spec("rdkit") is not None
 except ImportError:
     HAS_RDKIT = False
 
@@ -95,7 +95,6 @@ def _prepare_tier1(
     _ensure_rdkit()
 
     # Import here to avoid circular imports when rdkit is missing
-    from scripts.train_tier1 import train_main as _train_tier1_main
 
     save_path = save_path or os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
