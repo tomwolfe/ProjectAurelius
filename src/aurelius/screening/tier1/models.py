@@ -192,10 +192,9 @@ class _FallbackMLP:
 if HAS_TORCH:
 
     if TYPE_CHECKING:
-        import torch  # noqa: F401
-        import torch.nn  # noqa: F401
+        from torch.nn import Module
 
-        class PyTorchFallbackFilter(torch.nn.Module):
+        class PyTorchFallbackFilter(Module):
             """PyTorch-based MLP fallback replicating the ChemVLM2MLP architecture.
 
             Provides a 2-layer MLP (2048->128->1) using torch.nn when MLX is
