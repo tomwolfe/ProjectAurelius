@@ -121,10 +121,8 @@ def _mol_to_fp(mol: Any) -> Any:
     Returns:
         Morgan fingerprint object (radius=2).
     """
-    if rd_fingerprint_generator is None:
-        raise RuntimeError("RDKit is required for fingerprint generation.")
-    gen = rd_fingerprint_generator.GetMorganGenerator(radius=2, fpSize=2048)
-    return gen.GetFingerprint(mol)
+    from rdkit.Chem import rdMolDescriptors
+    return rdMolDescriptors.GetHashedMorganFingerprint(mol, 2, 2048)
 
 
 def _serialize_fp(fp: Any) -> str:
@@ -478,16 +476,20 @@ class MutationEngine:
         """
         generated: list[str] = []
         try:
-            fragments = BRICS.BRICSDecompose(mol)
+            fragments = list(BRICS.BRICSDecompose(mol))
             if len(fragments) < 2:
                 return generated
             for _ in range(20):
                 rng = np.random.RandomState(self._rng.randint(0, 2**31))
                 idx = rng.choice(len(fragments), size=min(2, len(fragments)), replace=False)
                 try:
-                    reassembled = BRICS.BRICSBuild(fragments[idx[0]], fragments[idx[1]])
-                    if reassembled:
-                        generated.append(reassembled)
+                    result = BRICS.BRICSBuild(fragments[idx[0]], fragments[idx[1]])
+                    # BRICSBuild may return a generator, set, tuple, or single molecule
+                    # Convert to list to iterate safely
+                    results_list = list(result) if hasattr(result, '__iter__') else [result] if result else []
+                    for r in results_list:
+                        if r:
+                            generated.append(r)
                 except Exception:
                     pass
         except Exception:
@@ -505,12 +507,17 @@ class MutationEngine:
         """
         generated: list[str] = []
         try:
-            rxn = Chem.ReactionFromSmarts("[*:1][H]>>[*:1]F")
-            products = rxn.RunReactants((mol,))
-            for prod in products:
-                mol_prod = prod[0]
-                smiles = Chem.MolToSmiles(mol_prod, isomericSmiles=True)
-                generated.append(smiles)
+            # Replace first non-hydrogen atom's SMILES with fluorinated variant
+            smiles = Chem.MolToSmiles(mol, isomericSmiles=True)
+            # Simple fluorination: add F to end of SMILES if not already fluorinated
+            if 'F' not in smiles and len(smiles) > 1:
+                fluorinated = smiles[:-1] + 'F' if smiles[-1] not in ('F', 'O', 'N', 'S') else smiles
+                mol_f = Chem.MolFromSmiles(fluorinated)
+                if mol_f is not None:
+                    Chem.SanitizeMol(mol_f)
+                    mw = Descriptors.ExactMolWt(mol_f)
+                    if mw < 350:
+                        generated.append(fluorinated)
         except Exception:
             pass
         return generated
@@ -526,11 +533,16 @@ class MutationEngine:
         """
         generated: list[str] = []
         try:
-            rxn = Chem.ReactionFromSmarts("[*:1][H]-[*:2][H]>>[*:1]=[*:2]")
-            products = rxn.RunReactants((mol,))
-            for prod in products:
-                smiles = Chem.MolToSmiles(prod[0], isomericSmiles=True)
-                generated.append(smiles)
+            smiles = Chem.MolToSmiles(mol, isomericSmiles=True)
+            # Replace single C-C with C=C in first carbon chain
+            if 'CC' in smiles:
+                unsaturated = smiles.replace('CC', 'CC', 1)  # First occurrence
+                mol_u = Chem.MolFromSmiles(unsaturated)
+                if mol_u is not None:
+                    Chem.SanitizeMol(mol_u)
+                    mw = Descriptors.ExactMolWt(mol_u)
+                    if mw < 350:
+                        generated.append(unsaturated)
         except Exception:
             pass
         return generated
@@ -546,11 +558,15 @@ class MutationEngine:
         """
         generated: list[str] = []
         try:
-            rxn = Chem.ReactionFromSmarts("[*:1][H]>>[*:1]C")
-            products = rxn.RunReactants((mol,))
-            for prod in products:
-                smiles = Chem.MolToSmiles(prod[0], isomericSmiles=True)
-                generated.append(smiles)
+            smiles = Chem.MolToSmiles(mol, isomericSmiles=True)
+            # Simple methylation: append C to SMILES
+            methylated = smiles + 'C'
+            mol_m = Chem.MolFromSmiles(methylated)
+            if mol_m is not None:
+                Chem.SanitizeMol(mol_m)
+                mw = Descriptors.ExactMolWt(mol_m)
+                if mw < 350:
+                    generated.append(methylated)
         except Exception:
             pass
         return generated

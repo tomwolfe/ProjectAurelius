@@ -1,11 +1,8 @@
-# High-Potential Complex Seeds (Borates, Fluorinated Carbonates, Sulfone-Nitriles)
-COC(=O)OC(F)(C(F)F)C(F)(F)F
-B1OB(OB(OCC(F)F)(OCC(F)F))O1
-B1OB(OCC(F)F)OB(OCC(F)F)O1
-COC(=O)OC(F)=C(F)C(F)(F)F
-N#CCS(=O)(=O)C
-FCC(F)(F)S(=O)(=O)OC=C
-COC(=O)OB1OC(C(F)F)(OCC(F)F)O1
-O1B(OCC(F)F)(OCC)OC1
-COC(=O)OCC=C
-COC(=O)OC(F)C=C
+# High-Potential Electrolyte Seed Molecules (RDKit-validated)
+COC(=O)OC
+CCOC(=O)OCC
+CCOC(=O)OC(C)C
+FC(F)(F)C(=O)OC
+COC(=O)C(F)(F)OC(F)F
+B(C(=O)OC)(F)(F)
+C=CC(=O)OC

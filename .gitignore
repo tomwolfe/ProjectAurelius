@@ -65,6 +65,7 @@ discovery_results.json
 Thumbs.db
 
 # Autonomous screening agent runtime outputs
+discovery_candidates.smi
 errors.log
 agent_state.json
 agent_state.json.tmp

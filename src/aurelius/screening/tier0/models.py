@@ -48,7 +48,7 @@ if HAS_TORCH:
             Args:
                 node_dim: Dimension of node features.
                 edge_dim: Dimension of edge features.
-                hidden_dim: Hidden dimension for message MLP.
+                hidden_dim: Hidden dimension for message passing.
             """
             super().__init__()
             self.node_dim = node_dim
@@ -212,14 +212,16 @@ if HAS_TORCH:
             self.edge_dim = edge_dim
             self.hidden_dim = hidden_dim
 
-            self.edge_input_dim = 2 * node_dim
+            self.node_proj = nn.Linear(node_dim, hidden_dim)
+
+            self.edge_input_dim = 2 * hidden_dim
             self.edge_transform = nn.Sequential(
                 nn.Linear(self.edge_input_dim, hidden_dim),
                 nn.ReLU(),
             )
 
             self.mp_layers = nn.ModuleList([
-                MPNNEdgeBlock(node_dim, edge_dim, hidden_dim)
+                MPNNEdgeBlock(hidden_dim, edge_dim, hidden_dim)
                 for _ in range(2)
             ])
 
@@ -254,18 +256,20 @@ if HAS_TORCH:
             if n_nodes == 0:
                 return torch.zeros(self.readout.network[-1].out_features, device=node_features.device)  # type: ignore[call-overload, no-any-return, unused-ignore]
 
+            # Project node features to hidden_dim space for message passing
+            h = self.node_proj(node_features)
+
             if edge_index.shape[1] == 0:
-                pooled = node_features.sum(dim=0)
+                pooled = h.sum(dim=0)
                 return self.readout(pooled)  # type: ignore[no-any-return, unused-ignore]
 
             src_idx = edge_index[0]
             tgt_idx = edge_index[1]
-            src_features = torch.index_select(node_features, 0, src_idx)
-            tgt_features = torch.index_select(node_features, 0, tgt_idx)
+            src_features = torch.index_select(h, 0, src_idx)
+            tgt_features = torch.index_select(h, 0, tgt_idx)
             initial_edge_features = torch.cat([src_features, tgt_features], dim=-1)
             edge_features = self.edge_transform(initial_edge_features)
 
-            h = node_features
             for mp_layer in self.mp_layers:
                 h = mp_layer(h, edge_index, edge_features)
 
