@@ -194,7 +194,7 @@ if HAS_TORCH:
     if TYPE_CHECKING:
         from torch.nn import Module
 
-        class PyTorchFallbackFilter(Module):
+        class PyTorchFallbackFilter(Module):  # type: ignore[misc]
             """PyTorch-based MLP fallback replicating the ChemVLM2MLP architecture.
 
             Provides a 2-layer MLP (2048->128->1) using torch.nn when MLX is
@@ -250,7 +250,7 @@ if HAS_TORCH:
                 h = self.fc1(x)
                 h = self.relu(h)
                 out = self.fc2(h)
-                return _torch.sigmoid(out)  # type: ignore[no-any-return]
+                return _torch.sigmoid(out)
 
             def predict(self, x: torch.Tensor) -> torch.Tensor:
                 """Run inference and return scalar confidence score.
@@ -263,8 +263,8 @@ if HAS_TORCH:
                 """
                 output = self(x)
                 if output.dim() == 0:
-                    return _torch.clamp(output, 0.0, 1.0)  # type: ignore[no-any-return]
-                return _torch.clamp(output, 0.0, 1.0)  # type: ignore[no-any-return]
+                    return _torch.clamp(output, 0.0, 1.0)
+                return _torch.clamp(output, 0.0, 1.0)
 
             def save_weights(self, path: str) -> None:
                 """Save model weights to individual .npy files (MLX-compatible format).
