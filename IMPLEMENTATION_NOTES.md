@@ -9,13 +9,13 @@
 - **Validation**: Works in both `pip install -e .` and installed wheels.
 
 ### 2. Thread-Safe Configuration (Phase 1)
-- **Problem**: `M5ProConfig.apply_environment()` mutated `os.environ` directly, causing race conditions during concurrent pipeline initialization.
+- **Problem**: `AureliusConfig.apply_environment()` mutated `os.environ` directly, causing race conditions during concurrent pipeline initialization.
 - **Solution**: `apply_environment()` now returns a `dict[str, str]` of environment variables. The CLI entry point (`__main__.py`) applies them via `_apply_env_thread_safe()` which only sets variables not already present in `os.environ`.
 - **Backward compatibility**: `apply_global_config()` still calls `apply_environment()` and applies env vars for backward-compatible code paths.
 
 ### 3. Frozen Dataclass Fix (Phase 1)
 - **Problem**: `object.__setattr__` in `__post_init__` on a frozen dataclass is fragile and silently ignored by the dataclass `__init__`.
-- **Solution**: `M5ProConfig` now uses `@dataclass(init=False)` with a keyword-only `__new__` that sets all fields before `__init__` runs. This eliminates the need for `__setattr__` workarounds entirely.
+- **Solution**: `AureliusConfig` now uses `@dataclass(init=False)` with a keyword-only `__new__` that sets all fields before `__init__` runs. This eliminates the need for `__setattr__` workarounds entirely.
 - **Pattern**: `__new__` detects system RAM, computes allocations, and sets all fields via `object.__setattr__` once at construction time.
 
 ### 4. Framework Hardening (Phase 2)

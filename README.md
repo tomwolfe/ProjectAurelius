@@ -19,7 +19,7 @@
 ### Bug Fixes & Improvements
 
 - **Version Bump**: Updated to 6.0.0 with all backward-compatible changes.
-- **Config Extension**: Added `use_neighbor_list` and `neighbor_list_cutoff` to `M5ProConfig`.
+- **Config Extension**: Added `use_neighbor_list` and `neighbor_list_cutoff` to `AureliusConfig`.
 - **CLI Flags**: Added `--task tier1|tier0` to `aurelius train`, `--allow-fallback` to `screen` and `batch`, and `--profile-memory` to the agent.
 - **CI Updates**: Updated `.github/workflows/ci.yml` for new test markers and optional dependency installs.
 

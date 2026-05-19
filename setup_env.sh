@@ -3,10 +3,10 @@
 # Run this to configure the M5 Pro hard-partitioned memory layout
 #
 # These exports mirror the defaults in src/aurelius/config.py:
-#   PYTORCH_MPS_ENABLE_ASYNC_COMPILATION -> M5ProConfig.pytorch_mps_async (default: True)
-#   MLX_MAX_MEM_CACHE                  -> M5ProConfig.mlx_max_mem_gb (dynamic, 50% RAM capped at 12GB)
+#   PYTORCH_MPS_ENABLE_ASYNC_COMPILATION -> AureliusConfig.pytorch_mps_async (default: True)
+#   MLX_MAX_MEM_CACHE                  -> AureliusConfig.mlx_max_mem_gb (dynamic, 50% RAM capped at 12GB)
 #   AURELIUS_VERSION                   -> hardcoded "6.0.0"
-#   AURELIUS_QUANT_PRESET              -> M5ProConfig.chemvlm_quantization (default: "MX4")
+#   AURELIUS_QUANT_PRESET              -> AureliusConfig.chemvlm_quantization (default: "MX4")
 
 set -e
 
@@ -22,11 +22,11 @@ echo "=== Aurelius v6.0 Environment Setup ==="
 echo "Configuring M5 Pro Neural Accelerator memory partitioning..."
 
 # PyTorch 2.12 async Metal compilation (eliminates JIT compilation lag)
-# Mirrors: M5ProConfig.pytorch_mps_async = True
+# Mirrors: AureliusConfig.pytorch_mps_async = True
 export PYTORCH_MPS_ENABLE_ASYNC_COMPILATION=1
 
 # MLX memory allocation (hard-partitioned from PyTorch)
-# Mirrors: M5ProConfig.mlx_max_mem_gb (dynamic: 50% of RAM, capped at 12GB)
+# Mirrors: AureliusConfig.mlx_max_mem_gb (dynamic: 50% of RAM, capped at 12GB)
 # Note: For M5 Pro 24GB, this computes to 12GB
 export MLX_MAX_MEM_CACHE=12G
 

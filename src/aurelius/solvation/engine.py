@@ -364,34 +364,32 @@ def compute_gbsa_solvation_energy(
     if surface_tension_val is None:
         surface_tension_val = 0.00542  # Fallback default
 
-    # Pairwise GB calculation
-    gb_energy = 0.0
-    for i in range(n):
-        for j in range(i + 1, n):
-            r_ij = abs(radii[i] + radii[j])
-            if r_ij < floor:
-                r_ij = floor
+    # Vectorized pairwise GB calculation using broadcasting
+    # charges[i] * charges[j] for all upper-triangle pairs
+    charge_products = np.multiply.outer(charges, charges)
 
-            # GB distance with effective radii
-            a_i = radii[i]
-            a_j = radii[j]
-            exp_term = np.exp(-r_ij ** 2 / (4.0 * a_i * a_j + floor))
-            r_eff = np.sqrt(r_ij ** 2 + a_i * a_j * exp_term)
-            if r_eff < floor:
-                r_eff = floor
+    # Effective radii for all pairs (upper triangle)
+    radii_sum = np.add.outer(radii, radii)
 
-            # Coulomb interaction screened by GB function
-            f_gb = 1.0 / r_eff
-            gb_energy += charges[i] * charges[j] * f_gb
+    # Get upper-triangle indices (i < j)
+    i_upper, j_upper = np.triu_indices(n, k=1)
+
+    # Compute effective interaction distances for upper-triangle pairs
+    r_eff = np.sqrt(radii_sum[i_upper] ** 2 + radii[i_upper] * radii[j_upper] *
+                      np.exp(-radii_sum[i_upper] ** 2 / (4.0 * radii[i_upper] * radii[j_upper] + floor)))
+
+    # Enforce minimum effective radius
+    r_eff = np.maximum(r_eff, floor)
+
+    # Coulomb interaction screened by GB function
+    gb_energy = np.sum(charge_products[i_upper, j_upper] / r_eff)
 
     # Electrostatic term
     prefactor = prefactor_sign * (1.0 - 1.0 / dielectric_bulk)
     e_electrostatic = prefactor * gb_energy * COULOMB_EV_A
 
     # Nonpolar SASA term (approximate as sphere surface area)
-    sasa = 0.0
-    for i in range(n):
-        sasa += 4.0 * math.pi * radii[i] ** 2
+    sasa = np.sum(4.0 * math.pi * radii ** 2)
     e_nonpolar = surface_tension_val * sasa
 
     total = e_electrostatic + e_nonpolar + offset
