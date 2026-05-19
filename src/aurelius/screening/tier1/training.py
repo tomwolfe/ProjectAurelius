@@ -466,7 +466,7 @@ def _train_synthetic_pytorch() -> PyTorchFallbackFilter:
 
     model = PyTorchFallbackFilter()
     criterion = torch_nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)  # type: ignore[attr-defined]
 
     best_val_loss = float("inf")
     best_state: dict[str, Any] = {}
@@ -503,7 +503,7 @@ def _train_synthetic_pytorch() -> PyTorchFallbackFilter:
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}  # type: ignore[attr-defined]
         else:
             patience_counter += 1
             if patience_counter >= patience:
@@ -512,7 +512,7 @@ def _train_synthetic_pytorch() -> PyTorchFallbackFilter:
                 break
 
     if best_state:
-        model.load_state_dict(best_state)
+        model.load_state_dict(best_state)  # type: ignore[attr-defined]
 
     return model
 

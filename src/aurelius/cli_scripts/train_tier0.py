@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import Any
 
 from aurelius.screening.tier0_gnn import train_tier0_model
 
@@ -26,7 +27,7 @@ def train_main(
     batch_size: int = 16,
     learning_rate: float = 0.001,
     csv_path: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Train the Tier 0 MPNN model.
 
     Args:

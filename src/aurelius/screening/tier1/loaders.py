@@ -179,7 +179,7 @@ def load_pytorch_fallback_with_mlx_weights(
             state_dict[torch_key] = torch_weights[mlx_name]
 
     if state_dict:
-        model.load_state_dict(state_dict, strict=False)
+        model.load_state_dict(state_dict, strict=False)  # type: ignore[attr-defined]
         print(f"[Aurelius v6.0 Tier1] Loaded PyTorch fallback weights from MLX: {mlx_weights_dir}")
     else:
         print(

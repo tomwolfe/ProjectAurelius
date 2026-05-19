@@ -172,7 +172,7 @@ def load_esol_data(csv_path: str | None = None) -> tuple[np.ndarray, np.ndarray,
 
     # Try HuggingFace datasets with verified repository IDs
     try:
-        from datasets import load_dataset  # type: ignore[import-untyped]
+        from datasets import load_dataset
 
         print("[train_tier1] Loading ESOL from HuggingFace Hub...")
         # Verified dataset: deepchem/esol ( maintained by DeepChem )
@@ -606,8 +606,8 @@ def train_mlx(
         nn.Linear(128, 1),  # type: ignore[attr-defined]
     )
 
-    def loss_fn(x, y):
-        return nn.losses.mse_loss(model(x), y, reduction="mean")  # type: ignore[attr-defined]
+    def loss_fn(x: Any, y: Any) -> Any:
+        return nn.losses.mse_loss(model(x), y, reduction="mean")
 
     X_train_mx = mx.array(X_train)
     y_train_mx = mx.array(y_train)

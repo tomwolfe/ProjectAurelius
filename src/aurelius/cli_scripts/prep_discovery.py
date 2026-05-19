@@ -130,7 +130,7 @@ def _prepare_tier1(
             raise RuntimeError("RDKit could not parse ethylene carbonate SMILES")
         # Validate fingerprint generation works
         from rdkit.Chem import AllChem as _AllChem
-        fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+        fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined]
         _ = fp.ToList()
         log.info("Tier 1 inference check passed")
     except Exception as exc:

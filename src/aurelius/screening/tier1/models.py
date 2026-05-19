@@ -214,7 +214,7 @@ class _ModuleBase:
 
 
 if HAS_TORCH:
-    _ModuleBase = _torch_nn.Module  # type: ignore[assignment,misc]
+    _ModuleBase = _torch_nn.Module  # type: ignore[misc]
 
 
 class PyTorchFallbackFilter(_ModuleBase):
@@ -296,7 +296,7 @@ class PyTorchFallbackFilter(_ModuleBase):
             path: Directory path to save weights.
         """
         os.makedirs(path, exist_ok=True)
-        state_dict = self.state_dict()
+        state_dict = self.state_dict()  # type: ignore[attr-defined]
         for name, tensor in state_dict.items():
             np.save(os.path.join(path, f"{name}.npy"), tensor.cpu().numpy())
         meta = {
@@ -318,7 +318,7 @@ class PyTorchFallbackFilter(_ModuleBase):
         state_dict = _torch.load(
             path, map_location="cpu", weights_only=True,
         )
-        self.load_state_dict(state_dict)
+        self.load_state_dict(state_dict)  # type: ignore[attr-defined]
 
 
 
