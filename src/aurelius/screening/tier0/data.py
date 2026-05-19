@@ -99,6 +99,26 @@ def _build_molecular_graph(
     return node_features, edge_index
 
 
+def _load_tier0_seed_smiles() -> list[str]:
+    """Load seed SMILES for Tier 0 synthetic data generation.
+
+    Returns:
+        List of SMILES strings for synthetic training data.
+    """
+    from importlib import resources
+    import json
+
+    data_path = resources.files("aurelius.data")
+    smiles_path = data_path.joinpath("tier0_seed_smiles.json")
+
+    try:
+        with open(smiles_path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        # Fallback to empty list if file not found
+        return []
+
+
 def generate_synthetic_training_data(
     n_samples: int = 500,
     noise_sigma: float = 0.05,
@@ -130,57 +150,8 @@ def generate_synthetic_training_data(
             "Install with: pip install rdkit"
         ) from None
 
-    base_smiles = [
-        "CC(=O)OC1=CC(=O)O1",
-        "C1CC(=O)OC1",
-        "COC(=O)C1=CC=CC=C1",
-        "COC(=O)OC",
-        "CC(=O)OC",
-        "C1CCC(=O)OC1",
-        "COC(=O)CN(C)C",
-        "CC1=CC=CC=C1C(=O)OC",
-        "OC1CCOC1",
-        "C1COCCO1",
-        "CC(C)OC(=O)C",
-        "COC(=O)C(C)C",
-        "CCC(=O)OC",
-        "CC(C)C(=O)OC",
-        "C1CCC(C)OO1",
-        "COC(=O)C1CC1",
-        "C1CCOC1",
-        "CCOC(=O)C",
-        "C=CC(=O)OC",
-        "CC(C)OC",
-        "C1CCC1",
-        "CC1=CC=CC=C1O",
-        "COC1=CC=C(C=C1)C(=O)OC",
-        "CC(C)(C)OC(=O)C",
-        "C1=CC=C(C=C1)C(F)(F)F",
-        "C1=CC=C(C=C1)C(F)(F)F",
-        "C1=CC=C(C=C1)C(F)(F)F",
-        "C1=CC=C(C=C1)C(F)(F)C(F)(F)F",
-        "C1=CC=C(C=C1)C(F)(F)C(F)(F)F",
-        "FC(F)(F)C(F)(F)C(F)(F)C(F)(F)F",
-        "C1=CC=C(C=C1)C(=O)OC(F)(F)F",
-        "C1=CC(=C(C=C1)C(=O)OC)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(=O)OC(F)(F)F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(=O)OC(F)(F)F)C(F)(F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(=O)OC(F)(F)F)C(F)(F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(=O)OC(F)(F)F)C(F)(F)C(F)(F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(=O)OC(F)(F)F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(=O)OC(F)(F)F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(=O)OC(F)(F)F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(F)(F)F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(F)(F)F)C(F)(F)C(F)(F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(F)(F)C(F)(F)F)C(F)(F)C(F)(F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(F)(F)C(F)(F)C(F)(F)F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F)C(F)(F)F",
-        "C1=CC(=C(C=C1)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F)C(F)(F)F",
-    ]
+    # Load seed SMILES from external file
+    base_smiles = _load_tier0_seed_smiles()
 
     valid_smiles: list[str] = []
     for smi in base_smiles:

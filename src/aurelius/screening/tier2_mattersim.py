@@ -707,7 +707,7 @@ class MatterSimMTSimulator:
         lj_per_pair = 4.0 * eps_tensor * (sig_over_r12 - sig_over_r6)
 
         # Shift to zero at cutoff
-        r_cutoff_soft = _torch.sqrt(_torch.full_like(distances, 144.0) + sig_tensor ** 2)
+        r_cutoff_soft = _torch.sqrt(distances * distances + sig_tensor ** 2)
         sig_over_r_cutoff = sig_tensor / r_cutoff_soft
         sig_over_r6_cutoff = sig_over_r_cutoff ** 6
         sig_over_r12_cutoff = sig_over_r6_cutoff ** 2
@@ -772,7 +772,7 @@ class MatterSimMTSimulator:
         lj_per_neighbor = 4.0 * eps_neighbors * (sig_over_r12 - sig_over_r6)
 
         # Shift to zero at cutoff
-        r_cutoff_soft = _torch.sqrt(_torch.full_like(distances, 144.0) + sig_neighbors ** 2)
+        r_cutoff_soft = _torch.sqrt(distances ** 2 + sig_neighbors ** 2)
         sig_over_r_cutoff = sig_neighbors / r_cutoff_soft
         sig_over_r6_cutoff = sig_over_r_cutoff ** 6
         sig_over_r12_cutoff = sig_over_r6_cutoff ** 2
@@ -933,7 +933,7 @@ class MatterSimMTSimulator:
         lj_per_atom = 4.0 * eps_broadcast * (sig_over_r12 - sig_over_r6)
 
         # Shift to zero at cutoff
-        r_cutoff_soft = _torch.sqrt(_torch.full_like(ion_solvent_distances, 144.0) + sig_broadcast ** 2)
+        r_cutoff_soft = _torch.sqrt(ion_solvent_distances ** 2 + sig_broadcast ** 2)
         sig_over_r_cutoff = sig_broadcast / r_cutoff_soft
         sig_over_r6_cutoff = sig_over_r_cutoff ** 6
         sig_over_r12_cutoff = sig_over_r6_cutoff ** 2
@@ -954,7 +954,7 @@ class MatterSimMTSimulator:
             qi_broadcast = qi * q_j_vals.unsqueeze(0).expand(n_scan_points, -1)
             charge_mask = (q_j_vals != 0.0).unsqueeze(0).expand(n_scan_points, -1)
             r_soft_c = _torch.sqrt(ion_solvent_distances ** 2 + 1.0)
-            coul_per_atom = 14.3996 * qi_broadcast / r_soft_c
+            coul_per_atom = COULOMB_EV_A * qi_broadcast / r_soft_c
             coul_total = _torch.sum(coul_per_atom * charge_mask.float(), dim=1)  # (n_scan_points,)
         else:
             coul_total = _torch.zeros(n_scan_points, device=device)
@@ -1042,18 +1042,17 @@ class MatterSimMTSimulator:
         coordinates: _torch.Tensor,
         cutoff: float | None = None,
     ) -> tuple[_torch.Tensor, _torch.Tensor, _torch.Tensor]:
-        """Build a cutoff-based neighbor list using fixed-cell spatial binning.
+        """Build a cutoff-based neighbor list using purely vectorized PyTorch operations.
 
-        Uses fixed-cell spatial binning (cell size = cutoff) to compute
-        distances only for atoms in adjacent cells. This reduces complexity
-        from O(N^2) to O(N*M) where M is the average number of neighbors.
+        Uses pairwise distance computation with masking to identify neighbor pairs.
+        All computation stays on the target device (MPS/CUDA) for maximum GPU throughput.
 
-        The neighbor list is rebuilt every `nl_rebuild_interval` MD steps
-        or when max displacement exceeds `max_displacement_threshold`.
+        For systems with fewer than 50 atoms, falls back to the dense neighbor list
+        which is more efficient due to lower overhead on small systems.
 
         MPS Optimization:
-            - Prefers index-based masking (_torch.gather/_torch.index_select)
-              over _torch.sparse for MPS compatibility.
+            - Uses _torch.cdist and masking for MPS compatibility
+            - Prefers index-based masking (_torch.nonzero) over sparse operations
             - Falls back to dense computation if n_atoms < 50 for maximum
               MPS throughput.
 
@@ -1087,78 +1086,39 @@ class MatterSimMTSimulator:
 
         device = coordinates.device
 
-        # Fixed-cell spatial binning
-        cell_size = cl
-        coords_shifted = coordinates - coordinates.min(dim=0, keepdim=True).values
-        max_coords = coords_shifted.max(dim=0).values
-        n_cells_x = int(_torch.ceil(max_coords[0] / cell_size).item()) + 1
-        n_cells_y = int(_torch.ceil(max_coords[1] / cell_size).item()) + 1
-        n_cells_z = int(_torch.ceil(max_coords[2] / cell_size).item()) + 1
+        # Compute all pairwise distances using cdist for efficiency
+        # Shape: (n_atoms, n_atoms)
+        # cdist is MPS-compatible and significantly faster than nested loops
+        distances = _torch.cdist(coordinates, coordinates)  # (N, N)
 
-        # Assign each atom to a cell
-        cell_x = (coords_shifted[:, 0] / cell_size).long().clamp(0, n_cells_x - 1)
-        cell_y = (coords_shifted[:, 1] / cell_size).long().clamp(0, n_cells_y - 1)
-        cell_z = (coords_shifted[:, 2] / cell_size).long().clamp(0, n_cells_z - 1)
+        # Build upper-triangle mask (i < j) and cutoff mask
+        row_indices, col_indices = _torch.meshgrid(
+            _torch.arange(n_atoms, device=device),
+            _torch.arange(n_atoms, device=device),
+            indexing="ij",
+        )
+        upper_mask = col_indices > row_indices
+        cutoff_mask = distances < cl
 
-        # Hash cell index to 1D
-        cell_ids = cell_x + cell_y * n_cells_x + cell_z * n_cells_x * n_cells_y
+        # Combine masks
+        valid_mask = upper_mask & cutoff_mask
 
-        # Build cell contents using bincount
-        n_cells = n_cells_x * n_cells_y * n_cells_z
-        cell_contents = _torch.zeros(n_cells, n_atoms, dtype=_torch.long, device=device)
-        cell_count = _torch.zeros(n_cells, dtype=_torch.long, device=device)
+        # Extract valid neighbor pairs
+        valid_pairs = _torch.nonzero(valid_mask, as_tuple=False)
 
-        # Place atoms in cells using scatter_add
-        cell_offsets = cell_ids * n_atoms
-        atom_indices = _torch.arange(n_atoms, device=device)
-        flat_indices = cell_offsets + atom_indices
-        cell_contents = _torch.zeros(n_cells * n_atoms, dtype=_torch.long, device=device)
-        cell_contents.scatter_add_(0, flat_indices, atom_indices)
+        if valid_pairs.numel() == 0:
+            return (
+                _torch.empty(0, dtype=_torch.long, device=device),
+                _torch.empty(0, dtype=_torch.long, device=device),
+                _torch.empty(0, dtype=_torch.float32, device=device),
+            )
 
-        # Count atoms per cell
-        cell_count.scatter_add_(0, cell_ids, _torch.ones(n_atoms, dtype=_torch.long, device=device))
+        # Extract indices and distances for valid pairs
+        src_indices = valid_pairs[:, 0]
+        dst_indices = valid_pairs[:, 1]
+        dist_values = distances[valid_mask]
 
-        # For each atom, find neighbors in adjacent cells
-        src_list: list[int] = []
-        dst_list: list[int] = []
-        dist_list: list[float] = []
-
-        # Convert to numpy for the neighbor list construction (still fast for small N)
-        # This is acceptable since we only iterate O(N) atoms, not O(N^2) pairs
-        coords_np = coordinates.cpu().numpy()
-        for i in range(n_atoms):
-            cx, cy, cz = int(cell_ids[i].item()), int(cell_y[i].item()), int(cell_z[i].item())
-            for dx in (-1, 0, 1):
-                for dy in (-1, 0, 1):
-                    for dz in (-1, 0, 1):
-                        nx, ny, nz = cx + dx, cy + dy, cz + dz
-                        if nx < 0 or nx >= n_cells_x or ny < 0 or ny >= n_cells_y or nz < 0 or nz >= n_cells_z:
-                            continue
-                        cell_id = nx + ny * n_cells_x + nz * n_cells_x * n_cells_y
-                        # Get atoms in this cell
-                        start = cell_id * n_atoms
-                        end = start + n_atoms
-                        cell_atoms = cell_contents[start:end].cpu().numpy()
-                        for j in cell_atoms:
-                            if j <= i:  # Only upper triangle
-                                continue
-                            dij = coords_np[i] - coords_np[j]
-                            dist = float(np.sqrt(np.dot(dij, dij)))
-                            if dist < cl:
-                                src_list.append(i)
-                                dst_list.append(j)
-                                dist_list.append(dist)
-
-        if src_list:
-            src_indices = _torch.tensor(src_list, dtype=_torch.long, device=device)
-            dst_indices = _torch.tensor(dst_list, dtype=_torch.long, device=device)
-            distances = _torch.tensor(dist_list, dtype=_torch.float32, device=device)
-        else:
-            src_indices = _torch.empty(0, dtype=_torch.long, device=device)
-            dst_indices = _torch.empty(0, dtype=_torch.long, device=device)
-            distances = _torch.empty(0, dtype=_torch.float32, device=device)
-
-        return src_indices, dst_indices, distances
+        return src_indices, dst_indices, dist_values
 
     def _dense_neighbor_list(
         self,

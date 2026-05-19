@@ -56,10 +56,111 @@ _error_handler.setFormatter(logging.Formatter("%(asctime)s [ERROR] %(message)s")
 log.addHandler(_error_handler)
 
 # ---------------------------------------------------------------------------
-# Module-level state for exception handling
+# RDKit helpers (moved from duplicated code in main() and _mutate_batch)
 # ---------------------------------------------------------------------------
 
-_checkpoint: CheckpointManager | None = None
+
+def _safe_mol_from_smiles(smiles: str) -> Any | None:
+    """Return RDKit Mol or None.
+
+    Args:
+        smiles: SMILES string of the molecule.
+
+    Returns:
+        Sanitized RDKit Mol object, or None if parsing fails.
+    """
+    if not _HAS_RDKIT:
+        return None
+    try:
+        mol = _Chem.MolFromSmiles(smiles)
+        if mol is not None:
+            _Chem.SanitizeMol(mol)
+        return mol
+    except Exception:
+        return None
+
+
+def _is_valid_mol(mol: Any) -> bool:
+    """Check chemical validity and molecular weight < 450 Da.
+
+    Args:
+        mol: RDKit Mol object.
+
+    Returns:
+        True if molecule is valid and MW < 450.
+    """
+    try:
+        _Chem.SanitizeMol(mol)
+    except Exception:
+        return False
+    mw = _Descriptors.ExactMolWt(mol)
+    return mw < 450.0
+
+
+def _serialize_fp(fp: Any) -> str:
+    """Serialize an RDKit fingerprint to a hex-like text string.
+
+    Args:
+        fp: RDKit fingerprint object.
+
+    Returns:
+        Serialized fingerprint string.
+    """
+    ev = ExplicitBitVect(2048)
+    for idx in fp.GetNonzeroElements():
+        ev.SetBit(idx)
+    return BitVectToText(ev)
+
+
+def _deserialize_fp(hex_str: str) -> Any:
+    """Reconstruct an RDKit fingerprint from serialized text.
+
+    Args:
+        hex_str: Serialized fingerprint string.
+
+    Returns:
+        RDKit fingerprint object.
+    """
+    return CreateFromBitString(hex_str)
+
+
+def _mol_to_fp(mol: Any) -> Any:
+    """Compute ECFP4 (radius=2) fingerprint using Morgan generator.
+
+    Args:
+        mol: RDKit Mol object.
+
+    Returns:
+        Morgan fingerprint object (radius=2).
+    """
+    from rdkit.Chem import rdMolDescriptors
+    return rdMolDescriptors.GetHashedMorganFingerprint(mol, 2, 2048)
+
+
+def _tanimoto(fp1: Any, fp2: Any) -> float:
+    """Compute Tanimoto similarity between two fingerprints.
+
+    Args:
+        fp1: First fingerprint.
+        fp2: Second fingerprint.
+
+    Returns:
+        Tanimoto similarity coefficient in [0, 1].
+    """
+    if _FingerprintSimilarity is None:
+        return 0.0
+    # Convert UIntSparseIntVect to ExplicitBitVect for compatibility
+    if not hasattr(fp1, 'GetNumBits'):
+        ev1 = ExplicitBitVect(2048)
+        for idx in fp1.GetNonzeroElements():
+            ev1.SetBit(idx)
+        fp1 = ev1
+    if not hasattr(fp2, 'GetNumBits'):
+        ev2 = ExplicitBitVect(2048)
+        for idx in fp2.GetNonzeroElements():
+            ev2.SetBit(idx)
+        fp2 = ev2
+    return _FingerprintSimilarity(fp1, fp2)
 
 # ---------------------------------------------------------------------------
 # Determinism
@@ -252,27 +353,28 @@ def main() -> None:
     parser.add_argument("--profile-memory", action="store_true", help="Enable memory profiling with CSV report output")
     args = parser.parse_args()
 
+    checkpoint = CheckpointManager()
     try:
-        run_screening(args)
+        run_screening(args, checkpoint)
     except KeyboardInterrupt:
         print("\n[AGENT] Interrupted by user. Saving state and exiting.")
-        if _checkpoint is not None:
-            _checkpoint.save()
+        if checkpoint is not None:
+            _save_checkpoint_safe(checkpoint)
         sys.exit(1)
     except Exception as e:
         log.error("Fatal error: %s", e, exc_info=True)
         print(f"\n[FATAL] {e}")
-        if _checkpoint is not None:
-            with contextlib.suppress(Exception):
-                _checkpoint.save()
+        if checkpoint is not None:
+            _save_checkpoint_safe(checkpoint)
         sys.exit(1)
 
 
-def run_screening(args: Any) -> None:
+def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
     """Main autonomous screening loop.
 
     Args:
         args: Parsed argparse arguments containing screening parameters.
+        checkpoint: CheckpointManager instance for saving progress.
     """
 
     # Initialize memory profiler if requested
@@ -324,8 +426,6 @@ def run_screening(args: Any) -> None:
     engine = MutationEngine(seed_smiles)
 
     # ---- Phase 5: Checkpoint & Resume ----
-    global _checkpoint
-    _checkpoint = checkpoint = CheckpointManager()
     state = checkpoint.load()
 
     known_fps_hex = state.get("known_fps_hex", [])
@@ -560,6 +660,18 @@ def run_screening(args: Any) -> None:
     print("    - mutation_rationale.md")
     print("    - errors.log")
     print()
+
+
+def _save_checkpoint_safe(checkpoint: CheckpointManager) -> None:
+    """Safely save checkpoint, suppressing any exceptions.
+
+    Args:
+        checkpoint: CheckpointManager instance to save.
+    """
+    try:
+        checkpoint.save()
+    except Exception:
+        pass  # Already logged the error at a higher level
 
 
 if __name__ == "__main__":

@@ -534,8 +534,13 @@ class GCMDigitalTwin:
             # Total reaction rate
             k_total = k_solvent + k_salt + k_poly
 
-            # Advance time: delta_t = 1 / k_total (standard kMC time step)
-            dt = 1.0 / k_total if k_total > 0 else 0.0
+            # Advance time: Gillespie algorithm draws dt from exponential distribution
+            # dt = -ln(u) / k_total where u ~ Uniform(0, 1)
+            # This ensures true stochastic kinetics rather than deterministic mean-field
+            if k_total > 0:
+                dt = -np.log(rng.random()) / k_total
+            else:
+                dt = 0.0
 
             current_time += dt
 
@@ -609,6 +614,16 @@ class GCMDigitalTwin:
 
     @staticmethod
     def _hash_inputs(smiles: str, solvent: str, salt: str) -> int:
-        """Generate deterministic seed from inputs."""
+        """Generate deterministic seed from inputs using SHA-256.
+
+        Args:
+            smiles: Molecule SMILES string.
+            solvent: Solvent composition (e.g., "ec:dmc").
+            salt: Salt type (e.g., "NaPF6").
+
+        Returns:
+            Deterministic integer seed derived from SHA-256 hash.
+        """
+        import hashlib
         combined = f"{smiles}_{solvent}_{salt}"
-        return sum(ord(c) for c in combined) % (2**31)
+        return int(hashlib.sha256(combined.encode()).hexdigest()[:8], 16)

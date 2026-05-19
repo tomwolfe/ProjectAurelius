@@ -130,7 +130,7 @@ class ZeroCopyMemoryManager:
                 # Safe fallback: use MPS directly
                 if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
                     print("[Aurelius v5.2] Using MPS backend directly")
-        except (AttributeError, RuntimeError) as e:
+        except (AttributeError, RuntimeError, OSError) as e:
             warnings.warn(f"torch.accelerator API not fully available: {e}", stacklevel=2)
 
     # ------------------------------------------------------------------
@@ -166,7 +166,7 @@ class ZeroCopyMemoryManager:
                         self._shader_cache_loaded = True
                         print(f"[Aurelius v5.2] Metal-4 shaders loaded from {metal_lib_path}")
                         return True
-                    except Exception as load_exc:
+                    except (ImportError, OSError) as load_exc:
                         # Strict fallback: allow JIT compilation to proceed
                         warnings.warn(
                             f"Failed to pre-load Metal library (JIT compilation will proceed normally): {load_exc}",
@@ -181,7 +181,7 @@ class ZeroCopyMemoryManager:
                 print("  First MD run will compile shaders (subsequent runs will use cache).")
                 return False
 
-        except Exception as e:
+        except (ImportError, OSError, AttributeError) as e:
             warnings.warn(
                 f"Failed to pre-load Metal library (JIT compilation will proceed normally): {e}",
                 stacklevel=2,
@@ -238,7 +238,7 @@ class ZeroCopyMemoryManager:
                     if isinstance(module, torch.nn.Linear):
                         module.to(device=torch.device(self.device))
             return model
-        except AttributeError:
+        except (AttributeError, TypeError, ValueError) as e:
             return model
 
     def _estimate_footprint(self, model: Any, bits: int) -> float:

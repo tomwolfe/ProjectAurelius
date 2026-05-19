@@ -57,13 +57,16 @@ def _hash_descriptors(smiles: str) -> dict[str, float]:
     WARNING: These are NOT chemically valid descriptors. They serve
     only as placeholders when RDKit is unavailable.
 
+    Uses SHA-256 for reproducible, session-independent hashing.
+
     Args:
         smiles: SMILES string.
 
     Returns:
         Dictionary of approximate descriptor values.
     """
-    seed = hash(smiles) % (2**31)
+    import hashlib
+    seed = int(hashlib.sha256(smiles.encode()).hexdigest()[:8], 16)
     rng = np.random.RandomState(seed)
     return {
         "mw": float(rng.uniform(50, 500)),

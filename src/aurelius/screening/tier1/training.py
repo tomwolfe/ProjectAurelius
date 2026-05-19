@@ -207,8 +207,11 @@ def train_on_esol(
     X_val_split = X_mx[perm[n_samples - n_val :]]
     y_val_split = y_mx[perm[n_samples - n_val :]]
 
+    # Prepare parameter list for optimization
+    params = [mx.array(p) for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]]
+
     # Loss function: mean squared error
-    def loss_fn(params: list[mx.array], x: mx.array, target: mx.array) -> mx.array:
+    def loss_fn(params, x, target):
         W1, b1, W2, b2 = params
         h = mx.addmm(b1, x, W1, alpha=1.0, beta=1.0)
         h = mx.maximum(h, 0.0)
@@ -217,18 +220,14 @@ def train_on_esol(
         pred = mx.squeeze(pred, axis=-1)
         return mx.mean((pred - target) ** 2)
 
-    _loss_grad = mx.grad(loss_fn)
-
     # Training loop with early stopping
     best_val_loss = float("inf")
     patience = 30
     patience_counter = 0
-    best_params: list[mx.array] | None = None
-
-    rng_state = mx.random.key(seed)
+    best_params = None
 
     for epoch in range(epochs):
-        perm = mx.random.permutation(n_samples - n_val, key=rng_state)
+        perm = mx.random.permutation(n_samples - n_val, key=mx.random.key(seed))
         X_shuffled = X_train_split[perm]
         y_shuffled = y_train_split[perm]
 
@@ -237,17 +236,27 @@ def train_on_esol(
             x_batch = X_shuffled[start:end]
             y_batch = y_shuffled[start:end]
 
-            grads = _loss_grad(model.parameters(), x_batch, y_batch)
+            # Compute gradients using mlx.value_and_grad
+            loss, grads = mx.value_and_grad(loss_fn)(params, x_batch, y_batch)
 
-            model.W1 = model.W1 - lr * grads[0]
-            model.b1 = model.b1 - lr * grads[1]
-            model.W2 = model.W2 - lr * grads[2]
-            model.b2 = model.b2 - lr * grads[3]
+            # Apply SGD update (manual weight updates)
+            model.linear1.weight = mx.array(params[0]) - lr * grads[0]
+            model.linear1.bias = mx.array(params[1]) - lr * grads[1]
+            model.linear2.weight = mx.array(params[2]) - lr * grads[2]
+            model.linear2.bias = mx.array(params[3]) - lr * grads[3]
 
-        val_loss = float(loss_fn(model.parameters(), X_val_split, y_val_split))
+            # Update params for next iteration
+            params = [
+                model.linear1.weight,
+                model.linear1.bias,
+                model.linear2.weight,
+                model.linear2.bias,
+            ]
+
+        val_loss = float(loss_fn(params, X_val_split, y_val_split))
 
         if (epoch + 1) % 20 == 0:
-            train_loss = float(loss_fn(model.parameters(), X_train_split, y_train_split))
+            train_loss = float(loss_fn(params, X_train_split, y_train_split))
             preds = model(X_val_split)
             preds_binary = mx.squeeze(preds) > 0.5
             accuracy = float(mx.mean(preds_binary == y_val_split))  # type: ignore[arg-type, unused-ignore]
@@ -258,7 +267,7 @@ def train_on_esol(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            best_params = [p.copy() for p in model.parameters()]
+            best_params = [np.array(p) for p in params]
         else:
             patience_counter += 1
             if patience_counter >= patience:
@@ -267,10 +276,10 @@ def train_on_esol(
                 break
 
     if best_params is not None:
-        model.W1 = best_params[0]
-        model.b1 = best_params[1]
-        model.W2 = best_params[2]
-        model.b2 = best_params[3]
+        model.linear1.weight = best_params[0]
+        model.linear1.bias = best_params[1]
+        model.linear2.weight = best_params[2]
+        model.linear2.bias = best_params[3]
 
     return model
 
@@ -351,7 +360,24 @@ def train_on_qm9(
     X_mx = mx.array(X_train)
     y_mx = mx.array(y_train)
 
-    def loss_fn(params: list[mx.array], x: mx.array, target: mx.array) -> mx.array:
+    # Prepare parameter list for optimization
+    params = [mx.array(p) for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]]
+
+    # Loss function: mean squared error
+    def loss_fn(params, x, target):
+        W1, b1, W2, b2 = params
+        h = mx.addmm(b1, x, W1, alpha=1.0, beta=1.0)
+        h = mx.maximum(h, 0.0)
+        out = mx.addmm(b2, h, W2, alpha=1.0, beta=1.0)
+        pred = mx.sigmoid(out)
+        pred = mx.squeeze(pred, axis=-1)
+        return mx.mean((pred - target) ** 2)
+
+    # Prepare parameter list for optimization
+    params = [mx.array(p) for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]]
+
+    # Loss function: mean squared error
+    def loss_fn(params, x, target):
         W1, b1, W2, b2 = params
         h = mx.addmm(b1, x, W1, alpha=1.0, beta=1.0)
         h = mx.maximum(h, 0.0)
@@ -373,15 +399,22 @@ def train_on_qm9(
             x_batch = X_shuffled[start:end]
             y_batch = y_shuffled[start:end]
 
-            grads = _loss_grad(model.parameters(), x_batch, y_batch)
+            grads = _loss_grad(params, x_batch, y_batch)
 
-            model.W1 = model.W1 - lr * grads[0]
-            model.b1 = model.b1 - lr * grads[1]
-            model.W2 = model.W2 - lr * grads[2]
-            model.b2 = model.b2 - lr * grads[3]
+            model.linear1.weight = mx.array(params[0]) - lr * grads[0]
+            model.linear1.bias = mx.array(params[1]) - lr * grads[1]
+            model.linear2.weight = mx.array(params[2]) - lr * grads[2]
+            model.linear2.bias = mx.array(params[3]) - lr * grads[3]
+
+            params = [
+                model.linear1.weight,
+                model.linear1.bias,
+                model.linear2.weight,
+                model.linear2.bias,
+            ]
 
         if (epoch + 1) % 50 == 0:
-            current_loss = float(loss_fn(model.parameters(), X_mx, y_mx))
+            current_loss = float(loss_fn(params, X_mx, y_mx))
             print(f"[Aurelius v5.2 Tier1] QM9 training epoch {epoch + 1}/{epochs}: "
                   f"loss={current_loss:.4f}")
 
@@ -405,11 +438,14 @@ def _train_synthetic_mlx(
         use_real_models=use_real_models
     )
 
-    X_mx = mx.array(X_train)
-    y_mx = mx.array(y_train)
     n_samples = X_train.shape[0]
+    n_val = max(1, int(n_samples * 0.15))
 
-    def loss_fn(params: list[mx.array], x: mx.array, target: mx.array) -> mx.array:
+    # Prepare parameter list for optimization
+    params = [mx.array(p) if isinstance(p, np.ndarray) else p for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]]
+
+    # Loss function: mean squared error
+    def loss_fn(params, x, target):
         W1, b1, W2, b2 = params
         h = mx.addmm(b1, x, W1, alpha=1.0, beta=1.0)
         h = mx.maximum(h, 0.0)
@@ -418,27 +454,60 @@ def _train_synthetic_mlx(
         pred = mx.squeeze(pred, axis=-1)
         return mx.mean((pred - target) ** 2)
 
-    _loss_grad = mx.grad(loss_fn)
-    rng_state = mx.random.key(42)
+    # Training loop with early stopping
+    best_val_loss = float("inf")
+    patience = 20
+    patience_counter = 0
+    best_params = None
 
     for epoch in range(100):
-        perm = mx.random.permutation(n_samples, key=rng_state)
-        X_shuffled = X_mx[perm]
-        y_shuffled = y_mx[perm]
+        perm = mx.random.permutation(n_samples, key=mx.random.key(42))
+        X_shuffled = X_train[perm]
+        y_shuffled = y_train[perm]
 
         for start in range(0, n_samples, 16):
             end = min(start + 16, n_samples)
             x_batch = X_shuffled[start:end]
             y_batch = y_shuffled[start:end]
-            grads = mx.grad(loss_fn)(model.parameters(), x_batch, y_batch)
-            model.W1 = model.W1 - 0.01 * grads[0]
-            model.b1 = model.b1 - 0.01 * grads[1]
-            model.W2 = model.W2 - 0.01 * grads[2]
-            model.b2 = model.b2 - 0.01 * grads[3]
+
+            # Compute gradients using mlx.value_and_grad
+            loss, grads = mx.value_and_grad(loss_fn)(params, x_batch, y_batch)
+
+            # Apply SGD update (manual weight updates)
+            model.linear1.weight = mx.array(params[0]) - 0.01 * grads[0]
+            model.linear1.bias = mx.array(params[1]) - 0.01 * grads[1]
+            model.linear2.weight = mx.array(params[2]) - 0.01 * grads[2]
+            model.linear2.bias = mx.array(params[3]) - 0.01 * grads[3]
+
+            # Update params for next iteration
+            params = [
+                model.linear1.weight,
+                model.linear1.bias,
+                model.linear2.weight,
+                model.linear2.bias,
+            ]
+
+        val_loss = float(loss_fn(params, X_train, y_train))
 
         if (epoch + 1) % 20 == 0:
-            current_loss = float(loss_fn(model.parameters(), X_mx, y_mx))
-            print(f"[Aurelius v6.0 Tier1] Synthetic epoch {epoch + 1}/100: loss={current_loss:.4f}")
+            print(f"[Aurelius v6.0 Tier1] Synthetic epoch {epoch + 1}/100: loss={val_loss:.4f}")
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            best_params = [np.array(p) for p in params]
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f"[Aurelius v6.0 Tier1] Early stopping at epoch {epoch + 1} "
+                      f"(best val_loss={best_val_loss:.4f})")
+                break
+
+    if best_params is not None:
+        model.linear1.weight = best_params[0]
+        model.linear1.bias = best_params[1]
+        model.linear2.weight = best_params[2]
+        model.linear2.bias = best_params[3]
 
     return model
 

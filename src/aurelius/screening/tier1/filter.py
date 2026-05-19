@@ -372,9 +372,9 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
 def _hash_fallback(smiles: str) -> np.ndarray:
     """Deterministic hash-based fingerprint fallback when RDKit is unavailable.
 
-    Produces a 2048-bit vector from the SMILES hash. This is NOT a
-    real ECFP4 fingerprint but provides deterministic, reproducible
-    input for pipeline validation.
+    Produces a 2048-bit vector from the SMILES hash using SHA-256.
+    This is NOT a real ECFP4 fingerprint but provides deterministic,
+    reproducible input for pipeline validation.
 
     Args:
         smiles: SMILES string.
@@ -382,6 +382,7 @@ def _hash_fallback(smiles: str) -> np.ndarray:
     Returns:
         numpy float32 array of shape (2048,).
     """
+    import hashlib
     n_bits = 2048
     min_set = 80
     max_set = 200

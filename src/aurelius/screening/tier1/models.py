@@ -78,85 +78,178 @@ if HAS_TORCH:
         pass
 
 
-class _ChemVLM2MLP:
-    """2-layer MLP for MLX-compatible molecular viability scoring.
+if HAS_MLX:
+    import mlx.nn as _mlx_nn
 
-    Input: 2048-bit ECFP4 fingerprint (float array).
-    Hidden: 128 units with ReLU activation.
-    Output: 1 scalar viability score via sigmoid.
+    class _ChemVLM2MLP(_mlx_nn.Module):
+        """2-layer MLP for MLX-compatible molecular viability scoring.
 
-    Weights are initialized using Xavier/Glorot initialization
-    to ensure non-zero gradients during training and meaningful
-    inference output without requiring a pre-trained model.
-    """
+        Input: 2048-bit ECFP4 fingerprint (float array).
+        Hidden: 128 units with ReLU activation.
+        Output: 1 scalar viability score via sigmoid.
 
-    def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-        self._init_weights()
+        Weights are initialized using Xavier/Glorot initialization
+        to ensure non-zero gradients during training and meaningful
+        inference output without requiring a pre-trained model.
 
-    def _init_weights(self) -> None:
-        """Xavier/Glorot initialization for stable training.
-
-        W ~ N(0, sqrt(2 / (fan_in + fan_out)))
-        This ensures the variance of activations is preserved
-        across layers, preventing vanishing/exploding gradients.
+        Inherits from mlx.nn.Module for compatibility with MLX's
+        optimization and compilation graph.
         """
-        scale1 = np.sqrt(2.0 / (self.input_dim + self.hidden_dim))
-        self.W1 = _mx.random.normal((self.input_dim, self.hidden_dim), scale=scale1)
-        self.b1 = _mx.zeros((self.hidden_dim,))
 
-        scale2 = np.sqrt(2.0 / (self.hidden_dim + 1))
-        self.W2 = _mx.random.normal((self.hidden_dim, 1), scale=scale2)
-        self.b2 = _mx.zeros((1,))
+        def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
+            super().__init__()
+            self.input_dim = input_dim
+            self.hidden_dim = hidden_dim
 
-    def __call__(self, x: Any) -> Any:
-        """Forward pass through the 2-layer MLP."""
-        h = _mx.addmm(self.b1, x, self.W1, alpha=1.0, beta=1.0)
-        h = _mx.maximum(h, 0.0)
-        out = _mx.addmm(self.b2, h, self.W2, alpha=1.0, beta=1.0)
-        return _mx.sigmoid(out)
+            self.linear1 = _mlx_nn.Linear(input_dim, hidden_dim)
+            self.relu = _mlx_nn.ReLU()
+            self.linear2 = _mlx_nn.Linear(hidden_dim, 1)
 
-    def parameters(self) -> list[Any]:
-        return [self.W1, self.b1, self.W2, self.b2]
+            self._init_weights()
 
-    def save_weights(self, path: str) -> None:
-        """Save model weights to individual .npy files.
+        def _init_weights(self) -> None:
+            """Initialize all weights using Xavier uniform initialization."""
+            scale1 = np.sqrt(2.0 / (self.input_dim + self.hidden_dim))
+            self.linear1.weight = _mx.random.uniform(
+                shape=(self.input_dim, self.hidden_dim),
+                low=-scale1,
+                high=scale1,
+            )
+            self.linear1.bias = _mx.zeros((self.hidden_dim,))
 
-        Args:
-            path: Directory path to save weights.
+            scale2 = np.sqrt(2.0 / (self.hidden_dim + 1))
+            self.linear2.weight = _mx.random.uniform(
+                shape=(self.hidden_dim, 1),
+                low=-scale2,
+                high=scale2,
+            )
+            self.linear2.bias = _mx.zeros((1,))
+
+        def __call__(self, x: Any) -> Any:
+            """Forward pass through the 2-layer MLP."""
+            h = self.linear1(x)
+            h = self.relu(h)
+            out = self.linear2(h)
+            return _mlx_nn.sigmoid(out)
+
+        def parameters(self) -> list[Any]:
+            return [self.linear1.weight, self.linear1.bias, self.linear2.weight, self.linear2.bias]
+
+        def save_weights(self, path: str) -> None:
+            """Save model weights to individual .npy files.
+
+            Args:
+                path: Directory path to save weights.
+            """
+            os.makedirs(path, exist_ok=True)
+            np.save(os.path.join(path, "W1.npy"), np.asarray(self.linear1.weight))
+            np.save(os.path.join(path, "b1.npy"), np.asarray(self.linear1.bias))
+            np.save(os.path.join(path, "W2.npy"), np.asarray(self.linear2.weight))
+            np.save(os.path.join(path, "b2.npy"), np.asarray(self.linear2.bias))
+            meta = {
+                "input_dim": self.input_dim,
+                "hidden_dim": self.hidden_dim,
+                "architecture": "MLP-2048-128-1",
+                "fp_type": "ECFP4_2048",
+            }
+            with open(os.path.join(path), "w") as f:
+                json.dump(meta, f, indent=2)
+
+        def load_weights(self, path: str) -> None:
+            """Load model weights from individual .npy files.
+
+            Args:
+                path: Directory path containing saved weights.
+
+            Raises:
+                FileNotFoundError: If weight files are not found.
+            """
+            W1 = np.load(os.path.join(path, "W1.npy"))
+            b1 = np.load(os.path.join(path, "b1.npy"))
+            W2 = np.load(os.path.join(path, "W2.npy"))
+            b2 = np.load(os.path.join(path, "b2.npy"))
+            self.linear1.weight = _mx.array(W1)
+            self.linear1.bias = _mx.array(b1)
+            self.linear2.weight = _mx.array(W2)
+            self.linear2.bias = _mx.array(b2)
+else:
+
+    class _ChemVLM2MLP:
+        """2-layer MLP for MLX-compatible molecular viability scoring.
+
+        Input: 2048-bit ECFP4 fingerprint (float array).
+        Hidden: 128 units with ReLU activation.
+        Output: 1 scalar viability score via sigmoid.
+
+        Weights are initialized using Xavier/Glorot initialization
+        to ensure non-zero gradients during training and meaningful
+        inference output without requiring a pre-trained model.
+
+        This is a NumPy-based fallback when MLX is unavailable.
         """
-        os.makedirs(path, exist_ok=True)
-        np.save(os.path.join(path, "W1.npy"), np.asarray(self.W1))
-        np.save(os.path.join(path, "b1.npy"), np.asarray(self.b1))
-        np.save(os.path.join(path, "W2.npy"), np.asarray(self.W2))
-        np.save(os.path.join(path, "b2.npy"), np.asarray(self.b2))
-        meta = {
-            "input_dim": self.input_dim,
-            "hidden_dim": self.hidden_dim,
-            "architecture": "MLP-2048-128-1",
-            "fp_type": "ECFP4_2048",
-        }
-        with open(os.path.join(path, "metadata.json"), "w") as f:
-            json.dump(meta, f, indent=2)
 
-    def load_weights(self, path: str) -> None:
-        """Load model weights from individual .npy files.
+        def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
+            self.input_dim = input_dim
+            self.hidden_dim = hidden_dim
+            self._init_weights()
 
-        Args:
-            path: Directory path containing saved weights.
+        def _init_weights(self) -> None:
+            """Xavier/Glorot initialization for stable training."""
+            scale1 = np.sqrt(2.0 / (self.input_dim + self.hidden_dim))
+            self.W1 = np.random.default_rng().standard_normal((self.input_dim, self.hidden_dim)) * scale1
+            self.b1 = np.zeros((self.hidden_dim,))
 
-        Raises:
-            FileNotFoundError: If weight files are not found.
-        """
-        W1 = np.load(os.path.join(path, "W1.npy"))
-        b1 = np.load(os.path.join(path, "b1.npy"))
-        W2 = np.load(os.path.join(path, "W2.npy"))
-        b2 = np.load(os.path.join(path, "b2.npy"))
-        self.W1 = _mx.array(W1)
-        self.b1 = _mx.array(b1)
-        self.W2 = _mx.array(W2)
-        self.b2 = _mx.array(b2)
+            scale2 = np.sqrt(2.0 / (self.hidden_dim + 1))
+            self.W2 = np.random.default_rng().standard_normal((self.hidden_dim, 1)) * scale2
+            self.b2 = np.zeros((1,))
+
+        def __call__(self, x: Any) -> Any:
+            """Forward pass through the 2-layer MLP."""
+            h = x @ self.W1 + self.b1
+            h = np.maximum(h, 0.0)
+            out = h @ self.W2 + self.b2
+            return 1.0 / (1.0 + np.exp(-out))
+
+        def parameters(self) -> list[Any]:
+            return [self.W1, self.b1, self.W2, self.b2]
+
+        def save_weights(self, path: str) -> None:
+            """Save model weights to individual .npy files.
+
+            Args:
+                path: Directory path to save weights.
+            """
+            os.makedirs(path, exist_ok=True)
+            np.save(os.path.join(path, "W1.npy"), np.asarray(self.W1))
+            np.save(os.path.join(path, "b1.npy"), np.asarray(self.b1))
+            np.save(os.path.join(path, "W2.npy"), np.asarray(self.W2))
+            np.save(os.path.join(path, "b2.npy"), np.asarray(self.b2))
+            meta = {
+                "input_dim": self.input_dim,
+                "hidden_dim": self.hidden_dim,
+                "architecture": "MLP-2048-128-1",
+                "fp_type": "ECFP4_2048",
+            }
+            with open(os.path.join(path), "w") as f:
+                json.dump(meta, f, indent=2)
+
+        def load_weights(self, path: str) -> None:
+            """Load model weights from individual .npy files.
+
+            Args:
+                path: Directory path containing saved weights.
+
+            Raises:
+                FileNotFoundError: If weight files are not found.
+            """
+            W1 = np.load(os.path.join(path, "W1.npy"))
+            b1 = np.load(os.path.join(path, "b1.npy"))
+            W2 = np.load(os.path.join(path, "W2.npy"))
+            b2 = np.load(os.path.join(path, "b2.npy"))
+            self.W1 = W1
+            self.b1 = b1
+            self.W2 = W2
+            self.b2 = b2
 
 
 class _FallbackMLP:
