@@ -61,6 +61,7 @@ where = ["src"]
 "aurelius.data" = ["force_field_params.json"]
 "aurelius.screening.tier1" = ["*.py"]
 "aurelius.screening.tier0" = ["*.py"]
+"aurelius.cli_scripts" = ["*.py"]
 
 [tool.ruff]
 line-length = 120

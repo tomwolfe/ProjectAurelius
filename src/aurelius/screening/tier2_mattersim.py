@@ -525,7 +525,7 @@ class MatterSimMTSimulator:
         smiles: str,
         ion_type: str = "Na+",
         solvent_type: str = "ec:dmc",
-        n_cycles: int = 500,
+        n_scan_points: int = 500,
     ) -> Tier2Result:
         """Run full desolvation path integral simulation.
 
@@ -537,7 +537,7 @@ class MatterSimMTSimulator:
             smiles: SMILES string of the molecule.
             ion_type: Ion type (e.g., "Na+", "Li+").
             solvent_type: Solvent type (e.g., "ec:dmc").
-            n_cycles: Number of simulation cycles.
+            n_scan_points: Number of displacement scan points.
 
         Returns:
             Tier2Result with simulation data.
@@ -546,12 +546,12 @@ class MatterSimMTSimulator:
         start = time.perf_counter()
 
         path_result = self._run_path_integral(
-            smiles, ion_type, solvent_type, n_cycles
+            smiles, ion_type, solvent_type, n_scan_points
         )
 
         elapsed_ms = (time.perf_counter() - start) * 1000
         device = self._select_device()
-        mem_gb = self._estimate_memory_usage(n_cycles, device=device)
+        mem_gb = self._estimate_memory_usage(n_scan_points, device=device)
 
         return Tier2Result(
             molecule_smiles=smiles,
@@ -566,7 +566,7 @@ class MatterSimMTSimulator:
         smiles: str,
         ion_type: str,
         solvent_type: str,
-        n_cycles: int,
+        n_scan_points: int,
     ) -> DesolvationPathResult:
         """Run the desolvation path integral with fully vectorized potentials.
 
@@ -578,13 +578,13 @@ class MatterSimMTSimulator:
             smiles: SMILES string.
             ion_type: Ion type.
             solvent_type: Solvent type.
-            n_cycles: Number of simulation cycles.
+            n_scan_points: Number of displacement scan points.
 
         Returns:
             DesolvationPathResult with energy profile data.
         """
         if not HAS_TORCH:
-            return self._fallback_path_integral(smiles, n_cycles)
+            return self._fallback_path_integral(smiles, n_scan_points)
 
         device = self._select_device()
 
@@ -636,12 +636,12 @@ class MatterSimMTSimulator:
         _total_energy = lj_energy + coulomb_energy
 
         # Build energy profile
-        energies = self._compute_energy_profile(atomic_numbers, coordinates, n_cycles)
+        energies = self._compute_energy_profile(atomic_numbers, coordinates, n_scan_points)
 
         local_maxima = self._find_local_maxima(energies.cpu().numpy())
         max_barrier = float(_torch.max(energies).item())
         max_local = float(max(local_maxima)) if local_maxima else 0.0
-        path_integral = float(_torch.trapezoid(energies, _torch.linspace(0, 8.0, n_cycles, device=device)).item())
+        path_integral = float(_torch.trapezoid(energies, _torch.linspace(0, 8.0, n_scan_points, device=device)).item())
 
         rejected = max_local > self.barrier_threshold_eV
         reason = None
@@ -655,7 +655,7 @@ class MatterSimMTSimulator:
             path_integral_eV_A=path_integral,
             rejected=rejected,
             rejection_reason=reason,
-            simulation_cycles=n_cycles,
+            n_scan_points=n_scan_points,
         )
 
     def _compute_lj_potential(
@@ -865,40 +865,40 @@ class MatterSimMTSimulator:
         self,
         atomic_numbers: _torch.Tensor,
         coordinates: _torch.Tensor,
-        n_cycles: int,
+        n_scan_points: int,
     ) -> _torch.Tensor:
         """Compute energy profile along the desolvation path.
 
         Fully vectorized implementation: computes LJ + Coulomb energies
         for all displacement steps simultaneously via tensor broadcasting.
-        O(N^2 * n_cycles) time/space, O(1) Python interpreter overhead.
+        O(N^2 * n_scan_points) time/space, O(1) Python interpreter overhead.
 
         Args:
             atomic_numbers: (N,) LongTensor.
             coordinates: (N, 3) FloatTensor.
-            n_cycles: Number of displacement steps.
+            n_scan_points: Number of displacement scan points.
 
         Returns:
-            (n_cycles,) FloatTensor of energies.
+            (n_scan_points,) FloatTensor of energies.
         """
         device = atomic_numbers.device
         ion_idx = 0
         n_solvent = coordinates.shape[0] - 1
 
-        positions = _torch.linspace(0, 8.0, n_cycles, device=device)
+        positions = _torch.linspace(0, 8.0, n_scan_points, device=device)
 
-        # Displace ion along x-axis: (n_cycles, 3)
-        ion_coords = _torch.zeros(n_cycles, 3, device=device, dtype=_torch.float32)
+        # Displace ion along x-axis: (n_scan_points, 3)
+        ion_coords = _torch.zeros(n_scan_points, 3, device=device, dtype=_torch.float32)
         ion_coords[:, 0] = positions
 
         # Solvent coordinates: (1, n_solvent, 3)
         solvent_coords = coordinates[1:].unsqueeze(0)  # (1, n_solvent, 3)
 
-        # Ion positions broadcast to (n_cycles, 1, 3)
-        # Solvent coords broadcast to (n_cycles, n_solvent, 3)
-        # Result: (n_cycles, n_solvent, 3)
+        # Ion positions broadcast to (n_scan_points, 1, 3)
+        # Solvent coords broadcast to (n_scan_points, n_solvent, 3)
+        # Result: (n_scan_points, n_solvent, 3)
         diffs = ion_coords.unsqueeze(1) - solvent_coords
-        ion_solvent_distances = _torch.norm(diffs, dim=-1)  # (n_cycles, n_solvent)
+        ion_solvent_distances = _torch.norm(diffs, dim=-1)  # (n_scan_points, n_solvent)
 
         # Build LJ parameter tensors for ion (z=11) vs solvent pairs
         solvent_z = atomic_numbers[1:]  # (n_solvent,)
@@ -918,11 +918,11 @@ class MatterSimMTSimulator:
             sig_vals == 0, _torch.full_like(sig_vals, self._default_sig), sig_vals
         )
 
-        # Broadcast to (n_cycles, n_solvent) for all steps
-        eps_broadcast = eps_vals.unsqueeze(0).expand(n_cycles, -1)
-        sig_broadcast = sig_vals.unsqueeze(0).expand(n_cycles, -1)
+        # Broadcast to (n_scan_points, n_solvent) for all steps
+        eps_broadcast = eps_vals.unsqueeze(0).expand(n_scan_points, -1)
+        sig_broadcast = sig_vals.unsqueeze(0).expand(n_scan_points, -1)
 
-        # Cutoff mask: (n_cycles, n_solvent)
+        # Cutoff mask: (n_scan_points, n_solvent)
         cutoff_mask = ion_solvent_distances < self._cutoff
 
         # Shifted LJ potential: fully vectorized over all steps
@@ -940,7 +940,7 @@ class MatterSimMTSimulator:
         lj_cutoff = 4.0 * eps_broadcast * (sig_over_r12_cutoff - sig_over_r6_cutoff)
         lj_per_atom = lj_per_atom - lj_cutoff
 
-        lj_total = _torch.sum(lj_per_atom * cutoff_mask.float(), dim=1)  # (n_cycles,)
+        lj_total = _torch.sum(lj_per_atom * cutoff_mask.float(), dim=1)  # (n_scan_points,)
 
         # Coulomb: ion charge (scalar) vs solvent charges
         qi = self._CHARGES.get(int(atomic_numbers[ion_idx].item()), 0.0)
@@ -950,14 +950,14 @@ class MatterSimMTSimulator:
             for z, q in self._CHARGES.items():
                 q_j_vals = _torch.where(solvent_z == z, _torch.full_like(q_j_vals, q), q_j_vals)
 
-            # Broadcast charge products: (n_cycles, n_solvent)
-            qi_broadcast = qi * q_j_vals.unsqueeze(0).expand(n_cycles, -1)
-            charge_mask = (q_j_vals != 0.0).unsqueeze(0).expand(n_cycles, -1)
+            # Broadcast charge products: (n_scan_points, n_solvent)
+            qi_broadcast = qi * q_j_vals.unsqueeze(0).expand(n_scan_points, -1)
+            charge_mask = (q_j_vals != 0.0).unsqueeze(0).expand(n_scan_points, -1)
             r_soft_c = _torch.sqrt(ion_solvent_distances ** 2 + 1.0)
             coul_per_atom = 14.3996 * qi_broadcast / r_soft_c
-            coul_total = _torch.sum(coul_per_atom * charge_mask.float(), dim=1)  # (n_cycles,)
+            coul_total = _torch.sum(coul_per_atom * charge_mask.float(), dim=1)  # (n_scan_points,)
         else:
-            coul_total = _torch.zeros(n_cycles, device=device)
+            coul_total = _torch.zeros(n_scan_points, device=device)
 
         return lj_total + coul_total
 
@@ -970,13 +970,13 @@ class MatterSimMTSimulator:
         return maxima
 
     def _fallback_path_integral(
-        self, smiles: str, n_cycles: int
+        self, smiles: str, n_scan_points: int
     ) -> DesolvationPathResult:
         """Fallback path integral when PyTorch is unavailable."""
         seed = hash(smiles) % 10000
         rng = np.random.RandomState(seed)
-        positions = np.linspace(0, 8.0, n_cycles)
-        energies = np.zeros(n_cycles)
+        positions = np.linspace(0, 8.0, n_scan_points)
+        energies = np.zeros(n_scan_points)
 
         heights = self._fallback_heights
         centers = self._fallback_centers
@@ -989,7 +989,7 @@ class MatterSimMTSimulator:
             energies += heights[3] * np.exp(-positions / widths[3])
         else:
             energies += 0.03 * np.exp(-positions / 0.3)
-        energies += rng.normal(0, 0.01, n_cycles)
+        energies += rng.normal(0, 0.01, n_scan_points)
 
         local_maxima = self._find_local_maxima(energies)
         max_barrier = float(np.max(energies))
@@ -1008,15 +1008,15 @@ class MatterSimMTSimulator:
             path_integral_eV_A=path_integral,
             rejected=rejected,
             rejection_reason=reason,
-            simulation_cycles=n_cycles,
+            n_scan_points=n_scan_points,
         )
 
     @staticmethod
-    def _estimate_memory_usage(n_cycles: int, device: str = "cpu") -> float:
+    def _estimate_memory_usage(n_scan_points: int, device: str = "cpu") -> float:
         """Estimate memory usage for the simulation.
 
         Args:
-            n_cycles: Number of simulation cycles.
+            n_scan_points: Number of simulation cycles.
             device: Compute device ("cuda", "mps", or "cpu").
 
         Returns:
@@ -1031,7 +1031,7 @@ class MatterSimMTSimulator:
         else:
             base = 0.2
             per_cycle = 0.0001
-        return base + n_cycles * per_cycle
+        return base + n_scan_points * per_cycle
 
     # ------------------------------------------------------------------
     # Cutoff-Aware Neighbor List

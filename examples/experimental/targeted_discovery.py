@@ -23,7 +23,7 @@ from rdkit import Chem
 from rdkit.Chem import BRICS, Descriptors, rdFingerprintGenerator
 from rdkit.DataStructs import BitVectToText, CreateFromBitString, FingerprintSimilarity
 
-from aurelius.config import M5ProConfig, initialize_environment
+from aurelius.config import AureliusConfig, initialize_environment
 from aurelius.pipeline import AureliusPipeline
 from aurelius.screening.tier3_gcmtwin import Tier0ActivationPredictor
 
@@ -303,7 +303,7 @@ def run_discovery():
 
     # Initialize environment and pipeline
     initialize_environment()
-    config = M5ProConfig()
+    config = AureliusConfig()
     pipeline = AureliusPipeline(config, use_real_models=True)
     pipeline.initialize()
 

@@ -1,8 +1,9 @@
 # Project Aurelius v6.0 — Autonomous Discovery Configuration
 #
-# This file defines the hyperparameters and paths used by the
-# autonomous_screening_agent.py main loop.  It is loaded by
-# Hydra at runtime so that the agent is fully reproducible.
+# This file documents the hyperparameters and paths used by the
+# autonomous_screening_agent.py main loop.  It is also used as a
+# reference configuration; the agent currently loads these values
+# from its own argparse defaults rather than parsing this YAML file.
 
 # ---------------------------------------------------------------------------
 # Screening loop parameters

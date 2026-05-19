@@ -27,7 +27,7 @@ except ImportError:
     HAS_RDKIT = False
     Chem = None  # type: ignore[assignment, unused-ignore]
 
-from aurelius.config import M5ProConfig
+from aurelius.config import AureliusConfig
 from aurelius.memory.manager import (
     QuantizationConfig,
     ZeroCopyMemoryManager,
@@ -48,29 +48,29 @@ from aurelius.types import (
 # Config Tests
 # ============================================================
 
-class TestM5ProConfig:
+class TestAureliusConfig:
     def test_default_memory_budget(self):
-        config = M5ProConfig()
+        config = AureliusConfig()
         assert config.validate_memory_budget() is True
         # MLX gets 50% of RAM, capped at 12GB
         assert config.mlx_max_mem_gb <= 12.0
         assert config.mlx_max_mem_gb > 0
 
     def test_memory_report(self):
-        config = M5ProConfig()
+        config = AureliusConfig()
         report = config.memory_report()
         assert "MLX" in report
         assert "Metal Shader Cache" in report
         assert "PyTorch MPS" in report
 
     def test_invalid_memory_budget(self):
-        config = M5ProConfig(mlx_max_mem_gb=22, metal_shader_cache_gb=3)
+        config = AureliusConfig(mlx_max_mem_gb=22, metal_shader_cache_gb=3)
         assert config.validate_memory_budget() is False
 
     def test_dynamic_ram_detection(self):
         """Verify that config detects system RAM dynamically."""
         import psutil
-        config = M5ProConfig()
+        config = AureliusConfig()
         detected_gb = psutil.virtual_memory().total / (1024 ** 3)
         assert config.total_memory_gb > 0
         assert config.total_memory_gb <= detected_gb + 1  # Allow small tolerance
@@ -593,7 +593,7 @@ class TestAureliusPipeline:
             pytest.skip("RDKit is required for pipeline with use_real_models=True")
         from aurelius.pipeline import AureliusPipeline
 
-        config = M5ProConfig()
+        config = AureliusConfig()
         pipeline = AureliusPipeline(config)
         pipeline.initialize()
 
@@ -606,7 +606,7 @@ class TestAureliusPipeline:
             pytest.skip("RDKit is required for pipeline with use_real_models=True")
         from aurelius.pipeline import AureliusPipeline
 
-        config = M5ProConfig()
+        config = AureliusConfig()
         pipeline = AureliusPipeline(config)
         pipeline.initialize()
 
@@ -622,7 +622,7 @@ class TestAureliusPipeline:
             pytest.skip("RDKit is required for pipeline with use_real_models=True")
         from aurelius.pipeline import AureliusPipeline
 
-        config = M5ProConfig()
+        config = AureliusConfig()
         pipeline = AureliusPipeline(config)
         pipeline.initialize()
 
@@ -1110,7 +1110,7 @@ class TestVectorizationSpeed:
             "CC(=O)OC1=CC(=O)O1",
             "Na+",
             "ec:dmc",
-            n_cycles=100,  # Use fewer cycles for speed test
+            n_scan_points=100,  # Use fewer scan points for speed test
         )
 
         # Should complete in reasonable time (allow generous margin for CI)
@@ -1440,7 +1440,7 @@ class TestCLIFlags:
         """Verify AureliusPipeline accepts use_real_models parameter."""
         from aurelius.pipeline import AureliusPipeline
 
-        config = M5ProConfig()
+        config = AureliusConfig()
 
         # Should accept use_real_models parameter
         pipeline = AureliusPipeline(config, use_real_models=True)

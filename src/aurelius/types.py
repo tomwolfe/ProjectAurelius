@@ -21,7 +21,7 @@ class MoleculeInput:
     temperature_k: float = 298.15
     voltage_cutoff: float = 0.05
     max_sei_time_ps: float = 1000.0
-    n_md_cycles: int = 500
+    n_scan_cycles: int = 500
 
 
 @dataclass
@@ -70,7 +70,13 @@ class MLXFilterResult:
 
 @dataclass
 class DesolvationPathResult:
-    """Result from the MatterSim-MT desolvation path integral calculation."""
+    """Result from the MatterSim-MT desolvation path integral calculation.
+
+    Represents a static Potential Energy Surface (PES) scan where an
+    ion is displaced through a frozen solvent field along a reaction
+    coordinate. The scan produces an energy profile used to identify
+    desolvation barriers.
+    """
 
     molecule_smiles: str
     barrier_height_eV: float
@@ -78,7 +84,7 @@ class DesolvationPathResult:
     path_integral_eV_A: float
     rejected: bool
     rejection_reason: str | None = None
-    simulation_cycles: int = 500
+    n_scan_points: int = 500
 
 
 @dataclass

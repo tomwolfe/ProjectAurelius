@@ -11,7 +11,7 @@ import json
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors, Lipinski
 
-from aurelius.config import M5ProConfig
+from aurelius.config import AureliusConfig
 from aurelius.pipeline import AureliusPipeline
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin, GCMDTConfig
 from aurelius.types import MoleculeInput
@@ -177,7 +177,7 @@ def main():
     print(f"\nScreening {len(top_candidates)} top candidates with full pipeline...\n")
 
     # Initialize pipeline and twin
-    config = M5ProConfig()
+    config = AureliusConfig()
     pipeline = AureliusPipeline(config)
     pipeline.initialize()
 

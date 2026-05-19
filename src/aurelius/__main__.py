@@ -16,14 +16,17 @@ Usage:
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import sys
-from pathlib import Path
 
 import click
 
+from aurelius.cli_scripts import (
+    train_tier0,
+    train_tier1,
+    validate_physics,
+)
 from aurelius.config import get_config
 from aurelius.pipeline import AureliusPipeline
 
@@ -278,7 +281,7 @@ def screen(
         ion_type=ion,
         temperature_k=temperature,
         voltage_cutoff=voltage,
-        n_md_cycles=cycles,
+            n_scan_cycles=cycles,
         gwp_value=gwp,
     )
 
@@ -409,18 +412,7 @@ def _run_tier1_train(
     csv_path: str | None,
 ) -> None:
     """Run Tier 1 model training via train_tier1.py."""
-    script_path = Path(__file__).resolve().parent.parent / "scripts" / "train_tier1.py"
-    if not script_path.exists():
-        raise FileNotFoundError(
-            f"Training script not found: {script_path}. "
-            "Ensure the package is installed (e.g., pip install -e .)."
-        )
-    spec = importlib.util.spec_from_file_location("train_tier1", script_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load module from {script_path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    mod.train_main(
+    train_tier1.train_main(
         dataset=dataset,
         epochs=epochs,
         batch_size=batch_size,
@@ -436,18 +428,7 @@ def _run_tier0_train(
     csv_path: str | None,
 ) -> None:
     """Run Tier 0 MPNN model training via train_tier0.py."""
-    script_path = Path(__file__).resolve().parent.parent / "scripts" / "train_tier0.py"
-    if not script_path.exists():
-        raise FileNotFoundError(
-            f"Training script not found: {script_path}. "
-            "Ensure the package is installed (e.g., pip install -e .)."
-        )
-    spec = importlib.util.spec_from_file_location("train_tier0", script_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load module from {script_path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    mod.train_main(
+    train_tier0.train_main(
         epochs=epochs,
         batch_size=batch_size,
         learning_rate=learning_rate,
@@ -460,21 +441,10 @@ def _run_tier0_train(
 def validate(smiles: str) -> None:
     """Run physics validation on a molecule.
 
-    Wraps scripts/validate_physics.py as a native CLI subcommand.
+    Wraps validate_physics module as a native CLI subcommand.
     """
-    script_path = Path(__file__).resolve().parent.parent / "scripts" / "validate_physics.py"
-    if not script_path.exists():
-        raise FileNotFoundError(
-            f"Validation script not found: {script_path}. "
-            "Ensure the package is installed (e.g., pip install -e .)."
-        )
-    spec = importlib.util.spec_from_file_location("validate_physics", script_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load module from {script_path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    sys.argv = ["validate_physics.py"]
-    mod.main()
+    sys.argv = ["validate_physics", "--smiles", smiles]
+    validate_physics.main()
 
 
 @cli.command("status")

@@ -195,7 +195,7 @@ def main() -> None:
 
     results = {
         "n_atoms": args.n_atoms,
-        "n_cycles": args.n_cycles,
+        "n_scan_points": args.n_scan_points,
         "repeats": args.repeats,
     }
 
@@ -205,12 +205,12 @@ def main() -> None:
     lj_vec_times = []
     for _ in range(args.repeats):
         t0 = time.perf_counter()
-        for _ in range(args.n_cycles):
+        for _ in range(args.n_scan_points):
             compute_lj_loop(atomic_numbers, distances)
         lj_loop_times.append(time.perf_counter() - t0)
 
         t0 = time.perf_counter()
-        for _ in range(args.n_cycles):
+        for _ in range(args.n_scan_points):
             compute_lj_vectorized(atomic_numbers, distances)
         lj_vec_times.append(time.perf_counter() - t0)
 
@@ -226,12 +226,12 @@ def main() -> None:
     coul_vec_times = []
     for _ in range(args.repeats):
         t0 = time.perf_counter()
-        for _ in range(args.n_cycles):
+        for _ in range(args.n_scan_points):
             compute_coulomb_loop(atomic_numbers, distances)
         coul_loop_times.append(time.perf_counter() - t0)
 
         t0 = time.perf_counter()
-        for _ in range(args.n_cycles):
+        for _ in range(args.n_scan_points):
             compute_coulomb_vectorized(atomic_numbers, distances)
         coul_vec_times.append(time.perf_counter() - t0)
 

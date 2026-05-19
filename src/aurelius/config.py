@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class M5ProConfig:
+class AureliusConfig:
     """Dynamic memory configuration for Apple M-series chips.
 
     Detects total system RAM at instantiation and computes
@@ -103,11 +103,12 @@ class M5ProConfig:
         shader_alloc = min(total_gb * 0.1, 2.0)
 
         # Only apply computed defaults when user hasn't provided non-zero values
-        object.__setattr__(self, "total_memory_gb", round(total_gb, 1))
+        if self.total_memory_gb == 0:
+            self.total_memory_gb = round(total_gb, 1)
         if self.mlx_max_mem_gb == 0.0:
-            object.__setattr__(self, "mlx_max_mem_gb", round(mlx_alloc, 1))
+            self.mlx_max_mem_gb = round(mlx_alloc, 1)
         if self.metal_shader_cache_gb == 0.0:
-            object.__setattr__(self, "metal_shader_cache_gb", round(shader_alloc, 1))
+            self.metal_shader_cache_gb = round(shader_alloc, 1)
 
     def apply_environment(self) -> dict[str, str]:
         """Return environment variables to set (thread-safe).
@@ -157,7 +158,7 @@ def get_config(
     total_memory_gb: float = 0.0,
     mlx_max_mem_gb: float = 0.0,
     metal_shader_cache_gb: float = 0.0,
-) -> M5ProConfig:
+) -> AureliusConfig:
     """Retrieve the dynamically-configured M-series memory layout.
 
     Args:
@@ -166,9 +167,9 @@ def get_config(
         metal_shader_cache_gb: Override shader cache size (for testing).
 
     Returns:
-        An M5ProConfig instance with dynamically computed memory allocations.
+        An AureliusConfig instance with dynamically computed memory allocations.
     """
-    config = M5ProConfig(
+    config = AureliusConfig(
         total_memory_gb=total_memory_gb,
         mlx_max_mem_gb=mlx_max_mem_gb,
         metal_shader_cache_gb=metal_shader_cache_gb,
@@ -181,7 +182,11 @@ def get_config(
     return config
 
 
-def apply_global_config() -> M5ProConfig:
+# Backward compatibility alias
+AureliusConfig = AureliusConfig
+
+
+def apply_global_config() -> AureliusConfig:
     """Apply configuration globally and return for use across modules.
 
     Note: This function still calls apply_environment() for backward
@@ -239,13 +244,13 @@ _EXPECTED_ENV_VARS: dict[str, str | None] = {
 
 
 def validate_environment(
-    config: M5ProConfig | None = None,
+    config: AureliusConfig | None = None,
     strict: bool = False,
 ) -> dict[str, Any]:
     """Validate that os.environ matches config defaults.
 
     Compares current environment variables against the expected
-    values from M5ProConfig.apply_environment() and logs any
+    values from AureliusConfig.apply_environment() and logs any
     discrepancies.
 
     Args:
@@ -308,7 +313,7 @@ def validate_environment(
     return result
 
 
-def print_env_diff(config: M5ProConfig | None = None) -> None:
+def print_env_diff(config: AureliusConfig | None = None) -> None:
     """Print a human-readable diff of environment vs config defaults.
 
     Args:

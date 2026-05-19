@@ -15,7 +15,7 @@ import logging
 import time
 from typing import Any
 
-from aurelius.config import M5ProConfig, apply_global_config
+from aurelius.config import AureliusConfig, apply_global_config
 from aurelius.memory.manager import (
     MetalShaderConfig,
     QuantizationConfig,
@@ -45,7 +45,7 @@ class AureliusPipeline:
 
     def __init__(
         self,
-        config: M5ProConfig | None = None,
+        config: AureliusConfig | None = None,
         use_real_models: bool = True,
     ) -> None:
         """Initialize the Aurelius pipeline.
@@ -167,7 +167,7 @@ class AureliusPipeline:
             temperature_k=kwargs.get("temperature_k", 298.15),
             voltage_cutoff=kwargs.get("voltage_cutoff", 0.05),
             max_sei_time_ps=kwargs.get("max_sei_time_ps", 1000.0),
-            n_md_cycles=kwargs.get("n_md_cycles", 500),
+            n_scan_cycles=kwargs.get("n_scan_cycles", 500),
         )
 
         failed_tier1 = MLXFilterResult(
@@ -224,7 +224,7 @@ class AureliusPipeline:
             temperature_k=kwargs.get("temperature_k", 298.15),
             voltage_cutoff=kwargs.get("voltage_cutoff", 0.05),
             max_sei_time_ps=kwargs.get("max_sei_time_ps", 1000.0),
-            n_md_cycles=kwargs.get("n_md_cycles", 500),
+            n_scan_cycles=kwargs.get("n_scan_cycles", 500),
         )
 
         results = {}
@@ -262,7 +262,7 @@ class AureliusPipeline:
                 smiles,
                 molecule_input.ion_type,
                 molecule_input.solvent_type,
-                molecule_input.n_md_cycles,
+                molecule_input.n_scan_cycles,
             )
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
             results["tier2"] = t2_result  # type: ignore[assignment]

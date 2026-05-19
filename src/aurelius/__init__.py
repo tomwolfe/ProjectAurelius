@@ -12,7 +12,7 @@ from importlib import metadata
 __version__: str = metadata.version("aurelius")
 
 from aurelius import bridge
-from aurelius.config import M5ProConfig, apply_global_config, get_config, initialize_environment
+from aurelius.config import AureliusConfig, apply_global_config, get_config, initialize_environment
 from aurelius.memory.manager import (
     MetalShaderConfig,
     QuantizationConfig,
@@ -48,7 +48,7 @@ __all__ = [
     "GCMDTwinResult",
     "GCMDigitalTwin",
     "MLXFilterResult",
-    "M5ProConfig",
+    "AureliusConfig",
     "MemoryProfiler",
     "MoleculeInput",
     "MLXNAFilter",

@@ -10,8 +10,6 @@ Usage:
     python autonomous_screening_agent.py
     python autonomous_screening_agent.py --max-generations 100 --batch-size 100
     python autonomous_screening_agent.py --n-workers 4  # parallel Tier 1
-
-The agent uses Hydra for configuration management (see config/discovery_config.yaml).
 """
 
 from __future__ import annotations
@@ -65,7 +63,7 @@ log.addHandler(_error_handler)
 # Aurelius imports
 # ---------------------------------------------------------------------------
 
-from aurelius.config import M5ProConfig, initialize_environment  # noqa: E402
+from aurelius.config import AureliusConfig, initialize_environment  # noqa: E402
 from aurelius.memory.profiler import MemoryProfiler  # noqa: E402
 from aurelius.pipeline import AureliusPipeline  # noqa: E402
 from aurelius.screening.tier0_gnn import Tier0ActivationPredictor  # noqa: E402
@@ -1286,7 +1284,7 @@ def run_screening(args: Any) -> None:
     """Main autonomous screening loop.
 
     Args:
-        args: Parsed Hydra/config arguments containing screening parameters.
+        args: Parsed argparse arguments containing screening parameters.
     """
 
     # Initialize memory profiler if requested
@@ -1309,7 +1307,7 @@ def run_screening(args: Any) -> None:
 
     initialize_environment()
 
-    config = M5ProConfig()
+    config = AureliusConfig()
     pipeline = AureliusPipeline(config, use_real_models=True)
     pipeline.initialize()
 
