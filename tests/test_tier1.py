@@ -117,4 +117,4 @@ class TestMLXNAFilter:
                 p_np = np.array(p.detach())
             else:
                 p_np = p
-            assert any(v > 1e-10 for v in p_np), "Model weights should have non-zero values"
+            assert np.any(p_np > 1e-10), "Model weights should have non-zero values"
