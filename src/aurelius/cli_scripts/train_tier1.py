@@ -101,7 +101,7 @@ Examples:
     return parser.parse_args()
 
 
-def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray:
+def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray[Any, Any]:
     """Generate a 2048-bit ECFP4 (Morgan radius=2) fingerprint.
 
     Uses RDKit if available, otherwise falls back to hash-based
@@ -133,7 +133,7 @@ def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray:
         return _hash_fallback(smiles, n_bits)
 
 
-def _hash_fallback(smiles: str, n_bits: int = 2048) -> np.ndarray:
+def _hash_fallback(smiles: str, n_bits: int = 2048) -> np.ndarray[Any, Any]:
     """Deterministic hash-based fingerprint fallback."""
     arr = np.zeros(n_bits, dtype=np.float32)
     seed = hash(smiles) & 0xFFFFFFFF
@@ -144,7 +144,7 @@ def _hash_fallback(smiles: str, n_bits: int = 2048) -> np.ndarray:
     return arr
 
 
-def load_esol_data(csv_path: str | None = None) -> tuple[np.ndarray, np.ndarray, list[str]]:
+def load_esol_data(csv_path: str | None = None) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[str]]:
     """Load the ESOL dataset (Delaney et al. 2004).
 
     The ESOL dataset contains 1112 molecules with experimentally
@@ -266,7 +266,7 @@ def load_esol_data(csv_path: str | None = None) -> tuple[np.ndarray, np.ndarray,
         return _load_esol_embedded()
 
 
-def _load_esol_from_csv(csv_path: str) -> tuple[np.ndarray, np.ndarray, list[str]]:
+def _load_esol_from_csv(csv_path: str) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[str]]:
     """Load ESOL from a local CSV file.
 
     Expected CSV format: smiles,logS (with header row)
@@ -305,7 +305,7 @@ def _load_esol_from_csv(csv_path: str) -> tuple[np.ndarray, np.ndarray, list[str
     return X, y, smiles_list
 
 
-def _load_esol_embedded() -> tuple[np.ndarray, np.ndarray, list[str]]:
+def _load_esol_embedded() -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[str]]:
     """Load a curated 50-molecule ESOL subset embedded in code.
 
     This is a scientifically valid fallback when HuggingFace download
@@ -391,7 +391,7 @@ def _load_esol_embedded() -> tuple[np.ndarray, np.ndarray, list[str]]:
     return X, y, smiles_list
 
 
-def load_qm9_data() -> tuple[np.ndarray, np.ndarray, list[str]]:
+def load_qm9_data() -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[str]]:
     """Load the QM9 dataset (Ramakrishnan et al. 2014).
 
     The QM9 dataset contains 134,887 small molecules with DFT-computed
@@ -458,10 +458,10 @@ def load_qm9_data() -> tuple[np.ndarray, np.ndarray, list[str]]:
 
 
 def train_numpy(
-    X_train: np.ndarray,
-    y_train: np.ndarray,
-    X_val: np.ndarray,
-    y_val: np.ndarray,
+    X_train: np.ndarray[Any, Any],
+    y_train: np.ndarray[Any, Any],
+    X_val: np.ndarray[Any, Any],
+    y_val: np.ndarray[Any, Any],
     epochs: int,
     lr: float,
     batch_size: int,
@@ -569,10 +569,10 @@ def train_numpy(
 
 
 def train_mlx(
-    X_train: np.ndarray,
-    y_train: np.ndarray,
-    X_val: np.ndarray,
-    y_val: np.ndarray,
+    X_train: np.ndarray[Any, Any],
+    y_train: np.ndarray[Any, Any],
+    X_val: np.ndarray[Any, Any],
+    y_val: np.ndarray[Any, Any],
     epochs: int,
     lr: float,
     batch_size: int,

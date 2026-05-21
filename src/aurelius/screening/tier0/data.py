@@ -112,8 +112,8 @@ def _load_tier0_seed_smiles() -> list[str]:
     smiles_path = data_path.joinpath("tier0_seed_smiles.json")
 
     try:
-        with open(smiles_path) as f:
-            return json.load(f)
+        with open(str(smiles_path)) as f:
+            return json.load(f)  # type: ignore[no-any-return]
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         # Fallback to empty list if file not found
         return []

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -110,7 +110,7 @@ class CheckpointManager:
 
     def fps_hex_list(self) -> list[str]:
         """Return list of known fingerprint hex strings."""
-        return self.state["known_fps_hex"]
+        return cast(list[str], self.state["known_fps_hex"])
 
     def add_fps_hex(self, hex_str: str) -> None:
         """Add a fingerprint hex string to the known list.

@@ -42,9 +42,9 @@ def _apply_env_thread_safe(env_vars: dict[str, str]) -> None:
             os.environ[k] = v
 
 
-@click.group()
-@click.version_option(version="6.0.0", prog_name="Aurelius")
-def cli() -> None:
+@click.group()  # type: ignore[untyped-decorator]
+@click.version_option(version="6.0.0", prog_name="Aurelius")  # type: ignore[untyped-decorator]
+def cli() -> None:  # type: ignore[untyped-decorator]
     """Project Aurelius v5.2 - The Hardened Release.
 
     Accelerated computational chemistry screening pipeline optimized
@@ -53,8 +53,8 @@ def cli() -> None:
     pass
 
 
-@cli.command()
-def init() -> None:
+@cli.command()  # type: ignore[untyped-decorator]
+def init() -> None:  # type: ignore[untyped-decorator]
     """Initialize the Aurelius v5.2 pipeline."""
     config = get_config()
     # Thread-safe environment variable application
@@ -65,7 +65,7 @@ def init() -> None:
     click.echo("\nPipeline initialized successfully.")
 
 
-@cli.command()
+@cli.command()  # type: ignore[untyped-decorator]
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Show detailed framework versions")
 def doctor(verbose: bool) -> None:
     """Validate dependencies, hardware, and configuration.
@@ -188,7 +188,7 @@ def doctor(verbose: bool) -> None:
     click.echo("")
 
 
-@cli.command("screen")
+@cli.command("screen")  # type: ignore[untyped-decorator]
 @click.argument("smiles")
 @click.option("--solvent", default="ec:dmc", help="Solvent type (default: ec:dmc)")
 @click.option("--salt", default="NaPF6", help="Salt type (default: NaPF6)")
@@ -227,7 +227,7 @@ def screen(
     use_real_models: bool,
     demo: bool,
     allow_fallback: bool,
-) -> None:
+) -> None:  # type: ignore[untyped-decorator]
     """Screen a single molecule through the full Aurelius pipeline.
 
     By default, Tier 1 loads or trains on real experimental data (ESOL/QM9).
@@ -290,10 +290,9 @@ def screen(
         sys.exit(1)
 
 
-@cli.command("batch")
+@cli.command("batch")  # type: ignore[untyped-decorator]
 @click.argument("file", type=click.Path(exists=True))
 @click.option("--solvent", default="ec:dmc", help="Solvent type")
-@click.option("--salt", default="NaPF6", help="Salt type")
 @click.option("--output", type=click.Path(), help="Output JSON file")
 @click.option(
     "--allow-fallback",
@@ -301,7 +300,7 @@ def screen(
     default=False,
     help="Allow hash-based fallback when RDKit is unavailable (demo/CI only)",
 )
-def batch(file: str, solvent: str, salt: str, output: str | None, allow_fallback: bool) -> None:
+def batch(file: str, solvent: str, salt: str, output: str | None, allow_fallback: bool) -> None:  # type: ignore[untyped-decorator]
     """Screen multiple molecules from a SMILES file (one per line)."""
     # Enforce RDKit for real models (unless --allow-fallback is set)
     if not allow_fallback:

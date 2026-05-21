@@ -140,7 +140,7 @@ class Tier0ActivationPredictor:
     def _predict_single(
         self,
         descriptors: dict[str, float],
-        weights: np.ndarray,
+        weights: np.ndarray[Any, Any],
         bias: float,
     ) -> float:
         """Predict a single activation energy from descriptors.

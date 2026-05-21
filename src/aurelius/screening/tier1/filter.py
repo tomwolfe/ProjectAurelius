@@ -287,7 +287,7 @@ class MLXNAFilter:
             return 6
         return 4
 
-    def _run_inference(self, fingerprint: np.ndarray, smiles: str) -> dict[str, Any]:
+    def _run_inference(self, fingerprint: np.ndarray[Any, Any], smiles: str) -> dict[str, Any]:
         """Run molecular viability inference via MLX, PyTorch, or numpy fallback."""
         if self._use_mlx and self._model is not None and self._mx is not None:
             fp_array = self._mx.array(fingerprint, dtype=self._mx.float32)
@@ -310,7 +310,7 @@ class MLXNAFilter:
         return {"is_viable": is_viable, "confidence": confidence}
 
 
-def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np.ndarray:
+def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np.ndarray[Any, Any]:
     """Generate a 2048-bit ECFP4 (Morgan radius=2) fingerprint from SMILES.
 
     Uses RDKit's GetMorganFingerprintAsBitVect for production-grade
@@ -368,7 +368,7 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
     return _hash_fallback(smiles)
 
 
-def _hash_fallback(smiles: str) -> np.ndarray:
+def _hash_fallback(smiles: str) -> np.ndarray[Any, Any]:
     """Deterministic hash-based fingerprint fallback when RDKit is unavailable.
 
     Produces a 2048-bit vector from the SMILES hash using SHA-256.

@@ -961,7 +961,7 @@ class MatterSimMTSimulator:
 
         return lj_total + coul_total
 
-    def _find_local_maxima(self, energies: np.ndarray) -> list[float]:
+    def _find_local_maxima(self, energies: np.ndarray[Any, Any]) -> list[float]:
         """Find local maxima in the energy profile."""
         maxima = []
         for i in range(1, len(energies) - 1):
@@ -994,7 +994,7 @@ class MatterSimMTSimulator:
         local_maxima = self._find_local_maxima(energies)
         max_barrier = float(np.max(energies))
         max_local = float(max(local_maxima)) if local_maxima else 0.0
-        path_integral = float(np.trapezoid(energies, positions))
+        path_integral = float(np.trapezoid(energies, positions))  # type: ignore[attr-defined]
 
         rejected = max_local > self.barrier_threshold_eV
         reason = None

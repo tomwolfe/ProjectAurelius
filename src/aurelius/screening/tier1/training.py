@@ -12,7 +12,7 @@ References:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -50,7 +50,7 @@ def _get_fingerprint_fn() -> Any:
 
 def _generate_synthetic_training_data(
     use_real_models: bool = False,
-) -> tuple[np.ndarray, np.ndarray, list[str]]:
+) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[str]]:
     """Generate synthetic training data for demo/fallback modes.
 
     Simple molecules are labeled as soluble (1.0),
@@ -211,7 +211,7 @@ def train_on_esol(
     params = [mx.array(p) for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]]
 
     # Loss function: mean squared error
-    def loss_fn(params, x, target):
+    def loss_fn(params: list[Any], x: mx.Array, target: mx.Array) -> mx.Array:
         W1, b1, W2, b2 = params
         h = mx.addmm(b1, x, W1, alpha=1.0, beta=1.0)
         h = mx.maximum(h, 0.0)
@@ -364,7 +364,7 @@ def train_on_qm9(
     params = [mx.array(p) for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]]
 
     # Loss function: mean squared error
-    def loss_fn(params, x, target):
+    def loss_fn(params: list[Any], x: mx.Array, target: mx.Array) -> mx.Array:
         W1, b1, W2, b2 = params
         h = mx.addmm(b1, x, W1, alpha=1.0, beta=1.0)
         h = mx.maximum(h, 0.0)
@@ -432,7 +432,7 @@ def _train_synthetic_mlx(
     params = [mx.array(p) if isinstance(p, np.ndarray) else p for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]]
 
     # Loss function: mean squared error
-    def loss_fn(params, x, target):
+    def loss_fn(params: list[Any], x: mx.Array, target: mx.Array) -> mx.Array:
         W1, b1, W2, b2 = params
         h = mx.addmm(b1, x, W1, alpha=1.0, beta=1.0)
         h = mx.maximum(h, 0.0)

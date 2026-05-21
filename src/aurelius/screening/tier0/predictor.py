@@ -5,6 +5,7 @@ for molecule-specific activation energies.
 """
 
 from __future__ import annotations
+from typing import Any
 
 import os
 
@@ -172,7 +173,7 @@ class _LinearFallbackPredictor:
             assert smiles is not None
             descriptors = _generate_molecular_descriptors(smiles)
 
-        def _predict_single(desc: dict[str, float], weights: np.ndarray, bias: float) -> float:
+        def _predict_single(desc: dict[str, float], weights: np.ndarray[Any, Any], bias: float) -> float:
             normalized = np.array([
                 (desc.get("mw", 250) - self._MW_RANGE[0]) / (self._MW_RANGE[1] - self._MW_RANGE[0]),
                 (desc.get("logp", 1.5) - self._LOGP_RANGE[0]) / (self._LOGP_RANGE[1] - self._LOGP_RANGE[0]),

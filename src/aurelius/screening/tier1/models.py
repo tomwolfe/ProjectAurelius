@@ -81,7 +81,7 @@ if HAS_TORCH:
 if HAS_MLX:
     import mlx.nn as _mlx_nn
 
-    class _ChemVLM2MLP(_mlx_nn.Module):
+    class _ChemVLM2MLP(_mlx_nn.Module):  # type: ignore[misc]
         """2-layer MLP for MLX-compatible molecular viability scoring.
 
         Input: 2048-bit ECFP4 fingerprint (float array).
@@ -174,7 +174,7 @@ if HAS_MLX:
             self.linear2.bias = _mx.array(b2)
 else:
 
-    class _ChemVLM2MLP:
+    class _ChemVLM2MLP:  # type: ignore[no-redef]
         """2-layer MLP for MLX-compatible molecular viability scoring.
 
         Input: 2048-bit ECFP4 fingerprint (float array).
@@ -270,14 +270,14 @@ class _FallbackMLP:
         self.W2 = rng.randn(hidden_dim, 1).astype(np.float32) * scale2
         self.b2 = np.zeros(1, dtype=np.float32)
 
-    def __call__(self, x: np.ndarray) -> np.ndarray:
+    def __call__(self, x: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
         """Forward pass through the 2-layer MLP (numpy)."""
         h = x @ self.W1 + self.b1
         h = np.maximum(h, 0.0)
         out = h @ self.W2 + self.b2
         return 1.0 / (1.0 + np.exp(-out))  # type: ignore[no-any-return]
 
-    def parameters(self) -> list[np.ndarray]:
+    def parameters(self) -> list[np.ndarray[Any, Any]]:
         return [self.W1, self.b1, self.W2, self.b2]
 
 

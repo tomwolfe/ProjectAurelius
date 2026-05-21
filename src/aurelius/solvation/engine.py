@@ -96,9 +96,9 @@ for z_str, val in _FF_PARAMS.get("partial_charges", {}).get("parameters", {}).it
     _PARTIAL_CHARGES[int(z_str)] = val["charge"]
 
 # Extract Born effective charges
-_BORN_CHARGES_LI: np.ndarray = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("Li+", np.eye(3) * 1.32))
-_BORN_CHARGES_NA: np.ndarray = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("Na+", np.eye(3) * 1.12))
-_BORN_CHARGES_K: np.ndarray = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("K+", np.eye(3) * 0.92))
+_BORN_CHARGES_LI: np.ndarray[Any, Any] = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("Li+", np.eye(3) * 1.32))
+_BORN_CHARGES_NA: np.ndarray[Any, Any] = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("Na+", np.eye(3) * 1.12))
+_BORN_CHARGES_K: np.ndarray[Any, Any] = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("K+", np.eye(3) * 0.92))
 
 # Arrhenius parameters
 _ARRHENIUS_BARRIERS: dict[str, float] = _FF_PARAMS.get("arrhenius_parameters", {}).get("barriers_eV", {})
@@ -259,7 +259,7 @@ class BornEffectiveCharges:
     """
 
     ion_type: str
-    z_star: np.ndarray  # 3x3 effective charge tensor
+    z_star: np.ndarray[Any, Any]  # 3x3 effective charge tensor
 
     @property
     def z_star_scalar(self) -> float:
@@ -317,8 +317,8 @@ class DesolvationBarrier:
 # ---------------------------------------------------------------------------
 
 def compute_gbsa_solvation_energy(
-    charges: np.ndarray,
-    radii: np.ndarray,
+    charges: np.ndarray[Any, Any],
+    radii: np.ndarray[Any, Any],
     dielectric_bulk: float,
     dielectric_internal: float = 1.0,
     surface_tension: float | None = None,
@@ -549,7 +549,7 @@ class MWSESolvationEngine:
         Returns:
             BornEffectiveCharges with 3x3 Z* tensor.
         """
-        z_star_map: dict[str, np.ndarray] = {
+        z_star_map: dict[str, np.ndarray[Any, Any]] = {
             "Li+": self._BORN_CHARGES_LI.copy(),
             "Na+": self._BORN_CHARGES_NA.copy(),
             "K+": self._BORN_CHARGES_K.copy(),
@@ -561,8 +561,8 @@ class MWSESolvationEngine:
         return BornEffectiveCharges(ion_type=ion_type, z_star=z_star)
 
     def _interpolate_born_for_solvent(
-        self, z_star: np.ndarray, solvent_type: str, ion_type: str
-    ) -> np.ndarray:
+        self, z_star: np.ndarray[Any, Any], solvent_type: str, ion_type: str
+    ) -> np.ndarray[Any, Any]:
         """Interpolate Born effective charges for mixed solvents.
 
         Uses linear interpolation based on the dielectric constant
@@ -578,7 +578,7 @@ class MWSESolvationEngine:
         """
         z_vacuum = np.eye(3)
 
-        z_water_map: dict[str, np.ndarray] = {
+        z_water_map: dict[str, np.ndarray[Any, Any]] = {
             "Li+": self._BORN_CHARGES_LI.copy(),
             "Na+": self._BORN_CHARGES_NA.copy(),
             "K+": self._BORN_CHARGES_K.copy(),
@@ -641,8 +641,8 @@ class MWSESolvationEngine:
 
     def compute_gbsa_energy(
         self,
-        charges: np.ndarray,
-        radii: np.ndarray,
+        charges: np.ndarray[Any, Any],
+        radii: np.ndarray[Any, Any],
         solvent_type: str = "ec:dmc",
     ) -> float:
         """Compute GBSA solvation energy for a molecular system.
@@ -684,7 +684,7 @@ class MWSESolvationEngine:
             barrier_height_eV=float(np.max(energies)),
             has_local_maxima=len(local_maxima) > 0,
             local_maxima_eV=float(max(local_maxima)) if local_maxima else 0.0,
-            path_integral_energy=float(np.trapezoid(energies, positions)),
+            path_integral_energy=float(np.trapezoid(energies, positions)),  # type: ignore[attr-defined]
         )
 
         rejection_threshold = _get_rejection_threshold()
@@ -698,8 +698,8 @@ class MWSESolvationEngine:
 
     @staticmethod
     def _simulate_energy_profile(
-        positions: np.ndarray, ion_type: str, solvent_type: str
-    ) -> np.ndarray:
+        positions: np.ndarray[Any, Any], ion_type: str, solvent_type: str
+    ) -> np.ndarray[Any, Any]:
         """Simulate energy profile of ion moving through solvent layer."""
         energies = np.zeros_like(positions)
         centers, widths, heights = _get_energy_profile_gaussians()
@@ -718,7 +718,7 @@ class MWSESolvationEngine:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _find_local_maxima(energies: np.ndarray) -> list[float]:
+    def _find_local_maxima(energies: np.ndarray[Any, Any]) -> list[float]:
         """Find local maxima in energy profile."""
         maxima = []
         for i in range(1, len(energies) - 1):

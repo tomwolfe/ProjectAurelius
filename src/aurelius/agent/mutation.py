@@ -11,7 +11,7 @@ Generates candidate molecules from seed SMILES using:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     pass
@@ -82,7 +82,7 @@ def _serialize_fp(fp: Any) -> str:
     ev = ExplicitBitVect(2048)
     for idx in fp.GetNonzeroElements():
         ev.SetBit(idx)
-    return BitVectToText(ev)
+    return cast(str, BitVectToText(ev))
 
 
 def _deserialize_fp(hex_str: str) -> Any:
@@ -120,7 +120,7 @@ def _tanimoto(fp1: Any, fp2: Any) -> float:
         for idx in fp2.GetNonzeroElements():
             ev2.SetBit(idx)
         fp2 = ev2
-    return FingerprintSimilarity(fp1, fp2)
+    return cast(float, FingerprintSimilarity(fp1, fp2))
 
 
 def _is_valid_mol(mol: Any) -> bool:
@@ -137,7 +137,7 @@ def _is_valid_mol(mol: Any) -> bool:
     except Exception:
         return False
     mw = Descriptors.ExactMolWt(mol)
-    return mw < 450.0
+    return cast(bool, mw < 450.0)
 
 
 class MutationEngine:
@@ -161,7 +161,7 @@ class MutationEngine:
                 for novelty checking.
         """
         self.seed_pool: list[str] = list(set(seed_smiles))
-        self.known_fps: list = []
+        self.known_fps: list[Any] = []
         for h in (known_fps_hex or []):
             with contextlib.suppress(Exception):
                 self.known_fps.append(_deserialize_fp(h))
