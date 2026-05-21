@@ -537,10 +537,7 @@ class GCMDigitalTwin:
             # Advance time: Gillespie algorithm draws dt from exponential distribution
             # dt = -ln(u) / k_total where u ~ Uniform(0, 1)
             # This ensures true stochastic kinetics rather than deterministic mean-field
-            if k_total > 0:
-                dt = -np.log(rng.random()) / k_total
-            else:
-                dt = 0.0
+            dt = -np.log(rng.random()) / k_total if k_total > 0 else 0.0
 
             current_time += dt
 

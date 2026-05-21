@@ -238,7 +238,7 @@ class ZeroCopyMemoryManager:
                     if isinstance(module, torch.nn.Linear):
                         module.to(device=torch.device(self.device))
             return model
-        except (AttributeError, TypeError, ValueError) as e:
+        except (AttributeError, TypeError, ValueError):
             return model
 
     def _estimate_footprint(self, model: Any, bits: int) -> float:

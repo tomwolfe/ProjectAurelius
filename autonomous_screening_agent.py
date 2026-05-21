@@ -668,10 +668,8 @@ def _save_checkpoint_safe(checkpoint: CheckpointManager) -> None:
     Args:
         checkpoint: CheckpointManager instance to save.
     """
-    try:
+    with contextlib.suppress(Exception):
         checkpoint.save()
-    except Exception:
-        pass  # Already logged the error at a higher level
 
 
 if __name__ == "__main__":

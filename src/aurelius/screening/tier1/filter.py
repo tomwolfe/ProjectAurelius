@@ -13,7 +13,6 @@ References:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -383,6 +382,7 @@ def _hash_fallback(smiles: str) -> np.ndarray:
         numpy float32 array of shape (2048,).
     """
     import hashlib
+
     n_bits = 2048
     min_set = 80
     max_set = 200

@@ -105,8 +105,8 @@ def _load_tier0_seed_smiles() -> list[str]:
     Returns:
         List of SMILES strings for synthetic training data.
     """
-    from importlib import resources
     import json
+    from importlib import resources
 
     data_path = resources.files("aurelius.data")
     smiles_path = data_path.joinpath("tier0_seed_smiles.json")

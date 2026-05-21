@@ -320,7 +320,7 @@ class HuggingFaceWeightLoader:
         except ConnectionError as e:
             logger.warning("[Aurelius v5.2 Tier1] Network error from HF Hub: %s", e)
             return None
-        except (ImportError, ValueError, ConnectionError, OSError, RuntimeError) as e:
+        except (OSError, RuntimeError) as e:
             logger.warning("[Aurelius v5.2 Tier1] HF Hub download failed: %s", e)
             return None
 

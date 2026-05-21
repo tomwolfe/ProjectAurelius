@@ -373,19 +373,6 @@ def train_on_qm9(
         pred = mx.squeeze(pred, axis=-1)
         return mx.mean((pred - target) ** 2)
 
-    # Prepare parameter list for optimization
-    params = [mx.array(p) for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]]
-
-    # Loss function: mean squared error
-    def loss_fn(params, x, target):
-        W1, b1, W2, b2 = params
-        h = mx.addmm(b1, x, W1, alpha=1.0, beta=1.0)
-        h = mx.maximum(h, 0.0)
-        out = mx.addmm(b2, h, W2, alpha=1.0, beta=1.0)
-        pred = mx.sigmoid(out)
-        pred = mx.squeeze(pred, axis=-1)
-        return mx.mean((pred - target) ** 2)
-
     _loss_grad = mx.grad(loss_fn)
     rng_state = mx.random.key(seed)
 
@@ -439,7 +426,7 @@ def _train_synthetic_mlx(
     )
 
     n_samples = X_train.shape[0]
-    n_val = max(1, int(n_samples * 0.15))
+    _n_val = max(1, int(n_samples * 0.15))
 
     # Prepare parameter list for optimization
     params = [mx.array(p) if isinstance(p, np.ndarray) else p for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]]
