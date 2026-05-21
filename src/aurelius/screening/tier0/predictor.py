@@ -5,9 +5,9 @@ for molecule-specific activation energies.
 """
 
 from __future__ import annotations
-from typing import Any
 
 import os
+from typing import Any
 
 import numpy as np
 
