@@ -66,7 +66,7 @@ def init() -> None:  # type: ignore[untyped-decorator]
 
 
 @cli.command()  # type: ignore[untyped-decorator]
-@click.option("--verbose", "-v", is_flag=True, default=False, help="Show detailed framework versions")
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Show detailed framework versions")  # type: ignore[untyped-decorator]
 def doctor(verbose: bool) -> None:
     """Validate dependencies, hardware, and configuration.
 
@@ -189,32 +189,32 @@ def doctor(verbose: bool) -> None:
 
 
 @cli.command("screen")  # type: ignore[untyped-decorator]
-@click.argument("smiles")
-@click.option("--solvent", default="ec:dmc", help="Solvent type (default: ec:dmc)")
-@click.option("--salt", default="NaPF6", help="Salt type (default: NaPF6)")
-@click.option("--ion", default="Na+", help="Ion type (default: Na+)")
-@click.option("--temperature", default=298.15, help="Temperature in Kelvin")
-@click.option("--voltage", default=0.05, help="Voltage cutoff")
-@click.option("--cycles", default=500, help="MD simulation cycles")
-@click.option("--gwp", default=1.0, help="Global Warming Potential value")
+@click.argument("smiles")  # type: ignore[untyped-decorator]
+@click.option("--solvent", default="ec:dmc", help="Solvent type (default: ec:dmc)")  # type: ignore[untyped-decorator]
+@click.option("--salt", default="NaPF6", help="Salt type (default: NaPF6)")  # type: ignore[untyped-decorator]
+@click.option("--ion", default="Na+", help="Ion type (default: Na+)")  # type: ignore[untyped-decorator]
+@click.option("--temperature", default=298.15, help="Temperature in Kelvin")  # type: ignore[untyped-decorator]
+@click.option("--voltage", default=0.05, help="Voltage cutoff")  # type: ignore[untyped-decorator]
+@click.option("--cycles", default=500, help="MD simulation cycles")  # type: ignore[untyped-decorator]
+@click.option("--gwp", default=1.0, help="Global Warming Potential value")  # type: ignore[untyped-decorator]
 @click.option(
     "--use-real-models",
     is_flag=True,
     default=True,
     help="Use real models trained on experimental data (default: enabled)",
-)
+)  # type: ignore[untyped-decorator]
 @click.option(
     "--demo",
     is_flag=True,
     default=False,
     help="Use synthetic training data for demonstration purposes",
-)
+)  # type: ignore[untyped-decorator]
 @click.option(
     "--allow-fallback",
     is_flag=True,
     default=False,
     help="Allow hash-based fallback when RDKit is unavailable (demo/CI only)",
-)
+)  # type: ignore[untyped-decorator]
 def screen(
     smiles: str,
     solvent: str,
@@ -227,7 +227,7 @@ def screen(
     use_real_models: bool,
     demo: bool,
     allow_fallback: bool,
-) -> None:  # type: ignore[untyped-decorator]
+) -> None:
     """Screen a single molecule through the full Aurelius pipeline.
 
     By default, Tier 1 loads or trains on real experimental data (ESOL/QM9).
@@ -291,15 +291,15 @@ def screen(
 
 
 @cli.command("batch")  # type: ignore[untyped-decorator]
-@click.argument("file", type=click.Path(exists=True))
-@click.option("--solvent", default="ec:dmc", help="Solvent type")
-@click.option("--output", type=click.Path(), help="Output JSON file")
+@click.argument("file", type=click.Path(exists=True))  # type: ignore[untyped-decorator]
+@click.option("--solvent", default="ec:dmc", help="Solvent type")  # type: ignore[untyped-decorator]
+@click.option("--output", type=click.Path(), help="Output JSON file")  # type: ignore[untyped-decorator]
 @click.option(
     "--allow-fallback",
     is_flag=True,
     default=False,
     help="Allow hash-based fallback when RDKit is unavailable (demo/CI only)",
-)
+)  # type: ignore[untyped-decorator]
 def batch(file: str, solvent: str, salt: str, output: str | None, allow_fallback: bool) -> None:  # type: ignore[untyped-decorator]
     """Screen multiple molecules from a SMILES file (one per line)."""
     # Enforce RDKit for real models (unless --allow-fallback is set)
@@ -356,13 +356,13 @@ def batch(file: str, solvent: str, salt: str, output: str | None, allow_fallback
         click.echo(f"Results saved to {output}")
 
 
-@cli.command("score")
-@click.argument("smiles")
-@click.option("--solvent", default="ec:dmc", help="Solvent type")
-@click.option("--salt", default="NaPF6", help="Salt type")
-@click.option("--ion", default="Na+", help="Ion type")
-@click.option("--gwp", default=1.0, help="Global Warming Potential")
-def score(smiles: str, solvent: str, salt: str, ion: str, gwp: float) -> None:
+@cli.command("score")  # type: ignore[untyped-decorator]
+@click.argument("smiles")  # type: ignore[untyped-decorator]
+@click.option("--solvent", default="ec:dmc", help="Solvent type")  # type: ignore[untyped-decorator]
+@click.option("--salt", default="NaPF6", help="Salt type")  # type: ignore[untyped-decorator]
+@click.option("--ion", default="Na+", help="Ion type")  # type: ignore[untyped-decorator]
+@click.option("--gwp", default=1.0, help="Global Warming Potential")  # type: ignore[untyped-decorator]
+def score(smiles: str, solvent: str, salt: str, ion: str, gwp: float) -> None:  # type: ignore[untyped-decorator]
     """Compute the Aurelius v5.2 score for a molecule (quick mode)."""
     config = get_config()
     env_vars = config.apply_environment()
@@ -384,14 +384,14 @@ def score(smiles: str, solvent: str, salt: str, ion: str, gwp: float) -> None:
                    f"{'VIABLE' if score.is_viable else 'REJECTED'}")
 
 
-@cli.command("train")
-@click.option("--dataset", default="esol", help="Dataset to train on (esol/qm9)")
-@click.option("--task", type=click.Choice(["tier1", "tier0"]), default="tier1", help="Training task (tier1 for MLX filter, tier0 for MPNN activation energy predictor)")
-@click.option("--epochs", type=int, default=200, help="Number of training epochs")
-@click.option("--batch-size", type=int, default=16, help="Mini-batch size")
-@click.option("--learning-rate", type=float, default=0.005, help="Learning rate")
-@click.option("--csv-path", type=str, default=None, help="Path to local CSV file")
-def train(dataset: str, task: str, epochs: int, batch_size: int, learning_rate: float, csv_path: str | None) -> None:
+@cli.command("train")  # type: ignore[untyped-decorator]
+@click.option("--dataset", default="esol", help="Dataset to train on (esol/qm9)")  # type: ignore[untyped-decorator]
+@click.option("--task", type=click.Choice(["tier1", "tier0"]), default="tier1", help="Training task (tier1 for MLX filter, tier0 for MPNN activation energy predictor)")  # type: ignore[untyped-decorator]
+@click.option("--epochs", type=int, default=200, help="Number of training epochs")  # type: ignore[untyped-decorator]
+@click.option("--batch-size", type=int, default=16, help="Mini-batch size")  # type: ignore[untyped-decorator]
+@click.option("--learning-rate", type=float, default=0.005, help="Learning rate")  # type: ignore[untyped-decorator]
+@click.option("--csv-path", type=str, default=None, help="Path to local CSV file")  # type: ignore[untyped-decorator]
+def train(dataset: str, task: str, epochs: int, batch_size: int, learning_rate: float, csv_path: str | None) -> None:  # type: ignore[untyped-decorator]
     """Train a model on a dataset.
 
     Use --task tier1 to train the MLX filter (esol/qm9).
@@ -435,9 +435,9 @@ def _run_tier0_train(
     )
 
 
-@cli.command("validate")
-@click.option("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to validate")
-def validate(smiles: str) -> None:
+@cli.command("validate")  # type: ignore[untyped-decorator]
+@click.option("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to validate")  # type: ignore[untyped-decorator]
+def validate(smiles: str) -> None:  # type: ignore[untyped-decorator]
     """Run physics validation on a molecule.
 
     Wraps validate_physics module as a native CLI subcommand.
@@ -446,8 +446,8 @@ def validate(smiles: str) -> None:
     validate_physics.main()
 
 
-@cli.command("status")
-def status() -> None:
+@cli.command("status")  # type: ignore[untyped-decorator]
+def status() -> None:  # type: ignore[untyped-decorator]
     """Show pipeline status and memory partition."""
     config = get_config()
     env_vars = config.apply_environment()
@@ -460,11 +460,11 @@ def status() -> None:
     click.echo(f"  Memory Valid:      {config.validate_memory_budget()}")
 
 
-@cli.command("benchmark")
-@click.option("--tier", type=click.Choice(["1", "2"]), default=None, help="Benchmark only a specific tier (1 or 2). Omit for all tiers.")
-@click.option("--quick/--detailed", default=True, help="Quick mode with fewer repeats (default: enabled)")
-@click.option("--output", type=click.Path(), default=None, help="Save results to JSON file")
-def benchmark(tier: str | None, quick: bool, output: str | None) -> None:
+@cli.command("benchmark")  # type: ignore[untyped-decorator]
+@click.option("--tier", type=click.Choice(["1", "2"]), default=None, help="Benchmark only a specific tier (1 or 2). Omit for all tiers.")  # type: ignore[untyped-decorator]
+@click.option("--quick/--detailed", default=True, help="Quick mode with fewer repeats (default: enabled)")  # type: ignore[untyped-decorator]
+@click.option("--output", type=click.Path(), default=None, help="Save results to JSON file")  # type: ignore[untyped-decorator]
+def benchmark(tier: str | None, quick: bool, output: str | None) -> None:  # type: ignore[untyped-decorator]
     """Run hardware benchmark and validation.
 
     Verifies that the user's Apple Silicon hardware is properly
@@ -476,13 +476,13 @@ def benchmark(tier: str | None, quick: bool, output: str | None) -> None:
     run_benchmark(tier=tier, quick=quick, output=output)
 
 
-@cli.command("hf-upload")
-@click.option("--model-dir", required=True, help="Local directory containing model files to upload")
-@click.option("--repo-id", required=True, help="HuggingFace Hub repository ID (e.g., 'user/repo-name')")
-@click.option("--task", type=click.Choice(["tier0", "esol", "qm9"]), default="tier0", help="Model task type (default: tier0)")
-@click.option("--private/--public", default=True, help="Make repository private (default: private)")
-@click.option("--commit-message", default="Upload model via Aurelius CLI", help="Commit message for the upload")
-@click.option("--dry-run", is_flag=True, help="Validate repo ID, token, and metadata without uploading")
+@cli.command("hf-upload")  # type: ignore[untyped-decorator]
+@click.option("--model-dir", required=True, help="Local directory containing model files to upload")  # type: ignore[untyped-decorator]
+@click.option("--repo-id", required=True, help="HuggingFace Hub repository ID (e.g., 'user/repo-name')")  # type: ignore[untyped-decorator]
+@click.option("--task", type=click.Choice(["tier0", "esol", "qm9"]), default="tier0", help="Model task type (default: tier0)")  # type: ignore[untyped-decorator]
+@click.option("--private/--public", default=True, help="Make repository private (default: private)")  # type: ignore[untyped-decorator]
+@click.option("--commit-message", default="Upload model via Aurelius CLI", help="Commit message for the upload")  # type: ignore[untyped-decorator]
+@click.option("--dry-run", is_flag=True, help="Validate repo ID, token, and metadata without uploading")  # type: ignore[untyped-decorator]
 def hf_upload(
     model_dir: str,
     repo_id: str,
@@ -490,7 +490,7 @@ def hf_upload(
     private: bool,
     commit_message: str,
     dry_run: bool,
-) -> None:
+) -> None:  # type: ignore[untyped-decorator]
     """Upload a locally trained model to HuggingFace Hub.
 
     Pushes model files (weights, metadata, README) to a HuggingFace
