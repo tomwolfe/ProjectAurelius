@@ -277,7 +277,7 @@ class TestDoctorCommand:
         """Verify doctor command is registered in CLI."""
         import subprocess
         result = subprocess.run(
-            ["python3", "-m", "aurelius", "--help"],
+            ["python3.12", "-m", "aurelius", "--help"],
             capture_output=True, text=True,
         )
         assert "doctor" in result.stdout
@@ -286,7 +286,7 @@ class TestDoctorCommand:
         """Verify doctor command runs without errors."""
         import subprocess
         result = subprocess.run(
-            ["python3", "-m", "aurelius", "doctor"],
+            ["python3.12", "-m", "aurelius", "doctor"],
             capture_output=True, text=True,
         )
         assert result.returncode == 0
@@ -296,7 +296,7 @@ class TestDoctorCommand:
         """Verify doctor --verbose shows framework versions."""
         import subprocess
         result = subprocess.run(
-            ["python3", "-m", "aurelius", "doctor", "--verbose"],
+            ["python3.12", "-m", "aurelius", "doctor", "--verbose"],
             capture_output=True, text=True,
         )
         assert result.returncode == 0
@@ -334,7 +334,7 @@ class TestRDKitErrors:
         """Verify --allow-fallback shows production risk warning."""
         import subprocess
         result = subprocess.run(
-            ["python3", "-m", "aurelius", "screen", "CCO", "--allow-fallback"],
+            ["python3.12", "-m", "aurelius", "screen", "CCO", "--allow-fallback"],
             capture_output=True, text=True,
         )
         # Should show a warning about hash fallback

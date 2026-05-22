@@ -406,7 +406,7 @@ class HuggingFaceWeightLoader:
             for entry in entries:
                 if total_size <= max_cache_gb:
                     break
-                entry_size = entry.stat().st_size / (1024 ** 3)
+                entry_size = self._dir_size(entry) / (1024 ** 3)
                 total_size -= entry_size
                 import shutil
                 shutil.rmtree(entry)

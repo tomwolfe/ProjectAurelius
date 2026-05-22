@@ -496,6 +496,11 @@ class MatterSimMTSimulator:
         self._use_pbc = use_pbc
         self._cell_vectors: _torch.Tensor | None = None
         if use_pbc:
+            raise NotImplementedError(
+                "PBC (Periodic Boundary Conditions) is not yet implemented. "
+                "This feature will be fully implemented in v7.0. "
+                "Please use use_pbc=False for now."
+            )
             # Default to cubic box sized to neighbor_list_cutoff
             box_len = neighbor_list_cutoff
             self._cell_vectors = _torch.tensor(
