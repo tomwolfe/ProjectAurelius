@@ -373,31 +373,10 @@ if HAS_TORCH:
             return -forces  # Force = -gradient of energy
 
 
-else:
+# ChargeEqModel is defined at module level below
 
-    class ContinuousFilterConv1d:  # type: ignore[no-redef]
-        """Stub class when PyTorch is not available."""
 
-        def __init__(self, input_dim: int, output_dim: int, num_filters: int = 32) -> None:
-            raise RuntimeError("PyTorch is required for ContinuousFilterConv1d. Install with: pip install torch")
-
-    class ContinuousFilterConv1dBatched:  # type: ignore[no-redef]
-        """Stub class when PyTorch is not available."""
-
-        def __init__(self, input_dim: int, output_dim: int, num_filters: int = 32) -> None:
-            raise RuntimeError("PyTorch is required for ContinuousFilterConv1dBatched. Install with: pip install torch")
-
-    class SchNetInteractionBlock:  # type: ignore[no-redef]
-        """Stub class when PyTorch is not available."""
-
-        def __init__(self, hidden_dim: int = 128, num_filters: int = 32) -> None:
-            raise RuntimeError("PyTorch is required for SchNetInteractionBlock. Install with: pip install torch")
-
-    class MatterSimMPEngine:  # type: ignore[no-redef]
-        """Stub class when PyTorch is not available."""
-
-        def __init__(self, hidden_dim: int = 128, num_filters: int = 32) -> None:
-            raise RuntimeError("PyTorch is required for MatterSimMPEngine. Install with: pip install torch")
+if _nn is not None:
 
     class ChargeEqModel(_nn.Module):  # type: ignore[misc, unused-ignore]
         """Lightweight 2-layer Message Passing Neural Network for partial charge prediction.
@@ -411,7 +390,7 @@ else:
         computation when `use_polarization=True` is passed to MatterSimMTSimulator.
         """
 
-        def __init__(self, hidden_dim: int = 64) -> None:
+        def __init__(self, hidden_dim: int = 64) -> None:  # type: ignore[no-untyped-def]
             super().__init__()
             self.hidden_dim = hidden_dim
 
@@ -433,7 +412,7 @@ else:
             self,
             atomic_numbers: _torch.Tensor,
             edge_index: _torch.Tensor,
-        ) -> _torch.Tensor:
+        ) -> _torch.Tensor:  # type: ignore[no-untyped-def]
             """Predict partial charges from atomic structure.
 
             Args:
@@ -486,17 +465,6 @@ else:
 
 
 class MatterSimMTSimulator:
-    """Tier 2: MatterSim-MT simulation with fully vectorized physics.
-
-    Computes real Lennard-Jones + Coulombic interaction energies
-    between an ion and solvent molecules using PyTorch tensor
-    broadcasting. All Python loops replaced with vectorized operations.
-
-    Supports batched inputs for throughput on MPS hardware.
-
-    Uses OPLS-AA/GAFF force field parameters loaded from JSON config.
-    """
-
     def __init__(
         self,
         barrier_threshold_eV: float | None = None,

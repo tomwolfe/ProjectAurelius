@@ -330,7 +330,7 @@ class GraphVAEMutator:
                 # Random latent vector
                 random_latent = latent + rng.randn(self.latent_dim) * 0.1
                 # Decode back to SMILES
-                decoded = self._decode(random_latent, index=i)
+                decoded = self._decode(random_latent.tolist(), index=i)  # type: ignore[arg-type]
                 if decoded is not None:
                     candidates.append(decoded)
         except Exception:

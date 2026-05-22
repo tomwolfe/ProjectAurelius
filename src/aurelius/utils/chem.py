@@ -74,7 +74,7 @@ def _is_valid_mol(mol: Any) -> bool:
     except Exception:
         return False
     mw = _Descriptors.ExactMolWt(mol)  # type: ignore[union-attr]
-    return mw < 450.0
+    return bool(mw < 450.0)  # type: ignore[no-any-return]
 
 
 def _mol_to_fp(mol: Any) -> Any:
@@ -140,7 +140,7 @@ def _tanimoto(fp1: Any, fp2: Any) -> float:
         for idx in fp2.GetNonzeroElements():
             ev2.SetBit(idx)
         fp2 = ev2
-    return _FingerprintSimilarity(fp1, fp2)  # type: ignore[union-attr]
+    return float(_FingerprintSimilarity(fp1, fp2))  # type: ignore[no-any-return]
 
 
 __all__ = [

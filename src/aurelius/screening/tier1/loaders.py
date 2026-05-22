@@ -395,7 +395,7 @@ class HuggingFaceWeightLoader:
                 return 0
 
             # Calculate total cache size (recursive)
-            total_size = sum(self._dir_size(p) for p in entries if p.is_dir())
+            total_size = float(sum(self._dir_size(p) for p in entries if p.is_dir()))
             total_size /= 1024 ** 3  # Convert to GB
 
             if total_size <= max_cache_gb:
@@ -437,4 +437,14 @@ class HuggingFaceWeightLoader:
                     total += entry.stat().st_size
         except (OSError, PermissionError):
             pass
+
         return total
+
+
+__all__ = [
+    "DEFAULT_MODEL_DIR",
+    "HUGGINGFACE_MODELS",
+    "HuggingFaceWeightLoader",
+    "convert_mlx_to_torch_weights",
+    "load_pytorch_fallback_with_mlx_weights",
+]
