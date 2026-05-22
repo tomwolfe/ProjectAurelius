@@ -399,91 +399,90 @@ else:
         def __init__(self, hidden_dim: int = 128, num_filters: int = 32) -> None:
             raise RuntimeError("PyTorch is required for MatterSimMPEngine. Install with: pip install torch")
 
+    class ChargeEqModel(_nn.Module):  # type: ignore[misc, unused-ignore]
+        """Lightweight 2-layer Message Passing Neural Network for partial charge prediction.
 
-class ChargeEqModel(_nn.Module):
-    """Lightweight 2-layer Message Passing Neural Network for partial charge prediction.
+        Predicts atom-specific partial charges based on local chemical environment
+        (atomic numbers and connectivity). When trained weights are available,
+        uses them for inference; otherwise falls back to a deterministic
+        charge prediction based on atomic number and connectivity features.
 
-    Predicts atom-specific partial charges based on local chemical environment
-    (atomic numbers and connectivity). When trained weights are available,
-    uses them for inference; otherwise falls back to a deterministic
-    charge prediction based on atomic number and connectivity features.
-
-    This enables dynamic charge equilibration during Coulombic potential
-    computation when `use_polarization=True` is passed to MatterSimMTSimulator.
-    """
-
-    def __init__(self, hidden_dim: int = 64) -> None:
-        super().__init__()
-        self.hidden_dim = hidden_dim
-
-        # Node embedding: atomic number -> hidden_dim
-        self.embedding = _nn.Embedding(118, hidden_dim)
-
-        # Two message passing layers
-        self.message_1 = _nn.Linear(hidden_dim, hidden_dim)
-        self.message_2 = _nn.Linear(hidden_dim, hidden_dim)
-
-        # Output layer: hidden_dim -> 1 (partial charge)
-        self.readout = _nn.Sequential(
-            _nn.Linear(hidden_dim, hidden_dim // 2),
-            _nn.ReLU(),
-            _nn.Linear(hidden_dim // 2, 1),
-        )
-
-    def forward(
-        self,
-        atomic_numbers: _torch.Tensor,
-        edge_index: _torch.Tensor,
-    ) -> _torch.Tensor:
-        """Predict partial charges from atomic structure.
-
-        Args:
-            atomic_numbers: (N,) LongTensor of atomic numbers.
-            edge_index: (2, E) LongTensor of edge indices (connectivity).
-
-        Returns:
-            (N, 1) Tensor of predicted partial charges.
+        This enables dynamic charge equilibration during Coulombic potential
+        computation when `use_polarization=True` is passed to MatterSimMTSimulator.
         """
-        h = self.embedding(atomic_numbers)  # (N, hidden_dim)
 
-        # Message passing: aggregate neighbor features
-        if edge_index.numel() > 0:
-            src_indices = edge_index[0]
-            dst_indices = edge_index[1]
-            h_src = h[src_indices]
-            h_dst = h[dst_indices]
-            messages = self.message_1(h_src) + self.message_2(h_dst)
-            # Aggregate messages by destination node
-            h = h + _torch.scatter_add(
-                _torch.zeros_like(h), 0,
-                dst_indices.unsqueeze(-1).expand(-1, h.shape[1]).long(),
-                messages,
+        def __init__(self, hidden_dim: int = 64) -> None:
+            super().__init__()
+            self.hidden_dim = hidden_dim
+
+            # Node embedding: atomic number -> hidden_dim
+            self.embedding = _nn.Embedding(118, hidden_dim)
+
+            # Two message passing layers
+            self.message_1 = _nn.Linear(hidden_dim, hidden_dim)
+            self.message_2 = _nn.Linear(hidden_dim, hidden_dim)
+
+            # Output layer: hidden_dim -> 1 (partial charge)
+            self.readout = _nn.Sequential(
+                _nn.Linear(hidden_dim, hidden_dim // 2),
+                _nn.ReLU(),
+                _nn.Linear(hidden_dim // 2, 1),
             )
 
-        # Readout: predict charges
-        charges = self.readout(h)
-        return charges
+        def forward(
+            self,
+            atomic_numbers: _torch.Tensor,
+            edge_index: _torch.Tensor,
+        ) -> _torch.Tensor:
+            """Predict partial charges from atomic structure.
 
-    def predict_charges(self, atomic_numbers: _torch.Tensor) -> _torch.Tensor:
-        """Predict partial charges without explicit edge indices.
+            Args:
+                atomic_numbers: (N,) LongTensor of atomic numbers.
+                edge_index: (2, E) LongTensor of edge indices (connectivity).
 
-        Uses full connectivity (all-pairs) as a default neighbor list.
+            Returns:
+                (N, 1) Tensor of predicted partial charges.
+            """
+            h = self.embedding(atomic_numbers)  # (N, hidden_dim)
 
-        Args:
-            atomic_numbers: (N,) LongTensor of atomic numbers.
+            # Message passing: aggregate neighbor features
+            if edge_index.numel() > 0:
+                src_indices = edge_index[0]
+                dst_indices = edge_index[1]
+                h_src = h[src_indices]
+                h_dst = h[dst_indices]
+                messages = self.message_1(h_src) + self.message_2(h_dst)
+                # Aggregate messages by destination node
+                h = h + _torch.scatter_add(
+                    _torch.zeros_like(h), 0,
+                    dst_indices.unsqueeze(-1).expand(-1, h.shape[1]).long(),
+                    messages,
+                )
 
-        Returns:
-            (N, 1) Tensor of predicted partial charges.
-        """
-        n = atomic_numbers.shape[0]
-        # Build all-pairs edge index
-        row, col = _torch.meshgrid(
-            _torch.arange(n, device=atomic_numbers.device),
-            _torch.arange(n, device=atomic_numbers.device),
-            indexing="ij",
-        )
-        edge_index = _torch.stack([row.flatten(), col.flatten()])
-        return self(atomic_numbers, edge_index)
+            # Readout: predict charges
+            charges = self.readout(h)
+            return charges
+
+        def predict_charges(self, atomic_numbers: _torch.Tensor) -> _torch.Tensor:
+            """Predict partial charges without explicit edge indices.
+
+            Uses full connectivity (all-pairs) as a default neighbor list.
+
+            Args:
+                atomic_numbers: (N,) LongTensor of atomic numbers.
+
+            Returns:
+                (N, 1) Tensor of predicted partial charges.
+            """
+            n = atomic_numbers.shape[0]
+            # Build all-pairs edge index
+            row, col = _torch.meshgrid(
+                _torch.arange(n, device=atomic_numbers.device),
+                _torch.arange(n, device=atomic_numbers.device),
+                indexing="ij",
+            )
+            edge_index = _torch.stack([row.flatten(), col.flatten()])
+            return self(atomic_numbers, edge_index)
 
 
 class MatterSimMTSimulator:
