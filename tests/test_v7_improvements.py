@@ -49,7 +49,6 @@ class TestChemModule:
     def test_safe_mol_from_smiles_valid(self):
         """Verify _safe_mol_from_smiles returns a Mol for valid SMILES."""
         try:
-            from rdkit import Chem
             from rdkit.Chem import AllChem
 
             from aurelius.utils.chem import _safe_mol_from_smiles
@@ -251,11 +250,14 @@ class TestChargeEqModel:
 
     def test_charge_eq_model_creation(self):
         """Verify ChargeEqModel can be instantiated."""
-        from aurelius.screening.tier2_mattersim import ChargeEqModel
+        try:
+            from aurelius.screening.tier2_mattersim import ChargeEqModel
 
-        model = ChargeEqModel(hidden_dim=64)
-        assert model is not None
-        assert model.hidden_dim == 64
+            model = ChargeEqModel(hidden_dim=64)
+            assert model is not None
+            assert model.hidden_dim == 64
+        except ImportError as exc:
+            pytest.skip(f"PyTorch not available: {exc}")
 
     def test_charge_eq_model_predict(self):
         """Verify ChargeEqModel can predict charges from atomic numbers."""

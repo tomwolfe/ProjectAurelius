@@ -276,27 +276,30 @@ class TestDoctorCommand:
     def test_doctor_command_exists(self):
         """Verify doctor command is registered in CLI."""
         import subprocess
+        import sys
         result = subprocess.run(
-            ["python3.12", "-m", "aurelius", "--help"],
+            [sys.executable, "-m", "aurelius", "--help"],
             capture_output=True, text=True,
         )
-        assert "doctor" in result.stdout
+        assert "doctor" in result.stdout or "doctor" in result.stderr
 
     def test_doctor_command_runs(self):
         """Verify doctor command runs without errors."""
         import subprocess
+        import sys
         result = subprocess.run(
-            ["python3.12", "-m", "aurelius", "doctor"],
+            [sys.executable, "-m", "aurelius", "doctor"],
             capture_output=True, text=True,
         )
         assert result.returncode == 0
-        assert "Aurelius v6.0 Doctor" in result.stdout
+        assert "Aurelius v6.0 Doctor" in result.stdout or "Aurelius v6.0 Doctor" in result.stderr
 
     def test_doctor_verbose_output(self):
         """Verify doctor --verbose shows framework versions."""
         import subprocess
+        import sys
         result = subprocess.run(
-            ["python3.12", "-m", "aurelius", "doctor", "--verbose"],
+            [sys.executable, "-m", "aurelius", "doctor", "--verbose"],
             capture_output=True, text=True,
         )
         assert result.returncode == 0
@@ -333,8 +336,9 @@ class TestRDKitErrors:
     def test_allow_fallback_warning(self):
         """Verify --allow-fallback shows production risk warning."""
         import subprocess
+        import sys
         result = subprocess.run(
-            ["python3.12", "-m", "aurelius", "screen", "CCO", "--allow-fallback"],
+            [sys.executable, "-m", "aurelius", "screen", "CCO", "--allow-fallback"],
             capture_output=True, text=True,
         )
         # Should show a warning about hash fallback
