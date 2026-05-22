@@ -38,6 +38,13 @@ from aurelius.config import AureliusConfig, initialize_environment
 from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
 from aurelius.screening.tier0_gnn import Tier0ActivationPredictor
+from aurelius.utils.chem import (
+    _deserialize_fp,
+    _is_valid_mol,
+    _mol_to_fp,
+    _safe_mol_from_smiles,
+    _serialize_fp,
+)
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -54,113 +61,6 @@ _error_handler = logging.FileHandler("errors.log", mode="w")
 _error_handler.setLevel(logging.ERROR)
 _error_handler.setFormatter(logging.Formatter("%(asctime)s [ERROR] %(message)s"))
 log.addHandler(_error_handler)
-
-# ---------------------------------------------------------------------------
-# RDKit helpers (moved from duplicated code in main() and _mutate_batch)
-# ---------------------------------------------------------------------------
-
-
-def _safe_mol_from_smiles(smiles: str) -> Any | None:
-    """Return RDKit Mol or None.
-
-    Args:
-        smiles: SMILES string of the molecule.
-
-    Returns:
-        Sanitized RDKit Mol object, or None if parsing fails.
-    """
-    if not _HAS_RDKIT:
-        return None
-    try:
-        mol = _Chem.MolFromSmiles(smiles)
-        if mol is not None:
-            _Chem.SanitizeMol(mol)
-        return mol
-    except Exception:
-        return None
-
-
-def _is_valid_mol(mol: Any) -> bool:
-    """Check chemical validity and molecular weight < 450 Da.
-
-    Args:
-        mol: RDKit Mol object.
-
-    Returns:
-        True if molecule is valid and MW < 450.
-    """
-    try:
-        _Chem.SanitizeMol(mol)
-    except Exception:
-        return False
-    mw = _Descriptors.ExactMolWt(mol)
-    return mw < 450.0
-
-
-def _serialize_fp(fp: Any) -> str:
-    """Serialize an RDKit fingerprint to a hex-like text string.
-
-    Args:
-        fp: RDKit fingerprint object.
-
-    Returns:
-        Serialized fingerprint string.
-    """
-    ev = ExplicitBitVect(2048)
-    for idx in fp.GetNonzeroElements():
-        ev.SetBit(idx)
-    return BitVectToText(ev)
-
-
-def _deserialize_fp(hex_str: str) -> Any:
-    """Reconstruct an RDKit fingerprint from serialized text.
-
-    Args:
-        hex_str: Serialized fingerprint string.
-
-    Returns:
-        RDKit fingerprint object.
-    """
-    return CreateFromBitString(hex_str)
-
-
-def _mol_to_fp(mol: Any) -> Any:
-    """Compute ECFP4 (radius=2) fingerprint using Morgan generator.
-
-    Args:
-        mol: RDKit Mol object.
-
-    Returns:
-        Morgan fingerprint object (radius=2).
-    """
-    from rdkit.Chem import rdMolDescriptors
-    return rdMolDescriptors.GetHashedMorganFingerprint(mol, 2, 2048)
-
-
-def _tanimoto(fp1: Any, fp2: Any) -> float:
-    """Compute Tanimoto similarity between two fingerprints.
-
-    Args:
-        fp1: First fingerprint.
-        fp2: Second fingerprint.
-
-    Returns:
-        Tanimoto similarity coefficient in [0, 1].
-    """
-    if _FingerprintSimilarity is None:
-        return 0.0
-    # Convert UIntSparseIntVect to ExplicitBitVect for compatibility
-    if not hasattr(fp1, 'GetNumBits'):
-        ev1 = ExplicitBitVect(2048)
-        for idx in fp1.GetNonzeroElements():
-            ev1.SetBit(idx)
-        fp1 = ev1
-    if not hasattr(fp2, 'GetNumBits'):
-        ev2 = ExplicitBitVect(2048)
-        for idx in fp2.GetNonzeroElements():
-            ev2.SetBit(idx)
-        fp2 = ev2
-    return _FingerprintSimilarity(fp1, fp2)
 
 # ---------------------------------------------------------------------------
 # Determinism
@@ -223,125 +123,10 @@ def _load_smiles_file(path: str) -> list[str]:
     return smiles_list
 
 
-def _safe_mol_from_smiles(smiles: str) -> Any | None:
-    """Return RDKit Mol or None.
-
-    Args:
-        smiles: SMILES string of the molecule.
-
-    Returns:
-        Sanitized RDKit Mol object, or None if parsing fails.
-    """
-    if not _HAS_RDKIT:
-        return None
-    try:
-        mol = _Chem.MolFromSmiles(smiles)
-        if mol is not None:
-            _Chem.SanitizeMol(mol)
-        return mol
-    except Exception:
-        return None
 
 
-def _is_valid_mol(mol: Any) -> bool:
-    """Check chemical validity and molecular weight < 450 Da.
-
-    Args:
-        mol: RDKit Mol object.
-
-    Returns:
-        True if molecule is valid and MW < 450.
-    """
-    try:
-        _Chem.SanitizeMol(mol)
-    except Exception:
-        return False
-    mw = _Descriptors.ExactMolWt(mol)
-    return mw < 450.0
 
 
-def _serialize_fp(fp: Any) -> str:
-    """Serialize an RDKit fingerprint to a hex-like text string.
-
-    Args:
-        fp: RDKit fingerprint object.
-
-    Returns:
-        Serialized fingerprint string.
-    """
-    ev = ExplicitBitVect(2048)
-    for idx in fp.GetNonzeroElements():
-        ev.SetBit(idx)
-    return BitVectToText(ev)
-
-
-def _deserialize_fp(hex_str: str) -> Any:
-    """Reconstruct an RDKit fingerprint from serialized text.
-
-    Args:
-        hex_str: Serialized fingerprint string.
-
-    Returns:
-        RDKit fingerprint object.
-    """
-    return CreateFromBitString(hex_str)
-
-
-def _mol_to_fp(mol: Any) -> Any:
-    """Compute ECFP4 (radius=2) fingerprint using Morgan generator.
-
-    Args:
-        mol: RDKit Mol object.
-
-    Returns:
-        Morgan fingerprint object (radius=2).
-    """
-    from rdkit.Chem import rdMolDescriptors
-    return rdMolDescriptors.GetHashedMorganFingerprint(mol, 2, 2048)
-
-
-def _tanimoto(fp1: Any, fp2: Any) -> float:
-    """Compute Tanimoto similarity between two fingerprints.
-
-    Args:
-        fp1: First fingerprint.
-        fp2: Second fingerprint.
-
-    Returns:
-        Tanimoto similarity coefficient in [0, 1].
-    """
-    if _FingerprintSimilarity is None:
-        return 0.0
-    # Convert UIntSparseIntVect to ExplicitBitVect for compatibility
-    if not hasattr(fp1, 'GetNumBits'):
-        ev1 = ExplicitBitVect(2048)
-        for idx in fp1.GetNonzeroElements():
-            ev1.SetBit(idx)
-        fp1 = ev1
-    if not hasattr(fp2, 'GetNumBits'):
-        ev2 = ExplicitBitVect(2048)
-        for idx in fp2.GetNonzeroElements():
-            ev2.SetBit(idx)
-        fp2 = ev2
-    return _FingerprintSimilarity(fp1, fp2)
-
-
-try:
-    from rdkit import Chem as _Chem
-    from rdkit.Chem import BRICS as _BRICS
-    from rdkit.Chem import AllChem as _AllChem
-    from rdkit.Chem import Descriptors as _Descriptors
-    from rdkit.DataStructs import BitVectToText, CreateFromBitString, ExplicitBitVect
-    from rdkit.DataStructs import FingerprintSimilarity as _FingerprintSimilarity
-    _HAS_RDKIT = True
-except ImportError:
-    _Chem = None  # type: ignore[assignment]
-    _AllChem = None
-    _Descriptors = None
-    _BRICS = None
-    _HAS_RDKIT = False
-    _FingerprintSimilarity = None  # type: ignore[assignment]
-    _ExplicitBitDefined = False
 
 
 def main() -> None:

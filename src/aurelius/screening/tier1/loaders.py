@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -293,6 +294,11 @@ class HuggingFaceWeightLoader:
                     model_id, free_gb,
                 )
 
+            # LRU cache eviction
+            evicted = self.evict_lru_cache(max_cache_gb=20.0)
+            if evicted > 0:
+                logger.info("LRU cache eviction: removed %d old model(s)", evicted)
+
             snapshot_download(
                 repo_id=model_id,
                 local_dir=local_dir,
@@ -361,11 +367,74 @@ class HuggingFaceWeightLoader:
         print(f"[Aurelius v5.2 Tier1] Saved {task} model to: {save_path}")
         return save_path
 
+    def evict_lru_cache(self, max_cache_gb: float = 20.0) -> int:
+        """Evict the oldest model directories from the HF cache directory.
 
-__all__ = [
-    "DEFAULT_MODEL_DIR",
-    "HUGGINGFACE_MODELS",
-    "HuggingFaceWeightLoader",
-    "convert_mlx_to_torch_weights",
-    "load_pytorch_fallback_with_mlx_weights",
-]
+        If the total cache size exceeds `max_cache_gb`, removes the oldest
+        model directories (sorted by modification time) until the cache
+        fits within the limit.
+
+        Args:
+            max_cache_gb: Maximum allowed cache size in GB (default: 20.0).
+
+        Returns:
+            Number of directories evicted.
+        """
+        try:
+            cache_path = Path(self.model_dir)
+            if not cache_path.is_dir():
+                return 0
+
+            # Collect all model directories sorted by modification time (oldest first)
+            entries = sorted(
+                [d for d in cache_path.iterdir() if d.is_dir()],
+                key=lambda p: p.stat().st_mtime,
+            )
+
+            if len(entries) <= 1:
+                return 0
+
+            # Calculate total cache size (recursive)
+            total_size = sum(self._dir_size(p) for p in entries if p.is_dir())
+            total_size /= 1024 ** 3  # Convert to GB
+
+            if total_size <= max_cache_gb:
+                return 0
+
+            # Evict oldest entries until within limit
+            evicted = 0
+            for entry in entries:
+                if total_size <= max_cache_gb:
+                    break
+                entry_size = entry.stat().st_size / (1024 ** 3)
+                total_size -= entry_size
+                import shutil
+                shutil.rmtree(entry)
+                evicted += 1
+                logger.info("Evicted LRU cache entry: %s", entry)
+
+            return evicted
+
+        except (OSError, PermissionError) as e:
+            logger.warning("LRU cache eviction failed: %s", e)
+            return 0
+
+    def _dir_size(self, path: Path) -> int:
+        """Calculate the total size of a directory recursively.
+
+        Args:
+            path: Path to the directory.
+
+        Returns:
+            Total size in bytes.
+        """
+        total = 0
+        try:
+            for entry in path.iterdir():
+                if entry.is_dir():
+                    total += self._dir_size(entry)
+                else:
+                    total += entry.stat().st_size
+        except (OSError, PermissionError):
+            pass
+        return total

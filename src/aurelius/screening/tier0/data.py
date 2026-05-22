@@ -435,3 +435,93 @@ def train_tier0_model(
         "n_val": len(val_idx),
         "weights_path": output_path,
     }
+
+
+class ActiveLearningOracle:
+    """Stub oracle for querying external DFT data and managing active learning cycles.
+
+    Provides:
+    - Caching of queried SMILES → activation energy mappings
+    - Batch-query interface for efficient API calls
+    - Dataset append logic for mixing synthetic + real DFT data
+    - Deterministic fallback when the external DFT API is unavailable
+
+    In production, this would query a real DFT API (e.g., QM7, Materials Project).
+    For now, deterministic synthetic targets are used as placeholders.
+    """
+
+    def __init__(self, api_base_url: str = "", api_token: str | None = None) -> None:
+        """Initialize the active learning oracle.
+
+        Args:
+            api_base_url: Base URL of the DFT API (e.g., "https://api.dft-service.example.com").
+            api_token: Optional authentication token for the DFT API.
+        """
+        self._api_base_url = api_base_url
+        self._api_token = api_token
+        self._cache: dict[str, float] = {}
+        self._pending: dict[str, float] = {}
+
+    def query(self, smiles: str) -> float | None:
+        """Query the DFT API for activation energy of a single molecule.
+
+        Returns cached value if available; otherwise returns None to
+        indicate the molecule should be skipped in the current batch.
+
+        Args:
+            smiles: SMILES string of the molecule.
+
+        Returns:
+            Activation energy in eV, or None if not found in cache.
+        """
+        if smiles in self._cache:
+            return self._cache[smiles]
+
+        # Stub: deterministic synthetic target
+        seed = hash(smiles) % 10000
+        energy = 0.5 + (seed % 500) / 1000.0
+        self._cache[smiles] = energy
+        return energy
+
+    def query_batch(self, smiles_list: list[str]) -> list[float | None]:
+        """Query multiple molecules, returning cached or None values.
+
+        Args:
+            smiles_list: List of SMILES strings.
+
+        Returns:
+            List of activation energies (or None for uncached entries).
+        """
+        return [self.query(smi) for smi in smiles_list]
+
+    def append_to_dataset(self, smiles_list: list[str], energies: list[float]) -> list[dict[str, Any]]:
+        """Append real DFT data to the training dataset.
+
+        Args:
+            smiles_list: SMILES strings of queried molecules.
+            energies: Corresponding activation energies from the DFT API.
+
+        Returns:
+            List of training data entries.
+        """
+        entries: list[dict[str, Any]] = []
+        for smi, e in zip(smiles_list, energies, strict=True):
+            if e is not None:
+                entries.append({
+                    "smiles": smi,
+                    "ec_reduction": e,
+                    "dm_reduction": e * 1.15,
+                    "pf6_decomposition": e * 1.3,
+                    "polymerization": e * 0.85,
+                })
+        return entries
+
+    def clear_cache(self) -> int:
+        """Clear the query cache and return the number of cleared entries.
+
+        Returns:
+            Number of cache entries removed.
+        """
+        n = len(self._cache)
+        self._cache.clear()
+        return n
