@@ -3,10 +3,12 @@
 Phase 5b: Full Aurelius Score Calculation for Dynamic Kinetic Candidates.
 
 Computes full Aurelius v5.2 scores for the top homogeneity candidates
-identified by the dynamic kinetic calibration, using in-memory Ea patching.
+identified by the dynamic kinetic calibration, using the ea_overrides
+public API for dynamic activation energy overrides.
 """
 
 import json
+from typing import Any
 
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors, Lipinski
@@ -68,12 +70,24 @@ def compute_ea_shifts(descriptors: dict) -> dict:
 
 
 def run_full_pipeline_with_dynamic_kinetics(
-    smiles: str, pipeline: AureliusPipeline, twin: GCMDigitalTwin
-) -> dict:
-    """Run the full 3-tier pipeline with dynamic Ea patching on Tier 3."""
+    smiles: str,
+    pipeline: AureliusPipeline,
+    twin: GCMDigitalTwin,
+    *,
+    original_ea_solvent: float = 0.65,
+    original_ea_dm: float = 0.75,
+    original_ea_salt: float = 1.20,
+    original_ea_poly: float = 0.40,
+) -> dict[str, Any]:
+    """Run the full 3-tier pipeline with dynamic Ea via the public API.
+
+    Uses the ``ea_overrides`` parameter of ``GCMDigitalTwin.simulate_sei_evolution()``
+    instead of mutating private attributes, making the call thread-safe
+    and side-effect-free.
+    """
     descriptors = calculate_electronic_descriptors(smiles)
     if not descriptors:
-        return {"smiles": smiles, "error": "Invalid SMILES"}
+        return {"smiles": smiles, "error": "Invalid SMILES"}  # type: ignore[return-value]
 
     shifts = compute_ea_shifts(descriptors)
 
@@ -98,66 +112,59 @@ def run_full_pipeline_with_dynamic_kinetics(
             "tier2": tier2,
         }
 
-    # Patch Twin Ea values for dynamic kinetics
-    original_ea_solvent = twin._Ea_SOLVENT_EC
-    original_ea_salt = twin._Ea_SALT_PF6
-    original_ea_poly = twin._activation_energies.get("polymerization", 0.40)
+    # Build overrides dict from descriptor-derived shifts
+    ea_overrides = {
+        "ec_reduction": original_ea_solvent + shifts["delta_solvent"],
+        "dm_reduction": original_ea_dm + shifts["delta_solvent"],
+        "pf6_decomposition": original_ea_salt + shifts["delta_salt"],
+        "polymerization": original_ea_poly + shifts["delta_poly"],
+    }
 
-    twin._Ea_SOLVENT_EC = original_ea_solvent + shifts["delta_solvent"]
-    twin._Ea_SALT_PF6 = original_ea_salt + shifts["delta_salt"]
-    twin._activation_energies["polymerization"] = (
-        original_ea_poly + shifts["delta_poly"]
+    # Run Tier 3 with dynamic Ea via the public API (no monkey-patching)
+    tier3 = twin.simulate_sei_evolution(
+        smiles=smiles,
+        solvent_type="ec:dmc",
+        salt_type="NaPF6",
+        voltage_cutoff=0.05,
+        max_time_ps=1000.0,
+        ea_overrides=ea_overrides,
     )
 
-    try:
-        # Run Tier 3 with patched Ea
-        tier3 = twin.simulate_sei_evolution(
-            smiles=smiles,
-            solvent_type="ec:dmc",
-            salt_type="NaPF6",
-            voltage_cutoff=0.05,
-            max_time_ps=1000.0,
-        )
+    # Compute full score with dynamic Tier 3
+    mol_input = MoleculeInput(
+        smiles=smiles,
+        solvent_type="ec:dmc",
+        salt_type="NaPF6",
+        ion_type="Na+",
+    )
 
-        # Compute full score with dynamic Tier 3
-        mol_input = MoleculeInput(
-            smiles=smiles,
-            solvent_type="ec:dmc",
-            salt_type="NaPF6",
-            ion_type="Na+",
-        )
+    score = pipeline._scoring_engine.compute_score(
+        molecule_input=mol_input,
+        tier1_result=tier1,
+        tier2_result=tier2,
+        tier3_result=tier3,
+        gwp_value=1.0,
+    )
 
-        score = pipeline._scoring_engine.compute_score(
-            molecule_input=mol_input,
-            tier1_result=tier1,
-            tier2_result=tier2,
-            tier3_result=tier3,
-            gwp_value=1.0,
-        )
-
-        return {
-            "smiles": smiles,
-            "total_score": score.total_score,
-            "is_viable": score.is_viable,
-            "sigma": score.sigma_score,
-            "desolvation": score.desolvation_score,
-            "sei_homogeneity": score.sei_homogeneity_score,
-            "sei_homogeneity_raw": tier3.sei_evolution.homogeneity_score,
-            "mx_synthesis": score.mx_synthesis_score,
-            "gwp_penalty": score.gwp_penalty,
-            "thickness": tier3.sei_evolution.thickness_angstrom,
-            "components": tier3.sei_evolution.components,
-            "electronic_insulation": tier3.sei_evolution.electronic_insulation,
-            "rejection_reasons": score.rejection_reasons,
-            "ea_shifts": shifts,
-            "descriptor_logp": descriptors["logp"],
-            "descriptor_num_f": descriptors["num_f"],
-            "descriptor_num_unsat": descriptors["num_unsat"],
-        }
-    finally:
-        twin._Ea_SOLVENT_EC = original_ea_solvent
-        twin._Ea_SALT_PF6 = original_ea_salt
-        twin._activation_energies["polymerization"] = original_ea_poly
+    return {
+        "smiles": smiles,
+        "total_score": score.total_score,
+        "is_viable": score.is_viable,
+        "sigma": score.sigma_score,
+        "desolvation": score.desolvation_score,
+        "sei_homogeneity": score.sei_homogeneity_score,
+        "sei_homogeneity_raw": tier3.sei_evolution.homogeneity_score,
+        "mx_synthesis": score.mx_synthesis_score,
+        "gwp_penalty": score.gwp_penalty,
+        "thickness": tier3.sei_evolution.thickness_angstrom,
+        "components": tier3.sei_evolution.components,
+        "electronic_insulation": tier3.sei_evolution.electronic_insulation,
+        "rejection_reasons": score.rejection_reasons,
+        "ea_shifts": shifts,
+        "descriptor_logp": descriptors["logp"],
+        "descriptor_num_f": descriptors["num_f"],
+        "descriptor_num_unsat": descriptors["num_unsat"],
+    }
 
 
 def main():

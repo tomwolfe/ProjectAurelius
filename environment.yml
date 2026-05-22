@@ -1,0 +1,56 @@
+# === Project Aurelius — Conda environment for macOS Apple Silicon ===
+#
+# Create environment:
+#   conda env create -f environment.yml
+#
+# Activate:
+#   conda activate aurelius
+#
+# Install package:
+#   pip install -e .
+
+name: aurelius
+channels:
+  - conda-forge
+  - pytorch
+platform: osx-arm64
+
+dependencies:
+  # Python
+  - python=3.11.0
+
+  # Core scientific stack (conda-forge)
+  - numpy=1.26.0
+  - scipy=1.12.0
+  - pandas=2.2.0
+  - pydantic=2.8.0
+  - tqdm=4.66.0
+  - hydra-core=1.3.0
+  - click=8.1.0
+  - structlog=24.1.0
+  - psutil=5.9.0
+  - huggingface-hub=0.20.0
+  - datasets=2.16.0
+
+  # PyTorch (MPS-compatible) — from pytorch channel
+  - pytorch=2.5.1
+  - torchvision=0.20.1
+  - cpuonly
+
+  # RDKit (from conda-forge for Apple Silicon compatibility)
+  - rdkit=2024.10.4
+
+  # Development / testing
+  - pytest=8.0.0
+  - pytest-cov=4.1.0
+  - pytest-benchmark=4.0.0
+  - ruff=0.3.0
+  - mypy=1.9.0
+  - hypothesis=6.100.0
+  - types-psutil=0.0.0
+
+  # pip-only packages (not available via conda-forge)
+  - pip
+  - pip:
+      - mlx==0.21.0
+      - types-psutil

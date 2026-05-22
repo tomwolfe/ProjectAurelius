@@ -130,6 +130,16 @@ def generate_synthetic_training_data(
     Arrhenius-shifted activation energy models with Gaussian noise
     (sigma=0.05 eV) to create training targets.
 
+    The targets include non-linear transformations of molecular
+    descriptors (sine/cosine terms, polynomial interactions like
+    ``logp * tpsa``, and step-function thresholds) so that the
+    MPNN must exercise its full non-linear representational capacity
+    rather than collapsing to a linear regressor.
+
+    .. warning::
+        This is a synthetic placeholder dataset.  Production use
+        requires fine-tuning on real DFT or experimental datasets.
+
     Args:
         n_samples: Number of samples to generate (default: 500).
         noise_sigma: Standard deviation of Gaussian noise in eV (default: 0.05).
@@ -190,10 +200,21 @@ def generate_synthetic_training_data(
         pf6_base = float(np.clip(pf6_base, 0.90, 1.50))
         poly_base = float(np.clip(poly_base, 0.30, 0.70))
 
-        ec = float(ec_base + rng.normal(0, noise_sigma))
-        dm = float(dm_base + rng.normal(0, noise_sigma))
-        pf6 = float(pf6_base + rng.normal(0, noise_sigma))
-        poly = float(poly_base + rng.normal(0, noise_sigma))
+        # Non-linear transformations to exercise MPNN representational capacity
+        # (otherwise the model reduces to a linear regressor)
+        ec = float(ec_base + 0.03 * np.sin(logp * 2.0) + rng.normal(0, noise_sigma))
+        dm = float(dm_base + 0.02 * np.cos(hba * hbd) + rng.normal(0, noise_sigma))
+        pf6 = float(pf6_base + 0.04 * (logp * tpsa) * 0.01 + rng.normal(0, noise_sigma))
+        poly = float(poly_base + 0.02 * np.sin(aromatic_ratio * np.pi) + rng.normal(0, noise_sigma))
+
+        # Step function: threshold-based activation of polymerization pathway
+        has_aromatic = 1.0 if aromatic_count > 0 else 0.0
+        poly = float(poly + 0.05 * has_aromatic + rng.normal(0, noise_sigma))
+
+        ec = float(np.clip(ec, 0.45, 0.95))
+        dm = float(np.clip(dm, 0.45, 1.10))
+        pf6 = float(np.clip(pf6, 0.90, 1.50))
+        poly = float(np.clip(poly, 0.30, 0.70))
 
         entry = {
             "smiles": smi,

@@ -97,8 +97,10 @@ def compute_ea_shifts(descriptors: dict) -> dict:
 
 
 def screen_with_dynamic_kinetics(smiles: str, base_twin: GCMDigitalTwin) -> GCMDTwinResult:
-    """
-    Screen a single molecule by patching the Twin's Ea values in memory.
+    """Screen a single molecule by applying dynamic Ea shifts via the public API.
+
+    Uses ``ea_overrides`` instead of mutating private attributes,
+    making the call thread-safe and side-effect-free.
     """
     descriptors = calculate_electronic_descriptors(smiles)
     if not descriptors:
@@ -106,32 +108,22 @@ def screen_with_dynamic_kinetics(smiles: str, base_twin: GCMDigitalTwin) -> GCMD
 
     shifts = compute_ea_shifts(descriptors)
 
-    # Clone the twin to avoid thread safety issues if batching later
-    # For now, we just modify the instance attributes directly for this call
-    original_ea_solvent = base_twin._Ea_SOLVENT_EC
-    original_ea_salt = base_twin._Ea_SALT_PF6
-    original_ea_poly = base_twin._activation_energies.get("polymerization", 0.40)
+    # Build overrides dict from descriptor-derived shifts
+    ea_overrides = {
+        "ec_reduction": base_twin._Ea_SOLVENT_EC + shifts["delta_solvent"],
+        "dm_reduction": base_twin._Ea_SOLVENT_DMC + shifts["delta_solvent"],
+        "pf6_decomposition": base_twin._Ea_SALT_PF6 + shifts["delta_salt"],
+        "polymerization": base_twin._activation_energies.get("polymerization", 0.40) + shifts["delta_poly"],
+    }
 
-    # Apply Shifts
-    base_twin._Ea_SOLVENT_EC = original_ea_solvent + shifts["delta_solvent"]
-    base_twin._Ea_SALT_PF6 = original_ea_salt + shifts["delta_salt"]
-    base_twin._activation_energies["polymerization"] = (
-        original_ea_poly + shifts["delta_poly"]
+    result = base_twin.simulate_sei_evolution(
+        smiles=smiles,
+        solvent_type="ec:dmc",
+        salt_type="NaPF6",
+        voltage_cutoff=0.05,
+        max_time_ps=1000.0,
+        ea_overrides=ea_overrides,
     )
-
-    try:
-        result = base_twin.simulate_sei_evolution(
-            smiles=smiles,
-            solvent_type="ec:dmc",
-            salt_type="NaPF6",
-            voltage_cutoff=0.05,
-            max_time_ps=1000.0,
-        )
-    finally:
-        # Restore original values
-        base_twin._Ea_SOLVENT_EC = original_ea_solvent
-        base_twin._Ea_SALT_PF6 = original_ea_salt
-        base_twin._activation_energies["polymerization"] = original_ea_poly
 
     return result
 

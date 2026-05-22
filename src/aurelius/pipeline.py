@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import multiprocessing
 import time
 from typing import Any
 
@@ -360,12 +361,37 @@ class AureliusPipeline:
 
         return results
 
-    def screen_batch(self, smiles_list: list[str], **kwargs: Any) -> list[dict[str, Any]]:
-        """Screen a batch of molecules through the full pipeline."""
-        all_results = []
-        for smiles in smiles_list:
-            result = self.screen_molecule(smiles, **kwargs)
-            all_results.append(result)
+    def screen_batch(self, smiles_list: list[str], n_workers: int = 1, **kwargs: Any) -> list[dict[str, Any]]:
+        """Screen a batch of molecules through the full pipeline.
+
+        When ``n_workers`` is greater than 1, molecules are screened
+        in parallel using ``ProcessPoolExecutor`` with the ``spawn``
+        multiprocessing context to avoid MPS context crashes in forked
+        processes.
+
+        RDKit objects are never passed across process boundaries; only
+        SMILES strings are pickled, and molecule reconstruction happens
+        inside each worker process.
+
+        Args:
+            smiles_list: List of SMILES strings to screen.
+            n_workers: Number of parallel workers.  Default ``1`` means
+                sequential execution (no parallelism).
+            **kwargs: Extra keyword arguments forwarded to
+                ``screen_molecule`` for each molecule.
+
+        Returns:
+            List of per-molecule pipeline results.
+        """
+        if n_workers < 1 or n_workers == 1:
+            return [self.screen_molecule(smiles, **kwargs) for smiles in smiles_list]
+
+        ctx = multiprocessing.get_context("spawn")
+        with ctx.Pool(processes=n_workers) as pool:
+            all_results = pool.map(
+                lambda smiles: self.screen_molecule(smiles, **kwargs),
+                smiles_list,
+            )
         return all_results
 
     def get_memory_budget(self) -> dict[str, Any]:

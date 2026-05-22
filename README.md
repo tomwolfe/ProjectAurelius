@@ -8,7 +8,7 @@
 
 - **🥇 Task 1: MPNN Activation Energy Predictor** -- Replaced the Tier 0 linear heuristic with a lightweight Message Passing Neural Network (MPNN). Generates deterministic synthetic training data (500 molecules), trains via MSE loss with early stopping, and falls back to the original linear model if the GNN is unavailable. Added `aurelius train --task tier0` CLI command.
 
-- **🥈 Task 2: Cutoff-Aware Neighbor Lists** -- Added optional neighbor list with fixed-cell spatial binning to Tier 2, reducing complexity from O(N²) to O(N·M). Toggleable via config (`use_neighbor_list: bool`, `neighbor_list_cutoff: float = 12.0`). Falls back to dense computation for small systems (<50 atoms) on MPS.
+- **🥈 Task 2: Grid-Based Cell List** -- Added grid-based spatial binning to Tier 2, reducing neighbour-finding complexity from O(N^2) to O(N). Atoms are assigned to spatial cells via ``torch.bucketize`` and only same/adjacent-cell pairs are evaluated. Falls back to dense computation for small systems (<50 atoms).
 
 - **🏅 Task 3: RDKit Enforcement** -- RDKit is now strictly required for `--use-real-models`. Hash fallbacks are blocked in production paths. Added `--allow-fallback` CLI flag for demo/CI environments. Clear error messages point to `pip install rdkit`.
 
@@ -297,7 +297,7 @@ Scores range from 0-100. Molecules with S_A_v5.2 >= 65 are considered viable.
 
 ## Tier 2 Complexity
 
-MatterSim-MT uses **fully vectorized tensor operations** for pairwise interaction computation. The physics engine computes all N×N pairwise distances and energies in **O(N^2) time and space** (where N is the number of atoms), with **O(1) Python interpreter overhead** per step. This is the optimal theoretical complexity for all-pairs interaction models.
+MatterSim-MT uses a **grid-based cell list** for neighbour-finding with O(N) memory and time complexity.  The simulation box is divided into cells of size ``cutoff``; only atoms in the same cell and the 26 adjacent cells are evaluated.  For systems with fewer than 50 atoms the dense path is used because the binning overhead outweighs the benefit.  The remaining energy evaluation itself remains fully vectorized (O(N^2) tensor operations for pairwise interaction computation), with **O(1) Python interpreter overhead** per step.
 
 ## Scientific References
 

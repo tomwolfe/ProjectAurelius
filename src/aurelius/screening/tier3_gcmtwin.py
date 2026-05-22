@@ -309,6 +309,7 @@ class GCMDigitalTwin:
         voltage_cutoff: float = 0.05,
         max_time_ps: float = 1000.0,
         temperature_k: float = 298.15,
+        ea_overrides: dict[str, float] | None = None,
     ) -> GCMDTwinResult:
         """Run GCMD Digital Twin simulation of SEI evolution.
 
@@ -319,6 +320,25 @@ class GCMDigitalTwin:
         When Tier 0 prediction is enabled, activation energies are
         predicted from molecular descriptors rather than using fixed
         literature values, enabling molecule-specific screening.
+
+        When ``ea_overrides`` is provided, the specified activation
+        energies are used instead of the defaults for that specific
+        simulation run.  This is the recommended public API for
+        dynamic kinetic calibration — no monkey-patching required.
+
+        Args:
+            smiles: Molecule SMILES string.
+            solvent_type: Solvent composition (e.g. ``"ec:dmc"``).
+            salt_type: Salt type (e.g. ``"NaPF6"``).
+            voltage_cutoff: Voltage cutoff in volts.
+            max_time_ps: Maximum simulation time in picoseconds.
+            temperature_k: Simulation temperature in Kelvin.
+            ea_overrides: Optional mapping of activation-energy keys
+                to override values (e.g. ``{"ec_reduction": 0.5}``).
+                When ``None``, the instance's default Ea values are used.
+
+        Returns:
+            GCMDTwinResult with SEI evolution data.
         """
         import time
         start = time.perf_counter()
@@ -326,7 +346,7 @@ class GCMDigitalTwin:
         seed = self._hash_inputs(smiles, solvent_type, salt_type)
         rng = np.random.RandomState(seed)
 
-        # Get activation energies (predicted or fixed)
+        # Resolve activation energies: overrides take priority
         if self._tier0_predictor is not None:
             predicted_energies = self._tier0_predictor.predict(smiles=smiles)
             ea_ec = predicted_energies["ec_reduction"]
@@ -338,6 +358,13 @@ class GCMDigitalTwin:
             ea_dm = self._Ea_SOLVENT_DMC
             ea_salt = self._Ea_SALT_PF6
             ea_poly = self._activation_energies.get("polymerization", 0.40)
+
+        # Apply overrides if provided
+        if ea_overrides is not None:
+            ea_ec = ea_overrides.get("ec_reduction", ea_ec)
+            ea_dm = ea_overrides.get("dm_reduction", ea_dm)
+            ea_salt = ea_overrides.get("pf6_decomposition", ea_salt)
+            ea_poly = ea_overrides.get("polymerization", ea_poly)
 
         sei = self._run_kmc_simulation(
             rng, voltage_cutoff, max_time_ps, temperature_k,
