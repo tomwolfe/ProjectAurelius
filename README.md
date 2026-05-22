@@ -1,8 +1,8 @@
-# Project Aurelius v6.0
+# Project Aurelius v7.0
 
-**The GNN-Enhanced Release** -- Production-grade computational chemistry screening pipeline with MPNN activation energy prediction, cutoff-aware neighbor lists, and HuggingFace integration, optimized for Apple M-series Neural Accelerators.
+**The Autonomous Discovery Release** -- Adds active learning loop with VAE-based structural mutation, PBC-aware physics, centralized dependency management, dependency health checks, and structural diversity generation for closed-loop molecule discovery.
 
-## Changelog (v5.2 → v6.0)
+## Changelog (v6.0 → v7.0)
 
 ### New Features
 
@@ -16,9 +16,23 @@
 
 - **📈 Task 5: Memory Profiler** -- Added `MemoryProfiler` class for tracking peak RAM, MPS/MLX memory, and GC activity. Generates timestamped CSV reports. Added `--profile-memory` flag to the autonomous screening agent CLI.
 
+### v7 Improvements
+
+- **🧬 Task 6: Centralized RDKit Helper Module** -- New `aurelius.utils.chem` module consolidates RDKit helpers: `_safe_mol_from_smiles`, `_is_valid_mol`, `_mol_to_fp`, `_serialize_fp`, `_deserialize_fp`, `_tanimoto`. Eliminates scattered try/except blocks across modules.
+
+- **🔬 Task 7: PBC Minimum Image Convention** -- Tier 2 (`MatterSimMTSimulator`) gains periodic boundary conditions with `_apply_pbc()` for coordinate wrapping, negative coordinate handling, and default cubic box creation from `neighbor_list_cutoff`.
+
+- **📦 Task 8: LRU Cache Eviction** -- `HuggingFaceWeightLoader.evict_lru_cache(max_cache_gb)` removes oldest entries when cache exceeds size limit, respecting LRU ordering.
+
+- **⚡ Task 9: GNN-ChargeEq Model** -- New `ChargeEqModel` class with `hidden_dim` parameter for predicting partial charges from atomic numbers via `predict_charges(atomic_numbers)`.
+
+- **🧠 Task 10: ActiveLearningOracle** -- New class for active learning with caching, batch querying (`query_batch`), dataset appending (`append_to_dataset`), and cache clearing (`clear_cache`).
+
+- **🔄 Task 11: GraphVAEMutator** -- Structural diversity generation via latent interpolation. `GraphVAEMutator(latent_dim=64)` with `mutate(smiles, batch_size=N)` returns N candidates.
+
 ### Bug Fixes & Improvements
 
-- **Version Bump**: Updated to 6.0.0 with all backward-compatible changes.
+- **Version Bump**: Updated to 7.0.0 with all backward-compatible changes.
 - **Config Extension**: Added `use_neighbor_list` and `neighbor_list_cutoff` to `AureliusConfig`.
 - **CLI Flags**: Added `--task tier1|tier0` to `aurelius train`, `--allow-fallback` to `screen` and `batch`, and `--profile-memory` to the agent.
 - **CI Updates**: Updated `.github/workflows/ci.yml` for new test markers and optional dependency installs.
