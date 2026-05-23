@@ -20,6 +20,7 @@ import pytest
 # utils.chem Module Tests
 # ============================================================
 
+
 class TestChemModule:
     """Tests for the consolidated RDKit helper functions in utils.chem."""
 
@@ -33,6 +34,7 @@ class TestChemModule:
             _serialize_fp,
             _tanimoto,
         )
+
         assert callable(_safe_mol_from_smiles)
         assert callable(_is_valid_mol)
         assert callable(_mol_to_fp)
@@ -43,6 +45,7 @@ class TestChemModule:
     def test_safe_mol_from_smiles_invalid(self):
         """Verify _safe_mol_from_smiles returns None for invalid SMILES."""
         from aurelius.utils.chem import _safe_mol_from_smiles
+
         result = _safe_mol_from_smiles("not_a_valid_smiles_string_!!!")
         assert result is None
 
@@ -52,6 +55,7 @@ class TestChemModule:
             from rdkit.Chem import AllChem
 
             from aurelius.utils.chem import _safe_mol_from_smiles
+
             mol = _safe_mol_from_smiles("CCO")
             assert mol is not None
             # Verify it's a valid molecule
@@ -62,6 +66,7 @@ class TestChemModule:
     def test_is_valid_mol_mw_check(self):
         """Verify _is_valid_mol returns False for heavy molecules."""
         from aurelius.utils.chem import _is_valid_mol, _safe_mol_from_smiles
+
         # C100 is a very heavy molecule
         mol = _safe_mol_from_smiles("C" * 100)
         if mol is not None:
@@ -97,6 +102,7 @@ class TestChemModule:
 # ============================================================
 # PBC Minimum Image Convention Tests
 # ============================================================
+
 
 class TestPBCMinimumImageConvention:
     """Tests for Periodic Boundary Conditions minimum image convention."""
@@ -178,6 +184,7 @@ class TestPBCMinimumImageConvention:
 # LRU Cache Eviction Tests
 # ============================================================
 
+
 class TestLRUCacheEviction:
     """Tests for LRU cache eviction logic."""
 
@@ -234,6 +241,7 @@ class TestLRUCacheEviction:
                     f.write(b"x" * 1024)
                 # Small delay to ensure different mtime
                 import time
+
                 time.sleep(0.01)
 
             loader = HuggingFaceWeightLoader(model_dir=tmpdir)
@@ -244,6 +252,7 @@ class TestLRUCacheEviction:
 # ============================================================
 # GNN-ChargeEq Model Tests
 # ============================================================
+
 
 class TestChargeEqModel:
     """Tests for GNN-ChargeEq model for polarization."""
@@ -278,6 +287,7 @@ class TestChargeEqModel:
 # ============================================================
 # ActiveLearningOracle Tests
 # ============================================================
+
 
 class TestActiveLearningOracle:
     """Tests for ActiveLearningOracle class."""
@@ -329,6 +339,7 @@ class TestActiveLearningOracle:
 # ============================================================
 # GraphVAEMutator Tests
 # ============================================================
+
 
 class TestGraphVAEMutator:
     """Tests for GraphVAEMutator structural diversity generation."""

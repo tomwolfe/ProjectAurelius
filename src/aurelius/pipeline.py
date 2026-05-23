@@ -136,12 +136,14 @@ class AureliusPipeline:
             weight_gwp=self.config.weight_gwp,
         )
 
-        print(f"\n[Aurelius v5.2] Pipeline ready. "
-              f"Viability threshold: {self._scoring_engine.viability_threshold}\n")
+        print(f"\n[Aurelius v5.2] Pipeline ready. Viability threshold: {self._scoring_engine.viability_threshold}\n")
 
-    def load_models(self, chemvlm2_path: str = "models/chemvlm2",
-                    mattersim_path: str = "models/mattersim_mt",
-                    gcmtwin_path: str = "models/gcmd_dt") -> None:
+    def load_models(
+        self,
+        chemvlm2_path: str = "models/chemvlm2",
+        mattersim_path: str = "models/mattersim_mt",
+        gcmtwin_path: str = "models/gcmd_dt",
+    ) -> None:
         """Load all models into the memory manager."""
         if self._memory_manager:
             self._memory_manager.load_chemvlm2(chemvlm2_path)
@@ -238,10 +240,12 @@ class AureliusPipeline:
             t1_result = self._mlx_filter.screen_molecule(smiles)
             tier_timings["tier1_ms"] = (time.perf_counter() - t1_start) * 1000
             results["tier1"] = t1_result
-            print(f"\n  Tier 1 Result: {t1_result.molecule_smiles} "
-                  f"-> {'VIABLE' if t1_result.is_viable else 'REJECTED'} "
-                  f"(confidence={t1_result.confidence_score:.3f}, "
-                  f"time={t1_result.inference_time_ms:.1f}ms)")
+            print(
+                f"\n  Tier 1 Result: {t1_result.molecule_smiles} "
+                f"-> {'VIABLE' if t1_result.is_viable else 'REJECTED'} "
+                f"(confidence={t1_result.confidence_score:.3f}, "
+                f"time={t1_result.inference_time_ms:.1f}ms)"
+            )
             if not t1_result.is_viable:
                 print(f"[Aurelius Pipeline] Short-circuiting: {smiles} failed Tier 1.")
                 results["tier_timings"] = tier_timings  # type: ignore[assignment]
@@ -267,17 +271,21 @@ class AureliusPipeline:
             )
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
             results["tier2"] = t2_result  # type: ignore[assignment]
-            print(f"  Tier 2 Result: {t2_result.molecule_smiles} "
-                  f"-> {'VIABLE' if t2_result.is_viable else 'REJECTED'} "
-                  f"(barrier={t2_result.desolvation_path.barrier_height_eV:.3f} eV, "
-                  f"time={t2_result.simulation_time_ms:.1f}ms)")
+            print(
+                f"  Tier 2 Result: {t2_result.molecule_smiles} "
+                f"-> {'VIABLE' if t2_result.is_viable else 'REJECTED'} "
+                f"(barrier={t2_result.desolvation_path.barrier_height_eV:.3f} eV, "
+                f"time={t2_result.simulation_time_ms:.1f}ms)"
+            )
 
             # HARD SHORT-CIRCUIT: Explicit early exit
             if not t2_result.is_viable:
                 print(f"[Aurelius Pipeline] Short-circuiting: {smiles} failed Tier 2 viability.")
                 results["tier_timings"] = tier_timings  # type: ignore[assignment]
                 return self._generate_failed_run(
-                    smiles, f"Failed Tier 2 Solvation (Barrier: {t2_result.desolvation_path.barrier_height_eV} eV)", **kwargs
+                    smiles,
+                    f"Failed Tier 2 Solvation (Barrier: {t2_result.desolvation_path.barrier_height_eV} eV)",
+                    **kwargs,
                 )
 
         # CROSS-TIER HARDWARE CLEANUP
@@ -285,12 +293,14 @@ class AureliusPipeline:
         if self.has_mlx:
             try:
                 import mlx.core as _mx  # noqa: F401
+
                 _mx.metal.clear_cache()
             except Exception:
                 pass
         if self.has_torch:
             try:
                 import torch  # noqa: F401
+
                 if torch.backends.mps.is_available():
                     torch.mps.empty_cache()
                 if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
@@ -311,21 +321,25 @@ class AureliusPipeline:
             )
             tier_timings["tier3_ms"] = (time.perf_counter() - t3_start) * 1000
             results["tier3"] = t3_result  # type: ignore[assignment]
-            print(f"  Tier 3 Result: {t3_result.molecule_smiles} "
-                  f"-> SEI: {t3_result.sei_evolution.thickness_angstrom:.1f}A, "
-                  f"Homogeneity={t3_result.sei_evolution.homogeneity_score:.3f}")
+            print(
+                f"  Tier 3 Result: {t3_result.molecule_smiles} "
+                f"-> SEI: {t3_result.sei_evolution.thickness_angstrom:.1f}A, "
+                f"Homogeneity={t3_result.sei_evolution.homogeneity_score:.3f}"
+            )
 
         # POST-TIER-3 MEMORY CLEANUP
         gc.collect()
         if self.has_mlx:
             try:
                 import mlx.core as _mx  # noqa: F401
+
                 _mx.metal.clear_cache()
             except Exception:
                 pass
         if self.has_torch:
             try:
                 import torch  # noqa: F401
+
                 if torch.backends.mps.is_available():
                     torch.mps.empty_cache()
                 if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
@@ -335,9 +349,7 @@ class AureliusPipeline:
 
         # Final consolidated score compilation
         gwp = kwargs.get("gwp_value", 1.0)
-        score = self._scoring_engine.compute_score(
-            molecule_input, t1_result, t2_result, t3_result, gwp
-        )
+        score = self._scoring_engine.compute_score(molecule_input, t1_result, t2_result, t3_result, gwp)
         results["score"] = score  # type: ignore[assignment]
         results["tier_timings"] = tier_timings  # type: ignore[assignment]
 
@@ -355,9 +367,11 @@ class AureliusPipeline:
         # Memory budget report
         if self._memory_manager:
             budget = self._memory_manager.get_memory_budget()
-            print(f"\n[Aurelius v5.2] Memory Budget: "
-                  f"{budget['chemvlm2_footprint_gb']}GB ChemVLM-2, "
-                  f"{budget['remaining_gb']}GB remaining")
+            print(
+                f"\n[Aurelius v5.2] Memory Budget: "
+                f"{budget['chemvlm2_footprint_gb']}GB ChemVLM-2, "
+                f"{budget['remaining_gb']}GB remaining"
+            )
 
         return results
 

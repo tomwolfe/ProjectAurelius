@@ -77,11 +77,13 @@ def memory_cleanup():
     gc.collect()
     try:
         import mlx.core as mx
+
         mx.clear_cache()
     except Exception:
         pass
     try:
         import torch
+
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()
     except Exception:
@@ -459,12 +461,16 @@ def run_discovery():
         print("\n  Top 10 Molecules by Score:")
         for i, r in enumerate(results[:10], 1):
             v = "VIABLE" if r["is_viable"] else "rejected"
-            print(f"    {i}. {r['smiles'][:45]:45s} Score={r['total_score']:5.1f} Homog={r['sei_homogeneity_score']:5.1f}  ({v})")
+            print(
+                f"    {i}. {r['smiles'][:45]:45s} Score={r['total_score']:5.1f} Homog={r['sei_homogeneity_score']:5.1f}  ({v})"
+            )
 
     if discoveries:
         print("\n  Viable Discoveries (Score >= 65.0):")
         for i, d in enumerate(discoveries[:10], 1):
-            print(f"    {i}. {d['smiles'][:45]:45s} Score={d['total_score']:5.1f} Homog={d['sei_homogeneity_score']:5.1f}")
+            print(
+                f"    {i}. {d['smiles'][:45]:45s} Score={d['total_score']:5.1f} Homog={d['sei_homogeneity_score']:5.1f}"
+            )
     else:
         print("\n  No molecules achieved viability threshold (65.0).")
         print("  Highest homogeneity candidates:")

@@ -34,10 +34,12 @@ logger = logging.getLogger(__name__)
 # MLX detection
 try:
     import mlx.core as _mx  # noqa: F401
+
     _HAS_MLX = True
     _MLX_VERSION: str | None = None
     try:
         from importlib.metadata import version as _pkg_version
+
         _MLX_VERSION = _pkg_version("mlx")
     except Exception:
         _MLX_VERSION = "unknown"
@@ -49,10 +51,12 @@ except ImportError:
 # PyTorch detection
 try:
     import torch as _torch  # noqa: F401
+
     _HAS_TORCH = True
     _TORCH_VERSION: str | None = None
     try:
         from importlib.metadata import version as _pkg_version
+
         _TORCH_VERSION = _pkg_version("torch")
     except Exception:
         _TORCH_VERSION = "unknown"
@@ -64,10 +68,12 @@ except ImportError:
 # RDKit detection
 try:
     from rdkit import Chem as _rdkit_chem  # noqa: F401, N813
+
     _HAS_RDKIT = True
     _RDKIT_VERSION: str | None = None
     try:
         from importlib.metadata import version as _pkg_version
+
         _RDKIT_VERSION = _pkg_version("rdkit")
     except Exception:
         _RDKIT_VERSION = "unknown"
@@ -83,6 +89,7 @@ try:
     _HF_HUB_VERSION: str | None = None
     try:
         from importlib.metadata import version as _pkg_version
+
         _HF_HUB_VERSION = _pkg_version("huggingface-hub")
     except Exception:
         _HF_HUB_VERSION = "unknown"
@@ -97,6 +104,7 @@ try:
     _DATASETS_VERSION: str | None = None
     try:
         from importlib.metadata import version as _pkg_version
+
         _DATASETS_VERSION = _pkg_version("datasets")
     except Exception:
         _DATASETS_VERSION = "unknown"
@@ -210,9 +218,11 @@ class DependencyManager:
             meets_minimum = _version_gte(version, min_ver)
             if not meets_minimum:
                 logger.warning(
-                    "Framework '%s' version %s is below minimum %s. "
-                    "Upgrade with: pip install --upgrade %s",
-                    name, version, min_ver, name,
+                    "Framework '%s' version %s is below minimum %s. Upgrade with: pip install --upgrade %s",
+                    name,
+                    version,
+                    min_ver,
+                    name,
                 )
 
         return {
@@ -247,13 +257,16 @@ class DependencyManager:
             if info["available"]:
                 logger.info(
                     "Framework '%s' available (version %s, meets minimum %s).",
-                    name, info["version"] or "unknown", info["min_version"],
+                    name,
+                    info["version"] or "unknown",
+                    info["min_version"],
                 )
             else:
                 logger.warning(
                     "Framework '%s' is NOT available. "
                     "Install with: pip install %s (or check optional dependency group).",
-                    name, name,
+                    name,
+                    name,
                 )
 
         self._status_cache = status
@@ -307,6 +320,7 @@ class DependencyManager:
 # ---------------------------------------------------------------------------
 # Module-level convenience functions (backward-compatible)
 # ---------------------------------------------------------------------------
+
 
 def check_framework(name: str) -> dict[str, Any]:
     """Convenience function to check a single framework.

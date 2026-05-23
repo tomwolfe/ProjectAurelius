@@ -197,7 +197,9 @@ def main() -> None:
             download_qm9(output_dir)
 
     print("\n[download_data] Dataset download complete!")
-    print(f"[download_data] Train with: python scripts/train_tier1.py --dataset {datasets_to_download[0]} --csv-path {output_dir}/{datasets_to_download[0]}/{datasets_to_download[0]}.csv")
+    print(
+        f"[download_data] Train with: python scripts/train_tier1.py --dataset {datasets_to_download[0]} --csv-path {output_dir}/{datasets_to_download[0]}/{datasets_to_download[0]}.csv"
+    )
 
 
 if __name__ == "__main__":

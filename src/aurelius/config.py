@@ -90,7 +90,7 @@ class AureliusConfig:
         """
         # Detect total system RAM
         total_bytes = psutil.virtual_memory().total
-        total_gb = total_bytes / (1024 ** 3)
+        total_gb = total_bytes / (1024**3)
 
         # Use user override if provided
         if self.total_memory_gb > 0:
@@ -278,22 +278,26 @@ def validate_environment(
             missing.append(var_name)
             if strict:
                 logger.warning(
-                    "Environment variable '%s' is not set. "
-                    "Expected: %s",
-                    var_name, expected_value,
+                    "Environment variable '%s' is not set. Expected: %s",
+                    var_name,
+                    expected_value,
                 )
         elif actual_value != expected_value:
-            mismatches.append({
-                "env_var": var_name,
-                "expected": expected_value,
-                "actual": actual_value,
-            })
+            mismatches.append(
+                {
+                    "env_var": var_name,
+                    "expected": expected_value,
+                    "actual": actual_value,
+                }
+            )
             if strict:
                 logger.warning(
                     "Environment variable '%s' mismatch: "
                     "expected '%s', got '%s'. "
                     "This may cause performance or memory mismatches.",
-                    var_name, expected_value, actual_value,
+                    var_name,
+                    expected_value,
+                    actual_value,
                 )
 
     compliant = len(mismatches) == 0 and len(missing) == 0
@@ -307,7 +311,8 @@ def validate_environment(
     if mismatches or missing:
         logger.info(
             "Environment validation: %d mismatch(es), %d missing var(s).",
-            len(mismatches), len(missing),
+            len(mismatches),
+            len(missing),
         )
 
     return result

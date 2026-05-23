@@ -33,19 +33,13 @@ def calculate_electronic_descriptors(smiles: str) -> dict:
 
     # 3. NumAromaticRings / Unsaturation: Proxy for polymerization potential
     num_aromatic = Lipinski.NumAromaticRings(mol)
-    num_double_bonds = sum(
-        1 for bond in mol.GetBonds() if bond.GetBondType() == Chem.rdchem.BondType.DOUBLE
-    )
-    num_triple_bonds = sum(
-        1 for bond in mol.GetBonds() if bond.GetBondType() == Chem.rdchem.BondType.TRIPLE
-    )
+    num_double_bonds = sum(1 for bond in mol.GetBonds() if bond.GetBondType() == Chem.rdchem.BondType.DOUBLE)
+    num_triple_bonds = sum(1 for bond in mol.GetBonds() if bond.GetBondType() == Chem.rdchem.BondType.TRIPLE)
 
     # 4. MaxPartialCharge: Proxy for local reactivity
     # Note: Gasteiger charges are approximate but fast
     AllChem.ComputeGasteigerCharges(mol)
-    max_charge = max(
-        [atom.GetDoubleProp("_GasteigerCharge") for atom in mol.GetAtoms()]
-    )
+    max_charge = max([atom.GetDoubleProp("_GasteigerCharge") for atom in mol.GetAtoms()])
 
     return {
         "logp": logp,
@@ -136,13 +130,9 @@ def main():
     # Load candidates from previous phase
     candidates = []
     with open("homogeneity_targeted_candidates.smi") as f:
-        candidates.extend(
-            [line.strip() for line in f if line.strip() and not line.startswith("#")]
-        )
+        candidates.extend([line.strip() for line in f if line.strip() and not line.startswith("#")])
     with open("refined_candidates.smi") as f:
-        candidates.extend(
-            [line.strip() for line in f if line.strip() and not line.startswith("#")]
-        )
+        candidates.extend([line.strip() for line in f if line.strip() and not line.startswith("#")])
 
     # Remove duplicates while preserving order
     seen = set()
@@ -156,9 +146,7 @@ def main():
     print(f"\nScreening {len(candidates)} candidates with dynamic kinetics...\n")
 
     # Initialize Base Twin (5000 steps for better homogeneity resolution)
-    twin = GCMDigitalTwin(
-        gcmtwin_config=GCMDTConfig(max_simulation_steps=5000)
-    )
+    twin = GCMDigitalTwin(gcmtwin_config=GCMDTConfig(max_simulation_steps=5000))
 
     results = []
     for smiles in candidates:
@@ -174,7 +162,7 @@ def main():
                 }
             )
             print(
-                f"  {smiles}: Homog={res.sei_evolution.homogeneity_score:.3f} ({res.sei_evolution.homogeneity_score*100:.1f}/100)"
+                f"  {smiles}: Homog={res.sei_evolution.homogeneity_score:.3f} ({res.sei_evolution.homogeneity_score * 100:.1f}/100)"
             )
         except Exception as e:
             print(f"  ERROR {smiles}: {e}")
@@ -191,7 +179,9 @@ def main():
         print(f"\n{'=' * 60}")
         print("  Best Candidate for Homogeneity:")
         print(f"    SMILES:    {best_homog['smiles']}")
-        print(f"    Homogeneity: {best_homog['sei_homogeneity_scaled']:.1f}/100 (raw {best_homog['sei_homogeneity_raw']:.4f})")
+        print(
+            f"    Homogeneity: {best_homog['sei_homogeneity_scaled']:.1f}/100 (raw {best_homog['sei_homogeneity_raw']:.4f})"
+        )
         print(f"    SEI Components: {best_homog['components']}")
         print(f"    Thickness: {best_homog['thickness']:.1f} A")
 

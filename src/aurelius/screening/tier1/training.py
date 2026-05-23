@@ -28,6 +28,7 @@ from aurelius.screening.tier1.models import (
 
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     mx = None  # type: ignore[assignment, unused-ignore]
@@ -35,6 +36,7 @@ except ImportError:
 try:
     import torch
     import torch.nn as torch_nn
+
     HAS_TORCH = True
 except ImportError:
     torch = None  # type: ignore[assignment, unused-ignore]
@@ -45,6 +47,7 @@ except ImportError:
 def _get_fingerprint_fn() -> Any:
     """Lazily import fingerprint generation to avoid circular imports."""
     from aurelius.screening.tier1.filter import _generate_ecfp4_fingerprint
+
     return _generate_ecfp4_fingerprint
 
 
@@ -134,6 +137,7 @@ def train_on_esol(
     # Load ESOL dataset via huggingface datasets library
     try:
         from datasets import load_dataset
+
         _ds = load_dataset("deepchem/esol", split="train")
     except ImportError:
         training_data: list[tuple[str, float]] = [
@@ -155,7 +159,10 @@ def train_on_esol(
             ("C1=CC2=CC=CC=C2C3=CC=C(C=C1)C4=CC=CC=C43", -4.30),
             ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C", -6.20),
             ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C", -6.50),
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C8=CC=C(C=C8)C", -6.80),
+            (
+                "C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C8=CC=C(C=C8)C",
+                -6.80,
+            ),
             ("CCCCCCCCCCCCCCCCCCO", -3.87),
             ("C1CCCCC1C2CCCCC2C3CCCCC3C4CCCCC4", -5.75),
             ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C", -4.54),
@@ -164,8 +171,14 @@ def train_on_esol(
             ("C1=CC2=C(C=C1)C3=CC=CC=C3C4=CC=CC=C24", -4.10),
             ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C", -4.40),
             ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C", -6.20),
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C8=CC=C(C=C8)C", -6.50),
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C8=CC=C(C=C8)C9=CC=C(C=C9)C", -6.80),
+            (
+                "C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C8=CC=C(C=C8)C",
+                -6.50,
+            ),
+            (
+                "C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C8=CC=C(C=C8)C9=CC=C(C=C9)C",
+                -6.80,
+            ),
             ("CCCCCCCCCCCCCCCCCC", -5.67),
             ("CCC", -1.65),
             ("C=CC", -1.25),
@@ -260,9 +273,11 @@ def train_on_esol(
             preds = model(X_val_split)
             preds_binary = mx.squeeze(preds) > 0.5
             accuracy = float(mx.mean(preds_binary == y_val_split))  # type: ignore[arg-type, unused-ignore]
-            print(f"[Aurelius v5.2 Tier1] Epoch {epoch + 1}/{epochs}: "
-                  f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, "
-                  f"val_accuracy={accuracy:.2f}")
+            print(
+                f"[Aurelius v5.2 Tier1] Epoch {epoch + 1}/{epochs}: "
+                f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, "
+                f"val_accuracy={accuracy:.2f}"
+            )
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -271,8 +286,7 @@ def train_on_esol(
         else:
             patience_counter += 1
             if patience_counter >= patience:
-                print(f"[Aurelius v5.2 Tier1] Early stopping at epoch {epoch + 1} "
-                      f"(best val_loss={best_val_loss:.4f})")
+                print(f"[Aurelius v5.2 Tier1] Early stopping at epoch {epoch + 1} (best val_loss={best_val_loss:.4f})")
                 break
 
     if best_params is not None:
@@ -319,21 +333,17 @@ def train_on_qm9(
 
     try:
         from datasets import load_dataset
+
         ds = load_dataset("maastrichtuniversity/qm9", split="train")
     except ImportError as err:
-        raise RuntimeError(
-            "QM9 dataset requires 'datasets' library. "
-            "Install with: pip install datasets"
-        ) from err
+        raise RuntimeError("QM9 dataset requires 'datasets' library. Install with: pip install datasets") from err
     except ValueError as e:
         raise ValueError(
-            f"QM9 dataset ID 'maastrichtuniversity/qm9' not found: {e}. "
-            "Check the dataset exists on HuggingFace Hub."
+            f"QM9 dataset ID 'maastrichtuniversity/qm9' not found: {e}. Check the dataset exists on HuggingFace Hub."
         ) from e
     except ConnectionError as e:
         raise ConnectionError(
-            f"Network error loading QM9: {e}. "
-            "Check the network connection or use a local CSV."
+            f"Network error loading QM9: {e}. Check the network connection or use a local CSV."
         ) from e
 
     u0_values = np.array(ds["U0"], dtype=np.float32)
@@ -402,8 +412,7 @@ def train_on_qm9(
 
         if (epoch + 1) % 50 == 0:
             current_loss = float(loss_fn(params, X_mx, y_mx))
-            print(f"[Aurelius v5.2 Tier1] QM9 training epoch {epoch + 1}/{epochs}: "
-                  f"loss={current_loss:.4f}")
+            print(f"[Aurelius v5.2 Tier1] QM9 training epoch {epoch + 1}/{epochs}: loss={current_loss:.4f}")
 
     return model
 
@@ -421,15 +430,16 @@ def _train_synthetic_mlx(
     Returns:
         The trained _ChemVLM2MLP instance.
     """
-    X_train, y_train, _ = _generate_synthetic_training_data(
-        use_real_models=use_real_models
-    )
+    X_train, y_train, _ = _generate_synthetic_training_data(use_real_models=use_real_models)
 
     n_samples = X_train.shape[0]
     _n_val = max(1, int(n_samples * 0.15))
 
     # Prepare parameter list for optimization
-    params = [mx.array(p) if isinstance(p, np.ndarray) else p for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]]
+    params = [
+        mx.array(p) if isinstance(p, np.ndarray) else p
+        for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]
+    ]
 
     # Loss function: mean squared error
     def loss_fn(params: list[Any], x: mx.Array, target: mx.Array) -> mx.Array:
@@ -486,8 +496,7 @@ def _train_synthetic_mlx(
         else:
             patience_counter += 1
             if patience_counter >= patience:
-                print(f"[Aurelius v6.0 Tier1] Early stopping at epoch {epoch + 1} "
-                      f"(best val_loss={best_val_loss:.4f})")
+                print(f"[Aurelius v6.0 Tier1] Early stopping at epoch {epoch + 1} (best val_loss={best_val_loss:.4f})")
                 break
 
     if best_params is not None:
@@ -553,8 +562,10 @@ def _train_synthetic_pytorch() -> PyTorchFallbackFilter:
             with torch.no_grad():
                 train_pred = model(torch.from_numpy(X_train_split).float()).squeeze(-1)
                 train_loss = criterion(train_pred, torch.from_numpy(y_train_split).float()).item()
-            print(f"[Aurelius v6.0 Tier1] PyTorch synthetic epoch {epoch + 1}/100: "
-                  f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
+            print(
+                f"[Aurelius v6.0 Tier1] PyTorch synthetic epoch {epoch + 1}/100: "
+                f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
+            )
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -563,8 +574,10 @@ def _train_synthetic_pytorch() -> PyTorchFallbackFilter:
         else:
             patience_counter += 1
             if patience_counter >= patience:
-                print(f"[Aurelius v6.0 Tier1] PyTorch early stopping at epoch {epoch + 1} "
-                      f"(best val_loss={best_val_loss:.4f})")
+                print(
+                    f"[Aurelius v6.0 Tier1] PyTorch early stopping at epoch {epoch + 1} "
+                    f"(best val_loss={best_val_loss:.4f})"
+                )
                 break
 
     if best_state:

@@ -235,6 +235,7 @@ def load_esol_data(csv_path: str | None = None) -> tuple[np.ndarray[Any, Any], n
     except Exception as e:
         print(f"[train_tier1] Unexpected error loading ESOL (type={type(e).__name__}): {e}")
         import traceback
+
         traceback.print_exc()
         if csv_path:
             return _load_esol_from_csv(csv_path)
@@ -355,7 +356,10 @@ def _load_esol_embedded() -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], l
         ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -10.00),
         ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C", -6.50),
         ("C1=CC2=C(C=C1C(=O)O)C(=O)C3=CC=CC=C32", -2.80),
-        ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C6)C8=CC=C(C=C8)C", -6.80),
+        (
+            "C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C6)C8=CC=C(C=C8)C",
+            -6.80,
+        ),
         ("c1ccccc1", 2.13),
         ("CC(C)COC(C)C", -0.50),
         ("CC(C)C(C)C(C)C(C)C", -2.87),
@@ -431,6 +435,7 @@ def load_qm9_data() -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[st
     except Exception as e:
         print(f"[train_tier1] Unexpected error loading QM9 (type={type(e).__name__}): {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
@@ -551,8 +556,7 @@ def train_numpy(
         history["val_loss"].append(float(val_loss))
 
         if (epoch + 1) % 20 == 0:
-            print(f"[train_tier1] Epoch {epoch + 1}/{epochs}: "
-                  f"train_loss={loss:.4f}, val_loss={val_loss:.4f}")
+            print(f"[train_tier1] Epoch {epoch + 1}/{epochs}: train_loss={loss:.4f}, val_loss={val_loss:.4f}")
 
         # Early stopping
         if val_loss < best_val_loss:
@@ -635,8 +639,8 @@ def train_mlx(
             loss, grads = nn.value_and_grad(model, loss_fn)(x_batch, y_batch)
 
             # Update model with gradients - nested structure: {'layers': [layer0, layer1, ...]}
-            grad_layers = grads['layers']
-            model_layers = model['layers']
+            grad_layers = grads["layers"]
+            model_layers = model["layers"]
             for layer_idx, grad_layer in enumerate(grad_layers):
                 model_layer = model_layers[layer_idx]
                 for param_name in grad_layer:
@@ -650,8 +654,7 @@ def train_mlx(
         if (epoch + 1) % 20 == 0:
             train_loss = float(loss_fn(X_train_mx, y_train_mx.reshape(-1, 1)))
             history["train_loss"].append(train_loss)
-            print(f"[train_tier1] Epoch {epoch + 1}/{epochs}: "
-                  f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
+            print(f"[train_tier1] Epoch {epoch + 1}/{epochs}: train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss

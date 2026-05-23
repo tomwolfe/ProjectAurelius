@@ -7,6 +7,7 @@ import pytest
 
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     mx = None  # type: ignore
@@ -14,6 +15,7 @@ except ImportError:
 
 try:
     from rdkit import Chem
+
     HAS_RDKIT = True
 except ImportError:
     HAS_RDKIT = False
@@ -24,6 +26,7 @@ class TestMLXNAFilter:
     def setup_method(self):
         # Disable training on init for faster tests
         from aurelius.screening.tier1 import MLXNAFilter
+
         self.filter = MLXNAFilter(quantization_format="MX4", train_on_init=False)
 
     def test_screen_molecule(self):
@@ -100,6 +103,7 @@ class TestMLXNAFilter:
     def test_model_trains_on_init(self):
         """Verify that train_on_init=True produces a trained model."""
         from aurelius.screening.tier1 import MLXNAFilter
+
         filter_trained = MLXNAFilter(quantization_format="MX4", train_on_init=True)
         # After training, the model should have non-trivial weights
         assert filter_trained._model is not None

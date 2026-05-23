@@ -51,14 +51,14 @@ def train_main(
 
 def main() -> None:
     """CLI entry point for tier0 model training."""
-    parser = argparse.ArgumentParser(
-        description="Train Tier 0 MPNN model for activation energy prediction."
-    )
+    parser = argparse.ArgumentParser(description="Train Tier 0 MPNN model for activation energy prediction.")
     parser.add_argument("--epochs", type=int, default=200, help="Number of training epochs (default: 200)")
     parser.add_argument("--batch-size", type=int, default=16, help="Mini-batch size (default: 16)")
     parser.add_argument("--learning-rate", type=float, default=0.001, help="Learning rate (default: 0.001)")
     parser.add_argument("--csv-path", type=str, default=None, help="Path to local CSV training data")
-    parser.add_argument("--output", type=str, default="models/tier0/mpnn_weights.pth", help="Output path for model weights")
+    parser.add_argument(
+        "--output", type=str, default="models/tier0/mpnn_weights.pth", help="Output path for model weights"
+    )
 
     args = parser.parse_args()
 

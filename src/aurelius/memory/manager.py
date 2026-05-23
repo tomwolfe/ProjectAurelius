@@ -17,6 +17,7 @@ import psutil
 
 try:
     import torch
+
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
@@ -24,6 +25,7 @@ except ImportError:
 
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     HAS_MLX = False
@@ -63,11 +65,13 @@ class MetalShaderConfig:
     shader_version: str = "metal4"
     cache_directory: str = ".metal_shader_cache"
     max_parallel_compilations: int = 4
-    precompile_models: list[str] = field(default_factory=lambda: [
-        "chemvlm2",
-        "mattersim_mt",
-        "gcmd_digital_twin",
-    ])
+    precompile_models: list[str] = field(
+        default_factory=lambda: [
+            "chemvlm2",
+            "mattersim_mt",
+            "gcmd_digital_twin",
+        ]
+    )
 
 
 class ZeroCopyMemoryManager:
@@ -102,7 +106,7 @@ class ZeroCopyMemoryManager:
     def _detect_total_ram() -> float:
         """Detect total system RAM in GB using psutil."""
         total_bytes = psutil.virtual_memory().total
-        return float(total_bytes / (1024 ** 3))
+        return float(total_bytes / (1024**3))
 
     # ------------------------------------------------------------------
     # PyTorch 2.12 Accelerator API
@@ -174,7 +178,9 @@ class ZeroCopyMemoryManager:
                         )
                         return False
                 else:
-                    print("[Aurelius v5.2] torch._C._mps_loadMetalLib not available (PyTorch < 2.12), skipping pre-load")
+                    print(
+                        "[Aurelius v5.2] torch._C._mps_loadMetalLib not available (PyTorch < 2.12), skipping pre-load"
+                    )
                     return False
             else:
                 print(f"[Aurelius v5.2] No pre-compiled Metal lib found at {metal_lib_path}")
@@ -215,9 +221,11 @@ class ZeroCopyMemoryManager:
                 quantized_model = self._apply_mx_format(quantized_model, bits, block_size)
 
             self._memory_footprint_gb = self._estimate_footprint(model, bits)
-            print(f"[Aurelius v5.2] MX{bits} quantization applied: "
-                  f"{self._memory_footprint_gb:.1f}GB footprint "
-                  f"({self.quant_config.compression_ratio}x compression)")
+            print(
+                f"[Aurelius v5.2] MX{bits} quantization applied: "
+                f"{self._memory_footprint_gb:.1f}GB footprint "
+                f"({self.quant_config.compression_ratio}x compression)"
+            )
 
             return quantized_model
 
@@ -225,15 +233,11 @@ class ZeroCopyMemoryManager:
             warnings.warn(f"MX{bits} quantization failed, falling back to FP16: {e}", stacklevel=2)
             return model
 
-    def _apply_mx_format(
-        self, model: Any, bits: int, block_size: int
-    ) -> Any:
+    def _apply_mx_format(self, model: Any, bits: int, block_size: int) -> Any:
         """Apply microscaling (MX) data format at the tensor level."""
         try:
             if hasattr(torch.ao.quantization, "MX"):
-                _mx_format = torch.ao.quantization.MX(
-                    bits=bits, block_size=block_size
-                )
+                _mx_format = torch.ao.quantization.MX(bits=bits, block_size=block_size)
                 for module in model.modules():
                     if isinstance(module, torch.nn.Linear):
                         module.to(device=torch.device(self.device))
@@ -246,7 +250,7 @@ class ZeroCopyMemoryManager:
         total_params = sum(p.numel() for p in model.parameters())
         bytes_per_param = bits / 8.0
         footprint_bytes = total_params * bytes_per_param
-        return float((footprint_bytes * 1.1) / (1024 ** 3))
+        return float((footprint_bytes * 1.1) / (1024**3))
 
     # ------------------------------------------------------------------
     # Model Loading
@@ -323,6 +327,7 @@ class ZeroCopyMemoryManager:
         instead of 100M params to keep test memory footprint below
         150MB during initialization.
         """
+
         class PlaceholderModel:
             def __init__(self, n: str) -> None:
                 self.name = n
@@ -336,7 +341,9 @@ class ZeroCopyMemoryManager:
                         class Param:
                             def __init__(self) -> None:
                                 self.numel: Any = lambda: 1
+
                         yield Param()
+
                 return ParamList()
 
             def to(self, **kwargs: Any) -> Any:

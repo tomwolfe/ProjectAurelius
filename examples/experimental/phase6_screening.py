@@ -23,17 +23,11 @@ def calculate_electronic_descriptors(smiles: str) -> dict:
     logp = Descriptors.MolLogP(mol)
     num_f = sum(1 for atom in mol.GetAtoms() if atom.GetAtomicNum() == 9)
     num_aromatic = Lipinski.NumAromaticRings(mol)
-    num_double_bonds = sum(
-        1 for bond in mol.GetBonds() if bond.GetBondType() == Chem.rdchem.BondType.DOUBLE
-    )
-    num_triple_bonds = sum(
-        1 for bond in mol.GetBonds() if bond.GetBondType() == Chem.rdchem.BondType.TRIPLE
-    )
+    num_double_bonds = sum(1 for bond in mol.GetBonds() if bond.GetBondType() == Chem.rdchem.BondType.DOUBLE)
+    num_triple_bonds = sum(1 for bond in mol.GetBonds() if bond.GetBondType() == Chem.rdchem.BondType.TRIPLE)
 
     AllChem.ComputeGasteigerCharges(mol)
-    max_charge = max(
-        [atom.GetDoubleProp("_GasteigerCharge") for atom in mol.GetAtoms()]
-    )
+    max_charge = max([atom.GetDoubleProp("_GasteigerCharge") for atom in mol.GetAtoms()])
 
     return {
         "logp": logp,
@@ -78,9 +72,7 @@ def screen_with_dynamic_kinetics(smiles: str, base_twin: GCMDigitalTwin) -> dict
 
     base_twin._Ea_SOLVENT_EC = original_ea_solvent + shifts["delta_solvent"]
     base_twin._Ea_SALT_PF6 = original_ea_salt + shifts["delta_salt"]
-    base_twin._activation_energies["polymerization"] = (
-        original_ea_poly + shifts["delta_poly"]
-    )
+    base_twin._activation_energies["polymerization"] = original_ea_poly + shifts["delta_poly"]
 
     try:
         result = base_twin.simulate_sei_evolution(
@@ -116,15 +108,11 @@ def main():
     # Load refined candidates
     candidates = []
     with open("phase6_refined_candidates.smi") as f:
-        candidates.extend(
-            [line.strip() for line in f if line.strip() and not line.startswith("#")]
-        )
+        candidates.extend([line.strip() for line in f if line.strip() and not line.startswith("#")])
 
     print(f"\nScreening {len(candidates)} refined candidates with dynamic kinetics...\n")
 
-    twin = GCMDigitalTwin(
-        gcmtwin_config=GCMDTConfig(max_simulation_steps=5000)
-    )
+    twin = GCMDigitalTwin(gcmtwin_config=GCMDTConfig(max_simulation_steps=5000))
 
     results = []
     for smiles in candidates:

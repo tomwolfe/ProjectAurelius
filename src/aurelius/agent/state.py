@@ -56,8 +56,7 @@ class CheckpointManager:
             try:
                 with open(self.path) as f:
                     self.state = json.load(f)
-                log.info("Checkpoint loaded: batch=%d screened=%d",
-                         self.state["batch"], self.state["screened_count"])
+                log.info("Checkpoint loaded: batch=%d screened=%d", self.state["batch"], self.state["screened_count"])
             except (json.JSONDecodeError, KeyError) as e:
                 log.error("Failed to load checkpoint: %s. Starting fresh.", e)
                 self.state["known_fps_hex"] = []
@@ -170,7 +169,7 @@ class ConvergenceChecker:
             return []
         rolling: list[float] = []
         for i in range(batch_size, len(self.all_scores) + 1, batch_size):
-            window = self.all_scores[i - batch_size:i]
+            window = self.all_scores[i - batch_size : i]
             rolling.append(float(np.mean(window)))
         return rolling
 
@@ -278,8 +277,7 @@ class FeedbackAdapter:
         if not score.tier1_viable:
             self.tier1_fails += 1
             self.rationale_log.append(
-                f"Tier 1 fail for {score.molecule_smiles}: "
-                "Lower MW, add polar groups, reduce F-density"
+                f"Tier 1 fail for {score.molecule_smiles}: Lower MW, add polar groups, reduce F-density"
             )
         if not score.tier2_viable:
             self.tier2_fails += 1
@@ -290,8 +288,7 @@ class FeedbackAdapter:
         if score.tier3_viable and score.sei_homogeneity_score < 50.0:
             self.tier3_low_homogeneity += 1
             self.rationale_log.append(
-                f"Low SEI homogeneity for {score.molecule_smiles}: "
-                "Add unsaturation/boron, increase F/C ratio"
+                f"Low SEI homogeneity for {score.molecule_smiles}: Add unsaturation/boron, increase F/C ratio"
             )
 
     def get_adaptation_strategy(self) -> dict[str, Any]:

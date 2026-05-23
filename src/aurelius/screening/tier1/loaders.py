@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 _torch: Any = None
 try:
     import torch  # noqa: F401
+
     _torch = torch
 except ImportError:
     pass
@@ -66,13 +67,15 @@ def check_disk_space(path: str, min_free_gb: float = 10.0) -> tuple[bool, float]
     """
     try:
         usage = psutil.disk_usage(path)
-        free_gb = usage.free / (1024 ** 3)
+        free_gb = usage.free / (1024**3)
         if free_gb < min_free_gb:
             logger.warning(
                 "Low disk space at %s: %.1fGB free (minimum %.1fGB required). "
                 "HuggingFace downloads may fail or fill the disk. "
                 "Consider cleaning up old models or using AURELIUS_HF_USE_SYMLINKS=1.",
-                path, free_gb, min_free_gb,
+                path,
+                free_gb,
+                min_free_gb,
             )
         return free_gb >= min_free_gb, free_gb
     except OSError:
@@ -183,10 +186,7 @@ def load_pytorch_fallback_with_mlx_weights(
         model.load_state_dict(state_dict, strict=False)  # type: ignore[attr-defined]
         print(f"[Aurelius v6.0 Tier1] Loaded PyTorch fallback weights from MLX: {mlx_weights_dir}")
     else:
-        print(
-            "[Aurelius v6.0 Tier1] WARNING: Could not map any weights from MLX format. "
-            "Using random initialization."
-        )
+        print("[Aurelius v6.0 Tier1] WARNING: Could not map any weights from MLX format. Using random initialization.")
 
     return model
 
@@ -291,7 +291,8 @@ class HuggingFaceWeightLoader:
                     "Skipping HuggingFace download for %s: insufficient disk space "
                     "(%.1fGB free, 10GB required). Consider using "
                     "AURELIUS_HF_USE_SYMLINKS=1 or cleaning up old models.",
-                    model_id, free_gb,
+                    model_id,
+                    free_gb,
                 )
 
             # LRU cache eviction
@@ -396,7 +397,7 @@ class HuggingFaceWeightLoader:
 
             # Calculate total cache size (recursive)
             total_size = float(sum(self._dir_size(p) for p in entries if p.is_dir()))
-            total_size /= 1024 ** 3  # Convert to GB
+            total_size /= 1024**3  # Convert to GB
 
             if total_size <= max_cache_gb:
                 return 0
@@ -406,9 +407,10 @@ class HuggingFaceWeightLoader:
             for entry in entries:
                 if total_size <= max_cache_gb:
                     break
-                entry_size = self._dir_size(entry) / (1024 ** 3)
+                entry_size = self._dir_size(entry) / (1024**3)
                 total_size -= entry_size
                 import shutil
+
                 shutil.rmtree(entry)
                 evicted += 1
                 logger.info("Evicted LRU cache entry: %s", entry)

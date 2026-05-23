@@ -43,13 +43,14 @@ from aurelius.types import MLXFilterResult
 
 logger = logging.getLogger(__name__)
 
+
 class MLXNAFilter:
     """Tier 1: MLX Neural Accelerator filter for rapid molecular screening.
 
     Uses a 2-layer MLP trained on ECFP4 (Morgan radius=2) fingerprints
-	to predict molecular viability. When MLX is available, inference
-	runs entirely on the MLX backend; otherwise a numpy fallback
-	provides deterministic pseudo-results for pipeline validation.
+        to predict molecular viability. When MLX is available, inference
+        runs entirely on the MLX backend; otherwise a numpy fallback
+        provides deterministic pseudo-results for pipeline validation.
 
     With --use-real-models (default), the filter:
     1. Attempts to load pre-trained weights from Hugging Face Hub
@@ -83,6 +84,7 @@ class MLXNAFilter:
         if HAS_MLX:
             try:
                 import mlx.core as mx  # noqa: F401
+
                 self._mx = mx
             except Exception:
                 self._use_mlx = False
@@ -97,6 +99,7 @@ class MLXNAFilter:
             try:
                 import torch  # noqa: F401
                 import torch.nn as torch_nn  # noqa: F401
+
                 self._torch = torch
                 self._torch_nn = torch_nn
             except Exception:
@@ -109,6 +112,7 @@ class MLXNAFilter:
             try:
                 from rdkit import Chem as _rdkit_chem  # noqa: F401, N813
                 from rdkit.Chem import AllChem as _rdkit_allchem  # noqa: F401, N813
+
                 self._rdkit_chem = _rdkit_chem
                 self._rdkit_allchem = _rdkit_allchem
             except Exception:
@@ -128,9 +132,7 @@ class MLXNAFilter:
         """
         if self._use_real_models:
             print("[Aurelius v5.2 Tier1] Attempting to load real model weights...")
-            model = self._weight_loader.load_model(
-                task="esol_solubility", local_only=False
-            )
+            model = self._weight_loader.load_model(task="esol_solubility", local_only=False)
             if model is not None:
                 self._model = model
                 self._model_loaded = True
@@ -147,8 +149,7 @@ class MLXNAFilter:
         """Train the model on real solubility or synthetic data."""
         if not self._use_mlx:
             if not HAS_TORCH:
-                print("[Aurelius v6.0 Tier1] WARNING: Both MLX and PyTorch unavailable. "
-                      "Using numpy-only fallback.")
+                print("[Aurelius v6.0 Tier1] WARNING: Both MLX and PyTorch unavailable. Using numpy-only fallback.")
                 self._model = _FallbackMLP()
                 self._model_loaded = True
                 return
@@ -159,9 +160,7 @@ class MLXNAFilter:
             if self._use_real_models and os.path.isdir(self._weight_loader.model_dir):
                 local_task_dir = os.path.join(self._weight_loader.model_dir, "esol_solubility")
                 if os.path.isdir(local_task_dir):
-                    self._model = load_pytorch_fallback_with_mlx_weights(
-                        self._model, local_task_dir
-                    )
+                    self._model = load_pytorch_fallback_with_mlx_weights(self._model, local_task_dir)
                     self._model_loaded = True
                     return
 
@@ -207,9 +206,7 @@ class MLXNAFilter:
                 print("[Aurelius v6.0 Tier1] MLX unavailable, using PyTorch fallback filter")
                 self._model = PyTorchFallbackFilter()
                 if os.path.isdir(model_path):
-                    self._model = load_pytorch_fallback_with_mlx_weights(
-                        self._model, model_path
-                    )
+                    self._model = load_pytorch_fallback_with_mlx_weights(self._model, model_path)
         self._model_loaded = True
         print("[Aurelius v6.0 Tier1] Model ready")
 
@@ -253,9 +250,7 @@ class MLXNAFilter:
             na_utilization_pct=na_util,
         )
 
-    def screen_batch(
-        self, smiles_list: list[str], batch_size: int = 32
-    ) -> list[MLXFilterResult]:
+    def screen_batch(self, smiles_list: list[str], batch_size: int = 32) -> list[MLXFilterResult]:
         """Screen a batch of molecules through the MLX-NA filter."""
         results = []
         for i in range(0, len(smiles_list), batch_size):
@@ -276,7 +271,9 @@ class MLXNAFilter:
         except (json.JSONDecodeError, OSError):
             pass
 
-        base_util = tier1_params.get("base_utilization_pct", 75.0) + confidence * tier1_params.get("confidence_boost", 20.0)
+        base_util = tier1_params.get("base_utilization_pct", 75.0) + confidence * tier1_params.get(
+            "confidence_boost", 20.0
+        )
         return float(min(base_util, tier1_params.get("max_utilization_pct", 98.0)))
 
     def _bits_from_format(self) -> int:
@@ -335,8 +332,7 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
         mol = _Chem.MolFromSmiles(smiles)
         if mol is None:
             logger.warning(
-                "RDKit failed to parse SMILES '%s', using hash fallback. "
-                "This fingerprint is NOT chemically valid.",
+                "RDKit failed to parse SMILES '%s', using hash fallback. This fingerprint is NOT chemically valid.",
                 smiles,
             )
             return _hash_fallback(smiles)
@@ -345,7 +341,7 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
         arr = np.array(bit_list, dtype=np.float32)
         if len(arr) < 2048:
             padded = np.zeros(2048, dtype=np.float32)
-            padded[:len(arr)] = arr
+            padded[: len(arr)] = arr
             return padded
         return arr[:2048]
 

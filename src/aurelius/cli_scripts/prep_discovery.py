@@ -43,6 +43,7 @@ log = logging.getLogger("prep_discovery")
 
 try:
     import importlib.util
+
     HAS_RDKIT = importlib.util.find_spec("rdkit") is not None
 except ImportError:
     HAS_RDKIT = False
@@ -52,15 +53,14 @@ def _ensure_rdkit() -> None:
     """Verify RDKit is importable; exit with a clear message if not."""
     if not HAS_RDKIT:
         sys.exit(
-            "RDKit is required for model preparation. Install it before "
-            "running this script:\n"
-            "    pip install rdkit"
+            "RDKit is required for model preparation. Install it before running this script:\n    pip install rdkit"
         )
 
 
 # ---------------------------------------------------------------------------
 # Tier 1 preparation
 # ---------------------------------------------------------------------------
+
 
 def _prepare_tier1(
     dataset: str = "esol",
@@ -125,11 +125,13 @@ def _prepare_tier1(
     log.info("Tier 1 inference check on SMILES: %s", smiles_check)
     try:
         from rdkit import Chem as _Chem
+
         mol = _Chem.MolFromSmiles(smiles_check)
         if mol is None:
             raise RuntimeError("RDKit could not parse ethylene carbonate SMILES")
         # Validate fingerprint generation works
         from rdkit.Chem import AllChem as _AllChem
+
         fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
         _ = fp.ToList()
         log.info("Tier 1 inference check passed")
@@ -157,6 +159,7 @@ def _train_tier_main(
     """
     # Import lazily to avoid circular import issues
     from aurelius.cli_scripts.train_tier1 import train_main as _train_main
+
     return _train_main(
         dataset=dataset,
         epochs=epochs,
@@ -173,6 +176,7 @@ def _train_tier_main(
 # ---------------------------------------------------------------------------
 # Tier 0 preparation
 # ---------------------------------------------------------------------------
+
 
 def _prepare_tier0(
     epochs: int = 200,
@@ -225,12 +229,14 @@ def _prepare_tier0(
     log.info("Tier 0 inference check on SMILES: %s", smiles_check)
     try:
         from rdkit import Chem as _Chem
+
         mol = _Chem.MolFromSmiles(smiles_check)
         if mol is None:
             raise RuntimeError("RDKit could not parse ethylene carbonate SMILES")
         # Validate molecular graph construction works
         from rdkit import Chem as _Chem2
         from rdkit import Chem as _Chem3
+
         mol_h = _Chem2.AddHs(mol)
         _ = _Chem3.MolToSmiles(mol_h)
         log.info("Tier 0 inference check passed")
@@ -243,6 +249,7 @@ def _prepare_tier0(
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def prep_discovery(
     tier0_epochs: int = 200,
@@ -321,25 +328,34 @@ def prep_discovery(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     """CLI entry point for the preparation pipeline."""
     parser = argparse.ArgumentParser(
         description="Prepare models for autonomous discovery screening.",
     )
     parser.add_argument(
-        "--tier0-epochs", type=int, default=200,
+        "--tier0-epochs",
+        type=int,
+        default=200,
         help="Number of Epochs for Tier 0 MPNN training (default: 200)",
     )
     parser.add_argument(
-        "--tier1-epochs", type=int, default=200,
+        "--tier1-epochs",
+        type=int,
+        default=200,
         help="Number of epochs for Tier 1 MLP training (default: 200)",
     )
     parser.add_argument(
-        "--batch-size", type=int, default=16,
+        "--batch-size",
+        type=int,
+        default=16,
         help="Mini-batch size for both tiers (default: 16)",
     )
     parser.add_argument(
-        "--learning-rate", type=float, default=0.005,
+        "--learning-rate",
+        type=float,
+        default=0.005,
         help="Learning rate for Tier 1 (default: 0.005)",
     )
     parser.add_argument(
@@ -349,11 +365,14 @@ def main() -> None:
         help="Dataset for Tier 1 training (default: esol)",
     )
     parser.add_argument(
-        "--csv-path", type=str, default=None,
+        "--csv-path",
+        type=str,
+        default=None,
         help="Path to local CSV file for Tier 1 (bypasses HuggingFace)",
     )
     parser.add_argument(
-        "--no-mlx", action="store_true",
+        "--no-mlx",
+        action="store_true",
         help="Train Tier 1 with numpy only (no MLX required)",
     )
     args = parser.parse_args()

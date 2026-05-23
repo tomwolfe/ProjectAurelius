@@ -28,17 +28,11 @@ def calculate_electronic_descriptors(smiles: str) -> dict:
     logp = Descriptors.MolLogP(mol)
     num_f = sum(1 for atom in mol.GetAtoms() if atom.GetAtomicNum() == 9)
     num_aromatic = Lipinski.NumAromaticRings(mol)
-    num_double_bonds = sum(
-        1 for bond in mol.GetBonds() if bond.GetBondType() == Chem.rdchem.BondType.DOUBLE
-    )
-    num_triple_bonds = sum(
-        1 for bond in mol.GetBonds() if bond.GetBondType() == Chem.rdchem.BondType.TRIPLE
-    )
+    num_double_bonds = sum(1 for bond in mol.GetBonds() if bond.GetBondType() == Chem.rdchem.BondType.DOUBLE)
+    num_triple_bonds = sum(1 for bond in mol.GetBonds() if bond.GetBondType() == Chem.rdchem.BondType.TRIPLE)
 
     AllChem.ComputeGasteigerCharges(mol)
-    max_charge = max(
-        [atom.GetDoubleProp("_GasteigerCharge") for atom in mol.GetAtoms()]
-    )
+    max_charge = max([atom.GetDoubleProp("_GasteigerCharge") for atom in mol.GetAtoms()])
 
     return {
         "logp": logp,
@@ -188,9 +182,7 @@ def main():
     pipeline = AureliusPipeline(config)
     pipeline.initialize()
 
-    twin = GCMDigitalTwin(
-        gcmtwin_config=GCMDTConfig(max_simulation_steps=5000)
-    )
+    twin = GCMDigitalTwin(gcmtwin_config=GCMDTConfig(max_simulation_steps=5000))
 
     results = []
     for smiles in top_candidates:
@@ -243,7 +235,9 @@ def main():
         )
         print(f"\n  Best Non-Viable by Homogeneity: {best_non_viable['smiles']}")
         print(f"  Total Score: {best_non_viable['total_score']:.1f}/100")
-        print(f"  SEI Homogeneity: {best_non_viable['sei_homogeneity']:.1f}/100 (raw {best_non_viable['sei_homogeneity_raw']:.4f})")
+        print(
+            f"  SEI Homogeneity: {best_non_viable['sei_homogeneity']:.1f}/100 (raw {best_non_viable['sei_homogeneity_raw']:.4f})"
+        )
         print(f"  SEI Components: {best_non_viable['components']}")
 
 

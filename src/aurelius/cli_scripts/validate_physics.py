@@ -36,11 +36,14 @@ def validate_tier2() -> dict[str, Any]:
 
         # Test 1: Water molecule energy is finite
         atomic_numbers = torch.tensor([1, 8, 1], dtype=torch.long)
-        coordinates = torch.tensor([
-            [0.0, 0.0, 0.0],
-            [0.0, 0.757, 0.586],
-            [0.0, -0.586, -0.586],
-        ], dtype=torch.float32)
+        coordinates = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [0.0, 0.757, 0.586],
+                [0.0, -0.586, -0.586],
+            ],
+            dtype=torch.float32,
+        )
 
         energy = engine(atomic_numbers, coordinates)
         if torch.isfinite(energy):
@@ -55,7 +58,9 @@ def validate_tier2() -> dict[str, Any]:
         coords_grad = coordinates.clone().requires_grad_(True)
         energy = engine(atomic_numbers, coords_grad)
         grad = torch.autograd.grad(
-            energy, coords_grad, grad_outputs=torch.ones_like(energy),
+            energy,
+            coords_grad,
+            grad_outputs=torch.ones_like(energy),
             create_graph=False,
         )
         if grad is not None and torch.all(torch.isfinite(grad[0])):
@@ -78,12 +83,15 @@ def validate_tier2() -> dict[str, Any]:
             print(f"  [FAIL] Non-deterministic energy: {e1} vs {e2}")
 
         # Test 4: Na+ water cluster has physically reasonable energy
-        na_coords = torch.tensor([
-            [0.0, 0.0, 0.0],    # Na+
-            [2.3, 0.0, 0.0],    # O (first solvation shell)
-            [2.8, 0.7, 0.0],    # H
-            [2.8, -0.7, 0.0],   # H
-        ], dtype=torch.float32)
+        na_coords = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],  # Na+
+                [2.3, 0.0, 0.0],  # O (first solvation shell)
+                [2.8, 0.7, 0.0],  # H
+                [2.8, -0.7, 0.0],  # H
+            ],
+            dtype=torch.float32,
+        )
         na_nums = torch.tensor([11, 8, 1, 1], dtype=torch.long)
         energy_na = engine(na_nums, na_coords)
         if torch.isfinite(energy_na):
@@ -136,15 +144,11 @@ def validate_tier3() -> dict[str, Any]:
 
         if k_250 < k_298 < k_350:
             results["passed"] += 1
-            print(f"  [PASS] Arrhenius: rates increase with temperature "
-                  f"({k_250:.4f} < {k_298:.4f} < {k_350:.4f})")
+            print(f"  [PASS] Arrhenius: rates increase with temperature ({k_250:.4f} < {k_298:.4f} < {k_350:.4f})")
         else:
             results["failed"] += 1
-            results["errors"].append(
-                f"Arrhenius: {k_250:.4f} >= {k_298:.4f} >= {k_350:.4f}"
-            )
-            print(f"  [FAIL] Arrhenius rate not monotonic: "
-                  f"{k_250:.4f} >= {k_298:.4f} >= {k_350:.4f}")
+            results["errors"].append(f"Arrhenius: {k_250:.4f} >= {k_298:.4f} >= {k_350:.4f}")
+            print(f"  [FAIL] Arrhenius rate not monotonic: {k_250:.4f} >= {k_298:.4f} >= {k_350:.4f}")
 
         # Test 2: Lower activation energy -> higher rate
         k_low_ea = twin._arrhenius_rate(
@@ -163,13 +167,10 @@ def validate_tier3() -> dict[str, Any]:
         )
         if k_low_ea > k_high_ea:
             results["passed"] += 1
-            print(f"  [PASS] Lower Ea gives higher rate: "
-                  f"{k_low_ea:.4f} > {k_high_ea:.4f}")
+            print(f"  [PASS] Lower Ea gives higher rate: {k_low_ea:.4f} > {k_high_ea:.4f}")
         else:
             results["failed"] += 1
-            results["errors"].append(
-                f"Ea reversal: {k_low_ea:.4f} <= {k_high_ea:.4f}"
-            )
+            results["errors"].append(f"Ea reversal: {k_low_ea:.4f} <= {k_high_ea:.4f}")
             print("  [FAIL] Lower Ea did not give higher rate")
 
         # Test 3: Concentration-dependent pre-exponential factor
@@ -196,18 +197,17 @@ def validate_tier3() -> dict[str, Any]:
         )
         if k_full > k_half > k_low:
             results["passed"] += 1
-            print(f"  [PASS] Rate decreases with concentration: "
-                  f"{k_full:.4f} > {k_half:.4f} > {k_low:.4f}")
+            print(f"  [PASS] Rate decreases with concentration: {k_full:.4f} > {k_half:.4f} > {k_low:.4f}")
         else:
             results["failed"] += 1
-            results["errors"].append(
-                f"Concentration dependence failed: {k_full:.4f} > {k_half:.4f} > {k_low:.4f}"
-            )
+            results["errors"].append(f"Concentration dependence failed: {k_full:.4f} > {k_half:.4f} > {k_low:.4f}")
             print("  [FAIL] Concentration dependence incorrect")
 
         # Test 4: SEI thickness is physically plausible (1-50 Angstroms)
         result = twin.simulate_sei_evolution(
-            "CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6",
+            "CC(=O)OC1=CC(=O)O1",
+            "ec:dmc",
+            "NaPF6",
         )
         thickness = result.sei_evolution.thickness_angstrom
         if 1.0 <= thickness <= 50.0:
@@ -260,8 +260,10 @@ def validate_solvation() -> dict[str, Any]:
 
         if 1.0 < na_norm < 2.5 and 1.5 < li_norm < 3.0 and 1.0 < k_norm < 2.0:
             results["passed"] += 1
-            print(f"  [PASS] Born charges are physically reasonable: "
-                  f"Na+={na_norm:.3f}, Li+={li_norm:.3f}, K+={k_norm:.3f}")
+            print(
+                f"  [PASS] Born charges are physically reasonable: "
+                f"Na+={na_norm:.3f}, Li+={li_norm:.3f}, K+={k_norm:.3f}"
+            )
         else:
             results["failed"] += 1
             results["errors"].append(
@@ -289,8 +291,10 @@ def validate_solvation() -> dict[str, Any]:
 
         if min(z_ec, z_dmc) <= z_mixed <= max(z_ec, z_dmc):
             results["passed"] += 1
-            print(f"  [PASS] Mixed solvent interpolation correct: "
-                  f"{min(z_ec, z_dmc):.3f} <= {z_mixed:.3f} <= {max(z_ec, z_dmc):.3f}")
+            print(
+                f"  [PASS] Mixed solvent interpolation correct: "
+                f"{min(z_ec, z_dmc):.3f} <= {z_mixed:.3f} <= {max(z_ec, z_dmc):.3f}"
+            )
         else:
             results["failed"] += 1
             results["errors"].append(
@@ -300,6 +304,7 @@ def validate_solvation() -> dict[str, Any]:
 
         # Test 4: Dielectric constants are loaded correctly
         from aurelius.solvation.engine import _DIELECTRIC_CONSTANTS
+
         expected_solvents = ["water", "ec", "dmc", "emc", "pc"]
         found = sum(1 for s in expected_solvents if s in _DIELECTRIC_CONSTANTS)
         if found >= 4:
@@ -307,9 +312,7 @@ def validate_solvation() -> dict[str, Any]:
             print(f"  [PASS] Dielectric constants loaded: {found}/{len(expected_solvents)} solvents")
         else:
             results["failed"] += 1
-            results["errors"].append(
-                f"Only {found}/{len(expected_solvents)} expected solvents found"
-            )
+            results["errors"].append(f"Only {found}/{len(expected_solvents)} expected solvents found")
             print(f"  [FAIL] Insufficient dielectric constants: {found}/{len(expected_solvents)}")
 
     except ImportError as e:
@@ -377,8 +380,10 @@ Examples:
 
         all_errors.extend(results["errors"])
 
-        print(f"  Passed: {results['passed']}, Failed: {results['failed']}"
-              + (", Skipped: 1" if "skipped" in results else ""))
+        print(
+            f"  Passed: {results['passed']}, Failed: {results['failed']}"
+            + (", Skipped: 1" if "skipped" in results else "")
+        )
 
     print("\n" + "=" * 60)
     print(f"  Results: {total_passed} passed, {total_failed} failed, {total_skipped} skipped")

@@ -113,6 +113,7 @@ def doctor(verbose: bool) -> None:
     if HAS_MLX:
         try:
             import mlx.core as _mx  # noqa: F401
+
             click.echo("  MLX:      Metal backend available")
         except Exception:
             click.echo("  MLX:      Metal backend unavailable")
@@ -123,6 +124,7 @@ def doctor(verbose: bool) -> None:
     if HAS_TORCH:
         try:
             import torch  # noqa: F401
+
             if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built():  # type: ignore[no-untyped-call, unused-ignore]
                 if torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
                     click.echo(f"  PyTorch:  CUDA available ({torch.cuda.get_device_name(0)})")  # type: ignore[no-untyped-call, unused-ignore]
@@ -281,7 +283,7 @@ def screen(
         ion_type=ion,
         temperature_k=temperature,
         voltage_cutoff=voltage,
-            n_scan_cycles=cycles,
+        n_scan_cycles=cycles,
         gwp_value=gwp,
     )
 
@@ -333,24 +335,26 @@ def batch(file: str, solvent: str, salt: str, output: str | None, allow_fallback
 
     # Summary
     viable = sum(1 for r in results if r["score"].is_viable)
-    click.echo(f"\nBatch complete: {viable}/{len(smiles_list)} viable ({100*viable/len(smiles_list):.0f}%)")
+    click.echo(f"\nBatch complete: {viable}/{len(smiles_list)} viable ({100 * viable / len(smiles_list):.0f}%)")
 
     if output:
         # Serialize results
         serializable = []
         for r in results:
             score = r["score"]
-            serializable.append({
-                "smiles": score.molecule_smiles,
-                "total_score": score.total_score,
-                "is_viable": score.is_viable,
-                "sigma": score.sigma_score,
-                "desolvation": score.desolvation_score,
-                "sei_homogeneity": score.sei_homogeneity_score,
-                "mx_synthesis": score.mx_synthesis_score,
-                "gwp_penalty": score.gwp_penalty,
-                "rejection_reasons": score.rejection_reasons,
-            })
+            serializable.append(
+                {
+                    "smiles": score.molecule_smiles,
+                    "total_score": score.total_score,
+                    "is_viable": score.is_viable,
+                    "sigma": score.sigma_score,
+                    "desolvation": score.desolvation_score,
+                    "sei_homogeneity": score.sei_homogeneity_score,
+                    "mx_synthesis": score.mx_synthesis_score,
+                    "gwp_penalty": score.gwp_penalty,
+                    "rejection_reasons": score.rejection_reasons,
+                }
+            )
         with open(output, "w") as f:
             json.dump(serializable, f, indent=2)
         click.echo(f"Results saved to {output}")
@@ -380,13 +384,17 @@ def score(smiles: str, solvent: str, salt: str, ion: str, gwp: float) -> None:  
 
     score = results.get("score")
     if score:
-        click.echo(f"\nAurelius Score v5.2: {score.total_score:.1f}/100 "
-                   f"{'VIABLE' if score.is_viable else 'REJECTED'}")
+        click.echo(f"\nAurelius Score v5.2: {score.total_score:.1f}/100 {'VIABLE' if score.is_viable else 'REJECTED'}")
 
 
 @cli.command("train")  # type: ignore[untyped-decorator]
 @click.option("--dataset", default="esol", help="Dataset to train on (esol/qm9)")  # type: ignore[untyped-decorator]
-@click.option("--task", type=click.Choice(["tier1", "tier0"]), default="tier1", help="Training task (tier1 for MLX filter, tier0 for MPNN activation energy predictor)")  # type: ignore[untyped-decorator]
+@click.option(
+    "--task",
+    type=click.Choice(["tier1", "tier0"]),
+    default="tier1",
+    help="Training task (tier1 for MLX filter, tier0 for MPNN activation energy predictor)",
+)  # type: ignore[untyped-decorator]
 @click.option("--epochs", type=int, default=200, help="Number of training epochs")  # type: ignore[untyped-decorator]
 @click.option("--batch-size", type=int, default=16, help="Mini-batch size")  # type: ignore[untyped-decorator]
 @click.option("--learning-rate", type=float, default=0.005, help="Learning rate")  # type: ignore[untyped-decorator]
@@ -461,7 +469,12 @@ def status() -> None:  # type: ignore[untyped-decorator]
 
 
 @cli.command("benchmark")  # type: ignore[untyped-decorator]
-@click.option("--tier", type=click.Choice(["1", "2"]), default=None, help="Benchmark only a specific tier (1 or 2). Omit for all tiers.")  # type: ignore[untyped-decorator]
+@click.option(
+    "--tier",
+    type=click.Choice(["1", "2"]),
+    default=None,
+    help="Benchmark only a specific tier (1 or 2). Omit for all tiers.",
+)  # type: ignore[untyped-decorator]
 @click.option("--quick/--detailed", default=True, help="Quick mode with fewer repeats (default: enabled)")  # type: ignore[untyped-decorator]
 @click.option("--output", type=click.Path(), default=None, help="Save results to JSON file")  # type: ignore[untyped-decorator]
 def benchmark(tier: str | None, quick: bool, output: str | None) -> None:  # type: ignore[untyped-decorator]
@@ -479,7 +492,9 @@ def benchmark(tier: str | None, quick: bool, output: str | None) -> None:  # typ
 @cli.command("hf-upload")  # type: ignore[untyped-decorator]
 @click.option("--model-dir", required=True, help="Local directory containing model files to upload")  # type: ignore[untyped-decorator]
 @click.option("--repo-id", required=True, help="HuggingFace Hub repository ID (e.g., 'user/repo-name')")  # type: ignore[untyped-decorator]
-@click.option("--task", type=click.Choice(["tier0", "esol", "qm9"]), default="tier0", help="Model task type (default: tier0)")  # type: ignore[untyped-decorator]
+@click.option(
+    "--task", type=click.Choice(["tier0", "esol", "qm9"]), default="tier0", help="Model task type (default: tier0)"
+)  # type: ignore[untyped-decorator]
 @click.option("--private/--public", default=True, help="Make repository private (default: private)")  # type: ignore[untyped-decorator]
 @click.option("--commit-message", default="Upload model via Aurelius CLI", help="Commit message for the upload")  # type: ignore[untyped-decorator]
 @click.option("--dry-run", is_flag=True, help="Validate repo ID, token, and metadata without uploading")  # type: ignore[untyped-decorator]
@@ -532,8 +547,7 @@ def hf_upload(
     # Validate repo ID format
     if "/" not in repo_id:
         click.echo(
-            f"[ERROR] Invalid repo ID format: '{repo_id}'. "
-            f"Expected 'username/repo-name'.",
+            f"[ERROR] Invalid repo ID format: '{repo_id}'. Expected 'username/repo-name'.",
             err=True,
         )
         sys.exit(1)
@@ -583,6 +597,7 @@ def hf_upload(
     # Authenticate
     try:
         from huggingface_hub import login as hf_login
+
         hf_login(add_to_git_credential=True)
     except Exception as e:
         click.echo(f"[ERROR] HuggingFace authentication failed: {e}", err=True)
@@ -624,7 +639,7 @@ screening pipeline optimized for Apple M-series Neural Accelerators.
 ## Training Details
 
 - **Framework:** PyTorch (GPU/MPS) or MLX (Apple Silicon)
-- **Dataset:** {task if task != 'tier0' else 'Synthetic (RDKit + Arrhenius shifts)'}
+- **Dataset:** {task if task != "tier0" else "Synthetic (RDKit + Arrhenius shifts)"}
 - **License:** MIT
 
 ## Usage

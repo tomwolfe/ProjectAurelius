@@ -62,6 +62,7 @@ _mx: Any = None
 if HAS_MLX:
     try:
         import mlx.core as mx  # noqa: F401
+
         _mx = mx
     except Exception:
         pass
@@ -72,6 +73,7 @@ if HAS_TORCH:
     try:
         import torch  # type: ignore[import-not-found, unused-ignore]
         import torch.nn as torch_nn  # type: ignore[import-not-found, unused-ignore]
+
         _torch = torch
         _torch_nn = torch_nn
     except Exception:
@@ -281,10 +283,10 @@ class _FallbackMLP:
         return [self.W1, self.b1, self.W2, self.b2]
 
 
-
 # ---------------------------------------------------------------------------
 # PyTorch base class alias
 # ---------------------------------------------------------------------------
+
 
 class _ModuleBase:
     """Base class for PyTorch model fallbacks.
@@ -298,11 +300,12 @@ class _ModuleBase:
         # When torch is available, inherit from torch.nn.Module
         pass
     else:
+
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             raise RuntimeError(
-                "PyTorch is required for PyTorchFallbackFilter. "
-                "Install with: pip install torch",
+                "PyTorch is required for PyTorchFallbackFilter. Install with: pip install torch",
             )
+
         __call__: Any
 
 
@@ -409,9 +412,8 @@ class PyTorchFallbackFilter(_ModuleBase):
             path: Directory path containing saved weights.
         """
         state_dict = _torch.load(
-            path, map_location="cpu", weights_only=True,
+            path,
+            map_location="cpu",
+            weights_only=True,
         )
         self.load_state_dict(state_dict)  # type: ignore[attr-defined]
-
-
-

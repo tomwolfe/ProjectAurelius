@@ -89,8 +89,8 @@ def compute_lj_loop(atomic_numbers: np.ndarray, distances: np.ndarray) -> float:
 
             r_soft = np.sqrt(r * r + sig * sig)
             sig_over_r = sig / r_soft
-            sig_over_r6 = sig_over_r ** 6
-            lj = 4.0 * eps * (sig_over_r6 ** 2 - sig_over_r6)
+            sig_over_r6 = sig_over_r**6
+            lj = 4.0 * eps * (sig_over_r6**2 - sig_over_r6)
             total += lj
 
     return total
@@ -132,10 +132,10 @@ def compute_lj_vectorized(atomic_numbers: np.ndarray, distances: np.ndarray) -> 
     cutoff_mask = (distances < 12.0) & mask
 
     # Vectorized LJ computation
-    r_soft = np.sqrt(distances * distances + sig_tensor ** 2)
+    r_soft = np.sqrt(distances * distances + sig_tensor**2)
     sig_over_r = sig_tensor / r_soft
-    sig_over_r6 = sig_over_r ** 6
-    lj = 4.0 * eps_tensor * (sig_over_r6 ** 2 - sig_over_r6)
+    sig_over_r6 = sig_over_r**6
+    lj = 4.0 * eps_tensor * (sig_over_r6**2 - sig_over_r6)
 
     return float(np.sum(lj * cutoff_mask))
 
@@ -172,7 +172,7 @@ def compute_coulomb_vectorized(atomic_numbers: np.ndarray, distances: np.ndarray
     q_product = q_i * q_j
 
     mask = np.triu(np.ones((n, n)), k=1)
-    charge_mask = (q_product != 0.0)
+    charge_mask = q_product != 0.0
     r_soft = np.sqrt(distances * distances + 1.0)
 
     return float(np.sum(COULOMB_EV_A * q_product / r_soft * mask * charge_mask))

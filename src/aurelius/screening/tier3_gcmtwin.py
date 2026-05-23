@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+from importlib import resources
 from typing import Any
 
 import numpy as np
@@ -69,40 +70,46 @@ class Tier0ActivationPredictor:
     _HEAVY_RANGE = (5, 50)
 
     # Linear model weights (deterministic, calibrated against DFT data)
-    _SOLVENT_WEIGHTS = np.array([
-        0.002,  # mw
-        0.08,   # logp (higher logp -> more hydrophobic -> higher barrier)
-        -0.02,  # hba (more H-bond acceptors -> lower barrier)
-        -0.03,  # hbd
-        -0.003, # tpsa
-        0.01,   # rot_bonds
-        0.15,   # aromatic_ratio (aromatic rings stabilize intermediates)
-        0.005,  # heavy_atom_count
-    ])
+    _SOLVENT_WEIGHTS = np.array(
+        [
+            0.002,  # mw
+            0.08,  # logp (higher logp -> more hydrophobic -> higher barrier)
+            -0.02,  # hba (more H-bond acceptors -> lower barrier)
+            -0.03,  # hbd
+            -0.003,  # tpsa
+            0.01,  # rot_bonds
+            0.15,  # aromatic_ratio (aromatic rings stabilize intermediates)
+            0.005,  # heavy_atom_count
+        ]
+    )
     _SOLVENT_BIAS = 0.70
 
-    _SALT_WEIGHTS = np.array([
-        0.001,
-        0.05,
-        0.01,
-        0.02,
-        0.002,
-        0.005,
-        0.10,
-        0.003,
-    ])
+    _SALT_WEIGHTS = np.array(
+        [
+            0.001,
+            0.05,
+            0.01,
+            0.02,
+            0.002,
+            0.005,
+            0.10,
+            0.003,
+        ]
+    )
     _SALT_BIAS = 1.15
 
-    _POLY_WEIGHTS = np.array([
-        0.001,
-        0.06,
-        -0.01,
-        -0.02,
-        -0.002,
-        0.015,
-        0.20,
-        0.004,
-    ])
+    _POLY_WEIGHTS = np.array(
+        [
+            0.001,
+            0.06,
+            -0.01,
+            -0.02,
+            -0.002,
+            0.015,
+            0.20,
+            0.004,
+        ]
+    )
     _POLY_BIAS = 0.45
 
     def predict(
@@ -154,16 +161,20 @@ class Tier0ActivationPredictor:
             Predicted activation energy in eV, clamped to literature range.
         """
         # Normalize descriptors to [0, 1]
-        normalized = np.array([
-            (descriptors.get("mw", 250) - self._MW_RANGE[0]) / (self._MW_RANGE[1] - self._MW_RANGE[0]),
-            (descriptors.get("logp", 1.5) - self._LOGP_RANGE[0]) / (self._LOGP_RANGE[1] - self._LOGP_RANGE[0]),
-            (descriptors.get("hba", 5) - self._HBA_RANGE[0]) / (self._HBA_RANGE[1] - self._HBA_RANGE[0]),
-            (descriptors.get("hbd", 2) - self._HBD_RANGE[0]) / (self._HBD_RANGE[1] - self._HBD_RANGE[0]),
-            (descriptors.get("tpsa", 100) - self._TPSA_RANGE[0]) / (self._TPSA_RANGE[1] - self._TPSA_RANGE[0]),
-            (descriptors.get("rot_bonds", 5) - self._ROT_RANGE[0]) / (self._ROT_RANGE[1] - self._ROT_RANGE[0]),
-            (descriptors.get("aromatic_ratio", 0.5) - self._ARO_RANGE[0]) / (self._ARO_RANGE[1] - self._ARO_RANGE[0]),
-            (descriptors.get("heavy_atom_count", 25) - self._HEAVY_RANGE[0]) / (self._HEAVY_RANGE[1] - self._HEAVY_RANGE[0]),
-        ])
+        normalized = np.array(
+            [
+                (descriptors.get("mw", 250) - self._MW_RANGE[0]) / (self._MW_RANGE[1] - self._MW_RANGE[0]),
+                (descriptors.get("logp", 1.5) - self._LOGP_RANGE[0]) / (self._LOGP_RANGE[1] - self._LOGP_RANGE[0]),
+                (descriptors.get("hba", 5) - self._HBA_RANGE[0]) / (self._HBA_RANGE[1] - self._HBA_RANGE[0]),
+                (descriptors.get("hbd", 2) - self._HBD_RANGE[0]) / (self._HBD_RANGE[1] - self._HBD_RANGE[0]),
+                (descriptors.get("tpsa", 100) - self._TPSA_RANGE[0]) / (self._TPSA_RANGE[1] - self._TPSA_RANGE[0]),
+                (descriptors.get("rot_bonds", 5) - self._ROT_RANGE[0]) / (self._ROT_RANGE[1] - self._ROT_RANGE[0]),
+                (descriptors.get("aromatic_ratio", 0.5) - self._ARO_RANGE[0])
+                / (self._ARO_RANGE[1] - self._ARO_RANGE[0]),
+                (descriptors.get("heavy_atom_count", 25) - self._HEAVY_RANGE[0])
+                / (self._HEAVY_RANGE[1] - self._HEAVY_RANGE[0]),
+            ]
+        )
 
         # Linear prediction
         raw_ea = float(np.dot(normalized, weights) + bias)
@@ -193,17 +204,22 @@ def _load_kmc_params(path: str | None = None) -> dict[str, Any]:
     Returns:
         Dictionary of kMC reaction parameters, or empty dict on failure.
     """
-    ff_path = path or os.path.join(
-        os.path.dirname(os.path.dirname(__file__)),
-        "data", "force_field_params.json",
-    )
-    if os.path.isfile(ff_path):
+    if path is not None and os.path.isfile(path):
         try:
-            with open(ff_path) as f:
+            with open(path) as f:
                 data = json.load(f)
                 return data.get("kmc_reaction_parameters", {})  # type: ignore[no-any-return]
         except (json.JSONDecodeError, OSError):
             pass
+
+    # Fallback: load from package data using importlib.resources
+    try:
+        ff_path = str(resources.files("aurelius.data").joinpath("force_field_params.json"))
+        with open(ff_path) as f:
+            data = json.load(f)
+            return data.get("kmc_reaction_parameters", {})  # type: ignore[no-any-return]
+    except (FileNotFoundError, OSError, ValueError):
+        pass
     return {}
 
 
@@ -341,6 +357,7 @@ class GCMDigitalTwin:
             GCMDTwinResult with SEI evolution data.
         """
         import time
+
         start = time.perf_counter()
 
         seed = self._hash_inputs(smiles, solvent_type, salt_type)
@@ -367,15 +384,20 @@ class GCMDigitalTwin:
             ea_poly = ea_overrides.get("polymerization", ea_poly)
 
         sei = self._run_kmc_simulation(
-            rng, voltage_cutoff, max_time_ps, temperature_k,
-            solvent_type, salt_type,
-            ea_ec=ea_ec, ea_dm=ea_dm, ea_salt=ea_salt, ea_poly=ea_poly,
+            rng,
+            voltage_cutoff,
+            max_time_ps,
+            temperature_k,
+            solvent_type,
+            salt_type,
+            ea_ec=ea_ec,
+            ea_dm=ea_dm,
+            ea_salt=ea_salt,
+            ea_poly=ea_poly,
         )
 
         elapsed_ms = (time.perf_counter() - start) * 1000
-        mem_gb = self._estimate_memory_footprint(
-            sei, base=self._mem_base, scaling=self._mem_scaling
-        )
+        mem_gb = self._estimate_memory_footprint(sei, base=self._mem_base, scaling=self._mem_scaling)
 
         return GCMDTwinResult(
             molecule_smiles=smiles,
@@ -509,7 +531,11 @@ class GCMDigitalTwin:
         current_time = 0.0
 
         # Solvent composition ratio (EC:DMC)
-        ec_ratio = self._ec_ratio_default if "ec:dmc" in solvent_type else (1.0 if "ec" in solvent_type else self._solvent_composition.get("fallback_ratio", 0.5))
+        ec_ratio = (
+            self._ec_ratio_default
+            if "ec:dmc" in solvent_type
+            else (1.0 if "ec" in solvent_type else self._solvent_composition.get("fallback_ratio", 0.5))
+        )
         dmc_ratio = 1.0 - ec_ratio
 
         for step in range(n_steps):
@@ -551,7 +577,9 @@ class GCMDigitalTwin:
             # Polymerization rate (organic SEI formation)
             # Depends on solvent radical concentration (proportional to solvent reaction)
             k_poly = self._arrhenius_rate(
-                activation_energy_eV=ea_poly if ea_poly is not None else self._activation_energies.get("polymerization", 0.40),
+                activation_energy_eV=ea_poly
+                if ea_poly is not None
+                else self._activation_energies.get("polymerization", 0.40),
                 temperature_k=temperature_k,
                 concentration=local_solvent_conc,
                 pre_exponential_base=self._A_POLY_BASE,
@@ -596,11 +624,13 @@ class GCMDigitalTwin:
         # Homogeneity: based on the distribution of reaction types
         total_events = n_solvent_events + n_salt_events + n_poly_events
         if total_events > 0:
-            fractions = np.array([
-                n_solvent_events / total_events,
-                n_salt_events / total_events,
-                n_poly_events / total_events,
-            ])
+            fractions = np.array(
+                [
+                    n_solvent_events / total_events,
+                    n_salt_events / total_events,
+                    n_poly_events / total_events,
+                ]
+            )
             # Homogeneity is high when reactions are well-distributed
             # (not dominated by a single pathway)
             ideal_fraction = self._ideal_fraction
@@ -649,5 +679,6 @@ class GCMDigitalTwin:
             Deterministic integer seed derived from SHA-256 hash.
         """
         import hashlib
+
         combined = f"{smiles}_{solvent}_{salt}"
         return int(hashlib.sha256(combined.encode()).hexdigest()[:8], 16)

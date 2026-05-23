@@ -28,12 +28,14 @@ _torch: Any = None
 if HAS_MLX:
     try:
         import mlx.core as mx  # noqa: F401
+
         _mx = mx
     except Exception:
         pass
 if HAS_TORCH:
     try:
         import torch  # noqa: F401
+
         _torch = torch
     except Exception:
         pass
@@ -47,19 +49,14 @@ _MLX_NOT_AVAILABLE_MSG = (
     "For CPU-only CI pipelines, consider skipping MLX-dependent tests.)"
 )
 
-_TORCH_NOT_AVAILABLE_MSG = (
-    "PyTorch is required for cross-framework bridging. "
-    "Install with: pip install torch"
-)
+_TORCH_NOT_AVAILABLE_MSG = "PyTorch is required for cross-framework bridging. Install with: pip install torch"
 
 _DLPACK_UNSUPPORTED_MSG = (
-    "This version of MLX does not support DLpack. "
-    "Upgrade to mlx>=0.21.0 for cross-framework zero-copy bridging."
+    "This version of MLX does not support DLpack. Upgrade to mlx>=0.21.0 for cross-framework zero-copy bridging."
 )
 
 _TORCH_DLPACK_UNSUPPORTED_MSG = (
-    "This version of PyTorch does not support DLpack. "
-    "Upgrade to torch>=2.12.0 for cross-framework zero-copy bridging."
+    "This version of PyTorch does not support DLpack. Upgrade to torch>=2.12.0 for cross-framework zero-copy bridging."
 )
 
 
@@ -70,6 +67,11 @@ def bridge_mlx_to_pytorch(mlx_array: _mx.array) -> _torch.Tensor:
     capsule, then consumes it natively inside PyTorch targeting the
     same device as the source MLX array. This avoids explicit heavy
     deep-copy memory duplication.
+
+    Note:
+        DLpack bridges MLX to PyTorch on CPU/Unified Memory. Callers
+        must explicitly call ``.to('mps')`` if Metal buffer allocation
+        is required, which will incur a deep copy.
 
     Args:
         mlx_array: An MLX core array to bridge.
@@ -96,18 +98,10 @@ def bridge_mlx_to_pytorch(mlx_array: _mx.array) -> _torch.Tensor:
     # Consume the capsule natively inside PyTorch
     torch_tensor = _torch.from_dlpack(capsule)  # type: ignore[attr-defined, unused-ignore]
 
-    # Preserve the device from the source MLX array's underlying storage.
-    # MLX arrays on Apple Silicon map to MPS in PyTorch; on CPU, they
-    # stay on CPU. This avoids the previous hardcoded .to("mps") which
-    # would silently fail or error on Linux/Windows.
-    if _torch.backends.mps.is_available():
-        try:
-            torch_tensor = torch_tensor.to("mps")
-        except RuntimeError:
-            # MPS not available on this hardware; fall back to CPU
-            torch_tensor = torch_tensor.to("cpu")
-
-    return torch_tensor
+    # DLpack bridges MLX to PyTorch on CPU/Unified Memory.
+    # Callers must explicitly call .to('mps') if Metal buffer allocation
+    # is required, which will incur a deep copy.
+    return torch_tensor  # type: ignore[no-any-return, unused-ignore]
 
 
 def bridge_pytorch_to_mlx(torch_tensor: _torch.Tensor) -> _mx.array:

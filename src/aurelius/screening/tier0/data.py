@@ -24,6 +24,7 @@ import numpy as np
 try:
     import torch
     import torch.nn as nn
+
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
@@ -35,7 +36,8 @@ if HAS_TORCH:
 
 
 def _build_molecular_graph(
-    smiles: str, device: str = "cpu",
+    smiles: str,
+    device: str = "cpu",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Build a molecular graph from a SMILES string.
 
@@ -62,8 +64,7 @@ def _build_molecular_graph(
         from rdkit.Chem import AllChem
     except ImportError:
         raise RuntimeError(
-            "RDKit is required for molecular graph construction. "
-            "Install with: pip install rdkit"
+            "RDKit is required for molecular graph construction. Install with: pip install rdkit"
         ) from None
 
     mol = Chem.MolFromSmiles(smiles)
@@ -155,10 +156,7 @@ def generate_synthetic_training_data(
         from rdkit import Chem
         from rdkit.Chem import Descriptors
     except ImportError:
-        raise RuntimeError(
-            "RDKit is required for synthetic data generation. "
-            "Install with: pip install rdkit"
-        ) from None
+        raise RuntimeError("RDKit is required for synthetic data generation. Install with: pip install rdkit") from None
 
     # Load seed SMILES from external file
     base_smiles = _load_tier0_seed_smiles()
@@ -228,7 +226,9 @@ def generate_synthetic_training_data(
     if output_path:
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         with open(output_path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["smiles", "ec_reduction", "dm_reduction", "pf6_decomposition", "polymerization"])
+            writer = csv.DictWriter(
+                f, fieldnames=["smiles", "ec_reduction", "dm_reduction", "pf6_decomposition", "polymerization"]
+            )
             writer.writeheader()
             writer.writerows(training_data)
 
@@ -272,8 +272,7 @@ def train_tier0_model(
         from rdkit import Chem  # noqa: F401
     except ImportError:
         raise RuntimeError(
-            "RDKit is required for molecular graph construction. "
-            "Install with: pip install rdkit"
+            "RDKit is required for molecular graph construction. Install with: pip install rdkit"
         ) from None
 
     if train_csv_path:
@@ -294,13 +293,15 @@ def train_tier0_model(
                 )
 
             for row in reader:
-                training_data.append({
-                    "smiles": row["smiles"],
-                    "ec_reduction": float(row["ec_reduction"]),
-                    "dm_reduction": float(row["dm_reduction"]),
-                    "pf6_decomposition": float(row["pf6_decomposition"]),
-                    "polymerization": float(row["polymerization"]),
-                })
+                training_data.append(
+                    {
+                        "smiles": row["smiles"],
+                        "ec_reduction": float(row["ec_reduction"]),
+                        "dm_reduction": float(row["dm_reduction"]),
+                        "pf6_decomposition": float(row["pf6_decomposition"]),
+                        "polymerization": float(row["polymerization"]),
+                    }
+                )
     else:
         csv_path = os.path.join(data_dir, "train_tier0_synthetic.csv")
         training_data = generate_synthetic_training_data(n_samples=500, output_path=csv_path)
@@ -316,12 +317,16 @@ def train_tier0_model(
 
     for entry in training_data:
         nf, ei = _build_molecular_graph(entry["smiles"], device=device)
-        target = torch.tensor([
-            entry["ec_reduction"],
-            entry["dm_reduction"],
-            entry["pf6_decomposition"],
-            entry["polymerization"],
-        ], dtype=torch.float32, device=device)
+        target = torch.tensor(
+            [
+                entry["ec_reduction"],
+                entry["dm_reduction"],
+                entry["pf6_decomposition"],
+                entry["polymerization"],
+            ],
+            dtype=torch.float32,
+            device=device,
+        )
         node_features_list.append(nf)
         edge_index_list.append(ei)
         targets_list.append(target)
@@ -422,8 +427,10 @@ def train_tier0_model(
         val_losses.append(avg_val_loss)
 
         if (epoch + 1) % 10 == 0 or epoch == 0:
-            print(f"[Tier0MPNN] Epoch {epoch+1}/{n_epochs} - "
-                  f"Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}")
+            print(
+                f"[Tier0MPNN] Epoch {epoch + 1}/{n_epochs} - "
+                f"Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}"
+            )
 
         if avg_val_loss < best_loss:
             best_loss = avg_val_loss
@@ -432,7 +439,7 @@ def train_tier0_model(
         else:
             patience_counter += 1
             if patience_counter >= early_stop_patience:
-                print(f"[Tier0MPNN] Early stopping at epoch {epoch+1}. Best val loss: {best_loss:.6f}")
+                print(f"[Tier0MPNN] Early stopping at epoch {epoch + 1}. Best val loss: {best_loss:.6f}")
                 break
 
     if best_state:
@@ -445,8 +452,7 @@ def train_tier0_model(
     if not os.path.exists(csv_path):
         generate_synthetic_training_data(n_samples=500, output_path=csv_path)
 
-    print(f"[Tier0MPNN] Training complete. Best val loss: {best_loss:.6f}. "
-          f"Weights saved to {output_path}")
+    print(f"[Tier0MPNN] Training complete. Best val loss: {best_loss:.6f}. Weights saved to {output_path}")
 
     return {
         "final_train_loss": float(epoch_losses[-1]) if epoch_losses else 0.0,
@@ -528,13 +534,15 @@ class ActiveLearningOracle:
         entries: list[dict[str, Any]] = []
         for smi, e in zip(smiles_list, energies, strict=True):
             if e is not None:
-                entries.append({
-                    "smiles": smi,
-                    "ec_reduction": e,
-                    "dm_reduction": e * 1.15,
-                    "pf6_decomposition": e * 1.3,
-                    "polymerization": e * 0.85,
-                })
+                entries.append(
+                    {
+                        "smiles": smi,
+                        "ec_reduction": e,
+                        "dm_reduction": e * 1.15,
+                        "pf6_decomposition": e * 1.3,
+                        "polymerization": e * 0.85,
+                    }
+                )
         return entries
 
     def clear_cache(self) -> int:

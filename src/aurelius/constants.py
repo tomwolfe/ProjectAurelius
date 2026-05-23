@@ -21,7 +21,7 @@ COULOMB_EV_A: float = 14.3996
 
 # Boltzmann constant
 BOLTZMANN_EV_K: float = 8.617333262e-5  # eV/K
-BOLTZMANN_J_K: float = 1.380649e-23     # J/K
+BOLTZMANN_J_K: float = 1.380649e-23  # J/K
 
 # Avogadro's number
 AVOGADRO: float = 6.02214076e23

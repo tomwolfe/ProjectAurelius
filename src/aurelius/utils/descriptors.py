@@ -44,7 +44,9 @@ def _generate_molecular_descriptors(smiles: str) -> dict[str, float]:
                 "hbd": int(Descriptors.NumHDonors(mol)),  # type: ignore[attr-defined, unused-ignore]
                 "tpsa": float(Descriptors.TPSA(mol)),  # type: ignore[attr-defined, unused-ignore]
                 "rot_bonds": int(Descriptors.NumRotatableBonds(mol)),  # type: ignore[attr-defined, unused-ignore]
-                "aromatic_ratio": float(sum(1 for a in mol.GetAtoms() if a.GetIsAromatic()) / max(mol.GetNumAtoms(), 1)),  # type: ignore[no-untyped-call, misc, unused-ignore]
+                "aromatic_ratio": float(
+                    sum(1 for a in mol.GetAtoms() if a.GetIsAromatic()) / max(mol.GetNumAtoms(), 1)
+                ),  # type: ignore[no-untyped-call, misc, unused-ignore]
                 "heavy_atom_count": float(Descriptors.HeavyAtomCount(mol)),  # type: ignore[no-untyped-call, unused-ignore]
             }
 
@@ -66,6 +68,7 @@ def _hash_descriptors(smiles: str) -> dict[str, float]:
         Dictionary of approximate descriptor values.
     """
     import hashlib
+
     seed = int(hashlib.sha256(smiles.encode()).hexdigest()[:8], 16)
     rng = np.random.RandomState(seed)
     return {

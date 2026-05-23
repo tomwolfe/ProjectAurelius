@@ -18,6 +18,7 @@ from aurelius.screening.tier0.models import Tier0MPNN
 
 try:
     import torch
+
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
@@ -54,19 +55,24 @@ class Tier0ActivationPredictor:
                     self._gnn_model.eval()
                     self._use_gnn = True
                 except Exception as e:
-                    print(f"[Tier0] Failed to load MPNN model from {model_path}: {e}. "
-                          "Falling back to linear predictor.")
+                    print(
+                        f"[Tier0] Failed to load MPNN model from {model_path}: {e}. Falling back to linear predictor."
+                    )
                     self._gnn_model = None
                     self._use_gnn = False
         elif model_path is None or not os.path.isfile(model_path):
             if model_path is not None:
-                print(f"[Tier0] WARNING: Model path '{model_path}' is invalid or file not found. "
-                      "Loading default linear predictor. For better accuracy, train via "
-                      "`aurelius train --task tier0`.")
+                print(
+                    f"[Tier0] WARNING: Model path '{model_path}' is invalid or file not found. "
+                    "Loading default linear predictor. For better accuracy, train via "
+                    "`aurelius train --task tier0`."
+                )
             else:
-                print("[Tier0] WARNING: No model path provided. "
-                      "Loading default linear predictor. For better accuracy, train via "
-                      "`aurelius train --task tier0`.")
+                print(
+                    "[Tier0] WARNING: No model path provided. "
+                    "Loading default linear predictor. For better accuracy, train via "
+                    "`aurelius train --task tier0`."
+                )
 
         self._linear_predictor = _LinearFallbackPredictor()
 
@@ -125,17 +131,44 @@ class _LinearFallbackPredictor:
     with hardcoded weights. Used when MPNN is unavailable.
     """
 
-    _SOLVENT_WEIGHTS = np.array([
-        0.002, 0.08, -0.02, -0.03, -0.003, 0.01, 0.15, 0.005,
-    ])
+    _SOLVENT_WEIGHTS = np.array(
+        [
+            0.002,
+            0.08,
+            -0.02,
+            -0.03,
+            -0.003,
+            0.01,
+            0.15,
+            0.005,
+        ]
+    )
     _SOLVENT_BIAS = 0.70
-    _SALT_WEIGHTS = np.array([
-        0.001, 0.05, 0.01, 0.02, 0.002, 0.005, 0.10, 0.003,
-    ])
+    _SALT_WEIGHTS = np.array(
+        [
+            0.001,
+            0.05,
+            0.01,
+            0.02,
+            0.002,
+            0.005,
+            0.10,
+            0.003,
+        ]
+    )
     _SALT_BIAS = 1.15
-    _POLY_WEIGHTS = np.array([
-        0.001, 0.06, -0.01, -0.02, -0.002, 0.015, 0.20, 0.004,
-    ])
+    _POLY_WEIGHTS = np.array(
+        [
+            0.001,
+            0.06,
+            -0.01,
+            -0.02,
+            -0.002,
+            0.015,
+            0.20,
+            0.004,
+        ]
+    )
     _POLY_BIAS = 0.45
 
     _MW_RANGE = (50, 500)
@@ -174,16 +207,19 @@ class _LinearFallbackPredictor:
             descriptors = _generate_molecular_descriptors(smiles)
 
         def _predict_single(desc: dict[str, float], weights: np.ndarray[Any, Any], bias: float) -> float:
-            normalized = np.array([
-                (desc.get("mw", 250) - self._MW_RANGE[0]) / (self._MW_RANGE[1] - self._MW_RANGE[0]),
-                (desc.get("logp", 1.5) - self._LOGP_RANGE[0]) / (self._LOGP_RANGE[1] - self._LOGP_RANGE[0]),
-                (desc.get("hba", 5) - self._HBA_RANGE[0]) / (self._HBA_RANGE[1] - self._HBA_RANGE[0]),
-                (desc.get("hbd", 2) - self._HBD_RANGE[0]) / (self._HBD_RANGE[1] - self._HBD_RANGE[0]),
-                (desc.get("tpsa", 100) - self._TPSA_RANGE[0]) / (self._TPSA_RANGE[1] - self._TPSA_RANGE[0]),
-                (desc.get("rot_bonds", 5) - self._ROT_RANGE[0]) / (self._ROT_RANGE[1] - self._ROT_RANGE[0]),
-                (desc.get("aromatic_ratio", 0.5) - self._ARO_RANGE[0]) / (self._ARO_RANGE[1] - self._ARO_RANGE[0]),
-                (desc.get("heavy_atom_count", 25) - self._HEAVY_RANGE[0]) / (self._HEAVY_RANGE[1] - self._HEAVY_RANGE[0]),
-            ])
+            normalized = np.array(
+                [
+                    (desc.get("mw", 250) - self._MW_RANGE[0]) / (self._MW_RANGE[1] - self._MW_RANGE[0]),
+                    (desc.get("logp", 1.5) - self._LOGP_RANGE[0]) / (self._LOGP_RANGE[1] - self._LOGP_RANGE[0]),
+                    (desc.get("hba", 5) - self._HBA_RANGE[0]) / (self._HBA_RANGE[1] - self._HBA_RANGE[0]),
+                    (desc.get("hbd", 2) - self._HBD_RANGE[0]) / (self._HBD_RANGE[1] - self._HBD_RANGE[0]),
+                    (desc.get("tpsa", 100) - self._TPSA_RANGE[0]) / (self._TPSA_RANGE[1] - self._TPSA_RANGE[0]),
+                    (desc.get("rot_bonds", 5) - self._ROT_RANGE[0]) / (self._ROT_RANGE[1] - self._ROT_RANGE[0]),
+                    (desc.get("aromatic_ratio", 0.5) - self._ARO_RANGE[0]) / (self._ARO_RANGE[1] - self._ARO_RANGE[0]),
+                    (desc.get("heavy_atom_count", 25) - self._HEAVY_RANGE[0])
+                    / (self._HEAVY_RANGE[1] - self._HEAVY_RANGE[0]),
+                ]
+            )
             raw_ea = float(np.dot(normalized, weights) + bias)
             return float(np.clip(raw_ea, 0.30, 1.50))
 
@@ -205,4 +241,5 @@ def _generate_molecular_descriptors(smiles: str) -> dict[str, float]:
         Dictionary of descriptor name -> value.
     """
     from aurelius.utils.descriptors import _generate_molecular_descriptors as _gen
+
     return _gen(smiles)

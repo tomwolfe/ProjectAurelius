@@ -26,8 +26,7 @@ def main() -> None:
 
     # Assert minimum dataset size
     if len(results) < 8:
-        print(f"ERROR: Only {len(results)} candidates found. Expected >= 8. "
-              "Dataset was not expanded properly.")
+        print(f"ERROR: Only {len(results)} candidates found. Expected >= 8. Dataset was not expanded properly.")
         sys.exit(1)
 
     print("=" * 72)
@@ -46,25 +45,26 @@ def main() -> None:
     print(f"  Mean score:  {avg_score:.1f}/100")
 
     if max_score < 50.0:
-        print("\n  WARNING: No high-confidence candidates found. "
-              "Recommend expanding dataset or retraining with QM9.")
+        print("\n  WARNING: No high-confidence candidates found. Recommend expanding dataset or retraining with QM9.")
     elif max_score < 65.0:
-        print("\n  NOTICE: All candidates below viability threshold (65.0). "
-              "Proceeding with best available.")
+        print("\n  NOTICE: All candidates below viability threshold (65.0). Proceeding with best available.")
 
     # Formatted table
     print("\n" + "-" * 72)
     print("  ALL CANDIDATES:")
     print("-" * 72)
-    print(f"  {'SMILES':<30s} | {'Total Score':>11s} | {'sigma':>7s} | "
-          f"{'E_des':>7s} | {'SEI Homog':>9s} | {'Viable':>6s}")
+    print(
+        f"  {'SMILES':<30s} | {'Total Score':>11s} | {'sigma':>7s} | {'E_des':>7s} | {'SEI Homog':>9s} | {'Viable':>6s}"
+    )
     print("  " + "-" * 68)
 
     for r in sorted(results, key=lambda x: x["total_score"], reverse=True):
         viable_str = "YES" if r["is_viable"] else "NO "
-        print(f"  {r['smiles']:<30s} | {r['total_score']:>10.1f} | "
-              f"{r['sigma']:>7.1f} | {r['desolvation']:>7.1f} | "
-              f"{r['sei_homogeneity']:>8.1f} | {viable_str:>6s}")
+        print(
+            f"  {r['smiles']:<30s} | {r['total_score']:>10.1f} | "
+            f"{r['sigma']:>7.1f} | {r['desolvation']:>7.1f} | "
+            f"{r['sei_homogeneity']:>8.1f} | {viable_str:>6s}"
+        )
 
     # Top 3 breakdown
     sorted_results = sorted(results, key=lambda x: x["total_score"], reverse=True)
@@ -96,25 +96,28 @@ def main() -> None:
     second = top3[1] if len(top3) > 1 else None
 
     print(f"\n  Priority Molecule: {best['smiles']}")
-    print(f"  Rationale: This candidate achieves the highest total score "
-          f"({best['total_score']:.1f}/100) among all screened candidates. "
-          f"It has the strongest sigma score ({best['sigma']:.1f}), "
-          "indicating favorable MLX-NA solubility predictions, "
-          "and passes all three tier validation checks.")
+    print(
+        f"  Rationale: This candidate achieves the highest total score "
+        f"({best['total_score']:.1f}/100) among all screened candidates. "
+        f"It has the strongest sigma score ({best['sigma']:.1f}), "
+        "indicating favorable MLX-NA solubility predictions, "
+        "and passes all three tier validation checks."
+    )
 
     if second:
         print(f"\n  Secondary Candidate: {second['smiles']}")
         print(f"  Score: {second['total_score']:.1f}/100")
-        print("  Note: This molecule differs in fluorination pattern and "
-              "offers complementary SEI-forming properties.")
+        print("  Note: This molecule differs in fluorination pattern and offers complementary SEI-forming properties.")
 
-    print(f"\n  Overall Assessment: {len(results)} novel electrolyte candidates "
-          f"screened. Maximum score of {max_score:.1f}/100 is below the "
-          "viability threshold of 65.0. These candidates represent the "
-          "best available options from the current structural space. "
-          "Recommend expanding the search space to include higher-fluorination "
-          "patterns, sulfonate-based solvents, and nitrile-carbonate co-solvent "
-          "mixtures for improved performance.")
+    print(
+        f"\n  Overall Assessment: {len(results)} novel electrolyte candidates "
+        f"screened. Maximum score of {max_score:.1f}/100 is below the "
+        "viability threshold of 65.0. These candidates represent the "
+        "best available options from the current structural space. "
+        "Recommend expanding the search space to include higher-fluorination "
+        "patterns, sulfonate-based solvents, and nitrile-carbonate co-solvent "
+        "mixtures for improved performance."
+    )
 
     print("\n" + "=" * 72)
     print("  REPORT COMPLETE")

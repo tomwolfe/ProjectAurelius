@@ -45,21 +45,21 @@ def main():
 
     print(f"\n  Baseline candidates (n={len(baseline_results)}):")
     print(f"    SEI Homogeneity range: {min(baseline_homog):.4f} - {max(baseline_homog):.4f}")
-    print(f"    Mean SEI Homogeneity:  {sum(baseline_homog)/len(baseline_homog):.4f}")
-    print(f"    Raw (0-1 scale):       {min(baseline_homog)/100:.4f} - {max(baseline_homog)/100:.4f}")
-    print(f"    Mean raw:              {sum(baseline_homog)/len(baseline_homog)/100:.4f}")
+    print(f"    Mean SEI Homogeneity:  {sum(baseline_homog) / len(baseline_homog):.4f}")
+    print(f"    Raw (0-1 scale):       {min(baseline_homog) / 100:.4f} - {max(baseline_homog) / 100:.4f}")
+    print(f"    Mean raw:              {sum(baseline_homog) / len(baseline_homog) / 100:.4f}")
 
     print(f"\n  Homogeneity-targeted batch (n={len(homog_results)}):")
     print(f"    SEI Homogeneity range: {min(homog_homog):.4f} - {max(homog_homog):.4f}")
-    print(f"    Mean SEI Homogeneity:  {sum(homog_homog)/len(homog_homog):.4f}")
-    print(f"    Raw (0-1 scale):       {min(homog_homog)/100:.4f} - {max(homog_homog)/100:.4f}")
-    print(f"    Mean raw:              {sum(homog_homog)/len(homog_homog)/100:.4f}")
+    print(f"    Mean SEI Homogeneity:  {sum(homog_homog) / len(homog_homog):.4f}")
+    print(f"    Raw (0-1 scale):       {min(homog_homog) / 100:.4f} - {max(homog_homog) / 100:.4f}")
+    print(f"    Mean raw:              {sum(homog_homog) / len(homog_homog) / 100:.4f}")
 
     print(f"\n  Refined batch (n={len(final_results)}):")
     print(f"    SEI Homogeneity range: {min(final_homog):.4f} - {max(final_homog):.4f}")
-    print(f"    Mean SEI Homogeneity:  {sum(final_homog)/len(final_homog):.4f}")
-    print(f"    Raw (0-1 scale):       {min(final_homog)/100:.4f} - {max(final_homog)/100:.4f}")
-    print(f"    Mean raw:              {sum(final_homog)/len(final_homog)/100:.4f}")
+    print(f"    Mean SEI Homogeneity:  {sum(final_homog) / len(final_homog):.4f}")
+    print(f"    Raw (0-1 scale):       {min(final_homog) / 100:.4f} - {max(final_homog) / 100:.4f}")
+    print(f"    Mean raw:              {sum(final_homog) / len(final_homog) / 100:.4f}")
 
     # ------------------------------------------------------------------
     # Section 2: Structural Correlation Analysis
@@ -99,7 +99,7 @@ def main():
     sorted_by_homog = sorted(all_results, key=lambda r: r["sei_homogeneity"], reverse=True)
 
     print(f"\n  {'SMILES':40s} | {'Total Score':>12s} | {'Homog (Raw)':>12s} | {'Homog (Scaled)':>15s} | Viable")
-    print(f"  {'-'*40}-+-{'-'*12}-+-{'-'*12}-+-{'-'*15}-+-{'-'*6}")
+    print(f"  {'-' * 40}-+-{'-' * 12}-+-{'-' * 12}-+-{'-' * 15}-+-{'-' * 6}")
     for r in sorted_by_homog[:10]:
         raw = r["sei_homogeneity"]
         scaled = raw  # Already in 0-100 scale from engine
@@ -115,7 +115,7 @@ def main():
     sorted_by_score = sorted(all_results, key=lambda r: r["total_score"], reverse=True)
 
     print(f"\n  {'SMILES':40s} | {'Total Score':>12s} | {'Homog (Raw)':>12s} | {'Homog (Scaled)':>15s} | Viable")
-    print(f"  {'-'*40}-+-{'-'*12}-+-{'-'*12}-+-{'-'*15}-+-{'-'*6}")
+    print(f"  {'-' * 40}-+-{'-' * 12}-+-{'-' * 12}-+-{'-' * 15}-+-{'-' * 6}")
     for r in sorted_by_score[:10]:
         raw = r["sei_homogeneity"]
         scaled = raw
@@ -153,17 +153,16 @@ def main():
     print("  Candidates Screened:   22 (batch 1) + 12 (batch 2) = 34 total")
     print("  Viable Candidates:     0/34 (0%)")
     all_screened = homog_results + final_results
-    tier1_pass = sum(
-        1 for r in all_screened
-        if "Tier 1" not in str(r.get("rejection_reasons", []))
-    )
+    tier1_pass = sum(1 for r in all_screened if "Tier 1" not in str(r.get("rejection_reasons", [])))
     print(f"  Tier 1 Pass Rate:      {tier1_pass}/34 passed Tier 1")
 
     print("\n  SEI Homogeneity Improvement:")
-    print(f"    Baseline mean:         {sum(baseline_homog)/len(baseline_homog):.4f} (raw ~0.122)")
-    print(f"    Targeted batch mean:   {sum(homog_homog)/len(homog_homog):.4f} (raw ~0.122)")
-    print(f"    Refined batch mean:    {sum(final_homog)/len(final_homog):.4f} (raw ~0.122)")
-    print(f"    Improvement:           {(sum(homog_homog)/len(homog_homog) - sum(baseline_homog)/len(baseline_homog)):.4f}")
+    print(f"    Baseline mean:         {sum(baseline_homog) / len(baseline_homog):.4f} (raw ~0.122)")
+    print(f"    Targeted batch mean:   {sum(homog_homog) / len(homog_homog):.4f} (raw ~0.122)")
+    print(f"    Refined batch mean:    {sum(final_homog) / len(final_homog):.4f} (raw ~0.122)")
+    print(
+        f"    Improvement:           {(sum(homog_homog) / len(homog_homog) - sum(baseline_homog) / len(baseline_homog)):.4f}"
+    )
 
     print("\n  KEY FINDING: Structural modifications (F, B, CN, C=C additions) did NOT")
     print("  correlate with improved SEI homogeneity because the Tier 3 kMC model")

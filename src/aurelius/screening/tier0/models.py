@@ -23,6 +23,7 @@ from typing import Any
 try:
     import torch  # type: ignore[import-not-found, unused-ignore]
     import torch.nn as nn  # type: ignore[import-not-found, unused-ignore]
+
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
@@ -220,10 +221,7 @@ if HAS_TORCH:
                 nn.ReLU(),
             )
 
-            self.mp_layers = nn.ModuleList([
-                MPNNEdgeBlock(hidden_dim, edge_dim, hidden_dim)
-                for _ in range(2)
-            ])
+            self.mp_layers = nn.ModuleList([MPNNEdgeBlock(hidden_dim, edge_dim, hidden_dim) for _ in range(2)])
 
             self.readout = MPNNReadoutMLP(input_dim=hidden_dim, output_dim=output_dim, hidden_dim=128)
 
@@ -311,6 +309,7 @@ if HAS_TORCH:
             """
             try:
                 import importlib
+
                 current_version = importlib.metadata.version("aurelius")
             except Exception:
                 current_version = "unknown"
@@ -324,10 +323,10 @@ if HAS_TORCH:
             saved_version = metadata.get("model_version", "unknown")
             if saved_version != "unknown" and current_version != "unknown" and saved_version != current_version:
                 print(
-                        f"[Tier0MPNN] WARNING: Model version ({saved_version}) does not match "
-                        f"installed package version ({current_version}). "
-                        "Consider retraining with `aurelius train --task tier0`."
-                    )
+                    f"[Tier0MPNN] WARNING: Model version ({saved_version}) does not match "
+                    f"installed package version ({current_version}). "
+                    "Consider retraining with `aurelius train --task tier0`."
+                )
 
             state_dict = torch.load(path, map_location="cpu", weights_only=True)
 

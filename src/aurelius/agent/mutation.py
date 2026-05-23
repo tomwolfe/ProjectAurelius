@@ -17,10 +17,11 @@ if TYPE_CHECKING:
     pass
 
 import contextlib
+import logging
 
 import numpy as np
 
-from aurelius.utils.chem import (
+from aurelius.utils.chem_utils import (
     _deserialize_fp,
     _is_valid_mol,
     _mol_to_fp,
@@ -29,17 +30,24 @@ from aurelius.utils.chem import (
 )
 
 try:
-    from rdkit import Chem
-    from rdkit.Chem import BRICS, AllChem, Descriptors
-    from rdkit.DataStructs import FingerprintSimilarity
+    from rdkit import Chem  # type: ignore[import-not-found, unused-ignore]
+    from rdkit.Chem import (
+        BRICS,  # type: ignore[import-not-found, unused-ignore]
+        AllChem,  # type: ignore[import-not-found, unused-ignore]
+        Descriptors,  # type: ignore[import-not-found, unused-ignore]
+    )
+    from rdkit.DataStructs import FingerprintSimilarity  # type: ignore[import-not-found, unused-ignore]
+
     HAS_RDKIT = True
 except ImportError:
     Chem = None  # type: ignore[assignment, unused-ignore]
-    AllChem = None
-    Descriptors = None
-    BRICS = None
-    HAS_RDKIT = False
+    AllChem = None  # type: ignore[assignment, unused-ignore]
+    Descriptors = None  # type: ignore[assignment, unused-ignore]
+    BRICS = None  # type: ignore[assignment, unused-ignore]
     FingerprintSimilarity = None  # type: ignore[assignment, unused-ignore]
+    HAS_RDKIT = False
+
+logger = logging.getLogger(__name__)
 
 
 class MutationEngine:
@@ -64,7 +72,7 @@ class MutationEngine:
         """
         self.seed_pool: list[str] = list(set(seed_smiles))
         self.known_fps: list[Any] = []
-        for h in (known_fps_hex or []):
+        for h in known_fps_hex or []:
             with contextlib.suppress(Exception):
                 self.known_fps.append(_deserialize_fp(h))
         self._rng = np.random.RandomState(42)
@@ -99,7 +107,7 @@ class MutationEngine:
         """BRICS decomposition + random reassembly using proper RDKit types."""
         generated: list[str] = []
         try:
-            frag_smiles = list(BRICS.BRICSDecompose(mol))
+            frag_smiles = list(BRICS.BRICSDecompose(mol))  # type: ignore[no-untyped-call]
             if len(frag_smiles) < 2:
                 return generated
 
@@ -112,19 +120,19 @@ class MutationEngine:
                 rng = np.random.RandomState(self._rng.randint(0, 2**31))
                 idx = rng.choice(len(frag_mols), size=min(2, len(frag_mols)), replace=False)
                 try:
-                    result_gen = BRICS.BRICSBuild([frag_mols[idx[0]], frag_mols[idx[1]]])
+                    result_gen = BRICS.BRICSBuild([frag_mols[idx[0]], frag_mols[idx[1]]])  # type: ignore[no-untyped-call]
                     for r_mol in result_gen:
                         if r_mol is not None:
                             try:
                                 Chem.SanitizeMol(r_mol)
                                 s = Chem.MolToSmiles(r_mol, isomericSmiles=True)
                                 generated.append(s)
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                            except (RuntimeError, ValueError) as e:
+                                logger.debug("RDKit operation failed: %s", e)
+                except (RuntimeError, ValueError) as e:
+                    logger.debug("BRICS build failed: %s", e)
+        except (RuntimeError, ValueError) as e:
+            logger.debug("BRICS reassembly failed: %s", e)
         return list(set(generated))
 
     def _fluorinate(self, mol: Any) -> list[str]:
@@ -132,8 +140,9 @@ class MutationEngine:
         generated: list[str] = []
         try:
             mol_h = Chem.AddHs(mol)
-            c_atoms = [atom.GetIdx() for atom in mol_h.GetAtoms()
-                        if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4]
+            c_atoms = [
+                atom.GetIdx() for atom in mol_h.GetAtoms() if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4
+            ]
             if not c_atoms:
                 return generated
 
@@ -146,17 +155,17 @@ class MutationEngine:
                         h_idx = neighbor.GetIdx()
                         break
                 if h_idx is not None:
-                    rw_mol.ReplaceAtom(h_idx, Chem.Atom(9)) # 9 = Fluorine
+                    rw_mol.ReplaceAtom(h_idx, Chem.Atom(9))  # 9 = Fluorine
                     try:
                         Chem.SanitizeMol(rw_mol)
                         final_mol = Chem.RemoveHs(rw_mol)
                         s = Chem.MolToSmiles(final_mol, isomericSmiles=True)
-                        if Descriptors.ExactMolWt(final_mol) < 450:
+                        if Descriptors.ExactMolWt(final_mol) < 450:  # type: ignore[attr-defined]
                             generated.append(s)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except (RuntimeError, ValueError) as e:
+                        logger.debug("RDKit operation failed: %s", e)
+        except (RuntimeError, ValueError) as e:
+            logger.debug("Fluorination failed: %s", e)
         return generated
 
     def _add_unsaturation(self, mol: Any) -> list[str]:
@@ -169,8 +178,9 @@ class MutationEngine:
         generated: list[str] = []
         try:
             mol_h = Chem.AddHs(mol)
-            c_atoms = [atom.GetIdx() for atom in mol_h.GetAtoms()
-                        if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4]
+            c_atoms = [
+                atom.GetIdx() for atom in mol_h.GetAtoms() if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4
+            ]
             if not c_atoms:
                 return generated
 
@@ -183,17 +193,17 @@ class MutationEngine:
                         h_idx = neighbor.GetIdx()
                         break
                 if h_idx is not None:
-                    rw_mol.ReplaceAtom(h_idx, Chem.Atom(6)) # 6 = Carbon (Methyl)
+                    rw_mol.ReplaceAtom(h_idx, Chem.Atom(6))  # 6 = Carbon (Methyl)
                     try:
                         Chem.SanitizeMol(rw_mol)
                         final_mol = Chem.RemoveHs(rw_mol)
                         s = Chem.MolToSmiles(final_mol, isomericSmiles=True)
-                        if Descriptors.ExactMolWt(final_mol) < 450:
+                        if Descriptors.ExactMolWt(final_mol) < 450:  # type: ignore[attr-defined]
                             generated.append(s)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except (RuntimeError, ValueError) as e:
+                        logger.debug("RDKit operation failed: %s", e)
+        except (RuntimeError, ValueError) as e:
+            logger.debug("Methylation failed: %s", e)
         return generated
 
     def mutate(self, smiles: str, batch_size: int = 50) -> list[str]:
@@ -299,6 +309,7 @@ class GraphVAEMutator:
             List of candidate SMILES strings from latent interpolation.
         """
         import random
+
         if random.random() < 0.10:
             return self._latent_interpolation(smiles, batch_size)
         return []
@@ -333,21 +344,23 @@ class GraphVAEMutator:
                 decoded = self._decode(random_latent.tolist(), index=i)  # type: ignore[arg-type]
                 if decoded is not None:
                     candidates.append(decoded)
-        except Exception:
+        except (RuntimeError, ValueError) as e:
+            logger.debug("Latent interpolation failed: %s", e)
             # Fallback: random BRICS reassembly
             try:
                 from rdkit import Chem
                 from rdkit.Chem import BRICS
-                frags = BRICS.BRICSDecompose(Chem.MolFromSmiles(smiles))
+
+                frags = BRICS.BRICSDecompose(Chem.MolFromSmiles(smiles))  # type: ignore[no-untyped-call]
                 if len(frags) >= 2:
                     rng = np.random.RandomState(42)
                     idx = rng.choice(len(frags), size=min(2, len(frags)), replace=False)
-                    result = BRICS.BRICSBuild([frags[idx[0]], frags[idx[1]]])
+                    result = BRICS.BRICSBuild([frags[idx[0]], frags[idx[1]]])  # type: ignore[no-untyped-call]
                     for r in result:
                         if r is not None:
                             s = Chem.MolToSmiles(r, isomericSmiles=True)
                             candidates.append(s)
-            except Exception:
+            except (RuntimeError, ValueError):
                 pass
 
         return list(set(candidates))
@@ -384,5 +397,6 @@ class GraphVAEMutator:
             h_count = max(1, int(abs(latent[2]) * 10) % 8)
             smiles = "C" * c_count + "O" * o_count + "H" * h_count + str(index)
             return smiles if len(smiles) > 0 else None
-        except (IndexError, ValueError):
+        except (IndexError, ValueError) as e:
+            logger.debug("Latent decoding failed: %s", e)
             return None

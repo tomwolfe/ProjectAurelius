@@ -41,9 +41,7 @@ def _load_scoring_params(path: str | None = None) -> dict[str, Any]:
     Returns:
         Dictionary of scoring parameters, or empty dict on failure.
     """
-    ff_path = path or str(
-        resources.files("aurelius.data").joinpath("force_field_params.json")
-    )
+    ff_path = path or str(resources.files("aurelius.data").joinpath("force_field_params.json"))
     if os.path.isfile(ff_path):
         try:
             with open(ff_path) as f:
@@ -78,11 +76,17 @@ class AureliusScoringEngine:
         self.weights = {
             "sigma": weight_sigma if weight_sigma is not None else scoring.get("sigma", 0.3),
             "desolvation": weight_desolvation if weight_desolvation is not None else scoring.get("desolvation", 0.2),
-            "sei_homogeneity": weight_sei_homogeneity if weight_sei_homogeneity is not None else scoring.get("sei_homogeneity", 0.2),
-            "mx_synthesis": weight_mx_synthesis if weight_mx_synthesis is not None else scoring.get("mx_synthesis", 0.2),
+            "sei_homogeneity": weight_sei_homogeneity
+            if weight_sei_homogeneity is not None
+            else scoring.get("sei_homogeneity", 0.2),
+            "mx_synthesis": weight_mx_synthesis
+            if weight_mx_synthesis is not None
+            else scoring.get("mx_synthesis", 0.2),
             "gwp": weight_gwp if weight_gwp is not None else scoring.get("gwp", 0.1),
         }
-        self.viability_threshold = viability_threshold if viability_threshold is not None else _SCORING_PARAMS.get("viability_threshold", 65.0)
+        self.viability_threshold = (
+            viability_threshold if viability_threshold is not None else _SCORING_PARAMS.get("viability_threshold", 65.0)
+        )
 
     def compute_score(
         self,
@@ -117,9 +121,7 @@ class AureliusScoringEngine:
 
         # Component 2: E_des_barrier (Normalized desolvation path integral)
         if tier2_result is not None:
-            result.desolvation_score = self._normalize_desolvation_barrier(
-                tier2_result.desolvation_path
-            )
+            result.desolvation_score = self._normalize_desolvation_barrier(tier2_result.desolvation_path)
             result.tier2_viable = tier2_result.is_viable
         else:
             result.desolvation_score = _SCORING_PARAMS.get("default_tier_score", 50.0)
@@ -127,18 +129,14 @@ class AureliusScoringEngine:
 
         # Component 3: SEI Homogeneity
         if tier3_result is not None:
-            result.sei_homogeneity_score = self._normalize_sei_homogeneity(
-                tier3_result.sei_evolution
-            )
+            result.sei_homogeneity_score = self._normalize_sei_homogeneity(tier3_result.sei_evolution)
             result.tier3_viable = tier3_result.sei_evolution.electronic_insulation
         else:
             result.sei_homogeneity_score = _SCORING_PARAMS.get("default_tier_score", 50.0)
             result.tier3_viable = True
 
         # Component 4: MX_Synthesis_Score (Automated lab compatibility)
-        result.mx_synthesis_score = self._compute_mx_synthesis_score(
-            molecule_input, tier3_result
-        )
+        result.mx_synthesis_score = self._compute_mx_synthesis_score(molecule_input, tier3_result)
 
         # Component 5: GWP penalty
         result.gwp_penalty = self._compute_gwp_penalty(gwp_value)
@@ -159,13 +157,9 @@ class AureliusScoringEngine:
         if not result.tier1_viable:
             result.rejection_reasons.append("Tier 1 (MLX-NA filter): molecule not viable")
         if not result.tier2_viable:
-            result.rejection_reasons.append(
-                "Tier 2 (MatterSim-MT): desolvation barrier exceeded"
-            )
+            result.rejection_reasons.append("Tier 2 (MatterSim-MT): desolvation barrier exceeded")
         if not result.tier3_viable:
-            result.rejection_reasons.append(
-                "Tier 3 (GCMD Digital Twin): SEI not electronically insulating"
-            )
+            result.rejection_reasons.append("Tier 3 (GCMD Digital Twin): SEI not electronically insulating")
         if result.total_score < self.viability_threshold:
             result.rejection_reasons.append(
                 f"Aurelius Score {result.total_score:.1f} < threshold {self.viability_threshold}"
@@ -176,19 +170,19 @@ class AureliusScoringEngine:
     def print_scorecard(self, score: AureliusScoreResult) -> str:
         """Generate a formatted scorecard for the Aurelius v5.2 result."""
         lines = [
-            f"{'='*60}",
+            f"{'=' * 60}",
             "  AURELIUS SCORE v5.2 - Scorecard",
-            f"{'='*60}",
+            f"{'=' * 60}",
             f"  Molecule:     {score.molecule_smiles}",
             f"  Total S_A:    {score.total_score:.1f}/100 {'VIABLE' if score.is_viable else 'REJECTED'}",
-            f"{'─'*60}",
+            f"{'─' * 60}",
             "  Component Scores:",
             f"    σ (MLX-NA filter):       {score.sigma_score:>6.1f}  × {score.weight_sigma}",
             f"    E_des_barrier:           {score.desolvation_score:>6.1f}  × {score.weight_desolvation}",
             f"    SEI Homogeneity:         {score.sei_homogeneity_score:>6.1f}  × {score.weight_sei}",
             f"    MX_Synthesis_Score:      {score.mx_synthesis_score:>6.1f}  × {score.weight_mx}",
             f"    GWP Penalty:            -{score.gwp_penalty:>5.1f}  × {score.weight_gwp}",
-            f"{'─'*60}",
+            f"{'─' * 60}",
             "  Tier Status:",
             f"    Tier 1 (MLX-NA):  {'PASS' if score.tier1_viable else 'FAIL'}",
             f"    Tier 2 (MatterSim): {'PASS' if score.tier2_viable else 'FAIL'}",
@@ -196,12 +190,12 @@ class AureliusScoringEngine:
         ]
 
         if score.rejection_reasons:
-            lines.append(f"{'─'*60}")
+            lines.append(f"{'─' * 60}")
             lines.append("  Rejection Reasons:")
             for reason in score.rejection_reasons:
                 lines.append(f"    - {reason}")
 
-        lines.append(f"{'='*60}")
+        lines.append(f"{'=' * 60}")
         return "\n".join(lines)
 
     # ------------------------------------------------------------------

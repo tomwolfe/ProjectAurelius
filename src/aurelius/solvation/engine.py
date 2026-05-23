@@ -40,6 +40,7 @@ from aurelius.constants import COULOMB_EV_A
 # Force field parameters
 # ---------------------------------------------------------------------------
 
+
 # Use importlib.resources for wheel-compatible path resolution.
 # Works in both `pip install -e .` and installed wheels.
 def _default_ff_path() -> str:
@@ -67,19 +68,22 @@ def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
 _FF_PARAMS = _load_force_field_params()
 
 # Extract dielectric constants from loaded params
-_DIELECTRIC_CONSTANTS: dict[str, float] = _FF_PARAMS.get("dielectric_constants", {}).get("solvents", {
-    "water": 78.36,
-    "ec": 89.91,
-    "dm": 31.17,
-    "dmc": 31.17,
-    "emc": 33.00,
-    "propylene_carbonate": 64.92,
-    "pc": 64.92,
-    "dimethyl_sulfoxide": 46.68,
-    "dmsO": 46.68,
-    "acetonitrile": 36.61,
-    "acn": 36.61,
-})
+_DIELECTRIC_CONSTANTS: dict[str, float] = _FF_PARAMS.get("dielectric_constants", {}).get(
+    "solvents",
+    {
+        "water": 78.36,
+        "ec": 89.91,
+        "dm": 31.17,
+        "dmc": 31.17,
+        "emc": 33.00,
+        "propylene_carbonate": 64.92,
+        "pc": 64.92,
+        "dimethyl_sulfoxide": 46.68,
+        "dmsO": 46.68,
+        "acetonitrile": 36.61,
+        "acn": 36.61,
+    },
+)
 
 # Extract LJ parameters
 _LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {}
@@ -96,9 +100,15 @@ for z_str, val in _FF_PARAMS.get("partial_charges", {}).get("parameters", {}).it
     _PARTIAL_CHARGES[int(z_str)] = val["charge"]
 
 # Extract Born effective charges
-_BORN_CHARGES_LI: np.ndarray[Any, Any] = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("Li+", np.eye(3) * 1.32))
-_BORN_CHARGES_NA: np.ndarray[Any, Any] = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("Na+", np.eye(3) * 1.12))
-_BORN_CHARGES_K: np.ndarray[Any, Any] = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("K+", np.eye(3) * 0.92))
+_BORN_CHARGES_LI: np.ndarray[Any, Any] = np.array(
+    _FF_PARAMS.get("born_effective_charges", {}).get("Li+", np.eye(3) * 1.32)
+)
+_BORN_CHARGES_NA: np.ndarray[Any, Any] = np.array(
+    _FF_PARAMS.get("born_effective_charges", {}).get("Na+", np.eye(3) * 1.12)
+)
+_BORN_CHARGES_K: np.ndarray[Any, Any] = np.array(
+    _FF_PARAMS.get("born_effective_charges", {}).get("K+", np.eye(3) * 0.92)
+)
 
 # Arrhenius parameters
 _ARRHENIUS_BARRIERS: dict[str, float] = _FF_PARAMS.get("arrhenius_parameters", {}).get("barriers_eV", {})
@@ -107,6 +117,7 @@ _ARRHENIUS_BARRIERS: dict[str, float] = _FF_PARAMS.get("arrhenius_parameters", {
 # ---------------------------------------------------------------------------
 # Solvation-specific parameter loading
 # ---------------------------------------------------------------------------
+
 
 def _load_solvation_params(path: str | None = None) -> dict[str, Any]:
     """Load solvation-specific parameters from force field JSON.
@@ -130,6 +141,7 @@ def _load_solvation_params(path: str | None = None) -> dict[str, Any]:
 
 _SOLVATION_PARAMS = _load_solvation_params()
 
+
 # Also load scoring params for MWSE stability threshold
 def _load_scoring_params_for_solvation(path: str | None = None) -> dict[str, Any]:
     """Load scoring parameters from force field JSON for MWSE evaluation."""
@@ -151,6 +163,7 @@ _SCORING_PARAMS = _load_scoring_params_for_solvation()
 # Data classes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SolvationShell:
     """Represents a labile solvation shell around an ion pair."""
@@ -166,6 +179,7 @@ class SolvationShell:
 # ---------------------------------------------------------------------------
 # Solvation parameter accessors
 # ---------------------------------------------------------------------------
+
 
 def _get_coordination_number(ion_type: str) -> int:
     """Get coordination number for ion from force field params."""
@@ -316,6 +330,7 @@ class DesolvationBarrier:
 # GBSA helper functions
 # ---------------------------------------------------------------------------
 
+
 def compute_gbsa_solvation_energy(
     charges: np.ndarray[Any, Any],
     radii: np.ndarray[Any, Any],
@@ -375,8 +390,12 @@ def compute_gbsa_solvation_energy(
     i_upper, j_upper = np.triu_indices(n, k=1)
 
     # Compute effective interaction distances for upper-triangle pairs
-    r_eff = np.sqrt(radii_sum[i_upper] ** 2 + radii[i_upper] * radii[j_upper] *
-                      np.exp(-radii_sum[i_upper] ** 2 / (4.0 * radii[i_upper] * radii[j_upper] + floor)))
+    r_eff = np.sqrt(
+        radii_sum[i_upper] ** 2
+        + radii[i_upper]
+        * radii[j_upper]
+        * np.exp(-(radii_sum[i_upper] ** 2) / (4.0 * radii[i_upper] * radii[j_upper] + floor))
+    )
 
     # Enforce minimum effective radius
     r_eff = np.maximum(r_eff, floor)
@@ -389,7 +408,7 @@ def compute_gbsa_solvation_energy(
     e_electrostatic = prefactor * gb_energy * COULOMB_EV_A
 
     # Nonpolar SASA term (approximate as sphere surface area)
-    sasa = np.sum(4.0 * math.pi * radii ** 2)
+    sasa = np.sum(4.0 * math.pi * radii**2)
     e_nonpolar = surface_tension_val * sasa
 
     total = e_electrostatic + e_nonpolar + offset
@@ -399,6 +418,7 @@ def compute_gbsa_solvation_energy(
 # ---------------------------------------------------------------------------
 # Main engine
 # ---------------------------------------------------------------------------
+
 
 class MWSESolvationEngine:
     """MWSE Intermediate Solvation screening engine.
@@ -505,9 +525,7 @@ class MWSESolvationEngine:
         temperature_k: float = 298.15,
     ) -> SolvationShell:
         """Screen for a labile solvation shell around an ion."""
-        k_ex = self.compute_solvent_exchange_rate(
-            solvent_type, ion_type, temperature_k
-        )
+        k_ex = self.compute_solvent_exchange_rate(solvent_type, ion_type, temperature_k)
 
         # Shell is "labile" if k_ex is within screening window
         is_labile = _get_labile_kex_lower_bound() < k_ex < self.kex_window_ps
@@ -522,11 +540,12 @@ class MWSESolvationEngine:
         )
 
         if is_labile:
-            print(f"[Aurelius v5.2 MWSE] Labile shell: {ion_type} in {solvent_type} "
-                  f"(k_ex={k_ex:.3f} ps^-1, nu_coord={shell.coordination_number})")
+            print(
+                f"[Aurelius v5.2 MWSE] Labile shell: {ion_type} in {solvent_type} "
+                f"(k_ex={k_ex:.3f} ps^-1, nu_coord={shell.coordination_number})"
+            )
         else:
-            print(f"[Aurelius v5.2 MWSE] Non-labile shell: {ion_type} in {solvent_type} "
-                  f"(k_ex={k_ex:.3f} ps^-1)")
+            print(f"[Aurelius v5.2 MWSE] Non-labile shell: {ion_type} in {solvent_type} (k_ex={k_ex:.3f} ps^-1)")
 
         return shell
 
@@ -623,8 +642,7 @@ class MWSESolvationEngine:
         High dipole moments (>3.5 D) correlate with 500-cycle stability.
         """
         mu = born_charges.dipole_moment_debye
-        print(f"[Aurelius v5.2 MWSE] Born Z* norm: {born_charges.z_star_scalar:.3f}, "
-              f"Predicted dipole: {mu:.2f} D")
+        print(f"[Aurelius v5.2 MWSE] Born Z* norm: {born_charges.z_star_scalar:.3f}, Predicted dipole: {mu:.2f} D")
         return mu
 
     def evaluate_mwse_state(
@@ -689,10 +707,14 @@ class MWSESolvationEngine:
 
         rejection_threshold = _get_rejection_threshold()
         if barrier.local_maxima_eV > rejection_threshold:
-            print(f"[Aurelius v5.2 MWSE] REJECTED: Local maxima {barrier.local_maxima_eV:.3f} eV > {rejection_threshold} eV")
+            print(
+                f"[Aurelius v5.2 MWSE] REJECTED: Local maxima {barrier.local_maxima_eV:.3f} eV > {rejection_threshold} eV"
+            )
         else:
-            print(f"[Aurelius v5.2 MWSE] PASS: Barrier {barrier.barrier_height_eV:.3f} eV, "
-                  f"Maxima={barrier.local_maxima_eV:.3f} eV, Path integral={barrier.path_integral_energy:.3f} eV*A")
+            print(
+                f"[Aurelius v5.2 MWSE] PASS: Barrier {barrier.barrier_height_eV:.3f} eV, "
+                f"Maxima={barrier.local_maxima_eV:.3f} eV, Path integral={barrier.path_integral_energy:.3f} eV*A"
+            )
 
         return barrier
 

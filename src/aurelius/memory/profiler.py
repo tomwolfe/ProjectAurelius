@@ -45,7 +45,7 @@ def _get_process_rss_gb() -> float:
     try:
         process = psutil.Process(os.getpid())
         rss_bytes = process.memory_info().rss
-        return float(rss_bytes) / (1024 ** 3)
+        return float(rss_bytes) / (1024**3)
     except Exception:
         return 0.0
 
@@ -61,9 +61,10 @@ def _get_mps_memory_gb() -> float:
     """
     try:
         import torch
+
         if torch.backends.mps.is_available():
             mem_bytes = torch.mps.current_allocated_memory()
-            return float(mem_bytes) / (1024 ** 3)
+            return float(mem_bytes) / (1024**3)
     except Exception:
         pass
     return 0.0
@@ -81,12 +82,13 @@ def _get_mlx_memory_gb() -> float:
     """
     try:
         import mlx.core as mx
+
         # Try newer API first (MLX >= 0.15/0.20)
         if hasattr(mx.metal, "get_active_memory"):
-            return float(mx.metal.get_active_memory()) / (1024 ** 3)
+            return float(mx.metal.get_active_memory()) / (1024**3)
         # Fallback to legacy API
         elif hasattr(mx, "get_active_memory"):
-            return float(mx.get_active_memory()) / (1024 ** 3)
+            return float(mx.get_active_memory()) / (1024**3)
         else:
             return 0.0
     except Exception:
@@ -211,12 +213,20 @@ class MemoryProfiler:
         if not self._samples:
             # Write empty CSV with headers
             with open(csv_path, "w", newline="") as f:
-                csv.writer(f).writerow([
-                    "generation", "screened_count", "current_ram_gb",
-                    "peak_ram_gb", "mps_cached_gb", "peak_mps_gb",
-                    "mlx_cached_gb", "peak_mlx_gb", "gc_collected",
-                    "elapsed_s",
-                ])
+                csv.writer(f).writerow(
+                    [
+                        "generation",
+                        "screened_count",
+                        "current_ram_gb",
+                        "peak_ram_gb",
+                        "mps_cached_gb",
+                        "peak_mps_gb",
+                        "mlx_cached_gb",
+                        "peak_mlx_gb",
+                        "gc_collected",
+                        "elapsed_s",
+                    ]
+                )
             return csv_path
 
         with open(csv_path, "w", newline="") as f:

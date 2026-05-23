@@ -64,7 +64,9 @@ def _detect_hardware() -> HardwareInfo:
     try:
         result = subprocess.run(
             ["sysctl", "-n", "machdep.cpu.brand_string"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         cpu_brand = result.stdout.strip()
         if "Apple" in cpu_brand:
@@ -77,16 +79,18 @@ def _detect_hardware() -> HardwareInfo:
     # Memory
     try:
         import psutil
+
         total = psutil.virtual_memory().total
         avail = psutil.virtual_memory().available
-        info.total_memory_gb = total / (1024 ** 3)
-        info.available_ram_gb = avail / (1024 ** 3)
+        info.total_memory_gb = total / (1024**3)
+        info.available_ram_gb = avail / (1024**3)
     except Exception:
         pass
 
     # PyTorch MPS
     try:
         import torch
+
         info.has_pytorch = True
         info.pytorch_version = torch.__version__
         info.has_mps = torch.backends.mps.is_available()
@@ -246,10 +250,10 @@ def _benchmark_tier2_quick(repeats: int = 3, n_atoms: int = 30) -> BenchmarkResu
     sig_tensor = np.where(sig_tensor == 0, 2.5, sig_tensor)
     mask = np.triu(np.ones((n_atoms, n_atoms)), k=1)
     cutoff_mask = (distances < 12.0) & mask
-    r_soft = np.sqrt(distances * distances + sig_tensor ** 2)
+    r_soft = np.sqrt(distances * distances + sig_tensor**2)
     sig_over_r = sig_tensor / r_soft
-    sig_over_r6 = sig_over_r ** 6
-    lj = 4.0 * eps_tensor * (sig_over_r6 ** 2 - sig_over_r6)
+    sig_over_r6 = sig_over_r**6
+    lj = 4.0 * eps_tensor * (sig_over_r6**2 - sig_over_r6)
     lj_energy = float(np.sum(lj * cutoff_mask))
 
     # Vectorized Coulomb
@@ -257,7 +261,7 @@ def _benchmark_tier2_quick(repeats: int = 3, n_atoms: int = 30) -> BenchmarkResu
     q_i = charges[np.newaxis, :]
     q_j = charges[:, np.newaxis]
     q_product = q_i * q_j
-    charge_mask = (q_product != 0.0)
+    charge_mask = q_product != 0.0
     r_soft_c = np.sqrt(distances * distances + 1.0)
     coul_energy = float(np.sum(COULOMB_EV_A * q_product / r_soft_c * mask * charge_mask))
 
@@ -266,16 +270,16 @@ def _benchmark_tier2_quick(repeats: int = 3, n_atoms: int = 30) -> BenchmarkResu
     for _ in range(repeats):
         start = time.perf_counter()
         # Recompute to get wall time
-        r_soft2 = np.sqrt(distances * distances + sig_tensor ** 2)
+        r_soft2 = np.sqrt(distances * distances + sig_tensor**2)
         sig_over_r2 = sig_tensor / r_soft2
-        sig_over_r6_2 = sig_over_r2 ** 6
-        lj2 = 4.0 * eps_tensor * (sig_over_r6_2 ** 2 - sig_over_r6_2)
+        sig_over_r6_2 = sig_over_r2**6
+        lj2 = 4.0 * eps_tensor * (sig_over_r6_2**2 - sig_over_r6_2)
         _ = float(np.sum(lj2 * cutoff_mask))
         charges2 = np.array([_CHARGES.get(z, 0.0) for z in atomic_numbers])
         q_i2 = charges2[np.newaxis, :]
         q_j2 = charges2[:, np.newaxis]
         q_product2 = q_i2 * q_j2
-        charge_mask2 = (q_product2 != 0.0)
+        charge_mask2 = q_product2 != 0.0
         r_soft_c2 = np.sqrt(distances * distances + 1.0)
         _ = float(np.sum(COULOMB_EV_A * q_product2 / r_soft_c2 * mask * charge_mask2))
         times.append(time.perf_counter() - start)

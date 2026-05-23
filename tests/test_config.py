@@ -14,6 +14,7 @@ except ImportError:
 
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     mx = None  # type: ignore
@@ -21,6 +22,7 @@ except ImportError:
 
 try:
     from rdkit import Chem
+
     HAS_RDKIT = True
 except ImportError:
     HAS_RDKIT = False
@@ -35,6 +37,7 @@ from aurelius.memory.manager import (
 # ============================================================
 # Config Tests
 # ============================================================
+
 
 class TestAureliusConfig:
     def test_default_memory_budget(self):
@@ -58,8 +61,9 @@ class TestAureliusConfig:
     def test_dynamic_ram_detection(self):
         """Verify that config detects system RAM dynamically."""
         import psutil
+
         config = AureliusConfig()
-        detected_gb = psutil.virtual_memory().total / (1024 ** 3)
+        detected_gb = psutil.virtual_memory().total / (1024**3)
         assert config.total_memory_gb > 0
         assert config.total_memory_gb <= detected_gb + 1  # Allow small tolerance
 
@@ -67,6 +71,7 @@ class TestAureliusConfig:
 # ============================================================
 # Memory Manager Tests
 # ============================================================
+
 
 class TestQuantizationConfig:
     def test_mx4_bits(self):
@@ -102,7 +107,8 @@ class TestZeroCopyMemoryManager:
     def test_dynamic_ram_detection(self):
         """Verify memory manager detects system RAM dynamically."""
         import psutil
+
         mgr = ZeroCopyMemoryManager()
         assert mgr._total_ram_gb > 0
-        detected = psutil.virtual_memory().total / (1024 ** 3)
+        detected = psutil.virtual_memory().total / (1024**3)
         assert mgr._total_ram_gb <= detected + 1

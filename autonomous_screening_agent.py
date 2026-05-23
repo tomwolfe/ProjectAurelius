@@ -38,7 +38,7 @@ from aurelius.config import AureliusConfig, initialize_environment
 from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
 from aurelius.screening.tier0_gnn import Tier0ActivationPredictor
-from aurelius.utils.chem import (
+from aurelius.utils.chem_utils import (
     _deserialize_fp,
     _is_valid_mol,
     _mol_to_fp,
@@ -77,11 +77,13 @@ def _memory_cleanup() -> None:
     gc.collect()
     try:
         import mlx.core as mx
+
         mx.metal.clear_cache()
     except Exception:
         pass
     try:
         import torch
+
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()
     except Exception:
@@ -95,6 +97,7 @@ def _check_apple_silicon() -> bool:
         True if running on Apple Silicon (arm64 Darwin).
     """
     import platform
+
     return platform.machine() in ("arm64",) and platform.system() == "Darwin"
 
 
@@ -121,12 +124,6 @@ def _load_smiles_file(path: str) -> list[str]:
             if line:
                 smiles_list.append(line)
     return smiles_list
-
-
-
-
-
-
 
 
 def main() -> None:
@@ -225,8 +222,10 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
     best_score_so_far = state.get("best_score", 0.0)
 
     if resumed:
-        print(f"[AGENT] Resuming from checkpoint: batch={start_batch}, "
-              f"screened={screened_so_far}, best_score={best_score_so_far:.1f}")
+        print(
+            f"[AGENT] Resuming from checkpoint: batch={start_batch}, "
+            f"screened={screened_so_far}, best_score={best_score_so_far:.1f}"
+        )
     else:
         print("[AGENT] Fresh start. No checkpoint found.")
 
@@ -249,8 +248,7 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
     current_batch = start_batch
     generation = 0
 
-    print(f"\n[AGENT] Starting screening loop. Batch size: {batch_size}, "
-          f"Max generations: {max_generations}")
+    print(f"\n[AGENT] Starting screening loop. Batch size: {batch_size}, Max generations: {max_generations}")
     print(f"[AGENT] Time limit: {max_wall_time}s (12 hours)\n")
 
     screened_smiles: set[str] = set()
@@ -270,11 +268,10 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
         else:
             if all_results:
                 scored_results = [
-                    (r["score"].total_score, r["score"].molecule_smiles)
-                    for r in all_results if r.get("score")
+                    (r["score"].total_score, r["score"].molecule_smiles) for r in all_results if r.get("score")
                 ]
                 scored_results.sort(key=lambda x: -x[0])
-                top_seeds = [s for _, s in scored_results[:max(5, len(scored_results) // 5)]]
+                top_seeds = [s for _, s in scored_results[: max(5, len(scored_results) // 5)]]
             else:
                 top_seeds = seed_smiles[:5]
             candidates = engine.mutate_batch(top_seeds, batch_size * 3)
@@ -302,8 +299,10 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
             print(f"[AGENT] Generation {generation}: No valid candidates. Skipping.")
             continue
 
-        print(f"[AGENT] Generation {generation}: Screening {len(valid_candidates)} candidates "
-              f"(invalid discarded: {invalid_count})")
+        print(
+            f"[AGENT] Generation {generation}: Screening {len(valid_candidates)} candidates "
+            f"(invalid discarded: {invalid_count})"
+        )
 
         # ---- Screening: Batch processing ----
         batch_scores: list[float] = []
@@ -378,9 +377,11 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
         convergence.record_batch(batch_scores, batch_viable, new_fps_count)
         checkpoint.update_stats(valid_candidates, batch_scores, batch_viable, invalid_count)
 
-        print(f"  Generation {generation} complete: "
-              f"{len(valid_candidates)} screened, {batch_viable} viable, "
-              f"best={max(batch_scores) if batch_scores else 0:.1f}")
+        print(
+            f"  Generation {generation} complete: "
+            f"{len(valid_candidates)} screened, {batch_viable} viable, "
+            f"best={max(batch_scores) if batch_scores else 0:.1f}"
+        )
 
         if profiler:
             profiler.sample(
@@ -401,9 +402,11 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
         # ---- Atomic checkpoint save after every molecule ----
         checkpoint.save()
 
-        print(f"  [Progress] Screened: {convergence.total_screened}, "
-              f"Viable: {convergence.viable_count}, "
-              f"Generations: {generation}/{max_generations}\n")
+        print(
+            f"  [Progress] Screened: {convergence.total_screened}, "
+            f"Viable: {convergence.viable_count}, "
+            f"Generations: {generation}/{max_generations}\n"
+        )
 
     # ---- Post-loop: Generate all deliverables ----
     print("\n" + "=" * 60)

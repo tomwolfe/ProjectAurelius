@@ -15,6 +15,7 @@ except ImportError:
 
 try:
     import mlx.core as mx
+
     HAS_MLX = True
 except ImportError:
     mx = None  # type: ignore
@@ -22,6 +23,7 @@ except ImportError:
 
 try:
     from rdkit import Chem
+
     HAS_RDKIT = True
 except ImportError:
     HAS_RDKIT = False
@@ -48,6 +50,7 @@ from aurelius.types import (
 # Config Tests
 # ============================================================
 
+
 class TestAureliusConfig:
     def test_default_memory_budget(self):
         config = AureliusConfig()
@@ -70,8 +73,9 @@ class TestAureliusConfig:
     def test_dynamic_ram_detection(self):
         """Verify that config detects system RAM dynamically."""
         import psutil
+
         config = AureliusConfig()
-        detected_gb = psutil.virtual_memory().total / (1024 ** 3)
+        detected_gb = psutil.virtual_memory().total / (1024**3)
         assert config.total_memory_gb > 0
         assert config.total_memory_gb <= detected_gb + 1  # Allow small tolerance
 
@@ -79,6 +83,7 @@ class TestAureliusConfig:
 # ============================================================
 # Memory Manager Tests
 # ============================================================
+
 
 class TestQuantizationConfig:
     def test_mx4_bits(self):
@@ -114,15 +119,17 @@ class TestZeroCopyMemoryManager:
     def test_dynamic_ram_detection(self):
         """Verify memory manager detects system RAM dynamically."""
         import psutil
+
         mgr = ZeroCopyMemoryManager()
         assert mgr._total_ram_gb > 0
-        detected = psutil.virtual_memory().total / (1024 ** 3)
+        detected = psutil.virtual_memory().total / (1024**3)
         assert mgr._total_ram_gb <= detected + 1
 
 
 # ============================================================
 # MWSE Solvation Tests
 # ============================================================
+
 
 class TestMWSESolvationEngine:
     def setup_method(self):
@@ -184,10 +191,12 @@ class TestMWSESolvationEngine:
 # MLX-NA Filter Tests
 # ============================================================
 
+
 class TestMLXNAFilter:
     def setup_method(self):
         # Disable training on init for faster tests
         from aurelius.screening.tier1 import MLXNAFilter
+
         self.filter = MLXNAFilter(quantization_format="MX4", train_on_init=False)
 
     def test_screen_molecule(self):
@@ -264,6 +273,7 @@ class TestMLXNAFilter:
     def test_model_trains_on_init(self):
         """Verify that train_on_init=True produces a trained model."""
         from aurelius.screening.tier1 import MLXNAFilter
+
         filter_trained = MLXNAFilter(quantization_format="MX4", train_on_init=True)
         # After training, the model should have non-trivial weights
         assert filter_trained._model is not None
@@ -288,9 +298,11 @@ class TestMLXNAFilter:
 # MatterSim-MT Tests
 # ============================================================
 
+
 class TestMatterSimMTSimulator:
     def setup_method(self):
         from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
+
         self.sim = MatterSimMTSimulator(barrier_threshold_eV=0.5)
 
     def test_simulate_desolvation(self):
@@ -379,15 +391,14 @@ class TestMatterSimMTSimulator:
 
         # Generate random-ish coordinates in a bounded box
         rng = np.random.RandomState(42)
-        coords_list.extend(
-            (rng.uniform(-5.0, 5.0, size=(len(atomic_numbers_list) - 1, 3))).tolist()
-        )
+        coords_list.extend((rng.uniform(-5.0, 5.0, size=(len(atomic_numbers_list) - 1, 3))).tolist())
 
         atomic_numbers = torch.tensor(atomic_numbers_list, dtype=torch.long, device=device)
         coordinates = torch.tensor(coords_list, dtype=torch.float32, device=device)
 
         # Dense path
         from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
+
         sim_dense = MatterSimMTSimulator(barrier_threshold_eV=0.5, use_neighbor_list=False)
         sim_dense.initialize()
         distances_dense = torch.norm(coordinates.unsqueeze(1) - coordinates.unsqueeze(0), dim=-1)
@@ -397,7 +408,8 @@ class TestMatterSimMTSimulator:
 
         # Sparse path: use same cutoff as dense to ensure identical pair sets
         sim_sparse = MatterSimMTSimulator(
-            barrier_threshold_eV=0.5, use_neighbor_list=True,
+            barrier_threshold_eV=0.5,
+            use_neighbor_list=True,
             neighbor_list_cutoff=10.0,  # Match _cutoff exactly
         )
         sim_sparse.initialize()
@@ -409,19 +421,19 @@ class TestMatterSimMTSimulator:
         # Energies should match within tolerance. Small floating-point
         # differences between sparse (numpy-based distance computation)
         # and dense (PyTorch-based) accumulate over ~5000 pairs.
-        assert abs(total_dense - total_sparse) < 0.5, \
+        assert abs(total_dense - total_sparse) < 0.5, (
             f"Sparse ({total_sparse:.6f}) vs dense ({total_dense:.6f}) energy mismatch"
+        )
 
 
 # ============================================================
 # GCMD Digital Twin Tests
 # ============================================================
 
+
 class TestGCMDigitalTwin:
     def setup_method(self):
-        self.twin = GCMDigitalTwin(
-            gcmtwin_config=GCMDTConfig(max_simulation_steps=5000)
-        )
+        self.twin = GCMDigitalTwin(gcmtwin_config=GCMDTConfig(max_simulation_steps=5000))
 
     def test_simulate_sei_evolution(self):
         result = self.twin.simulate_sei_evolution(
@@ -445,10 +457,7 @@ class TestGCMDigitalTwin:
     def test_kmc_deterministic(self):
         """kMC simulation must produce deterministic results for same inputs."""
         smiles = "CC(=O)OC1=CC(=O)O1"
-        results = [
-            self.twin.simulate_sei_evolution(smiles, "ec:dmc", "NaPF6")
-            for _ in range(3)
-        ]
+        results = [self.twin.simulate_sei_evolution(smiles, "ec:dmc", "NaPF6") for _ in range(3)]
         thicknesses = [r.sei_evolution.thickness_angstrom for r in results]
         assert all(t == thicknesses[0] for t in thicknesses)
         homogeneities = [r.sei_evolution.homogeneity_score for r in results]
@@ -456,20 +465,14 @@ class TestGCMDigitalTwin:
 
     def test_voltage_dependent_growth(self):
         """Higher voltage should produce thicker SEI (faster reaction rates)."""
-        result_low = self.twin.simulate_sei_evolution(
-            "CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6", voltage_cutoff=0.01
-        )
-        result_high = self.twin.simulate_sei_evolution(
-            "CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6", voltage_cutoff=0.1
-        )
+        result_low = self.twin.simulate_sei_evolution("CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6", voltage_cutoff=0.01)
+        result_high = self.twin.simulate_sei_evolution("CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6", voltage_cutoff=0.1)
         # Higher voltage -> faster kinetics -> thicker SEI
         assert result_high.sei_evolution.thickness_angstrom >= result_low.sei_evolution.thickness_angstrom
 
     def test_sei_thickness_physically_plausible(self):
         """SEI thickness should be in realistic range (1-50 Angstroms)."""
-        result = self.twin.simulate_sei_evolution(
-            "CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6"
-        )
+        result = self.twin.simulate_sei_evolution("CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6")
         thickness = result.sei_evolution.thickness_angstrom
         assert 1.0 <= thickness <= 50.0
 
@@ -477,6 +480,7 @@ class TestGCMDigitalTwin:
 # ============================================================
 # Aurelius Scoring Tests
 # ============================================================
+
 
 class TestAureliusScoringEngine:
     def setup_method(self):
@@ -587,6 +591,7 @@ class TestAureliusScoringEngine:
 # Pipeline Integration Tests
 # ============================================================
 
+
 class TestAureliusPipeline:
     def test_pipeline_initialization(self):
         if not HAS_RDKIT:
@@ -639,6 +644,7 @@ class TestAureliusPipeline:
 # ============================================================
 # Cross-Framework Bridge Tests
 # ============================================================
+
 
 class TestCrossFrameworkBridge:
     def test_mlx_to_pytorch_bridge(self):
@@ -703,6 +709,7 @@ class TestCrossFrameworkBridge:
 # 3D Physics Engine Tests
 # ============================================================
 
+
 class TestMatterSimMPEngine:
     def test_3d_vector_forward_pass(self):
         """Test that the 3D physics engine processes proper (N, 3) coordinates."""
@@ -714,13 +721,16 @@ class TestMatterSimMPEngine:
 
         # N=5 atoms with 3D coordinates
         atomic_numbers = torch.tensor([6, 6, 8, 1, 1], dtype=torch.long)  # C, C, O, H, H
-        coordinates = torch.tensor([
-            [0.0, 0.0, 0.0],
-            [1.5, 0.0, 0.0],
-            [0.0, 1.2, 0.5],
-            [2.0, 0.0, 0.0],
-            [1.3, 0.5, 0.0],
-        ], dtype=torch.float32)
+        coordinates = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [1.5, 0.0, 0.0],
+                [0.0, 1.2, 0.5],
+                [2.0, 0.0, 0.0],
+                [1.3, 0.5, 0.0],
+            ],
+            dtype=torch.float32,
+        )
 
         energy = engine(atomic_numbers, coordinates)
         assert energy.shape == ()  # Scalar output
@@ -734,25 +744,31 @@ class TestMatterSimMPEngine:
         engine = MatterSimMPEngine()
 
         # Batch of 2 molecules, each with 4 atoms
-        atomic_numbers = torch.tensor([
-            [6, 8, 1, 1],
-            [7, 7, 1, 1],  # N, N, H, H
-        ], dtype=torch.long)
+        atomic_numbers = torch.tensor(
+            [
+                [6, 8, 1, 1],
+                [7, 7, 1, 1],  # N, N, H, H
+            ],
+            dtype=torch.long,
+        )
 
-        coordinates = torch.tensor([
+        coordinates = torch.tensor(
             [
-                [0.0, 0.0, 0.0],
-                [1.2, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                [0.0, -1.0, 0.0],
+                [
+                    [0.0, 0.0, 0.0],
+                    [1.2, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                ],
+                [
+                    [0.0, 0.0, 0.0],
+                    [1.1, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                ],
             ],
-            [
-                [0.0, 0.0, 0.0],
-                [1.1, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                [0.0, -1.0, 0.0],
-            ],
-        ], dtype=torch.float32)
+            dtype=torch.float32,
+        )
 
         energy = engine(atomic_numbers, coordinates)
         assert energy.shape == ()  # Scalar output
@@ -767,10 +783,13 @@ class TestMatterSimMPEngine:
 
         # Two atoms at known separation
         atomic_numbers = torch.tensor([6, 8], dtype=torch.long)
-        coordinates = torch.tensor([
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-        ], dtype=torch.float32)
+        coordinates = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+            ],
+            dtype=torch.float32,
+        )
 
         energy = engine(atomic_numbers, coordinates)
         # Should produce a finite energy value
@@ -790,20 +809,22 @@ class TestMatterSimMPEngine:
         engine = MatterSimMPEngine()
 
         atomic_numbers = torch.tensor([6, 6, 8, 1, 1], dtype=torch.long)
-        coordinates = torch.tensor([
-            [0.0, 0.0, 0.0],
-            [1.5, 0.0, 0.0],
-            [0.0, 1.2, 0.5],
-            [2.0, 0.0, 0.0],
-            [1.3, 0.5, 0.0],
-        ], dtype=torch.float32, requires_grad=True)
+        coordinates = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [1.5, 0.0, 0.0],
+                [0.0, 1.2, 0.5],
+                [2.0, 0.0, 0.0],
+                [1.3, 0.5, 0.0],
+            ],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
 
         energy = engine(atomic_numbers, coordinates)
 
         # Compute gradients
-        grad = torch.autograd.grad(
-            energy, coordinates, grad_outputs=torch.ones_like(energy), create_graph=False
-        )
+        grad = torch.autograd.grad(energy, coordinates, grad_outputs=torch.ones_like(energy), create_graph=False)
         assert grad is not None
         assert grad[0].shape == coordinates.shape
         # Gradients should be finite (no NaN/Inf from physics)
@@ -813,6 +834,7 @@ class TestMatterSimMPEngine:
 # ============================================================
 # Shape Compatibility Tests
 # ============================================================
+
 
 class TestShapeCompatibility:
     def test_tier1_to_tier2_shape_compatibility(self):
@@ -828,6 +850,7 @@ class TestShapeCompatibility:
 
         # Instantiate model without training for shape test
         from aurelius.screening.tier1 import MLXNAFilter
+
         model = MLXNAFilter(quantization_format="MX4", train_on_init=False)
 
         # Create placeholder input
@@ -858,11 +881,14 @@ class TestShapeCompatibility:
 
         # Realistic water molecule: 3 atoms with 3D coordinates
         atomic_numbers = torch.tensor([1, 8, 1], dtype=torch.long)
-        coordinates = torch.tensor([
-            [0.0, 0.0, 0.0],
-            [0.0, 0.757, 0.586],
-            [0.0, -0.586, -0.586],
-        ], dtype=torch.float32)
+        coordinates = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [0.0, 0.757, 0.586],
+                [0.0, -0.586, -0.586],
+            ],
+            dtype=torch.float32,
+        )
 
         energy = engine(atomic_numbers, coordinates)
         assert energy.shape == ()
@@ -906,6 +932,7 @@ class TestShapeCompatibility:
 # Physics Validation Tests
 # ============================================================
 
+
 class TestPhysicsConservation:
     """Tests verifying physical correctness of simulation engines."""
 
@@ -925,12 +952,16 @@ class TestPhysicsConservation:
 
         # Small water cluster around Na+
         atomic_numbers = torch.tensor([11, 8, 1, 1], dtype=torch.long)  # Na+, O, H, H
-        coordinates = torch.tensor([
-            [0.0, 0.0, 0.0],   # Na+
-            [2.3, 0.0, 0.0],   # O (first solvation shell)
-            [2.8, 0.7, 0.0],   # H
-            [2.8, -0.7, 0.0],  # H
-        ], dtype=torch.float32, requires_grad=True)
+        coordinates = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],  # Na+
+                [2.3, 0.0, 0.0],  # O (first solvation shell)
+                [2.8, 0.7, 0.0],  # H
+                [2.8, -0.7, 0.0],  # H
+            ],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
 
         energy = engine(atomic_numbers, coordinates)
 
@@ -938,9 +969,7 @@ class TestPhysicsConservation:
         assert torch.isfinite(energy)
 
         # Compute forces as negative energy gradients
-        grad = torch.autograd.grad(
-            energy, coordinates, grad_outputs=torch.ones_like(energy), create_graph=False
-        )
+        grad = torch.autograd.grad(energy, coordinates, grad_outputs=torch.ones_like(energy), create_graph=False)
         assert grad is not None
         forces = -grad[0]
 
@@ -966,13 +995,16 @@ class TestPhysicsConservation:
 
         # Fixed atomic configuration
         atomic_numbers = torch.tensor([6, 6, 8, 1, 1], dtype=torch.long)
-        coordinates = torch.tensor([
-            [0.0, 0.0, 0.0],
-            [1.5, 0.0, 0.0],
-            [0.0, 1.2, 0.5],
-            [2.0, 0.0, 0.0],
-            [1.3, 0.5, 0.0],
-        ], dtype=torch.float32)
+        coordinates = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [1.5, 0.0, 0.0],
+                [0.0, 1.2, 0.5],
+                [2.0, 0.0, 0.0],
+                [1.3, 0.5, 0.0],
+            ],
+            dtype=torch.float32,
+        )
 
         # Compute energy multiple times - should be identical (deterministic)
         energies = []
@@ -997,16 +1029,13 @@ class TestArrheniusBehavior:
 
         # Run simulations at different temperatures
         result_250k = twin.simulate_sei_evolution(
-            "CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6",
-            voltage_cutoff=0.05, temperature_k=250.0
+            "CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6", voltage_cutoff=0.05, temperature_k=250.0
         )
         result_298k = twin.simulate_sei_evolution(
-            "CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6",
-            voltage_cutoff=0.05, temperature_k=298.15
+            "CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6", voltage_cutoff=0.05, temperature_k=298.15
         )
         result_350k = twin.simulate_sei_evolution(
-            "CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6",
-            voltage_cutoff=0.05, temperature_k=350.0
+            "CC(=O)OC1=CC(=O)O1", "ec:dmc", "NaPF6", voltage_cutoff=0.05, temperature_k=350.0
         )
 
         # Higher temperature -> faster kinetics -> thicker SEI
@@ -1014,9 +1043,10 @@ class TestArrheniusBehavior:
         thickness_298 = result_298k.sei_evolution.thickness_angstrom
         thickness_350 = result_350k.sei_evolution.thickness_angstrom
 
-        assert thickness_250 <= thickness_298 <= thickness_350, \
-            f"SEI thickness should increase with temperature: " \
+        assert thickness_250 <= thickness_298 <= thickness_350, (
+            f"SEI thickness should increase with temperature: "
             f"{thickness_250:.2f} <= {thickness_298:.2f} <= {thickness_350:.2f}"
+        )
 
     def test_arrhenius_rate_formula(self):
         """Verify the Arrhenius rate formula produces physically correct behavior."""
@@ -1043,8 +1073,7 @@ class TestArrheniusBehavior:
         )
 
         # Lower activation energy -> higher rate
-        assert k_low_ea > k_high_ea, \
-            f"Lower Ea should give higher rate: {k_low_ea} > {k_high_ea}"
+        assert k_low_ea > k_high_ea, f"Lower Ea should give higher rate: {k_low_ea} > {k_high_ea}"
 
         # Both rates should be positive
         assert k_low_ea > 0
@@ -1084,9 +1113,9 @@ class TestArrheniusBehavior:
         )
 
         # Rate should decrease as concentration drops
-        assert k_full > k_half > k_low, \
-            f"Rate should decrease with concentration: " \
-            f"{k_full:.4f} > {k_half:.4f} > {k_low:.4f}"
+        assert k_full > k_half > k_low, (
+            f"Rate should decrease with concentration: {k_full:.4f} > {k_half:.4f} > {k_low:.4f}"
+        )
 
 
 class TestVectorizationSpeed:
@@ -1114,8 +1143,7 @@ class TestVectorizationSpeed:
         )
 
         # Should complete in reasonable time (allow generous margin for CI)
-        assert result.simulation_time_ms < 5000, \
-            f"Simulation took {result.simulation_time_ms:.1f}ms, expected < 5000ms"
+        assert result.simulation_time_ms < 5000, f"Simulation took {result.simulation_time_ms:.1f}ms, expected < 5000ms"
 
     def test_batched_forward_pass(self):
         """Verify that MatterSimMPEngine handles batched inputs."""
@@ -1141,6 +1169,7 @@ class TestVectorizationSpeed:
 # ============================================================
 # GBSA Solvation Energy Tests
 # ============================================================
+
 
 class TestGBSASolvation:
     """Tests verifying GBSA solvation energy computation."""
@@ -1190,6 +1219,7 @@ class TestGBSASolvation:
 # ============================================================
 # Real Model Integration Tests
 # ============================================================
+
 
 class TestRealModelIntegration:
     """Tests verifying Tier 1 real model integration."""
@@ -1266,6 +1296,7 @@ class TestRealModelIntegration:
 # SchNet Layer Tests
 # ============================================================
 
+
 class TestSchNetLayers:
     """Tests verifying SchNet-style message passing layers."""
 
@@ -1306,12 +1337,15 @@ class TestSchNetLayers:
         engine = MatterSimMPEngine(hidden_dim=128, num_filters=32)
 
         atomic_numbers = torch.tensor([6, 8, 1, 1], dtype=torch.long)
-        coordinates = torch.tensor([
-            [0.0, 0.0, 0.0],
-            [1.2, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, -1.0, 0.0],
-        ], dtype=torch.float32)
+        coordinates = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [1.2, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0],
+            ],
+            dtype=torch.float32,
+        )
 
         energy = engine(atomic_numbers, coordinates)
         assert torch.isfinite(energy)
@@ -1326,12 +1360,16 @@ class TestSchNetLayers:
         engine = MatterSimMPEngine(hidden_dim=128, num_filters=32)
 
         atomic_numbers = torch.tensor([6, 8, 1, 1], dtype=torch.long)
-        coordinates = torch.tensor([
-            [0.0, 0.0, 0.0],
-            [1.2, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, -1.0, 0.0],
-        ], dtype=torch.float32, requires_grad=True)
+        coordinates = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [1.2, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0],
+            ],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
 
         _energy = engine(atomic_numbers, coordinates)
         forces = engine.compute_forces(atomic_numbers, coordinates)
@@ -1433,6 +1471,7 @@ class TestTier0MPNN:
 # CLI Flag Tests
 # ============================================================
 
+
 class TestCLIFlags:
     """Tests verifying CLI flag support for real models."""
 
@@ -1452,9 +1491,11 @@ class TestCLIFlags:
     def test_cli_help_includes_real_model_flags(self):
         """Verify CLI help text includes --use-real-models and --demo flags."""
         import subprocess
+
         result = subprocess.run(
             ["python3", "-m", "aurelius", "screen", "--help"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert "--use-real-models" in result.stdout
         assert "--demo" in result.stdout
@@ -1463,6 +1504,7 @@ class TestCLIFlags:
 # ============================================================
 # Cross-Platform Support Tests (v5.2)
 # ============================================================
+
 
 class TestCrossPlatformSupport:
     """Tests verifying cross-platform device selection for Tier 2."""
@@ -1503,6 +1545,7 @@ class TestCrossPlatformSupport:
     def test_memory_estimation_device_aware(self):
         """Verify memory estimation varies by device type."""
         from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
+
         mem_cpu = MatterSimMTSimulator._estimate_memory_usage(500, "cpu")
         mem_mps = MatterSimMTSimulator._estimate_memory_usage(500, "mps")
         mem_cuda = MatterSimMTSimulator._estimate_memory_usage(500, "cuda")
@@ -1525,6 +1568,7 @@ class TestCrossPlatformSupport:
 # ============================================================
 # Parameter Loading Tests (v5.2)
 # ============================================================
+
 
 class TestParameterLoading:
     """Tests verifying that magic numbers are loaded from force_field_params.json."""
@@ -1597,10 +1641,11 @@ class TestParameterLoading:
         import os
 
         ff_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.dirname(__file__)
-            ))),
-            "src", "aurelius", "data", "force_field_params.json",
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "src",
+            "aurelius",
+            "data",
+            "force_field_params.json",
         )
         if os.path.isfile(ff_path):
             with open(ff_path) as f:
@@ -1617,10 +1662,11 @@ class TestParameterLoading:
         import os
 
         ff_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.dirname(__file__)
-            ))),
-            "src", "aurelius", "data", "force_field_params.json",
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "src",
+            "aurelius",
+            "data",
+            "force_field_params.json",
         )
         if os.path.isfile(ff_path):
             with open(ff_path) as f:
@@ -1643,6 +1689,7 @@ class TestParameterLoading:
     def test_mattersim_loads_params_from_json(self):
         """Verify MatterSimMTSimulator loads parameters from JSON instead of hardcoded."""
         from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
+
         sim = MatterSimMTSimulator()
         # LJ params should come from JSON now
         assert len(sim._LJ_PARAMS) > 0
@@ -1658,6 +1705,7 @@ class TestParameterLoading:
             _get_desolvation_energy,
             _get_shell_radius,
         )
+
         assert _get_coordination_number("Na+") == 6
         assert _get_shell_radius("Li+") == 2.5
         assert _get_desolvation_energy("Na+", "water") == 0.05
@@ -1666,6 +1714,7 @@ class TestParameterLoading:
 # ============================================================
 # RDKit Fallback Warning Tests (v5.2)
 # ============================================================
+
 
 class TestRDKitFallbackWarnings:
     """Tests verifying explicit warnings when RDKit is unavailable."""
@@ -1702,6 +1751,7 @@ class TestRDKitFallbackWarnings:
     def test_na_utilization_uses_json_params(self):
         """Verify NA utilization estimation uses JSON parameters."""
         from aurelius.screening.tier1 import MLXNAFilter
+
         f = MLXNAFilter(quantization_format="MX4", train_on_init=False)
         util = f._estimate_na_utilization(0.75)
         assert 0 <= util <= 100
@@ -1710,6 +1760,7 @@ class TestRDKitFallbackWarnings:
 # ============================================================
 # Cross-Platform Bridge Tests
 # ============================================================
+
 
 class TestCrossPlatformBridge:
     """Tests verifying cross-platform bridge behavior."""
@@ -1755,6 +1806,7 @@ class TestCrossPlatformBridge:
 # ============================================================
 # PyTorch Fallback Filter Tests
 # ============================================================
+
 
 class TestPyTorchFallbackFilter:
     """Tests verifying the PyTorch fallback filter works correctly."""
@@ -1871,6 +1923,7 @@ class TestPyTorchFallbackFilter:
 # kMC Convergence Tests
 # ============================================================
 
+
 class TestKMCConvergence:
     """Tests verifying kMC convergence behavior in Tier 3."""
 
@@ -1881,15 +1934,9 @@ class TestKMCConvergence:
         and asserts that SEI thickness change between 5000 and 10000
         steps is < 5%.
         """
-        twin_1000 = GCMDigitalTwin(
-            gcmtwin_config=GCMDTConfig(max_simulation_steps=1000)
-        )
-        twin_5000 = GCMDigitalTwin(
-            gcmtwin_config=GCMDTConfig(max_simulation_steps=5000)
-        )
-        twin_10000 = GCMDigitalTwin(
-            gcmtwin_config=GCMDTConfig(max_simulation_steps=10000)
-        )
+        twin_1000 = GCMDigitalTwin(gcmtwin_config=GCMDTConfig(max_simulation_steps=1000))
+        twin_5000 = GCMDigitalTwin(gcmtwin_config=GCMDTConfig(max_simulation_steps=5000))
+        twin_10000 = GCMDigitalTwin(gcmtwin_config=GCMDTConfig(max_simulation_steps=10000))
 
         smiles = "CC(=O)OC1=CC(=O)O1"
         result_1000 = twin_1000.simulate_sei_evolution(smiles, "ec:dmc", "NaPF6")
@@ -1901,25 +1948,22 @@ class TestKMCConvergence:
         thickness_10000 = result_10000.sei_evolution.thickness_angstrom
 
         # Higher step counts should produce thicker SEI (more growth)
-        assert thickness_1000 <= thickness_5000 <= thickness_10000, \
+        assert thickness_1000 <= thickness_5000 <= thickness_10000, (
             f"SEI thickness should increase with steps: {thickness_1000:.2f} <= {thickness_5000:.2f} <= {thickness_10000:.2f}"
+        )
 
         # Convergence check: change between 5000 and 10000 steps should be < 5%
         if thickness_5000 > 0:
             convergence_change = abs(thickness_10000 - thickness_5000) / thickness_5000
-            assert convergence_change < 0.05, \
+            assert convergence_change < 0.05, (
                 f"kMC convergence: {convergence_change:.4f} change between 5000 and 10000 steps exceeds 5%"
+            )
 
     def test_kmc_deterministic_different_max_steps(self):
         """Verify kMC produces deterministic results for same max_simulation_steps."""
-        twin = GCMDigitalTwin(
-            gcmtwin_config=GCMDTConfig(max_simulation_steps=3000)
-        )
+        twin = GCMDigitalTwin(gcmtwin_config=GCMDTConfig(max_simulation_steps=3000))
         smiles = "CC(=O)OC1=CC(=O)O1"
-        results = [
-            twin.simulate_sei_evolution(smiles, "ec:dmc", "NaPF6")
-            for _ in range(3)
-        ]
+        results = [twin.simulate_sei_evolution(smiles, "ec:dmc", "NaPF6") for _ in range(3)]
         thicknesses = [r.sei_evolution.thickness_angstrom for r in results]
         assert all(t == thicknesses[0] for t in thicknesses)
 
@@ -1927,6 +1971,7 @@ class TestKMCConvergence:
 # ============================================================
 # Enhanced Physics Conservation Tests
 # ============================================================
+
 
 class TestEnhancedPhysicsConservation:
     """Enhanced tests verifying physical correctness of simulation engines."""
@@ -1946,19 +1991,23 @@ class TestEnhancedPhysicsConservation:
         # Ethylene carbonate (EC): 4C + 4H + 3O = 11 atoms
         # Ring structure: O=C1-O-C-C1 with proper 3D geometry
         atomic_numbers = torch.tensor([6, 6, 8, 8, 8, 1, 1, 1, 1, 6, 6], dtype=torch.long)
-        coordinates = torch.tensor([
-            [0.0, 0.0, 0.0],     # C1 (carbonyl)
-            [1.2, 0.0, 0.0],     # C2
-            [0.0, 1.3, 0.5],     # O1 (ring oxygen)
-            [-0.5, -0.5, -0.3],  # O2 (carbonyl)
-            [-1.0, 0.5, -0.3],   # O3 (ring oxygen)
-            [1.8, 0.8, 0.5],     # H1
-            [1.5, -0.5, -0.6],   # H2
-            [0.3, 1.8, 0.3],     # H3
-            [-0.3, -1.5, -0.5],  # H4
-            [0.5, 0.8, 1.0],     # C3
-            [0.0, -0.5, -1.0],   # C4
-        ], dtype=torch.float32, requires_grad=True)
+        coordinates = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],  # C1 (carbonyl)
+                [1.2, 0.0, 0.0],  # C2
+                [0.0, 1.3, 0.5],  # O1 (ring oxygen)
+                [-0.5, -0.5, -0.3],  # O2 (carbonyl)
+                [-1.0, 0.5, -0.3],  # O3 (ring oxygen)
+                [1.8, 0.8, 0.5],  # H1
+                [1.5, -0.5, -0.6],  # H2
+                [0.3, 1.8, 0.3],  # H3
+                [-0.3, -1.5, -0.5],  # H4
+                [0.5, 0.8, 1.0],  # C3
+                [0.0, -0.5, -1.0],  # C4
+            ],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
 
         energy = engine(atomic_numbers, coordinates)
 
@@ -1966,9 +2015,7 @@ class TestEnhancedPhysicsConservation:
         assert torch.isfinite(energy), f"Energy is not finite: {energy}"
 
         # Compute forces as negative energy gradients
-        grad = torch.autograd.grad(
-            energy, coordinates, grad_outputs=torch.ones_like(energy), create_graph=True
-        )
+        grad = torch.autograd.grad(energy, coordinates, grad_outputs=torch.ones_like(energy), create_graph=True)
         assert grad is not None, "Gradient computation returned None"
         forces = -grad[0]
 

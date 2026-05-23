@@ -50,6 +50,7 @@ if HAS_TORCH:
     try:
         import torch  # type: ignore[import-not-found, unused-ignore]
         import torch.nn as nn  # type: ignore[import-not-found, unused-ignore]
+
         _torch = torch
         _nn = nn
     except Exception:
@@ -63,6 +64,7 @@ if TYPE_CHECKING:
 # Force field parameter loading
 # ---------------------------------------------------------------------------
 
+
 def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
     """Load force field parameters from JSON config.
 
@@ -72,9 +74,7 @@ def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
     Returns:
         Dictionary of force field parameters.
     """
-    ff_path = path or str(
-        resources.files("aurelius.data").joinpath("force_field_params.json")
-    )
+    ff_path = path or str(resources.files("aurelius.data").joinpath("force_field_params.json"))
     if os.path.isfile(ff_path):
         with open(ff_path) as f:
             return json.load(f)  # type: ignore[no-any-return]
@@ -157,7 +157,6 @@ if HAS_TORCH:
 
             return h_new
 
-
     class ContinuousFilterConv1dBatched(_nn.Module):  # type: ignore[misc, unused-ignore]
         """Batched version of continuous-filter convolution.
 
@@ -206,7 +205,6 @@ if HAS_TORCH:
 
             return h_new
 
-
     class SchNetInteractionBlock(_nn.Module):  # type: ignore[misc, unused-ignore]
         """SchNet interaction block with continuous-filter convolution.
 
@@ -251,7 +249,6 @@ if HAS_TORCH:
             h = self.norm2(h + h_ffn)
             return h
 
-
     class MatterSimMPEngine(_nn.Module):  # type: ignore[misc, unused-ignore]
         """SchNet-style physics engine for MatterSim on Apple Silicon MPS.
 
@@ -283,10 +280,12 @@ if HAS_TORCH:
             self.embedding = _nn.Embedding(118, hidden_dim)
 
             # SchNet interaction blocks
-            self.interactions = _nn.ModuleList([
-                SchNetInteractionBlock(hidden_dim, num_filters)
-                for _ in range(3)  # 3 interaction blocks
-            ])
+            self.interactions = _nn.ModuleList(
+                [
+                    SchNetInteractionBlock(hidden_dim, num_filters)
+                    for _ in range(3)  # 3 interaction blocks
+                ]
+            )
 
             # Readout: project final embeddings to scalar energy
             self.readout = _nn.Sequential(
@@ -368,8 +367,11 @@ if HAS_TORCH:
             coordinates.requires_grad_(True)
             energy = self(atomic_numbers, coordinates)
             forces = _torch.autograd.grad(
-                energy, coordinates, grad_outputs=_torch.ones_like(energy),
-                create_graph=True, only_inputs=True,
+                energy,
+                coordinates,
+                grad_outputs=_torch.ones_like(energy),
+                create_graph=True,
+                only_inputs=True,
             )[0]
             return -forces  # Force = -gradient of energy
 
@@ -434,7 +436,8 @@ if _nn is not None:
                 messages = self.message_1(h_src) + self.message_2(h_dst)
                 # Aggregate messages by destination node
                 h = h + _torch.scatter_add(
-                    _torch.zeros_like(h), 0,
+                    _torch.zeros_like(h),
+                    0,
                     dst_indices.unsqueeze(-1).expand(-1, h.shape[1]).long(),
                     messages,
                 )
@@ -508,9 +511,7 @@ class MatterSimMTSimulator:
             # Default to cubic box sized to neighbor_list_cutoff
             box_len = neighbor_list_cutoff
             self._cell_vectors = _torch.tensor(
-                [[box_len, 0.0, 0.0],
-                 [0.0, box_len, 0.0],
-                 [0.0, 0.0, box_len]],
+                [[box_len, 0.0, 0.0], [0.0, box_len, 0.0], [0.0, 0.0, box_len]],
                 dtype=_torch.float32,
             )
         self._use_polarization = use_polarization
@@ -556,7 +557,11 @@ class MatterSimMTSimulator:
         self._fallback_widths = fallback.get("widths", [0.8, 1.0, 0.6, 0.3])
 
         # Barrier threshold
-        self.barrier_threshold_eV = barrier_threshold_eV if barrier_threshold_eV is not None else params.get("lennard_jones", {}).get("default_barrier_eV", 0.5)
+        self.barrier_threshold_eV = (
+            barrier_threshold_eV
+            if barrier_threshold_eV is not None
+            else params.get("lennard_jones", {}).get("default_barrier_eV", 0.5)
+        )
 
         self._compiled_model: Any | None = None
         self._graph_built = False
@@ -590,9 +595,11 @@ class MatterSimMTSimulator:
             raise RuntimeError("PyTorch is required for MatterSim-MT.")
 
         device = self._select_device()
-        print(f"[Aurelius v5.2 Tier2] Initializing MatterSim-MT "
-              f"(barrier threshold: {self.barrier_threshold_eV} eV, "
-              f"device={device})")
+        print(
+            f"[Aurelius v5.2 Tier2] Initializing MatterSim-MT "
+            f"(barrier threshold: {self.barrier_threshold_eV} eV, "
+            f"device={device})"
+        )
 
     def simulate_desolvation(
         self,
@@ -617,11 +624,10 @@ class MatterSimMTSimulator:
             Tier2Result with simulation data.
         """
         import time
+
         start = time.perf_counter()
 
-        path_result = self._run_path_integral(
-            smiles, ion_type, solvent_type, n_scan_points
-        )
+        path_result = self._run_path_integral(smiles, ion_type, solvent_type, n_scan_points)
 
         elapsed_ms = (time.perf_counter() - start) * 1000
         device = self._select_device()
@@ -662,34 +668,88 @@ class MatterSimMTSimulator:
 
         device = self._select_device()
 
-        # Build ion + solvent system
+        # Build ion + solvent system from input SMILES
         atomic_numbers_list: list[int] = [11]  # Na+
         coords_list: list[list[float]] = [[0.0, 0.0, 0.0]]
 
-        if "ec" in solvent_type:
-            # Ethylene carbonate: 4C + 4H + 3O
-            atomic_numbers_list.extend([6, 6, 6, 6, 1, 1, 1, 1, 8, 8, 8])
-            coords_list.extend([
-                [1.2, 0.0, 0.0], [0.0, 1.3, 0.5], [-1.0, 0.5, -0.3], [-0.5, -1.0, 0.2],
-                [1.8, 0.8, 0.5], [1.5, -0.5, -0.6], [0.3, 1.8, 0.3], [-0.3, -1.5, -0.5],
-                [0.5, 0.8, 1.0], [-0.8, 0.0, 0.8], [0.0, -0.5, -1.0],
-            ])
-        elif "dm" in solvent_type or "dmc" in solvent_type:
-            # Dimethyl carbonate: 3C + 6H + 3O
-            atomic_numbers_list.extend([6, 6, 6, 1, 1, 1, 1, 1, 1, 8, 8, 8])
-            coords_list.extend([
-                [1.0, 0.0, 0.0], [0.0, 1.1, 0.3], [-0.8, -0.5, 0.2],
-                [1.5, 0.5, 0.5], [1.5, -0.3, -0.5], [0.5, 1.6, 0.4],
-                [-1.2, 0.3, 0.6], [-0.5, -1.0, -0.4], [0.3, -0.8, -0.8],
-                [-0.3, 0.8, -0.6], [0.0, 0.0, 1.0],
-            ])
-        else:
-            # Generic solvent
-            atomic_numbers_list.extend([6, 8, 1, 1, 1])
-            coords_list.extend([
-                [1.0, 0.0, 0.0], [0.0, 1.1, 0.3], [1.4, 0.4, 0.4],
-                [0.6, -0.6, -0.5], [-0.5, -0.8, -0.3],
-            ])
+        try:
+            import torch
+            from rdkit import Chem
+            from rdkit.Chem import AllChem
+
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is not None:
+                mol = Chem.AddHs(mol)
+                AllChem.EmbedMolecule(mol, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
+                AllChem.MMFFOptimizeMolecule(mol)  # type: ignore[attr-defined, unused-ignore]
+
+                for atom in mol.GetAtoms():
+                    atomic_numbers_list.append(atom.GetAtomicNum())
+                conf = mol.GetConformer()
+                for atom_idx in range(mol.GetNumAtoms()):
+                    pos = conf.GetAtomPosition(atom_idx)
+                    coords_list.append([float(pos.x), float(pos.y), float(pos.z)])
+
+                coordinates = torch.tensor(coords_list, dtype=torch.float32, device=device)
+                atomic_numbers = torch.tensor(atomic_numbers_list, dtype=torch.long, device=device)
+            else:
+                raise ValueError("SMILES parsing failed")
+        except (ImportError, ValueError, RuntimeError):
+            # Fallback: use hardcoded solvent boxes
+            if "ec" in solvent_type:
+                atomic_numbers_list.extend([6, 6, 6, 6, 1, 1, 1, 1, 8, 8, 8])
+                coords_list.extend(
+                    [
+                        [1.2, 0.0, 0.0],
+                        [0.0, 1.3, 0.5],
+                        [-1.0, 0.5, -0.3],
+                        [-0.5, -1.0, 0.2],
+                        [1.8, 0.8, 0.5],
+                        [1.5, -0.5, -0.6],
+                        [0.3, 1.8, 0.3],
+                        [-0.3, -1.5, -0.5],
+                        [0.5, 0.8, 1.0],
+                        [-0.8, 0.0, 0.8],
+                        [0.0, -0.5, -1.0],
+                    ]
+                )
+            elif "dm" in solvent_type or "dmc" in solvent_type:
+                atomic_numbers_list.extend([6, 6, 6, 1, 1, 1, 1, 1, 1, 8, 8, 8])
+                coords_list.extend(
+                    [
+                        [1.0, 0.0, 0.0],
+                        [0.0, 1.1, 0.3],
+                        [-0.8, -0.5, 0.2],
+                        [1.5, 0.5, 0.5],
+                        [1.5, -0.3, -0.5],
+                        [0.5, 1.6, 0.4],
+                        [-1.2, 0.3, 0.6],
+                        [-0.5, -1.0, -0.4],
+                        [0.3, -0.8, -0.8],
+                        [-0.3, 0.8, -0.6],
+                        [0.0, 0.0, 1.0],
+                    ]
+                )
+            else:
+                atomic_numbers_list.extend([6, 8, 1, 1, 1])
+                coords_list.extend(
+                    [
+                        [1.0, 0.0, 0.0],
+                        [0.0, 1.1, 0.3],
+                        [1.4, 0.4, 0.4],
+                        [0.6, -0.6, -0.5],
+                        [-0.5, -0.8, -0.3],
+                    ]
+                )
+
+            _n_atoms = len(atomic_numbers_list)
+            atomic_numbers = torch.tensor(atomic_numbers_list, dtype=torch.long, device=device)
+            coordinates = torch.tensor(coords_list, dtype=torch.float32, device=device)
+
+            logger.warning(
+                "RDKit 3D embedding failed or unavailable. Using generic solvent proxy. "
+                "Physics simulation may not reflect actual molecular geometry."
+            )
 
         _n_atoms = len(atomic_numbers_list)
         atomic_numbers = _torch.tensor(atomic_numbers_list, dtype=_torch.long, device=device)
@@ -736,9 +796,7 @@ class MatterSimMTSimulator:
             n_scan_points=n_scan_points,
         )
 
-    def _compute_lj_potential(
-        self, atomic_numbers: _torch.Tensor, distances: _torch.Tensor
-    ) -> _torch.Tensor:
+    def _compute_lj_potential(self, atomic_numbers: _torch.Tensor, distances: _torch.Tensor) -> _torch.Tensor:
         """Compute Lennard-Jones potential between all atom pairs.
 
         Uses OPLS-AA / GAFF parameters loaded from force field JSON.
@@ -777,18 +835,18 @@ class MatterSimMTSimulator:
         cutoff_mask = (distances < self._cutoff) & mask  # OPLS-AA cutoff
 
         # Shifted LJ potential
-        r_soft = _torch.sqrt(distances * distances + sig_tensor ** 2)
+        r_soft = _torch.sqrt(distances * distances + sig_tensor**2)
         sig_over_r = sig_tensor / r_soft
-        sig_over_r6 = sig_over_r ** 6
-        sig_over_r12 = sig_over_r6 ** 2
+        sig_over_r6 = sig_over_r**6
+        sig_over_r12 = sig_over_r6**2
 
         lj_per_pair = 4.0 * eps_tensor * (sig_over_r12 - sig_over_r6)
 
         # Shift to zero at cutoff
-        r_cutoff_soft = _torch.sqrt(distances * distances + sig_tensor ** 2)
+        r_cutoff_soft = _torch.sqrt(distances * distances + sig_tensor**2)
         sig_over_r_cutoff = sig_tensor / r_cutoff_soft
-        sig_over_r6_cutoff = sig_over_r_cutoff ** 6
-        sig_over_r12_cutoff = sig_over_r6_cutoff ** 2
+        sig_over_r6_cutoff = sig_over_r_cutoff**6
+        sig_over_r12_cutoff = sig_over_r6_cutoff**2
         lj_cutoff = 4.0 * eps_tensor * (sig_over_r12_cutoff - sig_over_r6_cutoff)
 
         lj_per_pair = lj_per_pair - lj_cutoff
@@ -843,17 +901,17 @@ class MatterSimMTSimulator:
         cutoff_mask = (distances < self._cutoff).float()
 
         # Shifted LJ potential for neighbor distances
-        r_soft = _torch.sqrt(distances ** 2 + sig_neighbors ** 2)
+        r_soft = _torch.sqrt(distances**2 + sig_neighbors**2)
         sig_over_r = sig_neighbors / r_soft
-        sig_over_r6 = sig_over_r ** 6
-        sig_over_r12 = sig_over_r6 ** 2
+        sig_over_r6 = sig_over_r**6
+        sig_over_r12 = sig_over_r6**2
         lj_per_neighbor = 4.0 * eps_neighbors * (sig_over_r12 - sig_over_r6)
 
         # Shift to zero at cutoff
-        r_cutoff_soft = _torch.sqrt(distances ** 2 + sig_neighbors ** 2)
+        r_cutoff_soft = _torch.sqrt(distances**2 + sig_neighbors**2)
         sig_over_r_cutoff = sig_neighbors / r_cutoff_soft
-        sig_over_r6_cutoff = sig_over_r_cutoff ** 6
-        sig_over_r12_cutoff = sig_over_r6_cutoff ** 2
+        sig_over_r6_cutoff = sig_over_r_cutoff**6
+        sig_over_r12_cutoff = sig_over_r6_cutoff**2
         lj_cutoff = 4.0 * eps_neighbors * (sig_over_r12_cutoff - sig_over_r6_cutoff)
 
         lj_per_neighbor = lj_per_neighbor - lj_cutoff
@@ -861,9 +919,7 @@ class MatterSimMTSimulator:
 
         return lj_total
 
-    def _compute_coulomb_potential(
-        self, atomic_numbers: _torch.Tensor, distances: _torch.Tensor
-    ) -> _torch.Tensor:
+    def _compute_coulomb_potential(self, atomic_numbers: _torch.Tensor, distances: _torch.Tensor) -> _torch.Tensor:
         """Compute Coulombic potential between charged pairs.
 
         Uses OPLS-AA / GAFF partial charges, or dynamically predicted
@@ -893,7 +949,7 @@ class MatterSimMTSimulator:
         q_j = charges.unsqueeze(1)
         q_product = q_i * q_j
 
-        charge_mask = (q_product != 0.0)
+        charge_mask = q_product != 0.0
         r_soft = _torch.sqrt(distances * distances + 1.0)
 
         coulomb_per_pair = COULOMB_EV_A * q_product / r_soft
@@ -970,7 +1026,7 @@ class MatterSimMTSimulator:
         charge_mask = ((q_src != 0.0) & (q_dst != 0.0)).float()
 
         # Coulomb energy for neighbor distances
-        r_soft = _torch.sqrt(distances ** 2 + 1.0)
+        r_soft = _torch.sqrt(distances**2 + 1.0)
         coulomb_per_neighbor = COULOMB_EV_A * q_product / r_soft
         coulomb_total = _torch.sum(coulomb_per_neighbor * cutoff_mask * charge_mask)
 
@@ -1026,12 +1082,8 @@ class MatterSimMTSimulator:
             sig_vals = _torch.where(pair_mask, _torch.full_like(sig_vals, sig), sig_vals)
 
         # Apply defaults for unknown pairs: (n_solvent,)
-        eps_vals = _torch.where(
-            eps_vals == 0, _torch.full_like(eps_vals, self._default_eps), eps_vals
-        )
-        sig_vals = _torch.where(
-            sig_vals == 0, _torch.full_like(sig_vals, self._default_sig), sig_vals
-        )
+        eps_vals = _torch.where(eps_vals == 0, _torch.full_like(eps_vals, self._default_eps), eps_vals)
+        sig_vals = _torch.where(sig_vals == 0, _torch.full_like(sig_vals, self._default_sig), sig_vals)
 
         # Broadcast to (n_scan_points, n_solvent) for all steps
         eps_broadcast = eps_vals.unsqueeze(0).expand(n_scan_points, -1)
@@ -1041,17 +1093,17 @@ class MatterSimMTSimulator:
         cutoff_mask = ion_solvent_distances < self._cutoff
 
         # Shifted LJ potential: fully vectorized over all steps
-        r_soft = _torch.sqrt(ion_solvent_distances ** 2 + sig_broadcast ** 2)
+        r_soft = _torch.sqrt(ion_solvent_distances**2 + sig_broadcast**2)
         sig_over_r = sig_broadcast / r_soft
-        sig_over_r6 = sig_over_r ** 6
-        sig_over_r12 = sig_over_r6 ** 2
+        sig_over_r6 = sig_over_r**6
+        sig_over_r12 = sig_over_r6**2
         lj_per_atom = 4.0 * eps_broadcast * (sig_over_r12 - sig_over_r6)
 
         # Shift to zero at cutoff
-        r_cutoff_soft = _torch.sqrt(ion_solvent_distances ** 2 + sig_broadcast ** 2)
+        r_cutoff_soft = _torch.sqrt(ion_solvent_distances**2 + sig_broadcast**2)
         sig_over_r_cutoff = sig_broadcast / r_cutoff_soft
-        sig_over_r6_cutoff = sig_over_r_cutoff ** 6
-        sig_over_r12_cutoff = sig_over_r6_cutoff ** 2
+        sig_over_r6_cutoff = sig_over_r_cutoff**6
+        sig_over_r12_cutoff = sig_over_r6_cutoff**2
         lj_cutoff = 4.0 * eps_broadcast * (sig_over_r12_cutoff - sig_over_r6_cutoff)
         lj_per_atom = lj_per_atom - lj_cutoff
 
@@ -1068,7 +1120,7 @@ class MatterSimMTSimulator:
             # Broadcast charge products: (n_scan_points, n_solvent)
             qi_broadcast = qi * q_j_vals.unsqueeze(0).expand(n_scan_points, -1)
             charge_mask = (q_j_vals != 0.0).unsqueeze(0).expand(n_scan_points, -1)
-            r_soft_c = _torch.sqrt(ion_solvent_distances ** 2 + 1.0)
+            r_soft_c = _torch.sqrt(ion_solvent_distances**2 + 1.0)
             coul_per_atom = COULOMB_EV_A * qi_broadcast / r_soft_c
             coul_total = _torch.sum(coul_per_atom * charge_mask.float(), dim=1)  # (n_scan_points,)
         else:
@@ -1114,9 +1166,7 @@ class MatterSimMTSimulator:
                 maxima.append(float(energies[i]))
         return maxima
 
-    def _fallback_path_integral(
-        self, smiles: str, n_scan_points: int
-    ) -> DesolvationPathResult:
+    def _fallback_path_integral(self, smiles: str, n_scan_points: int) -> DesolvationPathResult:
         """Fallback path integral when PyTorch is unavailable."""
         seed = hash(smiles) % 10000
         rng = np.random.RandomState(seed)
@@ -1239,7 +1289,7 @@ class MatterSimMTSimulator:
         # ------------------------------------------------------------------
         min_coords = coordinates.amin(dim=0)  # (3,)
         max_coords = coordinates.amax(dim=0)  # (3,)
-        box_size = max_coords - min_coords    # (3,)
+        box_size = max_coords - min_coords  # (3,)
 
         # ------------------------------------------------------------------
         # 2. Build a grid of cells: cell_size = cutoff
@@ -1309,9 +1359,15 @@ class MatterSimMTSimulator:
             dist_values_list.append(dists[cutoff_mask])
 
         # Concatenate all lists
-        src_indices = _torch.cat(src_indices_list) if src_indices_list else _torch.empty(0, dtype=_torch.long, device=device)
-        dst_indices = _torch.cat(dst_indices_list) if dst_indices_list else _torch.empty(0, dtype=_torch.long, device=device)
-        dist_values = _torch.cat(dist_values_list) if dist_values_list else _torch.empty(0, dtype=_torch.float32, device=device)
+        src_indices = (
+            _torch.cat(src_indices_list) if src_indices_list else _torch.empty(0, dtype=_torch.long, device=device)
+        )
+        dst_indices = (
+            _torch.cat(dst_indices_list) if dst_indices_list else _torch.empty(0, dtype=_torch.long, device=device)
+        )
+        dist_values = (
+            _torch.cat(dist_values_list) if dist_values_list else _torch.empty(0, dtype=_torch.float32, device=device)
+        )
 
         return src_indices, dst_indices, dist_values
 
@@ -1374,8 +1430,10 @@ class MatterSimMTSimulator:
         self._total_displacement += displacement
         self._nl_rebuild_counter += 1
 
-        if (self._nl_rebuild_counter >= self._nl_rebuild_interval or
-                self._total_displacement > self._max_displacement_threshold):
+        if (
+            self._nl_rebuild_counter >= self._nl_rebuild_interval
+            or self._total_displacement > self._max_displacement_threshold
+        ):
             self._neighbor_list = None  # Force rebuild
             self._nl_rebuild_counter = 0
             self._total_displacement = 0.0

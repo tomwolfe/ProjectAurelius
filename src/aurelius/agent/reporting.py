@@ -59,6 +59,7 @@ def generate_discovery_results(
 
     import json
     import logging
+
     log = logging.getLogger("aurelius_agent")
 
     with open(path, "w") as f:
@@ -74,6 +75,7 @@ def write_top_discoveries(discoveries: list[dict[str, Any]], path: str = "top_di
         path: Output file path.
     """
     import logging
+
     log = logging.getLogger("aurelius_agent")
 
     with open(path, "w") as f:
@@ -96,6 +98,7 @@ def generate_screening_statistics(
         path: Output file path.
     """
     import logging
+
     log = logging.getLogger("aurelius_agent")
 
     scores = [r["score"].total_score for r in all_results if r.get("score")]
@@ -122,7 +125,7 @@ def generate_screening_statistics(
             for i in range(len(bins) - 1):
                 count = sum(1 for s in scores if bins[i] <= s < bins[i + 1])
                 bar = "#" * count
-                line = f"  [{bins[i]:>3.0f}-{bins[i+1]:>3.0f}): {bar} ({count}))"
+                line = f"  [{bins[i]:>3.0f}-{bins[i + 1]:>3.0f}): {bar} ({count}))"
                 f.write(line + "\n")
             f.write("\n")
 
@@ -157,9 +160,11 @@ def generate_screening_statistics(
         f.write("2. **Score Plateau:** Rolling mean changes < 1.0% over 3 consecutive batches\n")
         f.write("3. **Pass Rate Collapse:** Viability rate < 3% for 2 consecutive batches\n")
         f.write("4. **Structural Saturation:** < 3 new clusters over last 2 batches\n\n")
-        f.write(f"Final state: {convergence.total_screened} screened, "
-                f"{convergence.viable_count} viable, "
-                f"variance={convergence.final_score_variance():.4f}\n")
+        f.write(
+            f"Final state: {convergence.total_screened} screened, "
+            f"{convergence.viable_count} viable, "
+            f"variance={convergence.final_score_variance():.4f}\n"
+        )
 
     log.info("Screening statistics written to %s", path)
 
@@ -196,8 +201,9 @@ def generate_chemical_insights(
                 continue
             mol = Chem.MolFromSmiles(score.molecule_smiles)
             if mol is not None:
-                scaffold = Chem.MolFragmentToSmiles(mol, atomsToUse=list(range(mol.GetNumAtoms())),
-                                                    isomericSmiles=False)
+                scaffold = Chem.MolFragmentToSmiles(
+                    mol, atomsToUse=list(range(mol.GetNumAtoms())), isomericSmiles=False
+                )
                 scaffold = scaffold[:30]
                 if scaffold not in scaffold_scores:
                     scaffold_scores[scaffold] = []
@@ -266,6 +272,7 @@ def generate_manifest(
     """
     import json
     import logging
+
     log = logging.getLogger("aurelius_agent")
 
     rolling = convergence.compute_rolling_mean(batch_size=50)
@@ -282,24 +289,28 @@ def generate_manifest(
         "exhaustion_proof": {
             "rolling_mean_plateau": rolling_mean,
             "viability_rate_final": convergence.viability_rates[-1] if convergence.viability_rates else 0.0,
-            "new_clusters_last_batch": convergence.new_clusters_per_batch[-1] if convergence.new_clusters_per_batch else 0,
+            "new_clusters_last_batch": convergence.new_clusters_per_batch[-1]
+            if convergence.new_clusters_per_batch
+            else 0,
             "analytical_summary": "",
         },
     }
 
     for d in discoveries:
-        manifest["discoveries"].append({
-            "smiles": d["smiles"],
-            "total_score": d["total_score"],
-            "sigma": d["sigma"],
-            "desolvation": d["desolvation"],
-            "sei_homogeneity": d["sei_homogeneity"],
-            "mx_synthesis": d["mx_synthesis"],
-            "gwp_penalty": d["gwp_penalty"],
-            "is_viable": d["is_viable"],
-            "rejection_reasons": d["rejection_reasons"],
-            "components": d.get("components", []),
-        })
+        manifest["discoveries"].append(
+            {
+                "smiles": d["smiles"],
+                "total_score": d["total_score"],
+                "sigma": d["sigma"],
+                "desolvation": d["desolvation"],
+                "sei_homogeneity": d["sei_homogeneity"],
+                "mx_synthesis": d["mx_synthesis"],
+                "gwp_penalty": d["gwp_penalty"],
+                "is_viable": d["is_viable"],
+                "rejection_reasons": d["rejection_reasons"],
+                "components": d.get("components", []),
+            }
+        )
 
     reasons = []
     if convergence.check_score_plateau():
