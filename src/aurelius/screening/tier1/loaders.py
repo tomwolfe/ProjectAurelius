@@ -101,11 +101,11 @@ def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, Any]:
         Returns empty dict if loading fails or torch is unavailable.
     """
     if not HAS_TORCH:
-        print("[Aurelius v6.0 Tier1] WARNING: PyTorch is not available. Cannot convert MLX weights.")
+        print("[Aurelius v7.0 Tier1] WARNING: PyTorch is not available. Cannot convert MLX weights.")
         return {}
 
     if not os.path.isdir(mlx_weights_dir):
-        print(f"[Aurelius v6.0 Tier1] WARNING: MLX weights directory not found: {mlx_weights_dir}")
+        print(f"[Aurelius v7.0 Tier1] WARNING: MLX weights directory not found: {mlx_weights_dir}")
         return {}
 
     weight_files: dict[str, Any | None] = {
@@ -120,7 +120,7 @@ def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, Any]:
         if os.path.isfile(fpath):
             weight_files[fname] = np.load(fpath)
         else:
-            print(f"[Aurelius v6.0 Tier1] WARNING: Missing weight file: {fpath}")
+            print(f"[Aurelius v7.0 Tier1] WARNING: Missing weight file: {fpath}")
             return {}
 
     expected_shapes: dict[str, tuple[int, ...]] = {
@@ -137,7 +137,7 @@ def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, Any]:
         expected = expected_shapes.get(name)
         if expected and arr.shape != expected:
             print(
-                f"[Aurelius v6.0 Tier1] WARNING: Shape mismatch for {name}: "
+                f"[Aurelius v7.0 Tier1] WARNING: Shape mismatch for {name}: "
                 f"expected {expected}, got {arr.shape}. "
                 "Using uninitialized PyTorch fallback weights. "
                 "Run `aurelius train --task tier1` to train properly."
@@ -165,7 +165,7 @@ def load_pytorch_fallback_with_mlx_weights(
 
     if not torch_weights:
         print(
-            "[Aurelius v6.0 Tier1] WARNING: Using uninitialized PyTorch fallback weights. "
+            "[Aurelius v7.0 Tier1] WARNING: Using uninitialized PyTorch fallback weights. "
             "Run `aurelius train --task tier1` to train properly."
         )
         return model
@@ -184,9 +184,9 @@ def load_pytorch_fallback_with_mlx_weights(
 
     if state_dict:
         model.load_state_dict(state_dict, strict=False)  # type: ignore[attr-defined]
-        print(f"[Aurelius v6.0 Tier1] Loaded PyTorch fallback weights from MLX: {mlx_weights_dir}")
+        print(f"[Aurelius v7.0 Tier1] Loaded PyTorch fallback weights from MLX: {mlx_weights_dir}")
     else:
-        print("[Aurelius v6.0 Tier1] WARNING: Could not map any weights from MLX format. Using random initialization.")
+        print("[Aurelius v7.0 Tier1] WARNING: Could not map any weights from MLX format. Using random initialization.")
 
     return model
 

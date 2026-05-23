@@ -1245,14 +1245,14 @@ class MatterSimMTSimulator:
         neighbour-finding complexity from ``O(N^2)`` to ``O(N)`` while
         keeping all computation on the target device (MPS/CUDA).
 
-        For systems with fewer than 50 atoms the dense path is used
+        For systems with fewer than 500 atoms the dense path is used
         because the overhead of spatial binning outweighs the benefit.
 
         MPS Compatibility:
-            - Uses ``torch.bucketize`` for cell assignment (MPS-compatible)
+            - Uses ``torch.floor`` for cell assignment (MPS-compatible)
             - All neighbour-pair distance computation uses only index-based
               masking via ``torch.nonzero`` — no sparse tensor ops.
-            - Falls back to dense computation when ``n_atoms < 50``.
+            - Falls back to dense computation when ``n_atoms < 500``.
 
         Args:
             coordinates: ``(N_atoms, 3)`` FloatTensor of atomic positions.
@@ -1279,7 +1279,7 @@ class MatterSimMTSimulator:
         cl = cutoff or self._neighbor_list_cutoff
 
         # Fall back to dense if system is small (MPS throughput optimization)
-        if n_atoms < 50:
+        if n_atoms < 500:
             return self._dense_neighbor_list(coordinates, cl)
 
         device = coordinates.device
@@ -1300,13 +1300,17 @@ class MatterSimMTSimulator:
         n_cells_z = int(_torch.ceil(box_size[2] / cell_size).item()) if box_size[2] > 0 else 1
 
         # ------------------------------------------------------------------
-        # 3. Assign each atom to its cell using floor division
+        # 3. Assign each atom to its cell using _torch.floor.
+        #    This is fully MPS-compatible (no clamp needed).
         # ------------------------------------------------------------------
-        # This is simpler and more reliable than bucketize for MPS compatibility.
-        # For a single-cell system (box < cutoff), all atoms get cell index 0.
-        cx = ((coordinates[:, 0] - min_coords[0]) / cell_size).clamp(0, n_cells_x - 1).long()
-        cy = ((coordinates[:, 1] - min_coords[1]) / cell_size).clamp(0, n_cells_y - 1).long()
-        cz = ((coordinates[:, 2] - min_coords[2]) / cell_size).clamp(0, n_cells_z - 1).long()
+        offsets = coordinates - min_coords  # (N, 3)
+        cx = _torch.floor(offsets[:, 0] / cell_size).long()
+        cy = _torch.floor(offsets[:, 1] / cell_size).long()
+        cz = _torch.floor(offsets[:, 2] / cell_size).long()
+        # Clamp to valid cell range (avoids out-of-bounds for edge atoms)
+        cx = cx.clamp(0, n_cells_x - 1)
+        cy = cy.clamp(0, n_cells_y - 1)
+        cz = cz.clamp(0, n_cells_z - 1)
 
         # ------------------------------------------------------------------
         # 4. Build adjacency map: for each atom, collect candidate indices

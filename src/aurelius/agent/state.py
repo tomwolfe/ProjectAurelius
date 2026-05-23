@@ -4,39 +4,100 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 
 
 class CheckpointManager:
-    """Manages agent_state.json for resume capability.
+    """Manages agent state using a lightweight embedded SQLite database.
+
+    Replaces the previous JSON-based checkpoint system with indexed
+    SQL tables for ``screened_molecules`` and ``fingerprints``, enabling
+    O(log N) duplicate detection instead of O(N) list scans.
 
     Uses atomic writes (tmp file + os.replace) to prevent corruption
     during crashes.  Saves state after every molecule (not only per batch)
     for granular checkpointing.
     """
 
-    def __init__(self, path: str = "agent_state.json") -> None:
+    def __init__(self, path: str = "aurelius_state.db") -> None:
         """Initialize the checkpoint manager.
 
         Args:
-            path: Path to the state JSON file.
+            path: Path to the SQLite database file.
         """
         self.path = path
-        self.state: dict[str, Any] = {
-            "batch": 0,
-            "screened_count": 0,
-            "best_score": 0.0,
-            "known_fps_hex": [],
-            "convergence_met": False,
-            "viable_count": 0,
-            "total_generated": 0,
-            "invalid_discarded": 0,
-            "discoveries": [],
-            "started_at": datetime.now(UTC).isoformat(),
-            "last_updated": None,
+        self._conn = sqlite3.connect(path)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS screened_molecules (
+                smiles  TEXT PRIMARY KEY,
+                score   REAL,
+                tier_status TEXT
+            )
+        """)
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_smiles ON screened_molecules(smiles)")
+
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS fingerprints (
+                smiles  TEXT,
+                fp_hex  TEXT,
+                PRIMARY KEY (smiles, fp_hex)
+            )
+        """)
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_fp_hex ON fingerprints(fp_hex)")
+
+        self._batch = 0
+        self._screened_count = 0
+        self._best_score = 0.0
+        self._viable_count = 0
+        self._total_generated = 0
+        self._invalid_discarded = 0
+        self._discoveries: list[dict[str, Any]] = []
+        self._started_at = datetime.now(UTC).isoformat()
+        self._last_updated: str | None = None
+
+    def _load_state(self) -> dict[str, Any]:
+        """Load checkpoint state from disk."""
+        import logging
+
+        log = logging.getLogger("aurelius_agent")
+
+        try:
+            state_path = self.path.rsplit(".", 1)[0] + ".json"
+            if os.path.exists(state_path):
+                with open(state_path) as f:
+                    state = json.load(f)
+                self._batch = state.get("batch", 0)
+                self._screened_count = state.get("screened_count", 0)
+                self._best_score = state.get("best_score", 0.0)
+                self._viable_count = state.get("viable_count", 0)
+                self._total_generated = state.get("total_generated", 0)
+                self._invalid_discarded = state.get("invalid_discarded", 0)
+                self._discoveries = state.get("discoveries", [])
+                log.info("Checkpoint loaded: batch=%d screened=%d", self._batch, self._screened_count)
+        except (json.JSONDecodeError, KeyError) as e:
+            log.error("Failed to load checkpoint: %s. Starting fresh.", e)
+
+        return self._get_state_dict()
+
+    def _get_state_dict(self) -> dict[str, Any]:
+        """Return current state as a dict (for API compatibility)."""
+        return {
+            "batch": self._batch,
+            "screened_count": self._screened_count,
+            "best_score": self._best_score,
+            "viable_count": self._viable_count,
+            "total_generated": self._total_generated,
+            "invalid_discarded": self._invalid_discarded,
+            "discoveries": self._discoveries,
+            "started_at": self._started_at,
+            "last_updated": self._last_updated,
         }
 
     def load(self) -> dict[str, Any]:
@@ -46,21 +107,7 @@ class CheckpointManager:
             Dict of checkpoint state.  Returns empty state if file
             cannot be read.
         """
-        import json
-        import logging
-        import os
-
-        log = logging.getLogger("aurelius_agent")
-
-        if os.path.exists(self.path):
-            try:
-                with open(self.path) as f:
-                    self.state = json.load(f)
-                log.info("Checkpoint loaded: batch=%d screened=%d", self.state["batch"], self.state["screened_count"])
-            except (json.JSONDecodeError, KeyError) as e:
-                log.error("Failed to load checkpoint: %s. Starting fresh.", e)
-                self.state["known_fps_hex"] = []
-        return self.state
+        return self._load_state()
 
     def save(self) -> None:
         """Save checkpoint state atomically using tmp + os.replace.
@@ -68,11 +115,13 @@ class CheckpointManager:
         Writes to agent_state.json.tmp first, then atomically replaces
         the original file to prevent corruption during crashes.
         """
-        self.state["last_updated"] = datetime.now(UTC).isoformat()
-        tmp_path = self.path + ".tmp"
+        state_path = self.path.rsplit(".", 1)[0] + ".json"
+        state = self._get_state_dict()
+        state["last_updated"] = datetime.now(UTC).isoformat()
+        tmp_path = state_path + ".tmp"
         with open(tmp_path, "w") as f:
-            json.dump(self.state, f, indent=2)
-        os.replace(tmp_path, self.path)
+            json.dump(state, f, indent=2)
+        os.replace(tmp_path, state_path)
 
     def add_discovery(self, discovery: dict[str, Any]) -> None:
         """Add a discovery to the checkpoint.
@@ -80,7 +129,7 @@ class CheckpointManager:
         Args:
             discovery: Dict with discovery data.
         """
-        self.state["discoveries"].append(discovery)
+        self._discoveries.append(discovery)
 
     def update_stats(
         self,
@@ -97,27 +146,89 @@ class CheckpointManager:
             viable_count: Number of viable molecules.
             invalid_count: Number of invalid discarded molecules.
         """
-        self.state["batch"] += 1
-        self.state["screened_count"] += len(batch_smiles)
-        self.state["total_generated"] += len(batch_smiles)
-        self.state["invalid_discarded"] += invalid_count
-        self.state["viable_count"] += viable_count
+        self._batch += 1
+        self._screened_count += len(batch_smiles)
+        self._total_generated += len(batch_smiles)
+        self._invalid_discarded += invalid_count
+        self._viable_count += viable_count
         if batch_scores:
             best = max(batch_scores)
-            if best > self.state["best_score"]:
-                self.state["best_score"] = best
+            if best > self._best_score:
+                self._best_score = best
+
+    def is_screened(self, smiles: str) -> bool:
+        """Check if a SMILES string has already been screened.
+
+        Args:
+            smiles: SMILES string to check.
+
+        Returns:
+            True if the molecule has already been screened.
+        """
+        cursor = self._conn.execute(
+            "SELECT 1 FROM screened_molecules WHERE smiles = ?", (smiles,)
+        )
+        return cursor.fetchone() is not None
+
+    def add_screened_molecule(self, smiles: str, score: float, tier_status: str) -> None:
+        """Record a screened molecule.
+
+        Args:
+            smiles: SMILES string.
+            score: Molecule score.
+            tier_status: Status string (e.g. "viable", "rejected").
+        """
+        self._conn.execute(
+            "INSERT OR REPLACE INTO screened_molecules (smiles, score, tier_status) VALUES (?, ?, ?)",
+            (smiles, score, tier_status),
+        )
 
     def fps_hex_list(self) -> list[str]:
         """Return list of known fingerprint hex strings."""
-        return cast(list[str], self.state["known_fps_hex"])
+        cursor = self._conn.execute("SELECT fp_hex FROM fingerprints")
+        return [row[0] for row in cursor]
 
-    def add_fps_hex(self, hex_str: str) -> None:
+    def add_fps_hex(self, hex_str: str, smiles: str | None = None) -> None:
         """Add a fingerprint hex string to the known list.
 
         Args:
             hex_str: Serialized fingerprint string.
+            smiles: Associated SMILES (for index lookup).
         """
-        self.state["known_fps_hex"].append(hex_str)
+        if smiles is None:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO fingerprints (fp_hex) VALUES (?)",
+                (hex_str,),
+            )
+        else:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO fingerprints (smiles, fp_hex) VALUES (?, ?)",
+                (smiles, hex_str),
+            )
+
+    def is_known_fps(self, hex_str: str) -> bool:
+        """Check if a fingerprint hex has already been recorded.
+
+        Args:
+            hex_str: Serialized fingerprint hex string.
+
+        Returns:
+            True if the fingerprint is already known.
+        """
+        cursor = self._conn.execute(
+            "SELECT 1 FROM fingerprints WHERE fp_hex = ?", (hex_str,)
+        )
+        return cursor.fetchone() is not None
+
+    def close(self) -> None:
+        """Close the database connection."""
+        self._conn.close()
+
+    def clear(self) -> None:
+        """Clear all screened molecules and fingerprints."""
+        self._conn.execute("DELETE FROM screened_molecules")
+        self._conn.execute("DELETE FROM fingerprints")
+        self._conn.commit()
 
 
 class ConvergenceChecker:

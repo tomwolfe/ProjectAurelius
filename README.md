@@ -2,7 +2,7 @@
 
 **The Autonomous Discovery Release** -- Adds active learning loop with VAE-based structural mutation, PBC-aware physics, centralized dependency management, dependency health checks, and structural diversity generation for closed-loop molecule discovery.
 
-## Changelog (v6.0 → v7.0)
+## Changelog (v7.0 → v7.0)
 
 ### New Features
 

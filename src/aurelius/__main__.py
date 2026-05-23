@@ -1,4 +1,4 @@
-"""Project Aurelius v6.0 - CLI Entry Point.
+"""Project Aurelius v7.0 - CLI Entry Point.
 
 Usage:
     aurelius init                    Initialize pipeline
@@ -87,7 +87,7 @@ def doctor(verbose: bool) -> None:
         DependencyManager,
     )
 
-    click.echo("\n=== Aurelius v6.0 Doctor ===")
+    click.echo("\n=== Aurelius v7.0 Doctor ===")
     click.echo("")
 
     # Framework status
@@ -629,7 +629,7 @@ def hf_upload(
 
 ## Model Description
 
-This model was trained as part of Project Aurelius v6.0, a computational chemistry
+This model was trained as part of Project Aurelius v7.0, a computational chemistry
 screening pipeline optimized for Apple M-series Neural Accelerators.
 
 - **Task:** {task_descriptions.get(task, task)}

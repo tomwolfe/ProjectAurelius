@@ -79,7 +79,7 @@ def write_top_discoveries(discoveries: list[dict[str, Any]], path: str = "top_di
     log = logging.getLogger("aurelius_agent")
 
     with open(path, "w") as f:
-        f.write("# Project Aurelius v6.0 — Top Discoveries (Score >= 65.0)\n")
+        f.write("# Project Aurelius v7.0 — Top Discoveries (Score >= 65.0)\n")
         for d in discoveries:
             f.write(f"{d['smiles']}  # score={d['total_score']:.1f}\n")
     log.info("Top discoveries written to %s (%d molecules)", path, len(discoveries))
@@ -104,7 +104,7 @@ def generate_screening_statistics(
     scores = [r["score"].total_score for r in all_results if r.get("score")]
 
     with open(path, "w") as f:
-        f.write("# Screening Statistics — Project Aurelius v6.0\n\n")
+        f.write("# Screening Statistics — Project Aurelius v7.0\n\n")
         f.write(f"**Generated:** {datetime.now(UTC).isoformat()}\n\n")
 
         f.write("## Overview\n\n")
@@ -188,7 +188,7 @@ def generate_chemical_insights(
     from rdkit import Chem
 
     with open(path, "w") as f:
-        f.write("# Chemical Insights — Project Aurelius v6.0\n\n")
+        f.write("# Chemical Insights — Project Aurelius v7.0\n\n")
         f.write(f"**Generated:** {datetime.now(UTC).isoformat()}\n\n")
 
         f.write("## Structural Correlations\n\n")

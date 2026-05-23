@@ -1,4 +1,4 @@
-"""Project Aurelius v6.0 - The GNN-Enhanced Release.
+"""Project Aurelius v7.0 - The GNN-Enhanced Release.
 
 Accelerated computational chemistry screening pipeline with MPNN
 activation energy prediction, cutoff-aware neighbor lists, and

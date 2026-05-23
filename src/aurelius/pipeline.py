@@ -10,7 +10,6 @@ Then computes the Aurelius Score v5.2 (S_A_v5.2).
 
 from __future__ import annotations
 
-import gc
 import logging
 import multiprocessing
 import time
@@ -82,7 +81,7 @@ class AureliusPipeline:
                 ) from None
 
         print("\n" + "=" * 60)
-        print("  PROJECT AURELIUS v6.0 - Pipeline Initialization")
+        print("  PROJECT AURELIUS v7.0 - Pipeline Initialization")
         print("  The 2nm Fusion Edition | M5 Pro Neural Accelerators")
         print("=" * 60 + "\n")
 
@@ -288,26 +287,6 @@ class AureliusPipeline:
                     **kwargs,
                 )
 
-        # CROSS-TIER HARDWARE CLEANUP
-        gc.collect()
-        if self.has_mlx:
-            try:
-                import mlx.core as _mx  # noqa: F401
-
-                _mx.metal.clear_cache()
-            except Exception:
-                pass
-        if self.has_torch:
-            try:
-                import torch  # noqa: F401
-
-                if torch.backends.mps.is_available():
-                    torch.mps.empty_cache()
-                if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
-                    torch.cuda.empty_cache()
-            except Exception:
-                pass
-
         # Tier 3: GCMD Digital Twin
         t3_result = None
         if self._gcmtwin:
@@ -326,26 +305,6 @@ class AureliusPipeline:
                 f"-> SEI: {t3_result.sei_evolution.thickness_angstrom:.1f}A, "
                 f"Homogeneity={t3_result.sei_evolution.homogeneity_score:.3f}"
             )
-
-        # POST-TIER-3 MEMORY CLEANUP
-        gc.collect()
-        if self.has_mlx:
-            try:
-                import mlx.core as _mx  # noqa: F401
-
-                _mx.metal.clear_cache()
-            except Exception:
-                pass
-        if self.has_torch:
-            try:
-                import torch  # noqa: F401
-
-                if torch.backends.mps.is_available():
-                    torch.mps.empty_cache()
-                if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
-                    torch.cuda.empty_cache()
-            except Exception:
-                pass
 
         # Final consolidated score compilation
         gwp = kwargs.get("gwp_value", 1.0)

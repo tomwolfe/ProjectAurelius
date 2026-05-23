@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-autonomous_screening_agent.py — Project Aurelius v6.0 Autonomous Screening Agent
+autonomous_screening_agent.py — Project Aurelius v7.0 Autonomous Screening Agent
 
 Implements the full autonomous discovery loop:
   Generation (RDKit mutation engine) -> Screening (3-tier pipeline) ->
@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import gc
 import logging
 import sys
 import time
@@ -69,27 +68,6 @@ log.addHandler(_error_handler)
 np.random.seed(42)
 
 
-def _memory_cleanup() -> None:
-    """Free GPU/MLX memory after each batch.
-
-    Collects garbage and clears cached memory from MPS/MLX backends.
-    """
-    gc.collect()
-    try:
-        import mlx.core as mx
-
-        mx.metal.clear_cache()
-    except Exception:
-        pass
-    try:
-        import torch
-
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
-    except Exception:
-        pass
-
-
 def _check_apple_silicon() -> bool:
     """Detect if running on Apple Silicon.
 
@@ -128,7 +106,7 @@ def _load_smiles_file(path: str) -> list[str]:
 
 def main() -> None:
     """CLI entry point for the autonomous screening agent."""
-    parser = argparse.ArgumentParser(description="Aurelius v6.0 Autonomous Screening Agent")
+    parser = argparse.ArgumentParser(description="Aurelius v7.0 Autonomous Screening Agent")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     parser.add_argument("--max-generations", type=int, default=50, help="Maximum generations to run")
     parser.add_argument("--batch-size", type=int, default=50, help="Candidates per batch")
@@ -168,7 +146,7 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
 
     # ---- Phase 1: Environment & Pipeline Initialization ----
     print("=" * 60)
-    print("  PROJECT AURELIUS v6.0 — Autonomous Screening Agent")
+    print("  PROJECT AURELIUS v7.0 — Autonomous Screening Agent")
     print("  The 2nm Fusion Edition | M5 Pro Neural Accelerators")
     print("=" * 60)
 
@@ -320,7 +298,6 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
                 result = pipeline.screen_molecule(smi)
             except Exception as e:
                 log.error("Pipeline error for %s: %s", smi, e, exc_info=True)
-                _memory_cleanup()
                 continue
 
             score = result.get("score")
@@ -363,8 +340,6 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
             all_results.append(result)
             feedback.record(result)
 
-            _memory_cleanup()
-
         new_fps_count = 0
         for smi in valid_candidates:
             mol = _safe_mol_from_smiles(smi)
@@ -387,7 +362,7 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
             profiler.sample(
                 generation=generation,
                 screened_count=convergence.total_screened,
-                gc_collected=gc.collect(),
+                gc_collected=0,
             )
 
         strategy = feedback.get_adaptation_strategy()

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Aurelius v6.0 Environment Setup Script
+# Aurelius v7.0 Environment Setup Script
 # Run this to configure the M5 Pro hard-partitioned memory layout
 #
 # These exports mirror the defaults in src/aurelius/config.py:
@@ -13,12 +13,12 @@ set -e
 DRY_RUN=false
 if [ "${1:-}" = "--dry-run" ]; then
     DRY_RUN=true
-    echo "=== Aurelius v6.0 Environment Setup (DRY RUN) ==="
+    echo "=== Aurelius v7.0 Environment Setup (DRY RUN) ==="
     echo "The following exports would be set (matching config.py defaults):"
     echo ""
 fi
 
-echo "=== Aurelius v6.0 Environment Setup ==="
+echo "=== Aurelius v7.0 Environment Setup ==="
 echo "Configuring M5 Pro Neural Accelerator memory partitioning..."
 
 # PyTorch 2.12 async Metal compilation (eliminates JIT compilation lag)
@@ -64,7 +64,7 @@ else
     echo ""
     echo "Add these to your ~/.zshrc or ~/.bashrc for persistence:"
     echo ""
-    echo '  # Aurelius v6.0 - M5 Pro hard-partitioned memory'
+    echo '  # Aurelius v7.0 - M5 Pro hard-partitioned memory'
     echo '  export PYTORCH_MPS_ENABLE_ASYNC_COMPILATION=1'
     echo '  export MLX_MAX_MEM_CACHE=12G'
     echo '  export AURELIUS_VERSION="6.0.0"'

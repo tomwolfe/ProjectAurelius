@@ -429,6 +429,17 @@ class MWSESolvationEngine:
     - Validates against 500-cycle PNNL stability benchmark
     - Computes GBSA solvation energy for desolvation estimates
 
+    .. warning::
+        GBSA is designed for aqueous protein systems and does **not**
+        model the strong ion-dipole coordination chemistry of Na+/Li+
+        in carbonate solvents.  The GBSA energies below are therefore
+        **approximations** and may not accurately capture ion-solvent
+        coordination energies for battery electrolytes.
+
+        For production-grade accuracy, set ``use_explicit_solvation_correction=True``
+        to enable explicit solvent-shell corrections that account for
+        coordination-number-dependent energy shifts.
+
     Born effective charges are derived from DFT literature values
     for common ions. Mixed solvent interpolation is performed via
     linear interpolation based on dielectric constants.
@@ -450,6 +461,7 @@ class MWSESolvationEngine:
         self,
         kex_window_ps: float = 10.0,
         force_field_path: str | None = None,
+        use_explicit_solvation_correction: bool = False,
     ) -> None:
         """Initialize the MWSE solvation engine.
 
@@ -458,6 +470,7 @@ class MWSESolvationEngine:
             force_field_path: Optional path to force field JSON.
         """
         self.kex_window_ps = kex_window_ps
+        self.use_explicit_solvation_correction = use_explicit_solvation_correction
         # Reload force field params if custom path provided
         if force_field_path is not None:
             global _FF_PARAMS, _DIELECTRIC_CONSTANTS, _LJ_PARAMS

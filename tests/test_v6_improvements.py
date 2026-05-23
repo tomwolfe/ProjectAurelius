@@ -1,4 +1,4 @@
-"""Tests for Project Aurelius v6.0 improvements.
+"""Tests for Project Aurelius v7.0 improvements.
 
 Tests for:
 - Centralized DependencyManager
@@ -323,7 +323,7 @@ class TestDoctorCommand:
             text=True,
         )
         assert result.returncode == 0
-        assert "Aurelius v6.0 Doctor" in result.stdout or "Aurelius v6.0 Doctor" in result.stderr
+        assert "Aurelius v7.0 Doctor" in result.stdout or "Aurelius v7.0 Doctor" in result.stderr
 
     def test_doctor_verbose_output(self):
         """Verify doctor --verbose shows framework versions."""

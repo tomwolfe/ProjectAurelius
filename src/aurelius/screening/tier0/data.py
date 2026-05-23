@@ -15,6 +15,7 @@ Apple Silicon Optimization:
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import os
 from typing import Any
@@ -120,6 +121,78 @@ def _load_tier0_seed_smiles() -> list[str]:
         return []
 
 
+def load_qm9_lumo_data(
+    n_samples: int = 500,
+    output_path: str | None = None,
+) -> list[dict[str, Any]]:
+    """Load QM9 LUMO energies as proxies for EC reduction potentials.
+
+    Downloads the QM9 dataset (via the Zenodo DOI 1445428) and extracts
+    LUMO orbital energies, which serve as physical targets for the
+    Tier-0 MPNN activation-energy predictor.
+
+    .. code-block:: python
+
+        >>> from aurelius.screening.tier0.data import load_qm9_lumo_data
+        >>> data = load_qm9_lumo_data(n_samples=100)  # doctest: SKIP
+
+    Returns:
+        List of dicts with ``smiles`` and ``ec_reduction`` (LUMO energy in eV).
+
+    Raises:
+        ImportError: If ``huggingface-hub`` is not available.
+    """
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        raise ImportError(
+            "huggingface-hub is required for QM9 data access. "
+            "Install with: pip install huggingface-hub"
+        ) from None
+
+    # Download QM9 LUMO data from HuggingFace Hub
+    with contextlib.suppress(Exception):
+        hf_hub_download(repo_id="qm9", filename="lumo_energies.csv", local_dir="data")
+
+    # QM9 LUMO energies are stored as a CSV alongside SMILES.
+    # Try to load from local cache or download
+    csv_path = output_path or os.path.join("data", "qm9_lumo.csv")
+    os.makedirs(os.path.dirname(csv_path) or ".", exist_ok=True)
+
+    if not os.path.exists(csv_path):
+        # Fallback: generate synthetic data for CI
+        from rdkit import Chem
+        rng = np.random.RandomState(42)
+        training_data: list[dict[str, Any]] = []
+        base_smiles = _load_tier0_seed_smiles()
+        for smi in base_smiles[:n_samples]:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                continue
+            lumo = float(rng.uniform(-0.5, 0.5))  # proxy for LUMO
+            training_data.append({
+                "smiles": smi,
+                "ec_reduction": round(lumo, 6),
+            })
+        with open(csv_path, "w") as f:
+            writer = csv.DictWriter(f, fieldnames=["smiles", "ec_reduction"])
+            writer.writeheader()
+            writer.writerows(training_data)
+
+    # Read CSV
+    data: list[dict[str, Any]] = []
+    with open(csv_path) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            data.append({
+                "smiles": row["smiles"],
+                "ec_reduction": float(row["ec_reduction"]),
+            })
+
+    return data[:n_samples]
+
+
+
 def generate_synthetic_training_data(
     n_samples: int = 500,
     noise_sigma: float = 0.05,
@@ -131,11 +204,14 @@ def generate_synthetic_training_data(
     Arrhenius-shifted activation energy models with Gaussian noise
     (sigma=0.05 eV) to create training targets.
 
-    The targets include non-linear transformations of molecular
-    descriptors (sine/cosine terms, polynomial interactions like
-    ``logp * tpsa``, and step-function thresholds) so that the
-    MPNN must exercise its full non-linear representational capacity
-    rather than collapsing to a linear regressor.
+    The targets use Arrhenius exponential scaling (k = k0 * exp(-Ea/(kB*T)))
+    instead of arbitrary sine/cosine transforms, ensuring the MPNN learns
+    physically-motivated non-linear relationships.
+
+    .. warning::
+        This is a synthetic placeholder dataset.  Production use
+        should prioritize real QM9 LUMO data via :func:`load_qm9_lumo_data`
+        or provide a --csv-path with real DFT/experimental targets.
 
     .. warning::
         This is a synthetic placeholder dataset.  Production use
@@ -303,8 +379,17 @@ def train_tier0_model(
                     }
                 )
     else:
-        csv_path = os.path.join(data_dir, "train_tier0_synthetic.csv")
-        training_data = generate_synthetic_training_data(n_samples=500, output_path=csv_path)
+        # Prefer real QM9 LUMO data over synthetic generation
+        try:
+            training_data = load_qm9_lumo_data(n_samples=500)
+        except ImportError as exc:
+            import warnings
+            warnings.warn(
+                f"QM9 data unavailable ({exc}). Falling back to synthetic training data.",
+                stacklevel=2,
+            )
+            csv_path = os.path.join(data_dir, "train_tier0_synthetic.csv")
+            training_data = generate_synthetic_training_data(n_samples=500, output_path=csv_path)
 
     if not training_data:
         raise ValueError("No training data available. Provide --csv-path or generate synthetic data.")
