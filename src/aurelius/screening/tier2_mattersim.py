@@ -1258,9 +1258,6 @@ class MatterSimMTSimulator:
         cy = ((coordinates[:, 1] - min_coords[1]) / cell_size).clamp(0, n_cells_y - 1).long()
         cz = ((coordinates[:, 2] - min_coords[2]) / cell_size).clamp(0, n_cells_z - 1).long()
 
-        # Flatten cell indices: (N,) -> (N,)
-        cell_idx = cx + cy * n_cells_x + cz * n_cells_x * n_cells_y
-
         # ------------------------------------------------------------------
         # 4. Build adjacency map: for each atom, collect candidate indices
         #    from the same cell and 26 adjacent cells.
