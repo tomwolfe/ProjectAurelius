@@ -12,7 +12,11 @@ except ImportError:
     torch = None  # type: ignore
     HAS_TORCH = False
 
-from aurelius.screening.tier2_mattersim import MatterSimMPEngine
+try:
+    from aurelius.screening.tier2_mattersim import MatterSimMPEngine
+except ImportError:
+    MatterSimMPEngine = None  # type: ignore[misc, assignment]
+
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin
 
 
@@ -128,8 +132,8 @@ class TestPhysicsConservation:
         coordinate tensor and not just computing a static value based
         on atomic numbers alone.
         """
-        if not HAS_TORCH:
-            pytest.skip("PyTorch not available")
+        if not HAS_TORCH or MatterSimMPEngine is None:
+            pytest.skip("PyTorch or MatterSimMPEngine not available")
 
         # Build a simple water-like cluster (H2O-like: O at center, H on sides)
         atomic_numbers = torch.tensor([8, 1, 1], dtype=torch.long)  # O, H, H
