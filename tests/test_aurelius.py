@@ -1889,7 +1889,7 @@ class TestPyTorchFallbackFilter:
     def test_mlxna_filter_uses_pytorch_fallback_without_mlx(self):
         """Verify MLXNAFilter instantiates PyTorch fallback when MLX is unavailable."""
         from aurelius.screening.tier1 import HAS_MLX, MLXNAFilter
-        from aurelius.screening.tier1.models import PyTorchFallbackFilter
+        from aurelius.screening.tier1.models import PyTorchBackend
 
         if HAS_MLX:
             pytest.skip("MLX is available; testing PyTorch fallback requires MLX absence")
@@ -1900,7 +1900,7 @@ class TestPyTorchFallbackFilter:
         filter_obj = MLXNAFilter(quantization_format="MX4", train_on_init=False)
         # Trigger model loading
         filter_obj.screen_molecule("CCO")
-        assert isinstance(filter_obj._model, PyTorchFallbackFilter)
+        assert isinstance(filter_obj._model, PyTorchBackend)
 
     def test_screening_works_without_mlx(self):
         """Verify screening pipeline works when MLX is unavailable."""
