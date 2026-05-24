@@ -7,6 +7,8 @@ fallback when RDKit is unavailable.
 
 from __future__ import annotations
 
+from aurelius.utils.dependencies import HAS_RDKIT
+
 try:
     from rdkit import Chem
     from rdkit.Chem import Descriptors

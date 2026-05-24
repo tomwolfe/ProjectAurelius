@@ -17,6 +17,8 @@ from typing import Any
 # RDKit import guard
 # ---------------------------------------------------------------------------
 
+from aurelius.utils.dependencies import HAS_RDKIT
+
 try:
     from rdkit import Chem as _Chem  # type: ignore[import-not-found, unused-ignore]
     from rdkit.Chem import BRICS as _BRICS  # type: ignore[import-not-found, unused-ignore]

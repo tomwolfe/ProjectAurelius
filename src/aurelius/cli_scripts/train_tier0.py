@@ -19,7 +19,7 @@ import argparse
 import sys
 from typing import Any
 
-from aurelius.screening.tier0_gnn import train_tier0_model
+from aurelius.screening.tier0.data import train_tier0_model
 
 
 def train_main(

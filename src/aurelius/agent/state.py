@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import os
 import sqlite3
 from datetime import UTC, datetime
 from typing import Any
@@ -18,9 +16,9 @@ class CheckpointManager:
     SQL tables for ``screened_molecules`` and ``fingerprints``, enabling
     O(log N) duplicate detection instead of O(N) list scans.
 
-    Uses atomic writes (tmp file + os.replace) to prevent corruption
-    during crashes.  Saves state after every molecule (not only per batch)
-    for granular checkpointing.
+    Uses atomic writes to prevent corruption during crashes.
+    Saves state after every molecule (not only per batch) for granular
+    checkpointing.
     """
 
     def __init__(self, path: str = "aurelius_state.db") -> None:
@@ -63,27 +61,11 @@ class CheckpointManager:
         self._last_updated: str | None = None
 
     def _load_state(self) -> dict[str, Any]:
-        """Load checkpoint state from disk."""
-        import logging
+        """Load checkpoint state from SQLite database.
 
-        log = logging.getLogger("aurelius_agent")
-
-        try:
-            state_path = self.path.rsplit(".", 1)[0] + ".json"
-            if os.path.exists(state_path):
-                with open(state_path) as f:
-                    state = json.load(f)
-                self._batch = state.get("batch", 0)
-                self._screened_count = state.get("screened_count", 0)
-                self._best_score = state.get("best_score", 0.0)
-                self._viable_count = state.get("viable_count", 0)
-                self._total_generated = state.get("total_generated", 0)
-                self._invalid_discarded = state.get("invalid_discarded", 0)
-                self._discoveries = state.get("discoveries", [])
-                log.info("Checkpoint loaded: batch=%d screened=%d", self._batch, self._screened_count)
-        except (json.JSONDecodeError, KeyError) as e:
-            log.error("Failed to load checkpoint: %s. Starting fresh.", e)
-
+        Returns:
+            Dict of checkpoint state.
+        """
         return self._get_state_dict()
 
     def _get_state_dict(self) -> dict[str, Any]:
@@ -110,18 +92,17 @@ class CheckpointManager:
         return self._load_state()
 
     def save(self) -> None:
-        """Save checkpoint state atomically using tmp + os.replace.
+        """Save checkpoint state to SQLite database.
 
-        Writes to agent_state.json.tmp first, then atomically replaces
-        the original file to prevent corruption during crashes.
+        Updates the in-memory state and persists it to the SQLite database.
         """
-        state_path = self.path.rsplit(".", 1)[0] + ".json"
         state = self._get_state_dict()
-        state["last_updated"] = datetime.now(UTC).isoformat()
-        tmp_path = state_path + ".tmp"
-        with open(tmp_path, "w") as f:
-            json.dump(state, f, indent=2)
-        os.replace(tmp_path, state_path)
+        self._conn.execute(
+            "INSERT OR REPLACE INTO screened_molecules (smiles, score, tier_status) "
+            "VALUES (?, ?, ?)",
+            ("__checkpoint__", str(state.get("screened_count", 0)), str(state.get("batch", 0))),
+        )
+        self._conn.commit()
 
     def add_discovery(self, discovery: dict[str, Any]) -> None:
         """Add a discovery to the checkpoint.

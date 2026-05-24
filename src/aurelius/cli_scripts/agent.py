@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""
-autonomous_screening_agent.py — Project Aurelius v7.0 Autonomous Screening Agent
+"""Autonomous Screening Agent — Project Aurelius v7.0
 
 Implements the full autonomous discovery loop:
   Generation (RDKit mutation engine) -> Screening (3-tier pipeline) ->
   Feedback-driven mutation -> Convergence check -> Report generation
 
 Usage:
-    python autonomous_screening_agent.py
-    python autonomous_screening_agent.py --max-generations 100 --batch-size 100
-    python autonomous_screening_agent.py --n-workers 4  # parallel Tier 1
+    aurelius agent run --max-generations 100 --batch-size 100
+    aurelius agent run --profile-memory
 """
 
 from __future__ import annotations
@@ -36,7 +34,7 @@ from aurelius.agent.state import CheckpointManager, ConvergenceChecker, Feedback
 from aurelius.config import AureliusConfig, initialize_environment
 from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
-from aurelius.screening.tier0_gnn import Tier0ActivationPredictor
+from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
 from aurelius.utils.chem_utils import (
     _deserialize_fp,
     _is_valid_mol,
@@ -104,31 +102,6 @@ def _load_smiles_file(path: str) -> list[str]:
     return smiles_list
 
 
-def main() -> None:
-    """CLI entry point for the autonomous screening agent."""
-    parser = argparse.ArgumentParser(description="Aurelius v7.0 Autonomous Screening Agent")
-    parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
-    parser.add_argument("--max-generations", type=int, default=50, help="Maximum generations to run")
-    parser.add_argument("--batch-size", type=int, default=50, help="Candidates per batch")
-    parser.add_argument("--profile-memory", action="store_true", help="Enable memory profiling with CSV report output")
-    args = parser.parse_args()
-
-    checkpoint = CheckpointManager()
-    try:
-        run_screening(args, checkpoint)
-    except KeyboardInterrupt:
-        print("\n[AGENT] Interrupted by user. Saving state and exiting.")
-        if checkpoint is not None:
-            _save_checkpoint_safe(checkpoint)
-        sys.exit(1)
-    except Exception as e:
-        log.error("Fatal error: %s", e, exc_info=True)
-        print(f"\n[FATAL] {e}")
-        if checkpoint is not None:
-            _save_checkpoint_safe(checkpoint)
-        sys.exit(1)
-
-
 def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
     """Main autonomous screening loop.
 
@@ -170,7 +143,7 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
         pipeline._gcmtwin._use_tier0_prediction = True
         print("[AGENT] Tier 0 Activation Energy Predictor (MPNN) injected successfully.")
     else:
-        raise RuntimeError("Pipeline GCMD Twin not initialized. Cannot run Tier 3.")
+        raise RuntimeError("Pipeline GCMD Digital Twin not initialized. Cannot run Tier 3.")
 
     # ---- Phase 2: Chemical Generation Engine ----
     print("\n[AGENT] Loading seed molecules...")
@@ -401,7 +374,7 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
         print(f"\n[AGENT] Memory profile report: {report_path}")
         print(f"  Peak RAM:      {profiler.peak_ram_gb:.2f} GB")
         print(f"  Peak MPS:      {profiler.peak_mps_gb:.2f} GB")
-        print(f"  Peak MLX:      {profiler.peak_mlx_gb:.2f} GB")
+        print(f"  Peak MLX:      {profiler.peak_mlx_gb:-.2f} GB")
         print(f"  Samples:       {profiler.n_samples}")
 
     print("\n" + "=" * 60)
@@ -433,6 +406,31 @@ def _save_checkpoint_safe(checkpoint: CheckpointManager) -> None:
     """
     with contextlib.suppress(Exception):
         checkpoint.save()
+
+
+def main() -> None:
+    """CLI entry point for the autonomous screening agent."""
+    parser = argparse.ArgumentParser(description="Aurelius v7.0 Autonomous Screening Agent")
+    parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
+    parser.add_argument("--max-generations", type=int, default=50, help="Maximum generations to run")
+    parser.add_argument("--batch-size", type=int, default=50, help="Candidates per batch")
+    parser.add_argument("--profile-memory", action="store_true", help="Enable memory profiling with CSV report output")
+    args = parser.parse_args()
+
+    checkpoint = CheckpointManager()
+    try:
+        run_screening(args, checkpoint)
+    except KeyboardInterrupt:
+        print("\n[AGENT] Interrupted by user. Saving state and exiting.")
+        if checkpoint is not None:
+            _save_checkpoint_safe(checkpoint)
+        sys.exit(1)
+    except Exception as e:
+        log.error("Fatal error: %s", e, exc_info=True)
+        print(f"\n[FATAL] {e}")
+        if checkpoint is not None:
+            _save_checkpoint_safe(checkpoint)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

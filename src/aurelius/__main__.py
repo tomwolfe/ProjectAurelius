@@ -23,6 +23,7 @@ import sys
 import click
 
 from aurelius.cli_scripts import (
+    agent,
     train_tier0,
     train_tier1,
     validate_physics,
@@ -674,6 +675,36 @@ aurelius train --task {task}
         click.echo(f"[ERROR] Upload failed: {e}", err=True)
         sys.exit(1)
 
+
+
+@cli.command("agent")
+@click.option("--max-generations", type=int, default=50, help="Maximum generations to run")
+@click.option("--batch-size", type=int, default=50, help="Candidates per batch")
+@click.option("--profile-memory", is_flag=True, default=False, help="Enable memory profiling with CSV report output")
+def agent(max_generations: int, batch_size: int, profile_memory: bool) -> None:
+    """Run the autonomous screening agent.
+
+    Executes the full autonomous discovery loop:
+    Generation (RDKit mutation engine) -> Screening (3-tier pipeline) ->
+    Feedback-driven mutation -> Convergence check -> Report generation
+    """
+    from aurelius.agent.state import CheckpointManager
+
+    checkpoint = CheckpointManager()
+    try:
+        import argparse
+        from typing import Any
+
+        args = argparse.Namespace(
+            max_generations=max_generations,
+            batch_size=batch_size,
+            profile_memory=profile_memory,
+        )
+        from aurelius.cli_scripts.agent import run_screening
+        run_screening(args, checkpoint)
+    except Exception as e:
+        click.echo(f"[ERROR] {e}", err=True)
+        sys.exit(1)
 
 if __name__ == "__main__":
     cli()

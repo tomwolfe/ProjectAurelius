@@ -23,6 +23,8 @@ from aurelius.screening.tier1.models import (
     _ChemVLM2MLP,
 )
 
+from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
+
 # Import fingerprint generation from filter module (circular import guard)
 # We'll import it lazily inside the functions to avoid circular deps.
 

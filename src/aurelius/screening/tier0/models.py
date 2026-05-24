@@ -20,6 +20,8 @@ import json
 import os
 from typing import Any
 
+from aurelius.utils.dependencies import HAS_TORCH
+
 try:
     import torch  # type: ignore[import-not-found, unused-ignore]
     import torch.nn as nn  # type: ignore[import-not-found, unused-ignore]

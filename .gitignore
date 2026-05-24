@@ -83,5 +83,9 @@ memory_profile_*.csv
 # Synthetic training data
 data/
 
+# Outputs and research archives
+outputs/
+research/
+
 # Seed generation scripts
 generate_*.py

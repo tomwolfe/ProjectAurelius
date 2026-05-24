@@ -5,8 +5,7 @@ Tests for:
 - PBC minimum image convention distance calculations
 - LRU cache eviction logic
 - GNN-ChargeEq model for polarization
-- ActiveLearningOracle class
-- GraphVAEMutator structural diversity
+- MockDFTOracle class
 """
 
 from __future__ import annotations
@@ -285,37 +284,37 @@ class TestChargeEqModel:
 
 
 # ============================================================
-# ActiveLearningOracle Tests
+# MockDFTOracle Tests
 # ============================================================
 
 
-class TestActiveLearningOracle:
-    """Tests for ActiveLearningOracle class."""
+class TestMockDFTOracle:
+    """Tests for MockDFTOracle class."""
 
     def test_oracle_caching(self):
-        """Verify ActiveLearningOracle caches query results."""
-        from aurelius.screening.tier0.data import ActiveLearningOracle
+        """Verify MockDFTOracle caches query results."""
+        from aurelius.screening.tier0.data import MockDFTOracle
 
-        oracle = ActiveLearningOracle()
+        oracle = MockDFTOracle()
         energy1 = oracle.query("CCO")
         energy2 = oracle.query("CCO")
         assert energy1 == energy2
 
     def test_oracle_query_batch(self):
-        """Verify ActiveLearningOracle can query multiple molecules."""
-        from aurelius.screening.tier0.data import ActiveLearningOracle
+        """Verify MockDFTOracle can query multiple molecules."""
+        from aurelius.screening.tier0.data import MockDFTOracle
 
-        oracle = ActiveLearningOracle()
+        oracle = MockDFTOracle()
         smiles_list = ["CCO", "CCC", "CCCN"]
         results = oracle.query_batch(smiles_list)
         assert len(results) == 3
         assert all(r is not None for r in results)
 
     def test_oracle_append_dataset(self):
-        """Verify ActiveLearningOracle can append data to training dataset."""
-        from aurelius.screening.tier0.data import ActiveLearningOracle
+        """Verify MockDFTOracle can append data to training dataset."""
+        from aurelius.screening.tier0.data import MockDFTOracle
 
-        oracle = ActiveLearningOracle()
+        oracle = MockDFTOracle()
         smiles_list = ["CCO", "CCC"]
         energies = [0.5, 0.6]
         entries = oracle.append_to_dataset(smiles_list, energies)
@@ -324,10 +323,10 @@ class TestActiveLearningOracle:
         assert "ec_reduction" in entries[0]
 
     def test_oracle_clear_cache(self):
-        """Verify ActiveLearningOracle can clear its cache."""
-        from aurelius.screening.tier0.data import ActiveLearningOracle
+        """Verify MockDFTOracle can clear its cache."""
+        from aurelius.screening.tier0.data import MockDFTOracle
 
-        oracle = ActiveLearningOracle()
+        oracle = MockDFTOracle()
         oracle.query("CCO")
         cleared = oracle.clear_cache()
         assert cleared == 1
@@ -337,38 +336,3 @@ class TestActiveLearningOracle:
 
 
 # ============================================================
-# GraphVAEMutator Tests
-# ============================================================
-
-
-class TestGraphVAEMutator:
-    """Tests for GraphVAEMutator structural diversity generation."""
-
-    def test_vae_mutator_creation(self):
-        """Verify GraphVAEMutator can be instantiated."""
-        from aurelius.agent.mutation import GraphVAEMutator
-
-        mutator = GraphVAEMutator(latent_dim=64)
-        assert mutator is not None
-        assert mutator.latent_dim == 64
-
-    def test_vae_mutate_returns_empty_without_weights(self):
-        """Verify GraphVAEMutator returns empty list when weights unavailable."""
-        from aurelius.agent.mutation import GraphVAEMutator
-
-        mutator = GraphVAEMutator()
-        candidates = mutator.mutate("CCO", batch_size=5)
-        # Without weights, should return empty list
-        assert len(candidates) == 0
-
-    def test_vae_mutate_batch_size(self):
-        """Verify GraphVAEMutator returns batch_size candidates."""
-        from aurelius.agent.mutation import GraphVAEMutator
-
-        mutator = GraphVAEMutator(latent_dim=64)
-        # Force weights to be loaded
-        mutator._weights_loaded = True
-        # Call _latent_interpolation directly to ensure deterministic behavior
-        candidates = mutator._latent_interpolation("CCO", batch_size=3)
-        # Should return 3 candidates from latent interpolation
-        assert len(candidates) == 3

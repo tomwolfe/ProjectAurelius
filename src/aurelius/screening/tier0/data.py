@@ -22,13 +22,15 @@ from typing import Any
 
 import numpy as np
 
+from aurelius.utils.dependencies import HAS_TORCH
+
 try:
     import torch
     import torch.nn as nn
 
-    HAS_TORCH = True
+    _HAS_TORCH = True
 except ImportError:
-    HAS_TORCH = False
+    _HAS_TORCH = False
     torch = None  # type: ignore[assignment, unused-ignore]
     nn = None  # type: ignore[assignment, unused-ignore]
 
@@ -274,16 +276,15 @@ def generate_synthetic_training_data(
         pf6_base = float(np.clip(pf6_base, 0.90, 1.50))
         poly_base = float(np.clip(poly_base, 0.30, 0.70))
 
-        # Non-linear transformations to exercise MPNN representational capacity
-        # (otherwise the model reduces to a linear regressor)
-        ec = float(ec_base + 0.03 * np.sin(logp * 2.0) + rng.normal(0, noise_sigma))
-        dm = float(dm_base + 0.02 * np.cos(hba * hbd) + rng.normal(0, noise_sigma))
-        pf6 = float(pf6_base + 0.04 * (logp * tpsa) * 0.01 + rng.normal(0, noise_sigma))
-        poly = float(poly_base + 0.02 * np.sin(aromatic_ratio * np.pi) + rng.normal(0, noise_sigma))
+        # Apply Gaussian noise
+        ec = float(ec_base + rng.normal(0, noise_sigma))
+        dm = float(dm_base + rng.normal(0, noise_sigma))
+        pf6 = float(pf6_base + rng.normal(0, noise_sigma))
+        poly = float(poly_base + rng.normal(0, noise_sigma))
 
         # Step function: threshold-based activation of polymerization pathway
         has_aromatic = 1.0 if aromatic_count > 0 else 0.0
-        poly = float(poly + 0.05 * has_aromatic + rng.normal(0, noise_sigma))
+        poly = float(poly + rng.normal(0, noise_sigma))
 
         ec = float(np.clip(ec, 0.45, 0.95))
         dm = float(np.clip(dm, 0.45, 1.10))
@@ -549,17 +550,14 @@ def train_tier0_model(
     }
 
 
-class ActiveLearningOracle:
-    """Stub oracle for querying external DFT data and managing active learning cycles.
+class MockDFTOracle:
+    """Mock DFT Oracle for CI/testing only.
 
-    Provides:
-    - Caching of queried SMILES → activation energy mappings
-    - Batch-query interface for efficient API calls
-    - Dataset append logic for mixing synthetic + real DFT data
-    - Deterministic fallback when the external DFT API is unavailable
+    WARNING: This class is a fake implementation that returns deterministic
+    hash-based pseudo-energies. It MUST NOT be used in production.
 
-    In production, this would query a real DFT API (e.g., QM7, Materials Project).
-    For now, deterministic synthetic targets are used as placeholders.
+    For production use, implement a real uncertainty-sampling stub that queries
+    a local CSV of pre-computed DFT values.
     """
 
     def __init__(self, api_base_url: str = "", api_token: str | None = None) -> None:
