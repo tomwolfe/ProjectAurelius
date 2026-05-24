@@ -17,12 +17,9 @@ from typing import Any
 import numpy as np
 
 from aurelius.screening.tier1.models import (
-    HAS_MLX,
-    HAS_TORCH,
     PyTorchFallbackFilter,
     _ChemVLM2MLP,
 )
-
 from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
 
 # Import fingerprint generation from filter module (circular import guard)

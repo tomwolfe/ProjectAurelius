@@ -23,7 +23,6 @@ import sys
 import click
 
 from aurelius.cli_scripts import (
-    agent,
     train_tier0,
     train_tier1,
     validate_physics,
@@ -693,7 +692,6 @@ def agent(max_generations: int, batch_size: int, profile_memory: bool) -> None:
     checkpoint = CheckpointManager()
     try:
         import argparse
-        from typing import Any
 
         args = argparse.Namespace(
             max_generations=max_generations,

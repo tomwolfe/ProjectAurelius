@@ -12,7 +12,12 @@ from importlib import metadata
 __version__: str = metadata.version("aurelius")
 
 from aurelius import bridge
-from aurelius.config import AureliusConfig, apply_global_config, get_config, initialize_environment
+from aurelius.config import (
+    AureliusConfig,
+    apply_global_config,
+    get_config,
+    initialize_environment,
+)
 from aurelius.memory.manager import (
     MetalShaderConfig,
     QuantizationConfig,
@@ -22,8 +27,8 @@ from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.engine import AureliusScoringEngine
 from aurelius.screening.tier0 import MPNNEdgeBlock, MPNNReadoutMLP
-from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
 from aurelius.screening.tier0.models import Tier0MPNN
+from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
 from aurelius.screening.tier1 import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin

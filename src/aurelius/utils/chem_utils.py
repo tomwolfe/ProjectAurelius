@@ -16,8 +16,9 @@ from typing import Any
 # ---------------------------------------------------------------------------
 # RDKit import guard
 # ---------------------------------------------------------------------------
-
-from aurelius.utils.dependencies import HAS_RDKIT
+from aurelius.utils.dependencies import (
+    HAS_RDKIT,
+)
 
 try:
     from rdkit import Chem as _Chem  # type: ignore[import-not-found, unused-ignore]

@@ -283,8 +283,8 @@ def generate_synthetic_training_data(
         poly = float(poly_base + rng.normal(0, noise_sigma))
 
         # Step function: threshold-based activation of polymerization pathway
-        has_aromatic = 1.0 if aromatic_count > 0 else 0.0
-        poly = float(poly + rng.normal(0, noise_sigma))
+        if aromatic_count > 0:
+            poly = float(poly + rng.normal(0, noise_sigma))
 
         ec = float(np.clip(ec, 0.45, 0.95))
         dm = float(np.clip(dm, 0.45, 1.10))
