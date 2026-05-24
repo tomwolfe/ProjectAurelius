@@ -1196,13 +1196,8 @@ class MatterSimMTSimulator:
         n = coordinates.shape[0]
         device = coordinates.device
         cutoff = self._cutoff
-        cell_size = cutoff / 2.0
 
-        # Assign atoms to cells using torch.bucketize
-        cell_coords = _torch.div(coordinates, cell_size).long()
-        cell_indices = _torch.flatten(cell_coords, start_dim=0, end_dim=1)
-
-        # Build neighbor pairs from adjacent cells
+        # Build neighbor pairs
         src_indices = []
         dst_indices = []
         distances = []
