@@ -334,7 +334,7 @@ if HAS_TORCH:
             return list(self.parameters())
 
 else:
-    class PyTorchBackend:
+    class PyTorchBackend:  # type: ignore[no-redef]
         """Stub when PyTorch is unavailable."""
 
         def __init__(

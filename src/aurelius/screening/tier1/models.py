@@ -182,7 +182,7 @@ if HAS_MLX:
             self.linear2.bias = _mlx_core.array(b2)
 
 else:
-    class MLXBackend:
+    class MLXBackend:  # type: ignore[no-redef]
         """Placeholder when MLX is unavailable."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -293,7 +293,7 @@ if HAS_TORCH:
             self.load_state_dict(state_dict)
 
 else:
-    class PyTorchBackend:
+    class PyTorchBackend:  # type: ignore[no-redef]
         """Placeholder when PyTorch is unavailable."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:

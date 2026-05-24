@@ -23,9 +23,9 @@ from aurelius.screening.tier1.loaders import (
 )
 from aurelius.screening.tier1.models import (
     MLXBackend,
-    ModelFactory,
     NumpyBackend,
     PyTorchBackend,
+    model_factory,
 )
 from aurelius.screening.tier1.training import (
     train_on_esol,
@@ -41,7 +41,7 @@ __all__ = [
     "HuggingFaceWeightLoader",
     "MLXNAFilter",
     "MLXBackend",
-    "ModelFactory",
+    "model_factory",
     "NumpyBackend",
     "PyTorchBackend",
     "_generate_ecfp4_fingerprint",

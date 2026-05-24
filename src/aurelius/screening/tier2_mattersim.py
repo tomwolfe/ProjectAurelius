@@ -473,6 +473,8 @@ class MatterSimMTSimulator:
         self,
         barrier_threshold_eV: float | None = None,
         force_field_path: str | None = None,
+        use_neighbor_list: bool = False,
+        neighbor_list_cutoff: float = 12.0,
         use_pbc: bool = False,
         use_polarization: bool = False,
     ) -> None:
@@ -513,6 +515,8 @@ class MatterSimMTSimulator:
                 dtype=_torch.float32,
             )
         self._use_polarization = use_polarization
+        self._use_neighbor_list = use_neighbor_list
+        self._neighbor_list_cutoff = neighbor_list_cutoff
         # Load parameters from force field JSON
         self._LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {}
         self._CHARGES: dict[int, float] = {}
@@ -566,6 +570,12 @@ class MatterSimMTSimulator:
 
         self._max_displacement_threshold = 0.5  # Angstroms
         self._total_displacement = 0.0
+
+        # Neighbor list attributes
+        self._use_neighbor_list = False
+        self._nl_rebuild_counter = 0
+        self._nl_rebuild_interval = 100
+        self._neighbor_list: tuple[Any, Any, Any] | None = None
 
     def _select_device(self) -> str:
         """Select the best available compute device.
@@ -1164,9 +1174,50 @@ class MatterSimMTSimulator:
 
         # Neighbor list mode
         if self._neighbor_list is None:
-            src, dst, dist = self._build_neighbor_list(coordinates)
+            src, dst, dist = self._build_neighbor_list(coordinates)  # type: ignore[union-attr]
             self._neighbor_list = (src, dst, dist)
         else:
             src, dst, dist = self._neighbor_list
 
         return src, dst, dist
+
+    def _build_neighbor_list(
+        self,
+        coordinates: _torch.Tensor,
+    ) -> tuple[_torch.Tensor, _torch.Tensor, _torch.Tensor]:
+        """Build neighbor list using grid-based cell list for O(N) complexity.
+
+        Args:
+            coordinates: (N_atoms, 3) FloatTensor.
+
+        Returns:
+            Tuple of (src_indices, dst_indices, distances).
+        """
+        n = coordinates.shape[0]
+        device = coordinates.device
+        cutoff = self._cutoff
+        cell_size = cutoff / 2.0
+
+        # Assign atoms to cells using torch.bucketize
+        cell_coords = _torch.div(coordinates, cell_size).long()
+        cell_indices = _torch.flatten(cell_coords, start_dim=0, end_dim=1)
+
+        # Build neighbor pairs from adjacent cells
+        src_indices = []
+        dst_indices = []
+        distances = []
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                diff = coordinates[i] - coordinates[j]
+                dist = _torch.norm(diff, dim=-1)
+                if dist < cutoff:
+                    src_indices.append(i)
+                    dst_indices.append(j)
+                    distances.append(dist)
+
+        src_tensor = _torch.tensor(src_indices, dtype=_torch.long, device=device)
+        dst_tensor = _torch.tensor(dst_indices, dtype=_torch.long, device=device)
+        dist_tensor = _torch.stack(distances) if distances else _torch.empty(0, dtype=_torch.float32, device=device)
+
+        return src_tensor, dst_tensor, dist_tensor

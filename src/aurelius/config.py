@@ -80,7 +80,7 @@ class AureliusConfig(BaseSettings):
     use_neighbor_list: bool = False
     neighbor_list_cutoff: float = 12.0
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, __context: Any) -> None:
         """Compute dynamic memory allocations after model initialization.
 
         Detects system RAM via psutil and computes MLX / shader cache

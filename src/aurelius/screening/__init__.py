@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from aurelius.screening.tier0 import (
     HAS_TORCH,
-    ModelFactory,
     PyTorchBackend,
     Tier0ActivationPredictor,
+    model_factory,
 )
 from aurelius.screening.tier1 import (
     HAS_MLX,
