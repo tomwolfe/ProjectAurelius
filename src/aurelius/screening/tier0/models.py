@@ -116,7 +116,7 @@ if HAS_TORCH:
             self._init_weights()
 
         def _init_weights(self) -> None:
-            for module in self.modules():
+            for module in self.modules():  # type: ignore[attr-defined]
                 if isinstance(module, _torch_nn.Linear):
                     _torch_nn.init.xavier_uniform_(module.weight)
                     if module.bias is not None:
@@ -166,11 +166,11 @@ if HAS_TORCH:
 
         def save_weights(self, path: str) -> None:
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            _torch.save(self.state_dict(), path)
+            _torch.save(self.state_dict(), path)  # type: ignore[attr-defined]
 
             meta_path = path.rsplit(".", 1)[0] + "_metadata.json"
             shape_info: dict[str, list[int]] = {}
-            for name, tensor in self.state_dict().items():
+            for name, tensor in self.state_dict().items():  # type: ignore[attr-defined]
                 shape_info[name] = list(tensor.shape)
 
             meta = {
@@ -217,7 +217,7 @@ if HAS_TORCH:
                             "The model may not function correctly."
                         )
 
-            self.load_state_dict(state_dict)
+            self.load_state_dict(state_dict)  # type: ignore[attr-defined]
 
     # Import helper for metadata
     import importlib.metadata as _importlib_metadata
@@ -261,7 +261,7 @@ if HAS_TORCH:
             self._init_weights()
 
         def _init_weights(self) -> None:
-            for module in self.modules():
+            for module in self.modules():  # type: ignore[attr-defined]
                 if isinstance(module, _torch_nn.Linear):
                     _torch_nn.init.xavier_uniform_(module.weight)
                     if module.bias is not None:
@@ -319,7 +319,7 @@ if HAS_TORCH:
             self._init_weights()
 
         def _init_weights(self) -> None:
-            for module in self.modules():
+            for module in self.modules():  # type: ignore[attr-defined]
                 if isinstance(module, _torch_nn.Linear):
                     _torch_nn.init.xavier_uniform_(module.weight)
                     if module.bias is not None:
