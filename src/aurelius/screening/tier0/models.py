@@ -25,7 +25,7 @@ from aurelius.utils.dependencies import HAS_TORCH
 __all__ = [
     "HAS_TORCH",
     "ModelBackend",
-    "ModelFactory",
+    "model_factory",
     "PyTorchBackend",
 ]
 
@@ -194,7 +194,7 @@ if HAS_TORCH:
             meta_path_path = path.rsplit(".", 1)[0] + "_metadata.json"
             metadata: dict[str, Any] = {}
             if os.path.isfile(meta_path_path):
-                with open(meta_path) as f:
+                with open(meta_path_path) as f:
                     metadata = json.load(f)
 
             saved_version = metadata.get("model_version", "unknown")
@@ -224,7 +224,7 @@ if HAS_TORCH:
 
     def _importlib_metadata_version(name: str) -> str:
         try:
-            return importlib.metadata.version(name)
+            return _importlib_metadata.version(name)
         except Exception:
             return "unknown"
 
@@ -354,7 +354,7 @@ else:
         load_weights: Any
 
 
-def ModelFactory() -> PyTorchBackend:
+def model_factory() -> PyTorchBackend:
     """Return a PyTorch backend instance for Tier 0 MPNN.
 
     Returns:

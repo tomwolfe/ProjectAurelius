@@ -17,8 +17,6 @@ from typing import Any
 import numpy as np
 
 from aurelius.screening.tier1.models import (
-    HAS_MLX,
-    HAS_TORCH,
     MLXBackend,
     PyTorchBackend,
 )

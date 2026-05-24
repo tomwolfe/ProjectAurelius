@@ -35,7 +35,7 @@ __all__ = [
     "HAS_TORCH",
     "HUGGINGFACE_MODELS",
     "MLXBackend",
-    "ModelFactory",
+    "model_factory",
     "NumpyBackend",
     "PyTorchBackend",
 ]
@@ -384,7 +384,7 @@ class NumpyBackend:
 # Factory
 # ---------------------------------------------------------------------------
 
-def ModelFactory() -> ModelBackend:
+def model_factory() -> ModelBackend:
     """Return the appropriate model backend based on framework availability.
 
     Priority: MLX > PyTorch > NumPy.

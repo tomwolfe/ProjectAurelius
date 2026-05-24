@@ -506,8 +506,8 @@ class MatterSimMTSimulator:
                 "This feature will be fully implemented in v7.0. "
                 "Please use use_pbc=False for now."
             )
-            # Default to cubic box sized to neighbor_list_cutoff
-            box_len = neighbor_list_cutoff
+            # Default to cubic box sized to self._cutoff
+            box_len = self._cutoff
             self._cell_vectors = _torch.tensor(
                 [[box_len, 0.0, 0.0], [0.0, box_len, 0.0], [0.0, 0.0, box_len]],
                 dtype=_torch.float32,

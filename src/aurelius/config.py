@@ -21,7 +21,6 @@ import os
 from typing import Any
 
 import psutil
-from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)

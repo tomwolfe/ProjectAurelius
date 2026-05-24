@@ -26,8 +26,7 @@ from aurelius.memory.manager import (
 from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.engine import AureliusScoringEngine
-from aurelius.screening.tier0 import ModelFactory, PyTorchBackend
-from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
+from aurelius.screening.tier0 import PyTorchBackend, model_factory
 from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
 from aurelius.screening.tier1 import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
@@ -63,7 +62,7 @@ __all__ = [
     "QuantizationConfig",
     "SEIEvolution",
     "Tier0ActivationPredictor",
-    "ModelFactory",
+    "model_factory",
     "PyTorchBackend",
     "Tier0ActivationPredictor",
     "Tier2Result",

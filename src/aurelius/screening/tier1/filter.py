@@ -31,10 +31,8 @@ from aurelius.screening.tier1.models import (
     HAS_RDKIT,
     HAS_TORCH,
     MLXBackend,
-    ModelFactory,
     NumpyBackend,
     PyTorchBackend,
-    ModelBackend,
 )
 from aurelius.screening.tier1.training import (
     _train_synthetic_mlx,

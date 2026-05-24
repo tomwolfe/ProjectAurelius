@@ -19,7 +19,6 @@ from aurelius.screening.tier1.models import (
     HAS_TORCH,
     HUGGINGFACE_MODELS,
     MLXBackend,
-    PyTorchBackend,
 )
 
 logger = logging.getLogger(__name__)
@@ -149,17 +148,17 @@ def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, Any]:
 
 
 def load_pytorch_fallback_with_mlx_weights(
-    model: PyTorchFallbackFilter,
+    model: Any,
     mlx_weights_dir: str,
-) -> PyTorchFallbackFilter:
+) -> Any:
     """Load PyTorch fallback model with weights converted from MLX format.
 
     Args:
-        model: The PyTorchFallbackFilter instance to load weights into.
+        model: The PyTorchBackend instance to load weights into.
         mlx_weights_dir: Path to the MLX model weights directory.
 
     Returns:
-        The PyTorchFallbackFilter with loaded (or randomly initialized) weights.
+        The PyTorchBackend with loaded (or randomly initialized) weights.
     """
     torch_weights = convert_mlx_to_torch_weights(mlx_weights_dir)
 
@@ -243,7 +242,7 @@ class HuggingFaceWeightLoader:
         self,
         task: str = "esol_solubility",
         local_only: bool = False,
-    ) -> _ChemVLM2MLP | None:
+    ) -> Any | None:
         """Load a pre-trained model from Hugging Face Hub.
 
         Args:
@@ -251,7 +250,7 @@ class HuggingFaceWeightLoader:
             local_only: If True, only load from local files.
 
         Returns:
-            _ChemVLM2MLP with loaded weights, or None if unavailable.
+            Model with loaded weights, or None if unavailable.
         """
         model_id = HUGGINGFACE_MODELS.get(task)
         if model_id is None:
@@ -269,7 +268,7 @@ class HuggingFaceWeightLoader:
 
         return None
 
-    def _load_from_hf_hub(self, model_id: str, task: str) -> _ChemVLM2MLP | None:
+    def _load_from_hf_hub(self, model_id: str, task: str) -> Any | None:
         """Attempt to load model weights from Hugging Face Hub.
 
         Args:
@@ -277,7 +276,7 @@ class HuggingFaceWeightLoader:
             task: Model task identifier.
 
         Returns:
-            _ChemVLM2MLP with loaded weights, or None on failure.
+            Model with loaded weights, or None on failure.
         """
         try:
             from huggingface_hub import snapshot_download
@@ -331,14 +330,14 @@ class HuggingFaceWeightLoader:
             logger.warning("[Aurelius v5.2 Tier1] HF Hub download failed: %s", e)
             return None
 
-    def _load_from_local(self, task: str) -> _ChemVLM2MLP | None:
+    def _load_from_local(self, task: str) -> Any | None:
         """Load model weights from local directory.
 
         Args:
             task: Model task identifier.
 
         Returns:
-            _ChemVLM2MLP with loaded weights, or None if not found.
+            Model with loaded weights, or None if not found.
         """
         local_path = os.path.join(self.model_dir, task)
         if not os.path.isdir(local_path):
@@ -353,7 +352,7 @@ class HuggingFaceWeightLoader:
             print(f"[Aurelius v5.2 Tier1] Local load failed: {e}")
             return None
 
-    def save_model(self, model: _ChemVLM2MLP, task: str) -> str:
+    def save_model(self, model: Any, task: str) -> str:
         """Save trained model weights to local directory.
 
         Args:
