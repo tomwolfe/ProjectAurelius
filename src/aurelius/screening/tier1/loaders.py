@@ -18,8 +18,8 @@ from aurelius.screening.tier1.models import (
     DEFAULT_MODEL_DIR,
     HAS_TORCH,
     HUGGINGFACE_MODELS,
-    PyTorchFallbackFilter,
-    _ChemVLM2MLP,
+    MLXBackend,
+    PyTorchBackend,
 )
 
 logger = logging.getLogger(__name__)
@@ -313,7 +313,7 @@ class HuggingFaceWeightLoader:
             # point to a location with more space, or use HF cache symlinks
             # manually via: ln -s $HF_HOME/models/... $AURELIUS_MODEL_DIR/
 
-            model = _ChemVLM2MLP()
+            model = MLXBackend()
             model.load_weights(local_dir)
             print(f"[Aurelius v5.2 Tier1] Loaded {task} model from Hugging Face Hub: {model_id}")
             return model
@@ -345,7 +345,7 @@ class HuggingFaceWeightLoader:
             return None
 
         try:
-            model = _ChemVLM2MLP()
+            model = MLXBackend()
             model.load_weights(local_path)
             print(f"[Aurelius v5.2 Tier1] Loaded {task} model from local: {local_path}")
             return model

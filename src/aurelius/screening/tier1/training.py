@@ -17,8 +17,10 @@ from typing import Any
 import numpy as np
 
 from aurelius.screening.tier1.models import (
-    PyTorchFallbackFilter,
-    _ChemVLM2MLP,
+    HAS_MLX,
+    HAS_TORCH,
+    MLXBackend,
+    PyTorchBackend,
 )
 from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
 
@@ -100,13 +102,13 @@ def _generate_synthetic_training_data(
 
 
 def train_on_esol(
-    model: _ChemVLM2MLP,
+    model: MLXBackend,
     epochs: int = 200,
     lr: float = 0.005,
     batch_size: int = 16,
     seed: int = 42,
     val_split: float = 0.15,
-) -> _ChemVLM2MLP:
+) -> MLXBackend:
     """Train the MLX-NA model on the ESOL dataset (Delaney et al. 2004).
 
     The ESOL (Estimated SOLubility) dataset contains 1112 molecules
@@ -115,7 +117,7 @@ def train_on_esol(
     and provides real experimental data for training.
 
     Args:
-        model: The _ChemVLM2MLP instance to train.
+        model: The MLXBackend instance to train.
         epochs: Maximum number of training epochs.
         lr: Learning rate for gradient descent.
         batch_size: Mini-batch size.
@@ -123,7 +125,7 @@ def train_on_esol(
         val_split: Fraction of data held out for validation.
 
     Returns:
-        The trained _ChemVLM2MLP instance (modified in place).
+        The trained MLXBackend instance (modified in place).
 
     Raises:
         RuntimeError: If MLX or RDKit is unavailable.
@@ -298,12 +300,12 @@ def train_on_esol(
 
 
 def train_on_qm9(
-    model: _ChemVLM2MLP,
+    model: MLXBackend,
     epochs: int = 300,
     lr: float = 0.005,
     batch_size: int = 32,
     seed: int = 42,
-) -> _ChemVLM2MLP:
+) -> MLXBackend:
     """Train the MLX-NA model on the QM9 dataset (Ramakrishnan et al. 2014).
 
     The QM9 dataset contains 130,837 small molecules with DFT-computed
@@ -311,14 +313,14 @@ def train_on_qm9(
     atomization energy (U0) property.
 
     Args:
-        model: The _ChemVLM2MLP instance to train.
+        model: The MLXBackend instance to train.
         epochs: Number of training epochs.
         lr: Learning rate for gradient descent.
         batch_size: Mini-batch size.
         seed: Random seed for reproducibility.
 
     Returns:
-        The trained _ChemVLM2MLP instance (modified in place).
+        The trained MLXBackend instance (modified in place).
 
     Raises:
         RuntimeError: If MLX is unavailable.
@@ -417,17 +419,17 @@ def train_on_qm9(
 
 
 def _train_synthetic_mlx(
-    model: _ChemVLM2MLP,
+    model: MLXBackend,
     use_real_models: bool = False,
-) -> _ChemVLM2MLP:
+) -> MLXBackend:
     """Train on synthetic solubility dataset (demo/fallback mode).
 
     Args:
-        model: The _ChemVLM2MLP instance to train.
+        model: The MLXBackend instance to train.
         use_real_models: If True, use real-model fingerprints.
 
     Returns:
-        The trained _ChemVLM2MLP instance.
+        The trained MLXBackend instance.
     """
     X_train, y_train, _ = _generate_synthetic_training_data(use_real_models=use_real_models)
 
@@ -507,14 +509,14 @@ def _train_synthetic_mlx(
     return model
 
 
-def _train_synthetic_pytorch() -> PyTorchFallbackFilter:
+def _train_synthetic_pytorch() -> PyTorchBackend:
     """Train PyTorch fallback on synthetic solubility dataset.
 
     This provides a trained PyTorch model when MLX is unavailable,
     ensuring the pipeline can run on Linux/Windows/CPU-only systems.
 
     Returns:
-        The trained PyTorchFallbackFilter instance.
+        The trained PyTorchBackend instance.
     """
     X_train, y_train, _ = _generate_synthetic_training_data(use_real_models=False)
 
@@ -528,7 +530,7 @@ def _train_synthetic_pytorch() -> PyTorchFallbackFilter:
     X_val_split = X_train[perm[n_samples - n_val :]]
     y_val_split = y_train[perm[n_samples - n_val :]]
 
-    model = PyTorchFallbackFilter()
+    model = PyTorchBackend()
     criterion = torch_nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)  # type: ignore[attr-defined]
 

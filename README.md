@@ -8,7 +8,7 @@
 
 - **🥇 Task 1: MPNN Activation Energy Predictor** -- Replaced the Tier 0 linear heuristic with a lightweight Message Passing Neural Network (MPNN). Generates deterministic synthetic training data (500 molecules), trains via MSE loss with early stopping, and falls back to the original linear model if the GNN is unavailable. Added `aurelius train --task tier0` CLI command.
 
-- **🥈 Task 2: Grid-Based Cell List** -- Added grid-based spatial binning to Tier 2, reducing neighbour-finding complexity from O(N^2) to O(N). Atoms are assigned to spatial cells via ``torch.bucketize`` and only same/adjacent-cell pairs are evaluated. Falls back to dense computation for small systems (<50 atoms).
+- **🥈 Task 2: Dense Physics Engine** -- Tier 2 now uses fully vectorized PyTorch tensor operations for pairwise interactions. For battery electrolyte molecules (<100 atoms), dense O(N^2) tensor computations on MPS/CUDA are faster than CPU-bound grid loops.
 
 - **🏅 Task 3: RDKit Enforcement** -- RDKit is now strictly required for `--use-real-models`. Hash fallbacks are blocked in production paths. Added `--allow-fallback` CLI flag for demo/CI environments. Clear error messages point to `pip install rdkit`.
 
@@ -33,7 +33,7 @@
 ### Bug Fixes & Improvements
 
 - **Version Bump**: Updated to 7.0.0 with all backward-compatible changes.
-- **Config Extension**: Added `use_neighbor_list` and `neighbor_list_cutoff` to `AureliusConfig`.
+
 - **CLI Flags**: Added `--task tier1|tier0` to `aurelius train`, `--allow-fallback` to `screen` and `batch`, and `--profile-memory` to the agent.
 - **CI Updates**: Updated `.github/workflows/ci.yml` for new test markers and optional dependency installs.
 

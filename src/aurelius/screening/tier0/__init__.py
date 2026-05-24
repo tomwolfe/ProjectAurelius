@@ -13,9 +13,8 @@ from aurelius.screening.tier0.data import (
 )
 from aurelius.screening.tier0.models import (
     HAS_TORCH,
-    MPNNEdgeBlock,
-    MPNNReadoutMLP,
-    Tier0MPNN,
+    ModelFactory,
+    PyTorchBackend,
 )
 from aurelius.screening.tier0.predictor import (
     Tier0ActivationPredictor,
@@ -24,10 +23,8 @@ from aurelius.screening.tier0.predictor import (
 
 __all__ = [
     "HAS_TORCH",
-    "MPNNEdgeBlock",
-    "MPNNReadoutMLP",
-    "Tier0ActivationPredictor",
-    "Tier0MPNN",
+    "ModelFactory",
+    "PyTorchBackend",
     "_LinearFallbackPredictor",
     "_build_molecular_graph",
     "generate_synthetic_training_data",

@@ -22,9 +22,10 @@ from aurelius.screening.tier1.loaders import (
     load_pytorch_fallback_with_mlx_weights,
 )
 from aurelius.screening.tier1.models import (
-    PyTorchFallbackFilter,
-    _ChemVLM2MLP,
-    _FallbackMLP,
+    MLXBackend,
+    ModelFactory,
+    NumpyBackend,
+    PyTorchBackend,
 )
 from aurelius.screening.tier1.training import (
     train_on_esol,
@@ -39,9 +40,10 @@ __all__ = [
     "HUGGINGFACE_MODELS",
     "HuggingFaceWeightLoader",
     "MLXNAFilter",
-    "PyTorchFallbackFilter",
-    "_ChemVLM2MLP",
-    "_FallbackMLP",
+    "MLXBackend",
+    "ModelFactory",
+    "NumpyBackend",
+    "PyTorchBackend",
     "_generate_ecfp4_fingerprint",
     "_hash_fallback",
     "convert_mlx_to_torch_weights",

@@ -30,9 +30,11 @@ from aurelius.screening.tier1.models import (
     HAS_MLX,
     HAS_RDKIT,
     HAS_TORCH,
-    PyTorchFallbackFilter,
-    _ChemVLM2MLP,
-    _FallbackMLP,
+    MLXBackend,
+    ModelFactory,
+    NumpyBackend,
+    PyTorchBackend,
+    ModelBackend,
 )
 from aurelius.screening.tier1.training import (
     _train_synthetic_mlx,
@@ -150,12 +152,12 @@ class MLXNAFilter:
         if not self._use_mlx:
             if not HAS_TORCH:
                 print("[Aurelius v6.0 Tier1] WARNING: Both MLX and PyTorch unavailable. Using numpy-only fallback.")
-                self._model = _FallbackMLP()
+                self._model = NumpyBackend()
                 self._model_loaded = True
                 return
 
             print("[Aurelius v6.0 Tier1] MLX unavailable, initializing PyTorch fallback filter...")
-            self._model = PyTorchFallbackFilter()
+            self._model = PyTorchBackend()
 
             if self._use_real_models and os.path.isdir(self._weight_loader.model_dir):
                 local_task_dir = os.path.join(self._weight_loader.model_dir, "esol_solubility")
@@ -169,7 +171,7 @@ class MLXNAFilter:
             self._model_loaded = True
             return
 
-        model = _ChemVLM2MLP()
+        model = MLXBackend()
 
         if self._use_real_models:
             try:
@@ -196,15 +198,15 @@ class MLXNAFilter:
         """
         if self._use_mlx:
             print(f"[Aurelius v6.0 Tier1] Loading model from {model_path}")
-            self._model = _ChemVLM2MLP()
+            self._model = MLXBackend()
             self._train_default_model()
         else:
             if not HAS_TORCH:
                 print("[Aurelius v6.0 Tier1] MLX and PyTorch unavailable, using numpy fallback MLP")
-                self._model = _FallbackMLP()
+                self._model = NumpyBackend()
             else:
                 print("[Aurelius v6.0 Tier1] MLX unavailable, using PyTorch fallback filter")
-                self._model = PyTorchFallbackFilter()
+                self._model = PyTorchBackend()
                 if os.path.isdir(model_path):
                     self._model = load_pytorch_fallback_with_mlx_weights(self._model, model_path)
         self._model_loaded = True
@@ -225,13 +227,13 @@ class MLXNAFilter:
         """
         if not self._model_loaded:
             if self._use_mlx:
-                self._model = _ChemVLM2MLP()
+                self._model = MLXBackend()
                 self._train_default_model()
             else:
                 if not HAS_TORCH:
-                    self._model = _FallbackMLP()
+                    self._model = NumpyBackend()
                 else:
-                    self._model = PyTorchFallbackFilter()
+                    self._model = PyTorchBackend()
             self._model_loaded = True
 
         start = time.perf_counter()
@@ -292,7 +294,7 @@ class MLXNAFilter:
                 fp_array = fp_array.reshape(1, -1)
             logits = self._model(fp_array)
             confidence = float(self._mx.squeeze(logits))
-        elif HAS_TORCH and isinstance(self._model, PyTorchFallbackFilter) and self._torch is not None:
+        elif HAS_TORCH and isinstance(self._model, PyTorchBackend) and self._torch is not None:
             fp_tensor = self._torch.from_numpy(fingerprint).float().unsqueeze(0)
             with self._torch.no_grad():
                 output = self._model.predict(fp_tensor)

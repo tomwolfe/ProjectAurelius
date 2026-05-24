@@ -25,7 +25,7 @@ class TestChemModule:
 
     def test_chem_module_exports(self):
         """Verify all helper functions are importable from aurelius.utils.chem."""
-        from aurelius.utils.chem import (
+        from aurelius.utils.chem_utils import (
             _deserialize_fp,
             _is_valid_mol,
             _mol_to_fp,
@@ -43,7 +43,7 @@ class TestChemModule:
 
     def test_safe_mol_from_smiles_invalid(self):
         """Verify _safe_mol_from_smiles returns None for invalid SMILES."""
-        from aurelius.utils.chem import _safe_mol_from_smiles
+        from aurelius.utils.chem_utils import _safe_mol_from_smiles
 
         result = _safe_mol_from_smiles("not_a_valid_smiles_string_!!!")
         assert result is None
@@ -53,7 +53,7 @@ class TestChemModule:
         try:
             from rdkit.Chem import AllChem
 
-            from aurelius.utils.chem import _safe_mol_from_smiles
+            from aurelius.utils.chem_utils import _safe_mol_from_smiles
 
             mol = _safe_mol_from_smiles("CCO")
             assert mol is not None
@@ -64,7 +64,7 @@ class TestChemModule:
 
     def test_is_valid_mol_mw_check(self):
         """Verify _is_valid_mol returns False for heavy molecules."""
-        from aurelius.utils.chem import _is_valid_mol, _safe_mol_from_smiles
+        from aurelius.utils.chem_utils import _is_valid_mol, _safe_mol_from_smiles
 
         # C100 is a very heavy molecule
         mol = _safe_mol_from_smiles("C" * 100)
@@ -78,7 +78,7 @@ class TestChemModule:
             from rdkit.Chem import AllChem
             from rdkit.DataStructs import ExplicitBitVect
 
-            from aurelius.utils.chem import _tanimoto
+            from aurelius.utils.chem_utils import _tanimoto
 
             mol = Chem.MolFromSmiles("CCO")
             Chem.AddHs(mol)

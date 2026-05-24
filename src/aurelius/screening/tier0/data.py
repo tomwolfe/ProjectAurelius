@@ -35,7 +35,7 @@ except ImportError:
     nn = None  # type: ignore[assignment, unused-ignore]
 
 if HAS_TORCH:
-    from aurelius.screening.tier0.models import Tier0MPNN
+    from aurelius.screening.tier0.models import PyTorchBackend
 
 
 def _build_molecular_graph(
@@ -448,7 +448,7 @@ def train_tier0_model(
 
         return padded_nf, padded_ei, batch_tgt, offsets
 
-    model = Tier0MPNN(node_dim=4, edge_dim=8, hidden_dim=64, output_dim=4)
+    model = PyTorchBackend(node_dim=4, edge_dim=8, hidden_dim=64, output_dim=4)
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -465,7 +465,7 @@ def train_tier0_model(
     train_idx = indices[:split]
     val_idx = indices[split:]
 
-    print(f"[Tier0MPNN] Training on {len(train_idx)} samples, validating on {len(val_idx)} samples")
+    print(f"[PyTorchBackend] Training on {len(train_idx)} samples, validating on {len(val_idx)} samples")
 
     for epoch in range(n_epochs):
         model.train()
@@ -514,7 +514,7 @@ def train_tier0_model(
 
         if (epoch + 1) % 10 == 0 or epoch == 0:
             print(
-                f"[Tier0MPNN] Epoch {epoch + 1}/{n_epochs} - "
+                f"[PyTorchBackend] Epoch {epoch + 1}/{n_epochs} - "
                 f"Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}"
             )
 
@@ -525,7 +525,7 @@ def train_tier0_model(
         else:
             patience_counter += 1
             if patience_counter >= early_stop_patience:
-                print(f"[Tier0MPNN] Early stopping at epoch {epoch + 1}. Best val loss: {best_loss:.6f}")
+                print(f"[PyTorchBackend] Early stopping at epoch {epoch + 1}. Best val loss: {best_loss:.6f}")
                 break
 
     if best_state:
@@ -538,7 +538,7 @@ def train_tier0_model(
     if not os.path.exists(csv_path):
         generate_synthetic_training_data(n_samples=500, output_path=csv_path)
 
-    print(f"[Tier0MPNN] Training complete. Best val loss: {best_loss:.6f}. Weights saved to {output_path}")
+    print(f"[PyTorchBackend] Training complete. Best val loss: {best_loss:.6f}. Weights saved to {output_path}")
 
     return {
         "final_train_loss": float(epoch_losses[-1]) if epoch_losses else 0.0,

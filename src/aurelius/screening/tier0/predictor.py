@@ -14,7 +14,7 @@ import numpy as np
 from aurelius.screening.tier0.data import (
     _build_molecular_graph,
 )
-from aurelius.screening.tier0.models import Tier0MPNN
+from aurelius.screening.tier0.models import PyTorchBackend
 
 try:
     import torch
@@ -45,12 +45,12 @@ class Tier0ActivationPredictor:
                 back to the linear predictor.
         """
         self._use_gnn = False
-        self._gnn_model: Tier0MPNN | None = None
+        self._gnn_model: PyTorchBackend | None = None
 
         if model_path and os.path.isfile(model_path):
             if HAS_TORCH:
                 try:
-                    self._gnn_model = Tier0MPNN(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
+                    self._gnn_model = PyTorchBackend(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
                     self._gnn_model.load_weights(model_path)
                     self._gnn_model.eval()
                     self._use_gnn = True
@@ -113,7 +113,7 @@ class Tier0ActivationPredictor:
 
         return self._linear_predictor.predict(descriptors=descriptors, smiles=smiles)
 
-    def set_gnn_model(self, model: Tier0MPNN, model_path: str) -> None:
+    def set_gnn_model(self, model: PyTorchBackend, model_path: str) -> None:
         """Set the GNN model explicitly.
 
         Args:

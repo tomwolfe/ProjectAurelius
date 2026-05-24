@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from aurelius.screening.tier0 import (
     HAS_TORCH,
-    MPNNEdgeBlock,
-    MPNNReadoutMLP,
+    ModelFactory,
+    PyTorchBackend,
     Tier0ActivationPredictor,
-    Tier0MPNN,
 )
 from aurelius.screening.tier1 import (
     HAS_MLX,
@@ -36,10 +35,9 @@ __all__ = [
     "HAS_TORCH_TIER1",
     "MLXFilterResult",
     "MLXNAFilter",
-    "MPNNEdgeBlock",
-    "MPNNReadoutMLP",
+    "ModelFactory",
+    "PyTorchBackend",
     "MatterSimMTSimulator",
     "Tier0ActivationPredictor",
-    "Tier0MPNN",
     "Tier2Result",
 ]

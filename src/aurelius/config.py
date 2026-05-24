@@ -18,16 +18,16 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
 from typing import Any
 
 import psutil
+from pydantic import BaseModel, Field, field_validator
+from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class AureliusConfig:
+class AureliusConfig(BaseSettings):
     """Dynamic memory configuration for Apple M-series chips.
 
     Detects total system RAM at instantiation and computes
@@ -81,8 +81,8 @@ class AureliusConfig:
     use_neighbor_list: bool = False
     neighbor_list_cutoff: float = 12.0
 
-    def __post_init__(self) -> None:
-        """Compute dynamic memory allocations after dataclass initialization.
+    def model_post_init(self, __context) -> None:
+        """Compute dynamic memory allocations after model initialization.
 
         Detects system RAM via psutil and computes MLX / shader cache
         allocations. User-provided non-zero values override computed
@@ -169,11 +169,11 @@ def get_config(
     Returns:
         An AureliusConfig instance with dynamically computed memory allocations.
     """
-    config = AureliusConfig(
-        total_memory_gb=total_memory_gb,
-        mlx_max_mem_gb=mlx_max_mem_gb,
-        metal_shader_cache_gb=metal_shader_cache_gb,
-    )
+    config = AureliusConfig.model_validate({
+        "total_memory_gb": total_memory_gb,
+        "mlx_max_mem_gb": mlx_max_mem_gb,
+        "metal_shader_cache_gb": metal_shader_cache_gb,
+    })
     if not config.validate_memory_budget():
         raise RuntimeError(
             f"Memory budget {config.mlx_max_mem_gb + config.metal_shader_cache_gb:.1f}GB exceeds "
@@ -250,7 +250,7 @@ def validate_environment(
     """Validate that os.environ matches config defaults.
 
     Compares current environment variables against the expected
-    values from AureliusConfig.apply_environment() and logs any
+    values from AureliusConfig.model_dump() and logs any
     discrepancies.
 
     Args:

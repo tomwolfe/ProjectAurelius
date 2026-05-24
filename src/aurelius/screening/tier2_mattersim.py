@@ -473,8 +473,6 @@ class MatterSimMTSimulator:
         self,
         barrier_threshold_eV: float | None = None,
         force_field_path: str | None = None,
-        use_neighbor_list: bool = False,
-        neighbor_list_cutoff: float = 12.0,
         use_pbc: bool = False,
         use_polarization: bool = False,
     ) -> None:
@@ -566,12 +564,6 @@ class MatterSimMTSimulator:
         self._compiled_model: Any | None = None
         self._graph_built = False
 
-        # Neighbor list settings
-        self._use_neighbor_list = use_neighbor_list
-        self._neighbor_list_cutoff = max(neighbor_list_cutoff, self._cutoff)
-        self._neighbor_list: tuple[_torch.Tensor, _torch.Tensor, _torch.Tensor] | None = None
-        self._nl_rebuild_counter = 0
-        self._nl_rebuild_interval = 10  # Rebuild every N steps
         self._max_displacement_threshold = 0.5  # Angstroms
         self._total_displacement = 0.0
 
@@ -763,14 +755,9 @@ class MatterSimMTSimulator:
         diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
         distances = _torch.norm(diffs, dim=-1)
 
-        # Compute LJ + Coulomb energies
-        if self._use_neighbor_list:
-            src_idx, dst_idx, distances = self._get_neighbor_list(coordinates)
-            lj_energy = self._compute_lj_sparse(atomic_numbers, src_idx, dst_idx, distances)
-            coulomb_energy = self._compute_coulomb_sparse(atomic_numbers, src_idx, dst_idx, distances)
-        else:
-            lj_energy = self._compute_lj_potential(atomic_numbers, distances)
-            coulomb_energy = self._compute_coulomb_potential(atomic_numbers, distances)
+        # Compute LJ + Coulomb energies (always uses dense pairwise computation)
+        lj_energy = self._compute_lj_potential(atomic_numbers, distances)
+        coulomb_energy = self._compute_coulomb_potential(atomic_numbers, distances)
         _total_energy = lj_energy + coulomb_energy
 
         # Build energy profile
@@ -854,71 +841,6 @@ class MatterSimMTSimulator:
 
         return lj_total
 
-    def _compute_lj_sparse(
-        self,
-        atomic_numbers: _torch.Tensor,
-        src_idx: _torch.Tensor,
-        dst_idx: _torch.Tensor,
-        distances: _torch.Tensor,
-    ) -> _torch.Tensor:
-        """Compute Lennard-Jones potential using sparse neighbor list.
-
-        Args:
-            atomic_numbers: (N,) LongTensor.
-            src_idx: (N_pairs,) LongTensor of source atom indices.
-            dst_idx: (N_pairs,) LongTensor of destination atom indices.
-            distances: (N_pairs,) FloatTensor of distances between pairs.
-
-        Returns:
-            Scalar LJ energy tensor.
-        """
-        device = atomic_numbers.device
-        n = atomic_numbers.shape[0]
-
-        # Build LJ parameter tensors for all pairs
-        z_i = atomic_numbers.unsqueeze(0)
-        z_j = atomic_numbers.unsqueeze(1)
-        z_min = _torch.minimum(z_i, z_j)
-        z_max = _torch.maximum(z_i, z_j)
-
-        eps_tensor = _torch.zeros(n, n, device=device)
-        sig_tensor = _torch.zeros(n, n, device=device)
-
-        for (zi, zj), (eps, sig) in self._LJ_PARAMS.items():
-            pair_mask = (z_min == zi) & (z_max == zj)
-            eps_tensor = _torch.where(pair_mask, _torch.full_like(eps_tensor, eps), eps_tensor)
-            sig_tensor = _torch.where(pair_mask, _torch.full_like(sig_tensor, sig), sig_tensor)
-
-        # Default parameters for unknown pairs
-        eps_tensor = _torch.where(eps_tensor == 0, _torch.full_like(eps_tensor, self._default_eps), eps_tensor)
-        sig_tensor = _torch.where(sig_tensor == 0, _torch.full_like(sig_tensor, self._default_sig), sig_tensor)
-
-        # Advanced indexing: gather parameters for neighbor pairs
-        eps_neighbors = eps_tensor[src_idx, dst_idx]
-        sig_neighbors = sig_tensor[src_idx, dst_idx]
-
-        # Apply cutoff mask
-        cutoff_mask = (distances < self._cutoff).float()
-
-        # Shifted LJ potential for neighbor distances
-        r_soft = _torch.sqrt(distances**2 + sig_neighbors**2)
-        sig_over_r = sig_neighbors / r_soft
-        sig_over_r6 = sig_over_r**6
-        sig_over_r12 = sig_over_r6**2
-        lj_per_neighbor = 4.0 * eps_neighbors * (sig_over_r12 - sig_over_r6)
-
-        # Shift to zero at cutoff
-        r_cutoff_soft = _torch.sqrt(distances**2 + sig_neighbors**2)
-        sig_over_r_cutoff = sig_neighbors / r_cutoff_soft
-        sig_over_r6_cutoff = sig_over_r_cutoff**6
-        sig_over_r12_cutoff = sig_over_r6_cutoff**2
-        lj_cutoff = 4.0 * eps_neighbors * (sig_over_r12_cutoff - sig_over_r6_cutoff)
-
-        lj_per_neighbor = lj_per_neighbor - lj_cutoff
-        lj_total = _torch.sum(lj_per_neighbor * cutoff_mask)
-
-        return lj_total
-
     def _compute_coulomb_potential(self, atomic_numbers: _torch.Tensor, distances: _torch.Tensor) -> _torch.Tensor:
         """Compute Coulombic potential between charged pairs.
 
@@ -988,49 +910,6 @@ class MatterSimMTSimulator:
             for z, q in self._CHARGES.items():
                 charges = _torch.where(atomic_numbers == z, _torch.full_like(charges, q), charges)
             return charges
-
-    def _compute_coulomb_sparse(
-        self,
-        atomic_numbers: _torch.Tensor,
-        src_idx: _torch.Tensor,
-        dst_idx: _torch.Tensor,
-        distances: _torch.Tensor,
-    ) -> _torch.Tensor:
-        """Compute Coulombic potential using sparse neighbor list.
-
-        Args:
-            atomic_numbers: (N,) LongTensor.
-            src_idx: (N_pairs,) LongTensor of source atom indices.
-            dst_idx: (N_pairs,) LongTensor of destination atom indices.
-            distances: (N_pairs,) FloatTensor of distances between pairs.
-
-        Returns:
-            Scalar Coulomb energy tensor.
-        """
-        n = atomic_numbers.shape[0]
-        device = atomic_numbers.device
-
-        charges = _torch.zeros(n, device=device, dtype=_torch.float32)
-        for z, q in self._CHARGES.items():
-            charges = _torch.where(atomic_numbers == z, _torch.full_like(charges, q), charges)
-
-        # Advanced indexing: gather charges for neighbor pairs
-        q_src = charges[src_idx]
-        q_dst = charges[dst_idx]
-        q_product = q_src * q_dst
-
-        # Apply cutoff mask
-        cutoff_mask = (distances < self._cutoff).float()
-
-        # Only include pairs where both atoms have non-zero charges (matching dense path behavior)
-        charge_mask = ((q_src != 0.0) & (q_dst != 0.0)).float()
-
-        # Coulomb energy for neighbor distances
-        r_soft = _torch.sqrt(distances**2 + 1.0)
-        coulomb_per_neighbor = COULOMB_EV_A * q_product / r_soft
-        coulomb_total = _torch.sum(coulomb_per_neighbor * cutoff_mask * charge_mask)
-
-        return coulomb_total
 
     def _compute_energy_profile(
         self,
@@ -1231,194 +1110,6 @@ class MatterSimMTSimulator:
     # ------------------------------------------------------------------
     # Cutoff-Aware Neighbor List (Grid-Based Cell List)
     # ------------------------------------------------------------------
-
-    def _build_neighbor_list(
-        self,
-        coordinates: _torch.Tensor,
-        cutoff: float | None = None,
-    ) -> tuple[_torch.Tensor, _torch.Tensor, _torch.Tensor]:
-        """Build a cutoff-based neighbor list using grid-based spatial binning.
-
-        Divides the simulation box into cells of size ``cutoff`` and only
-        computes distances between atoms in the same cell and the 26
-        adjacent cells (3 x 3 x 3 neighbourhood).  This reduces the
-        neighbour-finding complexity from ``O(N^2)`` to ``O(N)`` while
-        keeping all computation on the target device (MPS/CUDA).
-
-        For systems with fewer than 500 atoms the dense path is used
-        because the overhead of spatial binning outweighs the benefit.
-
-        MPS Compatibility:
-            - Uses ``torch.floor`` for cell assignment (MPS-compatible)
-            - All neighbour-pair distance computation uses only index-based
-              masking via ``torch.nonzero`` — no sparse tensor ops.
-            - Falls back to dense computation when ``n_atoms < 500``.
-
-        Args:
-            coordinates: ``(N_atoms, 3)`` FloatTensor of atomic positions.
-            cutoff: Cutoff radius in Angstroms.  Defaults to
-                ``self._neighbor_list_cutoff``.
-
-        Returns:
-            Tuple of ``(src_indices, dst_indices, distances)``.
-            - ``src_indices``: ``(N_pairs,)`` LongTensor of center atom
-              indices (i), repeated for every neighbour j found.
-            - ``dst_indices``: ``(N_pairs,)`` LongTensor of neighbour
-              atom indices (j).
-            - ``distances``: ``(N_pairs,)`` FloatTensor of distances
-              between each ``(i, j)`` pair.
-        """
-        if not HAS_TORCH:
-            return (
-                _torch.empty(0, dtype=_torch.long),
-                _torch.empty(0, dtype=_torch.long),
-                _torch.empty(0, dtype=_torch.float32),
-            )
-
-        n_atoms = coordinates.shape[0]
-        cl = cutoff or self._neighbor_list_cutoff
-
-        # Fall back to dense if system is small (MPS throughput optimization)
-        if n_atoms < 500:
-            return self._dense_neighbor_list(coordinates, cl)
-
-        device = coordinates.device
-
-        # ------------------------------------------------------------------
-        # 1. Determine simulation box bounds from coordinates
-        # ------------------------------------------------------------------
-        min_coords = coordinates.amin(dim=0)  # (3,)
-        max_coords = coordinates.amax(dim=0)  # (3,)
-        box_size = max_coords - min_coords  # (3,)
-
-        # ------------------------------------------------------------------
-        # 2. Build a grid of cells: cell_size = cutoff
-        # ------------------------------------------------------------------
-        cell_size = cl
-        n_cells_x = int(_torch.ceil(box_size[0] / cell_size).item()) if box_size[0] > 0 else 1
-        n_cells_y = int(_torch.ceil(box_size[1] / cell_size).item()) if box_size[1] > 0 else 1
-        n_cells_z = int(_torch.ceil(box_size[2] / cell_size).item()) if box_size[2] > 0 else 1
-
-        # ------------------------------------------------------------------
-        # 3. Assign each atom to its cell using _torch.floor.
-        #    This is fully MPS-compatible (no clamp needed).
-        # ------------------------------------------------------------------
-        offsets = coordinates - min_coords  # (N, 3)
-        cx = _torch.floor(offsets[:, 0] / cell_size).long()
-        cy = _torch.floor(offsets[:, 1] / cell_size).long()
-        cz = _torch.floor(offsets[:, 2] / cell_size).long()
-        # Clamp to valid cell range (avoids out-of-bounds for edge atoms)
-        cx = cx.clamp(0, n_cells_x - 1)
-        cy = cy.clamp(0, n_cells_y - 1)
-        cz = cz.clamp(0, n_cells_z - 1)
-
-        # ------------------------------------------------------------------
-        # 4. Build adjacency map: for each atom, collect candidate indices
-        #    from the same cell and 26 adjacent cells.
-        # ------------------------------------------------------------------
-        src_indices_list: list[_torch.Tensor] = []
-        dst_indices_list: list[_torch.Tensor] = []
-        dist_values_list: list[_torch.Tensor] = []
-
-        # Build a reverse map: cell_key -> list of atom indices
-        cell_to_atoms: dict[int, list[int]] = {}
-        for i in range(n_atoms):
-            key = int(cx[i].item()) + int(cy[i].item()) * n_cells_x + int(cz[i].item()) * n_cells_x * n_cells_y
-            cell_to_atoms.setdefault(key, []).append(i)
-
-        # For each atom, collect candidates from same + adjacent cells
-        for i in range(n_atoms):
-            ci = int(cx[i].item())
-            cj = int(cy[i].item())
-            ck = int(cz[i].item())
-
-            # Use a set to avoid duplicate candidates from multiple cell searches
-            candidates: set[int] = set()
-            for di in range(-1, 2):
-                for dj in range(-1, 2):
-                    for dk in range(-1, 2):
-                        ni = (ci + di) % n_cells_x
-                        nj = (cj + dj) % n_cells_y
-                        nk = (ck + dk) % n_cells_z
-                        key = ni + nj * n_cells_x + nk * n_cells_x * n_cells_y
-                        for j in cell_to_atoms.get(key, []):
-                            if j > i:
-                                candidates.add(j)
-
-            if not candidates:
-                continue
-
-            # Sort for deterministic ordering
-            sorted_candidates = sorted(candidates)
-            src_indices_list.append(_torch.full((len(sorted_candidates),), i, dtype=_torch.long, device=device))
-            dst_indices_list.append(_torch.tensor(sorted_candidates, dtype=_torch.long, device=device))
-
-            # Compute distances for candidate pairs and filter by cutoff
-            src_coords = coordinates[i]  # (3,)
-            dst_coords = coordinates[sorted_candidates]  # (M, 3)
-            dists = _torch.norm(dst_coords - src_coords, dim=1)  # (M,)
-            cutoff_mask = dists < cl
-            src_indices_list[-1] = src_indices_list[-1][cutoff_mask]
-            dst_indices_list[-1] = dst_indices_list[-1][cutoff_mask]  # type: ignore[union-attr]
-            dist_values_list.append(dists[cutoff_mask])
-
-        # Concatenate all lists
-        src_indices = (
-            _torch.cat(src_indices_list) if src_indices_list else _torch.empty(0, dtype=_torch.long, device=device)
-        )
-        dst_indices = (
-            _torch.cat(dst_indices_list) if dst_indices_list else _torch.empty(0, dtype=_torch.long, device=device)
-        )
-        dist_values = (
-            _torch.cat(dist_values_list) if dist_values_list else _torch.empty(0, dtype=_torch.float32, device=device)
-        )
-
-        return src_indices, dst_indices, dist_values
-
-    def _dense_neighbor_list(
-        self,
-        coordinates: _torch.Tensor,
-        cutoff: float,
-    ) -> tuple[_torch.Tensor, _torch.Tensor, _torch.Tensor]:
-        """Compute full pairwise neighbor list (O(N^2)).
-
-        Used as fallback for small systems (< 50 atoms) where dense
-        computation is faster on MPS due to lower overhead.
-
-        Args:
-            coordinates: (N_atoms, 3) FloatTensor.
-            cutoff: Cutoff radius in Angstroms.
-
-        Returns:
-            Tuple of (src_indices, dst_indices, distances).
-        """
-        n = coordinates.shape[0]
-        diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)  # (N, N, 3)
-        distances = _torch.norm(diffs, dim=-1)  # (N, N)
-
-        # Upper triangle mask
-        mask = _torch.triu(_torch.ones(n, n, device=coordinates.device, dtype=_torch.bool), diagonal=1)
-        cutoff_mask = distances < cutoff
-
-        # Combine masks
-        valid_mask = mask & cutoff_mask
-
-        # Use _torch.nonzero to get neighbor pairs (MPS-compatible)
-        neighbor_pairs = _torch.nonzero(valid_mask, as_tuple=False)  # (N_pairs, 2)
-
-        if neighbor_pairs.numel() == 0:
-            return (
-                _torch.empty(0, dtype=_torch.long, device=coordinates.device),
-                _torch.empty(0, dtype=_torch.long, device=coordinates.device),
-                _torch.empty(0, dtype=_torch.float32, device=coordinates.device),
-            )
-
-        # Extract indices and distances
-        row_idx = neighbor_pairs[:, 0]
-        col_idx = neighbor_pairs[:, 1]
-        dist_vals = distances[row_idx, col_idx]
-
-        return row_idx, col_idx, dist_vals
 
     def update_displacement(self, old_coords: _torch.Tensor, new_coords: _torch.Tensor) -> None:
         """Track atomic displacement to trigger neighbor list rebuild.

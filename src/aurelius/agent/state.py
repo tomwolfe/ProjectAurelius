@@ -56,9 +56,19 @@ class CheckpointManager:
         self._viable_count = 0
         self._total_generated = 0
         self._invalid_discarded = 0
-        self._discoveries: list[dict[str, Any]] = []
         self._started_at = datetime.now(UTC).isoformat()
         self._last_updated: str | None = None
+
+        # Create discoveries table for persistent storage
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS discoveries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                discovery_type TEXT,
+                data TEXT,
+                created_at TEXT
+            )
+        """)
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_discovery_id ON discoveries(id)")
 
     def _load_state(self) -> dict[str, Any]:
         """Load checkpoint state from SQLite database.
@@ -70,6 +80,9 @@ class CheckpointManager:
 
     def _get_state_dict(self) -> dict[str, Any]:
         """Return current state as a dict (for API compatibility)."""
+        import json
+        cursor = self._conn.execute("SELECT data FROM discoveries")
+        discoveries = [json.loads(row[0]) for row in cursor]
         return {
             "batch": self._batch,
             "screened_count": self._screened_count,
@@ -77,7 +90,7 @@ class CheckpointManager:
             "viable_count": self._viable_count,
             "total_generated": self._total_generated,
             "invalid_discarded": self._invalid_discarded,
-            "discoveries": self._discoveries,
+            "discoveries": discoveries,
             "started_at": self._started_at,
             "last_updated": self._last_updated,
         }
@@ -110,7 +123,12 @@ class CheckpointManager:
         Args:
             discovery: Dict with discovery data.
         """
-        self._discoveries.append(discovery)
+        import json
+        data = json.dumps(discovery)
+        self._conn.execute(
+            "INSERT INTO discoveries (discovery_type, data, created_at) VALUES (?, ?, ?)",
+            ("discovery", data, datetime.now(UTC).isoformat()),
+        )
 
     def update_stats(
         self,
