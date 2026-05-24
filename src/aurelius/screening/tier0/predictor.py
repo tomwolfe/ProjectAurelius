@@ -52,7 +52,7 @@ class Tier0ActivationPredictor:
                 try:
                     self._gnn_model = PyTorchBackend(node_dim=4, edge_dim=0, hidden_dim=64, output_dim=4)
                     self._gnn_model.load_weights(model_path)
-                    self._gnn_model.eval()
+                    self._gnn_model.eval()  # type: ignore[attr-defined]
                     self._use_gnn = True
                 except Exception as e:
                     print(

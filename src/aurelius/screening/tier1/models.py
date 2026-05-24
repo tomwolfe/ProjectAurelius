@@ -266,7 +266,7 @@ if HAS_TORCH:
                 path: Directory path to save weights.
             """
             os.makedirs(path, exist_ok=True)
-            state_dict = self.state_dict()
+            state_dict = self.state_dict()  # type: ignore[attr-defined]
             for name, tensor in state_dict.items():
                 np.save(os.path.join(path, f"{name}.npy"), tensor.cpu().numpy())
             meta = {
@@ -290,7 +290,7 @@ if HAS_TORCH:
                 map_location="cpu",
                 weights_only=True,
             )
-            self.load_state_dict(state_dict)
+            self.load_state_dict(state_dict)  # type: ignore[attr-defined]
 
 else:
     class PyTorchBackend:  # type: ignore[no-redef]

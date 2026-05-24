@@ -295,7 +295,7 @@ class MLXNAFilter:
         elif HAS_TORCH and isinstance(self._model, PyTorchBackend) and self._torch is not None:
             fp_tensor = self._torch.from_numpy(fingerprint).float().unsqueeze(0)
             with self._torch.no_grad():
-                output = self._model.predict(fp_tensor)
+                output = self._model.predict(fp_tensor)  # type: ignore[attr-defined]
             confidence = float(output.squeeze().item())
         else:
             assert self._model is not None

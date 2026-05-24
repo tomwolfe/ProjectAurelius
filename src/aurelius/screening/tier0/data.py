@@ -468,7 +468,7 @@ def train_tier0_model(
     print(f"[PyTorchBackend] Training on {len(train_idx)} samples, validating on {len(val_idx)} samples")
 
     for epoch in range(n_epochs):
-        model.train()
+        model.train()  # type: ignore[attr-defined]
         epoch_loss = 0.0
         n_batches = 0
 
@@ -494,7 +494,7 @@ def train_tier0_model(
         avg_train_loss = epoch_loss / max(n_batches, 1)
         epoch_losses.append(avg_train_loss)
 
-        model.eval()
+        model.eval()  # type: ignore[attr-defined]
         val_loss = 0.0
         n_val_batches = 0
         with torch.no_grad():
@@ -520,7 +520,7 @@ def train_tier0_model(
 
         if avg_val_loss < best_loss:
             best_loss = avg_val_loss
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}  # type: ignore[attr-defined]
             patience_counter = 0
         else:
             patience_counter += 1
@@ -529,7 +529,7 @@ def train_tier0_model(
                 break
 
     if best_state:
-        model.load_state_dict(best_state)
+        model.load_state_dict(best_state)  # type: ignore[attr-defined]
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     model.save_weights(output_path)
