@@ -39,4 +39,5 @@ __all__ = [
     "MatterSimMTSimulator",
     "Tier0ActivationPredictor",
     "Tier2Result",
+    "model_factory",
 ]
