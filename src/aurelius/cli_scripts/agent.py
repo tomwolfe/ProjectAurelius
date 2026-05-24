@@ -139,7 +139,7 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
         tier0_pred = Tier0ActivationPredictor(
             model_path="models/tier0/mpnn_weights.pth",
         )
-        pipeline._gcmtwin._tier0_predictor = tier0_pred
+        pipeline._gcmtwin._tier0_predictor = tier0_pred  # type: ignore[assignment]
         pipeline._gcmtwin._use_tier0_prediction = True
         print("[AGENT] Tier 0 Activation Energy Predictor (MPNN) injected successfully.")
     else:

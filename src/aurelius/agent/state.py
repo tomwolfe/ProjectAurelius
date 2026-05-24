@@ -205,6 +205,15 @@ class CheckpointManager:
         """Close the database connection."""
         self._conn.close()
 
+    @property
+    def state(self) -> dict[str, Any]:
+        """Expose current checkpoint state as a dict (for API compatibility).
+
+        Returns:
+            Dict with all checkpoint state values.
+        """
+        return self._get_state_dict()
+
     def clear(self) -> None:
         """Clear all screened molecules and fingerprints."""
         self._conn.execute("DELETE FROM screened_molecules")

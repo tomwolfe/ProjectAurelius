@@ -22,6 +22,8 @@ from typing import Any
 
 from aurelius.utils.dependencies import HAS_TORCH
 
+__all__ = ["HAS_TORCH", "MPNNEdgeBlock", "MPNNReadoutMLP", "Tier0MPNN"]
+
 try:
     import torch  # type: ignore[import-not-found, unused-ignore]
     import torch.nn as nn  # type: ignore[import-not-found, unused-ignore]
@@ -29,8 +31,8 @@ try:
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
-    torch = None  # type: ignore[assignment, unused-ignore]
-    nn = None  # type: ignore[assignment, unused-ignore]
+    torch = None  # type: ignore[assignment, unused-ignore]  # noqa: F841
+    nn = None  # type: ignore[assignment, unused-ignore]  # noqa: F841
 
 
 if HAS_TORCH:
