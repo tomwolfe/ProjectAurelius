@@ -171,24 +171,6 @@ def doctor(verbose: bool) -> None:
 
     click.echo("")
 
-    # Summary
-    click.echo("[Summary]")
-    issues = []
-    if not HAS_MLX:
-        issues.append("MLX (Apple Silicon optimization)")
-    if not HAS_TORCH:
-        issues.append("PyTorch (Tier 2 physics)")
-    if not HAS_RDKIT:
-        issues.append("RDKit (real model screening)")
-
-    if issues:
-        click.echo(f"  WARNING: Missing {len(issues)} framework(s): {', '.join(issues)}")
-        click.echo("  Pipeline will use fallback paths. Some features may be degraded.")
-    else:
-        click.echo("  All core frameworks available. System ready for full pipeline.")
-
-    click.echo("")
-
 
 @cli.command("screen")  # type: ignore[untyped-decorator]
 @click.argument("smiles")  # type: ignore[untyped-decorator]
@@ -306,16 +288,7 @@ def batch(file: str, solvent: str, salt: str, output: str | None, allow_fallback
     """Screen multiple molecules from a SMILES file (one per line)."""
     # Enforce RDKit for real models (unless --allow-fallback is set)
     if not allow_fallback:
-        try:
-            from rdkit import Chem  # noqa: F401
-        except ImportError:
-            raise RuntimeError(
-                "RDKit is required for batch screening.\n\n"
-                "Install RDKit:\n"
-                "  pip install rdkit\n"
-                "  conda install -c conda-forge rdkit\n\n"
-                "To use hash-based fallback (demo/CI only), add --allow-fallback."
-            ) from None
+        from rdkit import Chem  # noqa: F401
 
     config = get_config()
     env_vars = config.apply_environment()
@@ -524,18 +497,13 @@ def hf_upload(
     import os
     import sys
 
-    try:
-        from huggingface_hub import (
-            HfApi,
-            ModelCard,
-            create_repo,
-            repo_exists,
-            upload_folder,
-        )
-    except ImportError:
-        click.echo("[ERROR] huggingface_hub is required for hf-upload.", err=True)
-        click.echo("Install with: pip install huggingface-hub", err=True)
-        sys.exit(1)
+    from huggingface_hub import (
+        HfApi,
+        ModelCard,
+        create_repo,
+        repo_exists,
+        upload_folder,
+    )
 
     # Validate model directory
     if not os.path.isdir(model_dir):

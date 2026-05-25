@@ -15,14 +15,7 @@ from aurelius.screening.tier0.data import (
     _build_molecular_graph,
 )
 from aurelius.screening.tier0.models import PyTorchBackend
-
-try:
-    import torch
-
-    HAS_TORCH = True
-except ImportError:
-    HAS_TORCH = False
-    torch = None  # type: ignore[assignment, unused-ignore]
+from aurelius.utils.dependencies import HAS_TORCH
 
 
 class Tier0ActivationPredictor:

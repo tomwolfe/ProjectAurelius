@@ -79,12 +79,7 @@ def download_esol(output_dir: str) -> str:
     """
     print("[download_data] Downloading ESOL dataset...")
 
-    try:
-        from datasets import load_dataset
-    except ImportError:
-        print("[download_data] ERROR: 'datasets' library not installed.")
-        print("[download_data] Install with: pip install datasets")
-        sys.exit(1)
+    from datasets import load_dataset
 
     output_path = os.path.join(output_dir, "esol")
     os.makedirs(output_path, exist_ok=True)
@@ -140,12 +135,7 @@ def download_qm9(output_dir: str) -> str:
     """
     print("[download_data] Downloading QM9 dataset...")
 
-    try:
-        from datasets import load_dataset
-    except ImportError:
-        print("[download_data] ERROR: 'datasets' library not installed.")
-        print("[download_data] Install with: pip install datasets")
-        sys.exit(1)
+    from datasets import load_dataset
 
     output_path = os.path.join(output_dir, "qm9")
     os.makedirs(output_path, exist_ok=True)

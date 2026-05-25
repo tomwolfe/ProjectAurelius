@@ -88,14 +88,11 @@ def _detect_hardware() -> HardwareInfo:
         pass
 
     # PyTorch MPS
-    try:
-        import torch
+    import torch
 
-        info.has_pytorch = True
-        info.pytorch_version = torch.__version__
-        info.has_mps = torch.backends.mps.is_available()
-    except ImportError:
-        pass
+    info.has_pytorch = True
+    info.pytorch_version = torch.__version__
+    info.has_mps = torch.backends.mps.is_available()
 
     # MLX
     if importlib.util.find_spec("mlx") is not None:
@@ -119,49 +116,70 @@ def _benchmark_tier1_quick(repeats: int = 5, n_molecules: int = 100) -> Benchmar
         X[i, indices] = 1.0
 
     # Try MLX first
-    try:
-        import mlx.core as mx
-        import mlx.nn as nn
+    import mlx.core as mx
+    import mlx.nn as nn
 
-        model = nn.Sequential(  # type: ignore[attr-defined, unused-ignore]
-            nn.Linear(2048, 128),  # type: ignore[attr-defined, unused-ignore]
-            nn.ReLU(),  # type: ignore[attr-defined, unused-ignore]
-            nn.Linear(128, 1),  # type: ignore[attr-defined, unused-ignore]
-        )
-        X_mx = mx.array(X)
+    model = nn.Sequential(  # type: ignore[attr-defined, unused-ignore]
+        nn.Linear(2048, 128),  # type: ignore[attr-defined, unused-ignore]
+        nn.ReLU(),  # type: ignore[attr-defined, unused-ignore]
+        nn.Linear(128, 1),  # type: ignore[attr-defined, unused-ignore]
+    )
+    X_mx = mx.array(X)
 
-        # Warmup
-        _ = model(X_mx[:1])
+    # Warmup
+    _ = model(X_mx[:1])
+    mx.metal.clear_cache()
+
+    times = []
+    for _ in range(repeats):
+        start = time.perf_counter()
+        _ = model(X_mx)
         mx.metal.clear_cache()
+        times.append(time.perf_counter() - start)
 
-        times = []
-        for _ in range(repeats):
-            start = time.perf_counter()
-            _ = model(X_mx)
-            mx.metal.clear_cache()
-            times.append(time.perf_counter() - start)
-
-        return BenchmarkResult(
-            name="tier1_mlx",
-            status="pass",
-            mean_ms=float(np.mean(times) * 1000),
-            std_ms=float(np.std(times) * 1000),
-            min_ms=float(np.min(times) * 1000),
-            max_ms=float(np.max(times) * 1000),
-            details=f"MLX {n_molecules} molecules, {repeats} repeats",
-        )
-    except ImportError:
-        pass
+    return BenchmarkResult(
+        name="tier1_mlx",
+        status="pass",
+        mean_ms=float(np.mean(times) * 1000),
+        std_ms=float(np.std(times) * 1000),
+        min_ms=float(np.min(times) * 1000),
+        max_ms=float(np.max(times) * 1000),
+        details=f"MLX {n_molecules} molecules, {repeats} repeats",
+    )
 
     # Try PyTorch MPS
-    try:
-        import torch
+    import torch
 
-        model = torch.nn.Sequential(
-            torch.nn.Linear(2048, 128),
-            torch.nn.ReLU(),
-            torch.nn.Linear(128, 1),
-        )
+    model = torch.nn.Sequential(
+        torch.nn.Linear(2048, 128),
+        torch.nn.ReLU(),
+        torch.nn.Linear(128, 1),
+    )
+    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    X_torch = torch.tensor(X, device=device)
+
+    # Warmup
+    _ = model(X_torch[:1])
+    if device == "mps":
+        torch.mps.empty_cache()
+
+    times = []
+    for _ in range(repeats):
+        start = time.perf_counter()
+        _ = model(X_torch)
+        if device == "mps":
+            torch.mps.empty_cache()
+        times.append(time.perf_counter() - start)
+
+    return BenchmarkResult(
+        name="tier1_torch",
+        status="pass",
+        mean_ms=float(np.mean(times) * 1000),
+        std_ms=float(np.std(times) * 1000),
+        min_ms=float(np.min(times) * 1000),
+        max_ms=float(np.max(times) * 1000),
+        details=f"PyTorch MPS {n_molecules} molecules, {repeats} repeats",
+    )
         device = "mps" if torch.backends.mps.is_available() else "cpu"
         X_torch = torch.tensor(X, device=device)
 
@@ -192,8 +210,6 @@ def _benchmark_tier1_quick(repeats: int = 5, n_molecules: int = 100) -> Benchmar
             max_ms=float(np.max(times) * 1000),
             details=detail,
         )
-    except ImportError:
-        pass
 
     return BenchmarkResult(
         name="tier1",

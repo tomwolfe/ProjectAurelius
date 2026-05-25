@@ -7,7 +7,7 @@ across framework boundaries.
 Cross-Platform Compatibility:
     This module is designed to be importable on Linux/Windows (where MLX
     is unavailable) to support CI pipelines. MLX-specific imports are
-    wrapped in try/except ImportError blocks. If MLX is not installed,
+    guarded by HAS_MLX checks. If MLX is not installed,
     the CrossFrameworkBridge class will still instantiate but will raise
     a descriptive RuntimeError when mlx_to_pytorch or pytorch_to_mlx
     is called.
@@ -23,8 +23,8 @@ from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
 logger = logging.getLogger(__name__)
 
 # Conditional framework imports (for runtime use when available)
-_mx: Any = None
-_torch: Any = None
+_mlx: Any | None = None
+_torch: Any | None = None
 if HAS_MLX:
     try:
         import mlx.core as mx  # noqa: F401

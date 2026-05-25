@@ -23,15 +23,6 @@ from aurelius.screening.tier1.models import (
 
 logger = logging.getLogger(__name__)
 
-# Conditional torch import for weight conversion
-_torch: Any = None
-try:
-    import torch  # noqa: F401
-
-    _torch = torch
-except ImportError:
-    pass
-
 # ---------------------------------------------------------------------------
 # HuggingFace symlink control
 # ---------------------------------------------------------------------------
@@ -231,12 +222,8 @@ class HuggingFaceWeightLoader:
 
     def _check_hf_dependencies(self) -> bool:
         """Check if huggingface_hub and datasets are available."""
-        try:
-            __import__("huggingface_hub")
-            __import__("datasets")
-            return True
-        except ImportError:
-            return False
+        from aurelius.utils.dependencies import HAS_HF_HUB, HAS_DATASETS
+        return HAS_HF_HUB and HAS_DATASETS
 
     def load_model(
         self,
@@ -278,57 +265,43 @@ class HuggingFaceWeightLoader:
         Returns:
             Model with loaded weights, or None on failure.
         """
-        try:
-            from huggingface_hub import snapshot_download
+        from huggingface_hub import snapshot_download
 
-            local_dir = os.path.join(self.model_dir, task, "hf_cache")
+        local_dir = os.path.join(self.model_dir, task, "hf_cache")
 
-            # Pre-flight disk space check
-            has_space, free_gb = check_disk_space(self.model_dir, min_free_gb=10.0)
-            if not has_space:
-                logger.warning(
-                    "Skipping HuggingFace download for %s: insufficient disk space "
-                    "(%.1fGB free, 10GB required). Consider using "
-                    "AURELIUS_HF_USE_SYMLINKS=1 or cleaning up old models.",
-                    model_id,
-                    free_gb,
-                )
-
-            # LRU cache eviction
-            evicted = self.evict_lru_cache(max_cache_gb=20.0)
-            if evicted > 0:
-                logger.info("LRU cache eviction: removed %d old model(s)", evicted)
-
-            snapshot_download(
-                repo_id=model_id,
-                local_dir=local_dir,
+        # Pre-flight disk space check
+        has_space, free_gb = check_disk_space(self.model_dir, min_free_gb=10.0)
+        if not has_space:
+            logger.warning(
+                "Skipping HuggingFace download for %s: insufficient disk space "
+                "(%.1fGB free, 10GB required). Consider using "
+                "AURELIUS_HF_USE_SYMLINKS=1 or cleaning up old models.",
+                model_id,
+                free_gb,
             )
 
-            # NOTE: AURELIUS_HF_USE_SYMLINKS env var is tracked for
-            # documentation purposes. The huggingface_hub library has
-            # deprecated the `local_dir_use_symlinks` parameter (v0.24+).
-            # Downloading to a local directory no longer uses symlinks.
-            # Users with limited disk should use AURELIUS_MODEL_DIR to
-            # point to a location with more space, or use HF cache symlinks
-            # manually via: ln -s $HF_HOME/models/... $AURELIUS_MODEL_DIR/
+        # LRU cache eviction
+        evicted = self.evict_lru_cache(max_cache_gb=20.0)
+        if evicted > 0:
+            logger.info("LRU cache eviction: removed %d old model(s)", evicted)
 
-            model = MLXBackend()
-            model.load_weights(local_dir)
-            print(f"[Aurelius v5.2 Tier1] Loaded {task} model from Hugging Face Hub: {model_id}")
-            return model
+        snapshot_download(
+            repo_id=model_id,
+            local_dir=local_dir,
+        )
 
-        except ImportError as e:
-            logger.warning("[Aurelius v5.2 Tier1] Hugging Face import failed: %s", e)
-            return None
-        except ValueError as e:
-            logger.warning("[Aurelius v5.2 Tier1] Invalid model ID (ValueError): %s", e)
-            return None
-        except ConnectionError as e:
-            logger.warning("[Aurelius v5.2 Tier1] Network error from HF Hub: %s", e)
-            return None
-        except (OSError, RuntimeError) as e:
-            logger.warning("[Aurelius v5.2 Tier1] HF Hub download failed: %s", e)
-            return None
+        # NOTE: AURELIUS_HF_USE_SYMLINKS env var is tracked for
+        # documentation purposes. The huggingface_hub library has
+        # deprecated the `local_dir_use_symlinks` parameter (v0.24+).
+        # Downloading to a local directory no longer uses symlinks.
+        # Users with limited disk should use AURELIUS_MODEL_DIR to
+        # point to a location with more space, or use HF cache symlinks
+        # manually via: ln -s $HF_HOME/models/... $AURELIUS_MODEL_DIR/
+
+        model = MLXBackend()
+        model.load_weights(local_dir)
+        print(f"[Aurelius v5.2 Tier1] Loaded {task} model from Hugging Face Hub: {model_id}")
+        return model
 
     def _load_from_local(self, task: str) -> Any | None:
         """Load model weights from local directory.

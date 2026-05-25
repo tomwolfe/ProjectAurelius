@@ -55,13 +55,8 @@ def _build_molecular_graph(
     if not HAS_TORCH:
         raise RuntimeError("PyTorch is required for molecular graph construction.")
 
-    try:
-        from rdkit import Chem
-        from rdkit.Chem import AllChem
-    except ImportError:
-        raise RuntimeError(
-            "RDKit is required for molecular graph construction. Install with: pip install rdkit"
-        ) from None
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
 
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -137,13 +132,7 @@ def load_qm9_lumo_data(
     Raises:
         ImportError: If ``huggingface-hub`` is not available.
     """
-    try:
-        from huggingface_hub import hf_hub_download
-    except ImportError:
-        raise ImportError(
-            "huggingface-hub is required for QM9 data access. "
-            "Install with: pip install huggingface-hub"
-        ) from None
+    from huggingface_hub import hf_hub_download
 
     # Download QM9 LUMO data from HuggingFace Hub
     with contextlib.suppress(Exception):
@@ -292,12 +281,7 @@ def train_tier0_model(
     if not HAS_TORCH:
         raise RuntimeError("PyTorch is required for model training.")
 
-    try:
-        from rdkit import Chem  # noqa: F401
-    except ImportError:
-        raise RuntimeError(
-            "RDKit is required for molecular graph construction. Install with: pip install rdkit"
-        ) from None
+    from rdkit import Chem
 
     if train_csv_path:
         required_columns = {"smiles", "ec_reduction", "dm_reduction", "pf6_decomposition", "polymerization"}
@@ -328,16 +312,9 @@ def train_tier0_model(
                 )
     else:
         # Prefer real QM9 LUMO data over synthetic generation
-        try:
-            training_data = load_qm9_lumo_data(n_samples=500)
-        except ImportError as exc:
-            import warnings
-            warnings.warn(
-                f"QM9 data unavailable ({exc}). Falling back to synthetic training data.",
-                stacklevel=2,
-            )
-            csv_path = os.path.join(data_dir, "train_tier0_synthetic.csv")
-            training_data = generate_synthetic_training_data(n_samples=500, output_path=csv_path)
+        training_data = load_qm9_lumo_data(n_samples=500)
+        csv_path = os.path.join(data_dir, "train_tier0_synthetic.csv")
+        training_data = generate_synthetic_training_data(n_samples=500, output_path=csv_path)
 
     if not training_data:
         raise ValueError("No training data available. Provide --csv-path or generate synthetic data.")

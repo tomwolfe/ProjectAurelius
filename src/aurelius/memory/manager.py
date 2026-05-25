@@ -12,22 +12,7 @@ from typing import Any
 
 import psutil
 
-try:
-    import torch
-
-    HAS_TORCH = True
-except ImportError:
-    HAS_TORCH = False
-    torch = None  # type: ignore[assignment, unused-ignore]
-
-try:
-    import mlx.core as mx
-
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-    mx = None  # type: ignore[assignment, unused-ignore]
-
+from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
 
 @dataclass
 class QuantizationConfig:

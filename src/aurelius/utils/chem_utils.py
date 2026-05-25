@@ -20,28 +20,18 @@ from aurelius.utils.dependencies import (
     HAS_RDKIT,
 )
 
-try:
-    from rdkit import Chem as _Chem  # type: ignore[import-not-found, unused-ignore]
-    from rdkit.Chem import BRICS as _BRICS  # type: ignore[import-not-found, unused-ignore]
-    from rdkit.Chem import AllChem as _AllChem  # type: ignore[import-not-found, unused-ignore]
-    from rdkit.Chem import Descriptors as _Descriptors  # type: ignore[import-not-found, unused-ignore]
-    from rdkit.DataStructs import (
-        BitVectToText,  # type: ignore[import-not-found, unused-ignore]
-        CreateFromBitString,  # type: ignore[import-not-found, unused-ignore]
-        ExplicitBitVect,  # type: ignore[import-not-found, unused-ignore]
-    )
-    from rdkit.DataStructs import (
-        FingerprintSimilarity as _FingerprintSimilarity,  # type: ignore[import-not-found, unused-ignore]
-    )
-
-    HAS_RDKIT = True
-except ImportError:
-    _Chem = None  # type: ignore[assignment, unused-ignore]
-    _AllChem = None  # type: ignore[assignment, unused-ignore]
-    _Descriptors = None  # type: ignore[assignment, unused-ignore]
-    _BRICS = None  # type: ignore[assignment, unused-ignore]
-    HAS_RDKIT = False
-    _FingerprintSimilarity = None  # type: ignore[assignment, unused-ignore]
+from rdkit import Chem as _Chem  # type: ignore[import-not-found, unused-ignore]
+from rdkit.Chem import BRICS as _BRICS  # type: ignore[import-not-found, unused-ignore]
+from rdkit.Chem import AllChem as _AllChem  # type: ignore[import-not-found, unused-ignore]
+from rdkit.Chem import Descriptors as _Descriptors  # type: ignore[import-not-found, unused-ignore]
+from rdkit.DataStructs import (
+    BitVectToText,  # type: ignore[import-not-found, unused-ignore]
+    CreateFromBitString,  # type: ignore[import-not-found, unused-ignore]
+    ExplicitBitVect,  # type: ignore[import-not-found, unused-ignore]
+)
+from rdkit.DataStructs import (
+    FingerprintSimilarity as _FingerprintSimilarity,  # type: ignore[import-not-found, unused-ignore]
+)
 
 
 def _safe_mol_from_smiles(smiles: str) -> Any | None:

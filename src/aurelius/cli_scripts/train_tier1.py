@@ -332,15 +332,7 @@ def load_qm9_data() -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[st
         sys.exit(1)
 
     # Load HuggingFace datasets
-    try:
-        from datasets import load_dataset
-
-        print("[train_tier1] Loading QM9 from HuggingFace Hub...")
-        # Verified dataset: maastrichtuniversity/qm9
-        ds = load_dataset("maastrichtuniversity/qm9", split="train")
-    except ImportError as e:
-        print("[train_tier1] Datasets library not available")
-        raise e
+    from datasets import load_dataset
 
     u0_values = np.array(ds["U0"], dtype=np.float32)
     smiles_list = ds["smiles"]

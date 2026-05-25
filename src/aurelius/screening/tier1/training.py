@@ -243,20 +243,7 @@ def train_on_qm9(
 
     generate_fp = _get_fingerprint_fn()
 
-    try:
-        from datasets import load_dataset
-
-        ds = load_dataset("maastrichtuniversity/qm9", split="train")
-    except ImportError as err:
-        raise RuntimeError("QM9 dataset requires 'datasets' library. Install with: pip install datasets") from err
-    except ValueError as e:
-        raise ValueError(
-            f"QM9 dataset ID 'maastrichtuniversity/qm9' not found: {e}. Check the dataset exists on HuggingFace Hub."
-        ) from e
-    except ConnectionError as e:
-        raise ConnectionError(
-            f"Network error loading QM9: {e}. Check the network connection or use a local CSV."
-        ) from e
+    from datasets import load_dataset
 
     u0_values = np.array(ds["U0"], dtype=np.float32)
     smiles_list = ds["smiles"]

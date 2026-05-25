@@ -70,15 +70,7 @@ class AureliusPipeline:
         """Initialize all pipeline components."""
         # Enforce RDKit availability for real model paths
         if self._use_real_models:
-            try:
-                from rdkit import Chem  # noqa: F401
-            except ImportError:
-                raise RuntimeError(
-                    "RDKit is required when use_real_models=True. "
-                    "Install with: pip install rdkit\n\n"
-                    "To run without RDKit, create the pipeline with "
-                    "use_real_models=False, or use --demo mode."
-                ) from None
+            from rdkit import Chem
 
         print("\n" + "=" * 60)
         print("  PROJECT AURELIUS v7.0 - Pipeline Initialization")

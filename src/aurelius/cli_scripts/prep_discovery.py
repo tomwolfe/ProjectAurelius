@@ -41,12 +41,7 @@ log = logging.getLogger("prep_discovery")
 # RDKit availability check
 # ---------------------------------------------------------------------------
 
-try:
-    import importlib.util
-
-    HAS_RDKIT = importlib.util.find_spec("rdkit") is not None
-except ImportError:
-    HAS_RDKIT = False
+from aurelius.utils.dependencies import HAS_RDKIT
 
 
 def _ensure_rdkit() -> None:

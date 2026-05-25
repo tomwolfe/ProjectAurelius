@@ -28,6 +28,16 @@
 
 - **🧠 Task 10: ActiveLearningOracle** -- New class for active learning with caching, batch querying (`query_batch`), dataset appending (`append_to_dataset`), and cache clearing (`clear_cache`).
 
+- **🔧 Task 12: Dead Code Removal** -- Removed `_hash_descriptors`, `_ChemVLM2MLP`, `_FallbackMLP` and eliminated CLI duplicate `[Summary]` block.
+
+### Bug Fixes & Improvements
+
+- **Version Bump**: Updated to 7.0.0 with all backward-compatible changes.
+
+- **CLI Flags**: Added `--task tier1|tier0` to `aurelius train`, `--allow-fallback` to `screen` and `batch`, and `--profile-memory` to the agent.
+- **CI Updates**: Updated `.github/workflows/ci.yml` for new test markers and optional dependency installs.
+- **Dead Code Removal**: Removed `_hash_descriptors`, `_ChemVLM2MLP`, `_FallbackMLP` and eliminated CLI duplicate `[Summary]` block.
+
 - **🔄 Task 11: GraphVAEMutator** -- Structural diversity generation via latent interpolation. `GraphVAEMutator(latent_dim=64)` with `mutate(smiles, batch_size=N)` returns N candidates.
 
 ### Bug Fixes & Improvements
@@ -326,13 +336,13 @@ ProjectAurelius/
 │   ├── screening/
 │   │   ├── tier1/
 │   │   │   ├── __init__.py     # Re-exports
-│   │   │   ├── models.py       # _ChemVLM2MLP, _FallbackMLP, PyTorchFallbackFilter
+│   │   │   ├── models.py       # MLXBackend, PyTorchBackend, model_factory
 │   │   │   ├── training.py     # train_on_esol, train_on_qm9
 │   │   │   ├── loaders.py      # HuggingFaceWeightLoader, weight conversion
 │   │   │   └── filter.py       # MLXNAFilter, fingerprint generation
 │   │   ├── tier0/
 │   │   │   ├── __init__.py     # Re-exports
-│   │   │   ├── models.py       # Tier0MPNN, MPNNEdgeBlock, MPNNReadoutMLP
+│   │   │   ├── models.py       # _MPNNEdgeBlockBackend, _MPNNReadoutMLPBackend, model_factory
 │   │   │   ├── data.py         # _build_molecular_graph, generate_synthetic_training_data, train_tier0_model
 │   │   │   └── predictor.py    # Tier0ActivationPredictor, _LinearFallbackPredictor
 │   │   ├── tier2_mattersim.py  # MatterSim-MT physics engine
