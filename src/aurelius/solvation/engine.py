@@ -739,7 +739,7 @@ class MWSESolvationEngine:
         energies = np.zeros_like(positions)
         centers, widths, heights = _get_energy_profile_gaussians()
 
-        for c, w, h in zip(centers, widths, heights):
+        for c, w, h in zip(centers, widths, heights, strict=True):
             energies += h * np.exp(-0.5 * ((positions - c) / w) ** 2)
 
         # Add a smooth repulsive wall at the anode surface
