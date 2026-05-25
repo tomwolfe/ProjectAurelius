@@ -92,7 +92,7 @@ if HAS_MLX:
     import mlx.core as _mlx_core
     import mlx.nn as _mlx_nn
 
-    class MLXBackend(_mlx_nn.Module):
+    class MLXBackend(_mlx_nn.Module):  # type: ignore[misc]
         """MLX-compatible 2-layer MLP for molecular viability scoring.
 
         Input: 2048-bit ECFP4 fingerprint (float array).

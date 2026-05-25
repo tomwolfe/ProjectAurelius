@@ -288,7 +288,7 @@ def _load_esol_embedded() -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], l
     training_data_path = resources.files("aurelius.data").joinpath("esol_fallback.csv")
     print(f"[train_tier1] *** LOADED FROM PACKAGED CSV: {training_data_path} ***")
 
-    with open(training_data_path) as f:
+    with open(str(training_data_path)) as f:
         reader = csv.DictReader(f)
         training_data = [(row["smiles"], float(row["logS"])) for row in reader]
 

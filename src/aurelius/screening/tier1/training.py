@@ -66,7 +66,7 @@ def _generate_synthetic_training_data(
     synthetic_data_path = resources.files("aurelius.data").joinpath("synthetic_training_data.csv")
 
     training_data: list[tuple[str, float]] = []
-    with open(synthetic_data_path) as f:
+    with open(str(synthetic_data_path)) as f:
         reader = csv.DictReader(f)
         for row in reader:
             training_data.append((row["smiles"], float(row["label"])))
@@ -133,7 +133,7 @@ def train_on_esol(
 
         import csv
 
-        with open(training_data_path) as f:
+        with open(str(training_data_path)) as f:
             reader = csv.DictReader(f)
             training_data = [(row["smiles"], float(row["logS"])) for row in reader]
 

@@ -116,6 +116,11 @@ class MatterSimMTSimulator:
                 charge prediction for Coulombic potential computation.
         """
         # Periodic Boundary Conditions support (v7.0)
+        if use_pbc:
+            raise NotImplementedError(
+                "PBC support will be introduced in v7.0. "
+                "Use use_pbc=False for now."
+            )
         self._use_pbc = use_pbc
         self._cell_vectors: _torch.Tensor | None = None
         self._use_polarization = use_polarization
