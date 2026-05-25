@@ -15,6 +15,7 @@ Cross-Platform Compatibility:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Protocol, runtime_checkable
 
@@ -24,19 +25,12 @@ logger = logging.getLogger(__name__)
 
 # TYPE_CHECKING imports for type hints only
 if HAS_MLX:
-    try:
+    with contextlib.suppress(Exception):
         import mlx.core as _mlx  # noqa: F401
-
         _mlx = _mlx
-    except Exception:
-        pass
 if HAS_TORCH:
-    try:
-        import torch  # noqa: F401
-
-        _torch = _torch
-    except Exception:
-        pass
+    with contextlib.suppress(Exception):
+        import torch as _torch  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Protocol definitions for cross-framework tensor operations
@@ -57,7 +51,7 @@ class _TorchTensorLike(Protocol):
     """Protocol for PyTorch tensor-like objects that support DLpack consumption."""
 
     @staticmethod
-    def from_dlpack(cap: object) -> "_TorchTensorLike":
+    def from_dlpack(cap: object) -> _TorchTensorLike:
         """Consume a DLPack capsule and create a tensor."""
         ...
 
@@ -67,7 +61,7 @@ class _TorchDLPackUtils(Protocol):
     """Protocol for PyTorch DLpack utilities."""
 
     @staticmethod
-    def to_dlpack(tensor: "_TorchTensorLike") -> object:
+    def to_dlpack(tensor: _TorchTensorLike) -> object:
         """Export a PyTorch tensor memory view into a DLPack capsule."""
         ...
 

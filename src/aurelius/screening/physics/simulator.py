@@ -16,8 +16,8 @@ from typing import Any
 import numpy as np
 
 from aurelius.constants import COULOMB_EV_A
-from aurelius.screening.physics.potentials import MatterSimCoulombPotentials, MatterSimLJPotentials
 from aurelius.screening.physics.neighbor_list import MatterSimNeighborList
+from aurelius.screening.physics.potentials import MatterSimCoulombPotentials, MatterSimLJPotentials
 from aurelius.types import DesolvationPathResult, Tier2Result
 from aurelius.utils.dependencies import HAS_TORCH
 
@@ -401,11 +401,11 @@ class MatterSimMTSimulator:
 
     def _compute_lj_sparse(
         self,
-        atomic_numbers: "torch.Tensor",
-        src_indices: "torch.Tensor",
-        dst_indices: "torch.Tensor",
-        distances: "torch.Tensor",
-    ) -> "torch.Tensor":
+        atomic_numbers: torch.Tensor,
+        src_indices: torch.Tensor,
+        dst_indices: torch.Tensor,
+        distances: torch.Tensor,
+    ) -> torch.Tensor:
         """Compute Lennard-Jones potential using sparse neighbor list."""
         return MatterSimLJPotentials.compute_lj_sparse(
             atomic_numbers, src_indices, dst_indices, distances,
@@ -414,11 +414,11 @@ class MatterSimMTSimulator:
 
     def _compute_coulomb_sparse(
         self,
-        atomic_numbers: "torch.Tensor",
-        src_indices: "torch.Tensor",
-        dst_indices: "torch.Tensor",
-        distances: "torch.Tensor",
-    ) -> "torch.Tensor":
+        atomic_numbers: torch.Tensor,
+        src_indices: torch.Tensor,
+        dst_indices: torch.Tensor,
+        distances: torch.Tensor,
+    ) -> torch.Tensor:
         """Compute Coulombic potential using sparse neighbor list."""
         return MatterSimCoulombPotentials.compute_coulomb_sparse(
             atomic_numbers, src_indices, dst_indices, distances,
@@ -428,8 +428,8 @@ class MatterSimMTSimulator:
         )
 
     def _compute_lj_potential(
-        self, atomic_numbers: "torch.Tensor", distances: "torch.Tensor"
-    ) -> "torch.Tensor":
+        self, atomic_numbers: torch.Tensor, distances: torch.Tensor
+    ) -> torch.Tensor:
         """Compute Lennard-Jones potential between all atom pairs."""
         return MatterSimLJPotentials.compute_lj_potential(
             atomic_numbers, distances, self._default_eps, self._default_sig,
@@ -437,15 +437,15 @@ class MatterSimMTSimulator:
         )
 
     def _compute_coulomb_potential(
-        self, atomic_numbers: "torch.Tensor", distances: "torch.Tensor"
-    ) -> "torch.Tensor":
+        self, atomic_numbers: torch.Tensor, distances: torch.Tensor
+    ) -> torch.Tensor:
         """Compute Coulombic potential between charged pairs."""
         return MatterSimCoulombPotentials.compute_coulomb_potential(
             atomic_numbers, distances, self._CHARGES, self._use_polarization,
             self._default_eps, self._default_sig, self._LJ_PARAMS, self._cutoff,
         )
 
-    def _predict_charges_atomic(self, atomic_numbers: "torch.Tensor") -> "torch.Tensor":
+    def _predict_charges_atomic(self, atomic_numbers: torch.Tensor) -> torch.Tensor:
         """Predict partial charges using the GNN-ChargeEq model."""
         if self._compiled_model is None:
             device = atomic_numbers.device
@@ -467,10 +467,10 @@ class MatterSimMTSimulator:
 
     def _compute_energy_profile(
         self,
-        atomic_numbers: "torch.Tensor",
-        coordinates: "torch.Tensor",
+        atomic_numbers: torch.Tensor,
+        coordinates: torch.Tensor,
         n_scan_points: int,
-    ) -> "torch.Tensor":
+    ) -> torch.Tensor:
         """Compute energy profile along the desolvation path."""
         device = atomic_numbers.device
         ion_idx = 0
@@ -548,7 +548,7 @@ class MatterSimMTSimulator:
 
         return lj_total + coul_total
 
-    def _apply_pbc(self, coords: "torch.Tensor") -> "torch.Tensor":
+    def _apply_pbc(self, coords: torch.Tensor) -> torch.Tensor:
         """Apply minimum image convention to coordinates."""
         if not self._use_pbc or self._cell_vectors is None:
             return coords
@@ -569,7 +569,7 @@ class MatterSimMTSimulator:
                 maxima.append(float(energies[i]))
         return maxima
 
-    def __call__(self, atomic_numbers: "torch.Tensor", coordinates: "torch.Tensor") -> "torch.Tensor":
+    def __call__(self, atomic_numbers: torch.Tensor, coordinates: torch.Tensor) -> torch.Tensor:
         """Compute energy for given atomic numbers and coordinates.
 
         This is a convenience method that computes the total energy
@@ -663,7 +663,7 @@ class MatterSimMTSimulator:
             per_cycle = 0.0001
         return base + n_scan_points * per_cycle
 
-    def update_displacement(self, old_coords: "torch.Tensor", new_coords: "torch.Tensor") -> None:
+    def update_displacement(self, old_coords: torch.Tensor, new_coords: torch.Tensor) -> None:
         """Track atomic displacement to trigger neighbor list rebuild."""
         if not self._use_neighbor_list:
             return
@@ -682,8 +682,8 @@ class MatterSimMTSimulator:
 
     def _get_neighbor_list(
         self,
-        coordinates: "torch.Tensor",
-    ) -> tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
+        coordinates: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Get or build neighbor list."""
         if not self._use_neighbor_list:
             n = coordinates.shape[0]

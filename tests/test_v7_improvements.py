@@ -15,8 +15,6 @@ import tempfile
 
 import pytest
 
-from aurelius.utils.dependencies import HAS_RDKIT
-
 # ============================================================
 # utils.chem Module Tests
 # ============================================================
@@ -61,7 +59,7 @@ class TestChemModule:
             assert mol is not None
             # Verify it's a valid molecule
             assert AllChem.MolToSmiles(mol) == "CCO"
-        except ImportError as exc:
+        except ImportError:
             pytest.skip("RDKit not available")
 
     def test_is_valid_mol_mw_check(self):
@@ -160,7 +158,7 @@ class TestPBCMinimumImageConvention:
             assert wrapped[0, 0].item() == pytest.approx(1.0, abs=1e-5)
             assert wrapped[0, 1].item() == pytest.approx(2.0, abs=1e-5)
             assert wrapped[0, 2].item() == pytest.approx(3.0, abs=1e-5)
-        except ImportError as exc:
+        except ImportError:
             pytest.skip("PyTorch not available")
 
     def test_pbc_default_cubic_box(self):
@@ -253,7 +251,7 @@ class TestChargeEqModel:
             model = ChargeEqModel(hidden_dim=64)
             assert model is not None
             assert model.hidden_dim == 64
-        except ImportError as exc:
+        except ImportError:
             pytest.skip("PyTorch not available")
 
     def test_charge_eq_model_predict(self):

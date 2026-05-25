@@ -7,7 +7,8 @@ import pytest
 
 from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT
 
-from aurelius.screening.tier1.filter import MLXNAFilter
+if HAS_MLX:
+    import mlx.core as mx
 
 
 @pytest.mark.skip(reason="Training has shape mismatch issues - fix training code first")

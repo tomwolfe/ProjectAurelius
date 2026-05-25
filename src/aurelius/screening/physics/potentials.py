@@ -15,8 +15,6 @@ import torch  # noqa: F401
 
 from aurelius.constants import COULOMB_EV_A
 
-import numpy as np
-
 
 class MatterSimLJPotentials:
     """Lennard-Jones potential calculations.
@@ -27,16 +25,16 @@ class MatterSimLJPotentials:
 
     @staticmethod
     def compute_lj_sparse(
-        atomic_numbers: "torch.Tensor",
-        src_indices: "torch.Tensor",
-        dst_indices: "torch.Tensor",
-        distances: "torch.Tensor",
+        atomic_numbers: torch.Tensor,
+        src_indices: torch.Tensor,
+        dst_indices: torch.Tensor,
+        distances: torch.Tensor,
         default_eps: float,
         default_sig: float,
         lj_params: dict[tuple[int, int], tuple[float, float]],
         cutoff: float,
         device: str = "cpu",
-    ) -> "torch.Tensor":
+    ) -> torch.Tensor:
         """Compute Lennard-Jones potential using sparse neighbor list.
 
         Uses OPLS-AA / GAFF parameters from force field JSON.
@@ -93,13 +91,13 @@ class MatterSimLJPotentials:
 
     @staticmethod
     def compute_lj_potential(
-        atomic_numbers: "torch.Tensor",
-        distances: "torch.Tensor",
+        atomic_numbers: torch.Tensor,
+        distances: torch.Tensor,
         default_eps: float,
         default_sig: float,
         lj_params: dict[tuple[int, int], tuple[float, float]],
         cutoff: float,
-    ) -> "torch.Tensor":
+    ) -> torch.Tensor:
         """Compute Lennard-Jones potential between all atom pairs.
 
         Uses OPLS-AA / GAFF parameters loaded from force field JSON.
@@ -170,15 +168,15 @@ class MatterSimCoulombPotentials:
 
     @staticmethod
     def compute_coulomb_sparse(
-        atomic_numbers: "torch.Tensor",
-        src_indices: "torch.Tensor",
-        dst_indices: "torch.Tensor",
-        distances: "torch.Tensor",
+        atomic_numbers: torch.Tensor,
+        src_indices: torch.Tensor,
+        dst_indices: torch.Tensor,
+        distances: torch.Tensor,
         charges: dict[int, float],
         use_polarization: bool,
         ci: float,
         device: str,
-    ) -> "torch.Tensor":
+    ) -> torch.Tensor:
         """Compute Coulombic potential using sparse neighbor list.
 
         Uses OPLS-AA / GAFF partial charges, or dynamically predicted
@@ -222,15 +220,15 @@ class MatterSimCoulombPotentials:
 
     @staticmethod
     def compute_coulomb_potential(
-        atomic_numbers: "torch.Tensor",
-        distances: "torch.Tensor",
+        atomic_numbers: torch.Tensor,
+        distances: torch.Tensor,
         charges: dict[int, float],
         use_polarization: bool,
         default_eps: float,
         default_sig: float,
         lj_params: dict[tuple[int, int], tuple[float, float]],
         cutoff: float,
-    ) -> "torch.Tensor":
+    ) -> torch.Tensor:
         """Compute Coulombic potential between charged pairs.
 
         Uses OPLS-AA / GAFF partial charges, or dynamically predicted

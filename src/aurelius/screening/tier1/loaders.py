@@ -24,8 +24,6 @@ from aurelius.screening.tier1.models import (
 logger = logging.getLogger(__name__)
 
 # Conditional torch import for weight conversion
-from aurelius.utils.dependencies import HAS_TORCH
-
 _torch: Any | None = None
 if HAS_TORCH:
     try:

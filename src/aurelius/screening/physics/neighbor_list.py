@@ -26,9 +26,9 @@ class MatterSimNeighborList:
 
     @staticmethod
     def build_neighbor_list(
-        coordinates: "torch.Tensor",
+        coordinates: torch.Tensor,
         cutoff: float,
-    ) -> tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Build neighbor list using grid-based cell list for O(N) complexity.
 
         Uses a spatial cell-list algorithm that:

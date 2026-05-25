@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from aurelius.screening.physics.simulator import MatterSimMTSimulator
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin
 from aurelius.utils.dependencies import HAS_TORCH
-from aurelius.screening.physics.simulator import MatterSimMTSimulator
 
 if HAS_TORCH:
     import torch  # noqa: F401

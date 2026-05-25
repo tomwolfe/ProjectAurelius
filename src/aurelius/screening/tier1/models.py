@@ -15,6 +15,7 @@ References:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from importlib import resources
@@ -40,7 +41,7 @@ else:
 # PyTorch tensor type (available only when Torch is installed)
 if HAS_TORCH:
     try:
-        import torch  # noqa: F401
+        import torch as _torch  # noqa: F401
 
         TTensor = _torch.Tensor
     except Exception:
@@ -52,17 +53,12 @@ else:
 if HAS_MLX:
     try:
         import mlx.core as _mlx_core  # noqa: F401
-
         _mlx_core = _mlx_core
     except Exception:
         pass
 if HAS_TORCH:
-    try:
-        import torch  # noqa: F401
-
-        _torch = _torch
-    except Exception:
-        pass
+    with contextlib.suppress(Exception):
+        import torch as _torch  # noqa: F401
 
 __all__ = [
     "DEFAULT_MODEL_DIR",
@@ -126,6 +122,7 @@ class ModelBackend(Protocol):
 if HAS_MLX:
     import mlx.core as _mlx_core
     import mlx.nn as _mlx_nn
+    import numpy as np
 
     class MLXBackend(_mlx_nn.Module):  # type: ignore[name-defined, misc]
         """MLX-compatible 2-layer MLP for molecular viability scoring.
