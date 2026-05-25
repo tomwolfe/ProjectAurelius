@@ -240,6 +240,6 @@ def _generate_molecular_descriptors(smiles: str) -> dict[str, float]:
     Returns:
         Dictionary of descriptor name -> value.
     """
-    from aurelius.utils.descriptors import _generate_molecular_descriptors as _gen
+    from aurelius.utils.descriptors import generate_molecular_descriptors
 
-    return _gen(smiles)
+    return generate_molecular_descriptors(smiles)

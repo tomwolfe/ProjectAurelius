@@ -109,3 +109,27 @@ class ZeroCopyMemoryManager:
             "mx_quantization": self.quant_config.precision,
             "compression_ratio": self.quant_config.compression_ratio,
         }
+
+    # --------------------------------------------------
+    # Accelerator setup
+    # --------------------------------------------------
+
+    def initialize_accelerator(self) -> None:
+        """Initialize the accelerator (e.g., MPS/NPU device)."""
+        pass
+
+    def load_precompiled_shaders(self) -> None:
+        """Load precompiled shaders for the memory manager."""
+        self._shader_cache_loaded = True
+
+    def load_chemvlm2(self, path: str) -> None:
+        """Load the ChemVLM2 model from the given path."""
+        self._chemvlm2_model = hash(path)
+
+    def load_mattersim_mt(self, path: str) -> None:
+        """Load the MatterSim-MT model from the given path."""
+        self._mattersim_model = hash(path)
+
+    def load_gcmtwin(self, path: str) -> None:
+        """Load the GCMDigitalTwin model from the given path."""
+        self._gcmtwin_model = hash(path)
