@@ -429,7 +429,7 @@ class MatterSimMTSimulator:
         eps_tensor = _torch.zeros(n, device=atomic_numbers.device)
         sig_tensor = _torch.zeros(n, device=atomic_numbers.device)
 
-        for (zi, zj), (eps, sig) in self._LJ_PARAMS.items():
+        for (zi, _zj), (eps, sig) in self._LJ_PARAMS.items():
             for i in range(n):
                 if src_indices[i] == zi:
                     eps_tensor[i] = eps
@@ -531,8 +531,8 @@ class MatterSimMTSimulator:
         eps_tensor = _torch.zeros(n, n, device=device)
         sig_tensor = _torch.zeros(n, n, device=device)
 
-        for (zi, zj), (eps, sig) in self._LJ_PARAMS.items():
-            pair_mask = (z_min == zi) & (z_max == zj)
+        for (zi, _zj), (eps, sig) in self._LJ_PARAMS.items():
+            pair_mask = (z_min == zi) & (z_max == _zj)
             eps_tensor = _torch.where(pair_mask, _torch.full_like(eps_tensor, eps), eps_tensor)
             sig_tensor = _torch.where(pair_mask, _torch.full_like(sig_tensor, sig), sig_tensor)
 
@@ -676,8 +676,8 @@ class MatterSimMTSimulator:
         eps_vals = _torch.zeros(n_solvent, device=device)
         sig_vals = _torch.zeros(n_solvent, device=device)
 
-        for (zi, zj), (eps, sig) in self._LJ_PARAMS.items():
-            pair_mask = ((solvent_z == zi) & (zi == 11)) | ((solvent_z == zj) & (zj == 11))
+        for (zi, _zj), (eps, sig) in self._LJ_PARAMS.items():
+            pair_mask = ((solvent_z == zi) & (zi == 11)) | ((solvent_z == _zj) & (_zj == 11))
             eps_vals = _torch.where(pair_mask, _torch.full_like(eps_vals, eps), eps_vals)
             sig_vals = _torch.where(pair_mask, _torch.full_like(sig_vals, sig), sig_vals)
 
@@ -951,7 +951,7 @@ class MatterSimMTSimulator:
                         adj_key = (cx + dx) * 1_000_000 + (cy + dy) * 1_000 + (cz + dz)
                         adj_atoms = cell_to_atoms.get(adj_key, [])
 
-                        for i_idx, i in enumerate(atoms):
+                        for _i_idx, i in enumerate(atoms):
                             for j in adj_atoms:
                                 if j <= i:
                                     continue

@@ -28,9 +28,9 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from aurelius.utils.dependencies import HAS_TORCH, HAS_RDKIT, HAS_DATASETS, HAS_MLX
-
 import numpy as np
+
+from aurelius.utils.dependencies import HAS_DATASETS, HAS_MLX, HAS_RDKIT
 
 
 def parse_args() -> argparse.Namespace:
@@ -344,6 +344,9 @@ def load_qm9_data() -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[st
         print("[train_tier1] Datasets library not available")
         raise e
 
+    u0_values = np.array(ds["U0"], dtype=np.float32)
+    smiles_list = ds["smiles"]
+
     # Filter valid molecules
     valid_mask = ~np.isnan(u0_values)
     valid_smiles = [s for i, s in enumerate(smiles_list) if valid_mask[i]]
@@ -502,6 +505,9 @@ def train_mlx(
     if not HAS_MLX:
         print("[train_tier1] MLX not available, falling back to numpy training")
         return train_numpy(X_train, y_train, X_val, y_val, epochs, lr, batch_size, seed)
+
+    import mlx.core as mx
+    import mlx.nn as nn
 
     model = nn.Sequential(
         nn.Linear(2048, 128),

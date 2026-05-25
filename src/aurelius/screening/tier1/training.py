@@ -17,6 +17,7 @@ from typing import Any
 
 import numpy as np
 
+from aurelius.screening.tier1.models import MLXBackend, PyTorchBackend
 from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
 
 try:
@@ -123,7 +124,7 @@ def train_on_esol(
         from datasets import load_dataset
 
         _ds = load_dataset("deepchem/esol", split="train")
-        training_data = [(sm, float(v)) for sm, v in zip(_ds["smiles"], _ds["logS"])]
+        training_data = [(sm, float(v)) for sm, v in zip(_ds["smiles"], _ds["logS"], strict=True)]
     except Exception:
         # Fallback to packaged CSV resource
         training_data_path = resources.files("aurelius.data").joinpath("esol_fallback.csv")
@@ -174,7 +175,6 @@ def train_on_esol(
     for epoch in range(epochs):
         perm = mx.random.permutation(n_samples - n_val, key=mx.random.key(seed))
         X_shuffled = X_train_split[perm]
-        y_shuffled = y_train_split[perm]
 
         for start in range(0, n_samples - n_val, batch_size):
             end = min(start + batch_size, n_samples - n_val)
@@ -202,7 +202,6 @@ def train_on_esol(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            best_params = [p.copy() for p in model.trainable_parameters()]
         else:
             patience_counter += 1
             if patience_counter >= patience:
@@ -211,7 +210,7 @@ def train_on_esol(
 
     if best_params is not None:
         # Apply best weights to model
-        for param, weight in zip(model.trainable_parameters(), best_params):
+        for param, weight in zip(model.trainable_parameters(), best_params, strict=True):
             param[...] = weight
 
     return model
@@ -333,7 +332,6 @@ def train_on_qm9(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            best_params = [p.copy() for p in model.trainable_parameters()]
         else:
             patience_counter += 1
             if patience_counter >= patience:
@@ -342,7 +340,7 @@ def train_on_qm9(
 
     if best_params is not None:
         # Apply best weights to model
-        for param, weight in zip(model.trainable_parameters(), best_params):
+        for param, weight in zip(model.trainable_parameters(), best_params, strict=True):
             param[...] = weight
 
     return model
@@ -411,7 +409,6 @@ def _train_synthetic_mlx(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            best_params = [p.copy() for p in model.trainable_parameters()]
         else:
             patience_counter += 1
             if patience_counter >= patience:
@@ -420,7 +417,7 @@ def _train_synthetic_mlx(
 
     if best_params is not None:
         # Apply best weights to model
-        for param, weight in zip(model.trainable_parameters(), best_params):
+        for param, weight in zip(model.trainable_parameters(), best_params, strict=True):
             param[...] = weight
 
     return model
@@ -488,7 +485,6 @@ def _train_synthetic_pytorch() -> PyTorchBackend:
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            best_params = [p.copy() for p in model.trainable_parameters()]
         else:
             patience_counter += 1
             if patience_counter >= patience:
