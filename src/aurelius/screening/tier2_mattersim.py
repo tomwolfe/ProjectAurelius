@@ -146,9 +146,13 @@ class MatterSimMTSimulator:
 
         # Fallback Gaussian parameters
         fallback = params.get("fallback_gaussians", {})
-        self._fallback_heights = fallback.get("heights", [0.2, 0.15, 0.1, 0.03])
-        self._fallback_centers = fallback.get("centers", [2.0, 4.5, 6.5, 8.0])
-        self._fallback_widths = fallback.get("widths", [0.8, 1.0, 0.6, 0.3])
+        _heights = fallback.get("heights", [0.2, 0.15, 0.1, 0.03])
+        _centers = fallback.get("centers", [2.0, 4.5, 6.5, 8.0])
+        _widths = fallback.get("widths", [0.8, 1.0, 0.6, 0.3])
+        _n = min(len(_heights), len(_centers), len(_widths))
+        self._fallback_heights = _heights[:_n]
+        self._fallback_centers = _centers[:_n]
+        self._fallback_widths = _widths[:_n]
 
         # Barrier threshold
         self.barrier_threshold_eV = (
