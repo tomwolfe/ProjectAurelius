@@ -6,10 +6,6 @@ RDKit is strictly required; production use without RDKit is not supported.
 
 from __future__ import annotations
 
-from aurelius.utils.dependencies import HAS_RDKIT
-
-import numpy as np
-
 
 def generate_molecular_descriptors(smiles: str) -> dict[str, float]:
     """Generate simple molecular descriptors from SMILES for Tier 0 prediction.

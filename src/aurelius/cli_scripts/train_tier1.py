@@ -334,6 +334,8 @@ def load_qm9_data() -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[st
     # Load HuggingFace datasets
     from datasets import load_dataset
 
+    ds = load_dataset("maastrichtuniversity/qm9", split="train")
+
     u0_values = np.array(ds["U0"], dtype=np.float32)
     smiles_list = ds["smiles"]
 

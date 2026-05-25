@@ -16,13 +16,7 @@ from typing import Any
 # ---------------------------------------------------------------------------
 # RDKit import guard
 # ---------------------------------------------------------------------------
-from aurelius.utils.dependencies import (
-    HAS_RDKIT,
-)
-
 from rdkit import Chem as _Chem  # type: ignore[import-not-found, unused-ignore]
-from rdkit.Chem import BRICS as _BRICS  # type: ignore[import-not-found, unused-ignore]
-from rdkit.Chem import AllChem as _AllChem  # type: ignore[import-not-found, unused-ignore]
 from rdkit.Chem import Descriptors as _Descriptors  # type: ignore[import-not-found, unused-ignore]
 from rdkit.DataStructs import (
     BitVectToText,  # type: ignore[import-not-found, unused-ignore]
@@ -32,6 +26,8 @@ from rdkit.DataStructs import (
 from rdkit.DataStructs import (
     FingerprintSimilarity as _FingerprintSimilarity,  # type: ignore[import-not-found, unused-ignore]
 )
+
+from aurelius.utils.dependencies import HAS_RDKIT
 
 
 def _safe_mol_from_smiles(smiles: str) -> Any | None:

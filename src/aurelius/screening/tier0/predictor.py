@@ -17,6 +17,9 @@ from aurelius.screening.tier0.data import (
 from aurelius.screening.tier0.models import PyTorchBackend
 from aurelius.utils.dependencies import HAS_TORCH
 
+if HAS_TORCH:
+    import torch  # noqa: F401
+
 
 class Tier0ActivationPredictor:
     """Wrapper that supports both the old linear model and the new MPNN.

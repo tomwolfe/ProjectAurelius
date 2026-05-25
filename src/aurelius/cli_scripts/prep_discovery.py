@@ -30,6 +30,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from aurelius.utils.dependencies import HAS_RDKIT
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -40,8 +42,6 @@ log = logging.getLogger("prep_discovery")
 # ---------------------------------------------------------------------------
 # RDKit availability check
 # ---------------------------------------------------------------------------
-
-from aurelius.utils.dependencies import HAS_RDKIT
 
 
 def _ensure_rdkit() -> None:

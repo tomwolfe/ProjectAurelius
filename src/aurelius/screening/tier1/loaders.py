@@ -23,6 +23,19 @@ from aurelius.screening.tier1.models import (
 
 logger = logging.getLogger(__name__)
 
+# Conditional torch import for weight conversion
+_torch: Any | None = None
+try:
+    import torch  # noqa: F401
+
+    _torch = torch
+except ImportError:
+    pass
+
+# ---------------------------------------------------------------------------
+# HuggingFace symlink control
+# ---------------------------------------------------------------------------
+
 # ---------------------------------------------------------------------------
 # HuggingFace symlink control
 # ---------------------------------------------------------------------------
@@ -222,7 +235,7 @@ class HuggingFaceWeightLoader:
 
     def _check_hf_dependencies(self) -> bool:
         """Check if huggingface_hub and datasets are available."""
-        from aurelius.utils.dependencies import HAS_HF_HUB, HAS_DATASETS
+        from aurelius.utils.dependencies import HAS_DATASETS, HAS_HF_HUB
         return HAS_HF_HUB and HAS_DATASETS
 
     def load_model(

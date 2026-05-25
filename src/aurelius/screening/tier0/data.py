@@ -281,7 +281,7 @@ def train_tier0_model(
     if not HAS_TORCH:
         raise RuntimeError("PyTorch is required for model training.")
 
-    from rdkit import Chem
+    import rdkit  # noqa: F401
 
     if train_csv_path:
         required_columns = {"smiles", "ec_reduction", "dm_reduction", "pf6_decomposition", "polymerization"}

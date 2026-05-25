@@ -180,42 +180,6 @@ def _benchmark_tier1_quick(repeats: int = 5, n_molecules: int = 100) -> Benchmar
         max_ms=float(np.max(times) * 1000),
         details=f"PyTorch MPS {n_molecules} molecules, {repeats} repeats",
     )
-        device = "mps" if torch.backends.mps.is_available() else "cpu"
-        X_torch = torch.tensor(X, device=device)
-
-        # Warmup
-        _ = model(X_torch[:1])
-        if device == "mps":
-            torch.mps.empty_cache()
-
-        times = []
-        for _ in range(repeats):
-            start = time.perf_counter()
-            _ = model(X_torch)
-            if device == "mps":
-                torch.mps.empty_cache()
-            times.append(time.perf_counter() - start)
-
-        status = "pass" if device == "mps" else "warning"
-        detail = f"PyTorch {device} ({n_molecules} molecules, {repeats} repeats)"
-        if device == "cpu":
-            detail += " - MPS not available, running on CPU"
-
-        return BenchmarkResult(
-            name="tier1_pytorch",
-            status=status,
-            mean_ms=float(np.mean(times) * 1000),
-            std_ms=float(np.std(times) * 1000),
-            min_ms=float(np.min(times) * 1000),
-            max_ms=float(np.max(times) * 1000),
-            details=detail,
-        )
-
-    return BenchmarkResult(
-        name="tier1",
-        status="skipped",
-        details="No MLX or PyTorch available",
-    )
 
 
 def _benchmark_tier2_quick(repeats: int = 3, n_atoms: int = 30) -> BenchmarkResult:

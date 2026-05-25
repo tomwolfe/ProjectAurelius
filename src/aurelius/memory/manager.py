@@ -12,7 +12,6 @@ from typing import Any
 
 import psutil
 
-from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
 
 @dataclass
 class QuantizationConfig:

@@ -245,6 +245,8 @@ def train_on_qm9(
 
     from datasets import load_dataset
 
+    ds = load_dataset("maastrichtuniversity/qm9", split="train")
+
     u0_values = np.array(ds["U0"], dtype=np.float32)
     smiles_list = ds["smiles"]
 
