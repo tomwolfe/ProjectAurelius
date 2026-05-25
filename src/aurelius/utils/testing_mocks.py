@@ -9,9 +9,8 @@ For production, use real ECFP4 fingerprints from RDKit instead.
 
 from __future__ import annotations
 
-from typing import Any
-
 import hashlib
+from typing import Any
 
 import numpy as np
 

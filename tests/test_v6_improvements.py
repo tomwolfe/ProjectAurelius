@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import os
 
-import pytest
-
 # ============================================================
 # DependencyManager Tests
 # ============================================================
@@ -392,12 +390,13 @@ class TestRDKitErrors:
 class TestPBCPlaceholder:
     """Tests for Periodic Boundary Conditions placeholder."""
 
-    def test_use_pbc_raises_not_implemented(self):
-        """Verify use_pbc=True raises NotImplementedError."""
+    def test_use_pbc_true_enabled(self):
+        """Verify use_pbc=True enables PBC functionality."""
         from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
 
-        with pytest.raises(NotImplementedError, match="v7.0"):
-            MatterSimMTSimulator(use_pbc=True)
+        sim = MatterSimMTSimulator(use_pbc=True)
+        assert sim is not None
+        assert sim._use_pbc is True
 
     def test_use_pbc_false_defaults(self):
         """Verify use_pbc=False (default) works normally."""

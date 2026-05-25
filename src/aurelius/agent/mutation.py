@@ -28,17 +28,14 @@ from aurelius.utils.chem_utils import (
     _safe_mol_from_smiles,
     _tanimoto,
 )
-
 from aurelius.utils.dependencies import HAS_RDKIT
 
 if HAS_RDKIT:
     from rdkit import Chem  # type: ignore[import-not-found, unused-ignore]
     from rdkit.Chem import (
         BRICS,  # type: ignore[import-not-found, unused-ignore]
-        AllChem,  # type: ignore[import-not-found, unused-ignore]
         Descriptors,  # type: ignore[import-not-found, unused-ignore]
     )
-    from rdkit.DataStructs import FingerprintSimilarity  # type: ignore[import-not-found, unused-ignore]
 
 logger = logging.getLogger(__name__)
 

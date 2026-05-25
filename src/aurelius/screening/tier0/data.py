@@ -226,7 +226,7 @@ def generate_synthetic_training_data(
     valid_smiles = valid_smiles[:n_samples]
 
     training_data: list[dict[str, Any]] = []
-    for idx, smi in enumerate(valid_smiles):
+    for _idx, smi in enumerate(valid_smiles):
         # Trivial deterministic pseudo-targets — no real chemistry involved
         seed = hash(smi) % 10000
         ec = 0.5 + (seed % 500) / 1000.0 + rng.normal(0, noise_sigma)

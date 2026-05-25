@@ -33,7 +33,6 @@ import numpy as np
 from aurelius.constants import BOLTZMANN_EV_K
 from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
 from aurelius.types import GCMDTConfig, GCMDTwinResult, SEIEvolution
-from aurelius.utils.descriptors import _generate_molecular_descriptors
 
 
 def _load_kmc_params(path: str | None = None) -> dict[str, Any]:

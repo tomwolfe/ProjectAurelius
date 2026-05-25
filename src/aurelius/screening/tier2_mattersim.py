@@ -87,6 +87,7 @@ class MatterSimMTSimulator:
         use_neighbor_list: bool = False,
         neighbor_list_cutoff: float = 12.0,
         use_polarization: bool = False,
+        use_pbc: bool = False,
     ) -> None:
         """Initialize MatterSim-MT simulator.
 
@@ -107,6 +108,7 @@ class MatterSimMTSimulator:
         """
         self._use_polarization = use_polarization
         self._use_neighbor_list = use_neighbor_list
+        self._use_pbc = use_pbc
         self._neighbor_list_cutoff = neighbor_list_cutoff
         self._LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {}
         self._CHARGES: dict[int, float] = {}
