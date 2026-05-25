@@ -196,7 +196,7 @@ if HAS_MLX:
             self.linear2.bias = _mlx_core.array(b2)
 
 else:
-    class MLXBackend(_mlx_nn.Module):  # type: ignore[no-redef]
+    class MLXBackend:  # type: ignore[no-redef]
         """Placeholder when MLX is unavailable."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
