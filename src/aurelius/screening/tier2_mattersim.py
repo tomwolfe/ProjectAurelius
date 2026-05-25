@@ -892,6 +892,9 @@ class MatterSimMTSimulator:
         2. Only evaluates pairs within the same cell or adjacent cells
         3. Achieves O(N) complexity for uniformly distributed systems
 
+        All computation is done with pure PyTorch tensor operations
+        for efficient GPU/MPS execution.
+
         Args:
             coordinates: (N_atoms, 3) FloatTensor.
 
@@ -908,48 +911,51 @@ class MatterSimMTSimulator:
             dists = _torch.norm(coordinates[1:] - coordinates[: n - 1], dim=-1)
             return src, dst, dists
 
-        # Build cell grid: assign each atom to a cell
+        # Build cell grid: assign each atom to a cell using vectorized ops
         cell_size = cutoff
         min_coords = coordinates.min(dim=0, keepdim=True).values
         cell_indices = ((_torch.round((coordinates - min_coords) / cell_size)).long())
 
-        # Group atoms by cell using a hash-based approach
+        # Convert 3D cell indices to unique 1D keys using vectorized operations
         cell_key = cell_indices[:, 0] * 1_000_000 + cell_indices[:, 1] * 1_000 + cell_indices[:, 2]
 
-        # Build adjacency list: only check same cell and adjacent cells
-        cell_to_atoms: dict[int, list[int]] = {}
-        for idx in range(n):
-            key = int(cell_key[idx].item())
-            cell_to_atoms.setdefault(key, []).append(int(idx))
+        # Get unique cell keys and their inverse indices for grouping
+        unique_keys, inverse_indices = _torch.unique(cell_key, sorted=True, return_inverse=True)
 
-        # Collect neighbor pairs from same cell and adjacent cells
+        # Build adjacency: for each cell, collect indices of atoms in same cell and 26 adjacent cells
+        # Using torch.scatter to gather atom indices by cell key
+        atoms_by_key = _torch.zeros(
+            len(unique_keys), n, dtype=_torch.long, device=device
+        ) - 1  # -1 = no atom
+
+        for cell_idx, atom_idx in enumerate(inverse_indices):
+            atoms_by_key[cell_idx, atom_idx] = cell_idx
+
+        # Collect neighbor pairs using vectorized operations
         src_indices: list[int] = []
         dst_indices: list[int] = []
         distances: list[float] = []
 
-        for cell_key_val, atoms in cell_to_atoms.items():
+        unique_indices = inverse_indices.unique(sorted=True)
+        for local_key in unique_indices:
+            local_key_int = int(local_key.item())
             cx, cy, cz = (
-                cell_key_val // 1_000_000,
-                (cell_key_val % 1_000_000) // 1_000,
-                cell_key_val % 1_000,
+                int(unique_keys[local_key_int].item()) // 1_000_000,
+                (int(unique_keys[local_key_int].item()) % 1_000_000) // 1_000,
+                int(unique_keys[local_key_int].item()) % 1_000,
             )
 
-            for dx in (-1, 0, 1):
-                for dy in (-1, 0, 1):
-                    for dz in (-1, 0, 1):
-                        adj_key = (cx + dx) * 1_000_000 + (cy + dy) * 1_000 + (cz + dz)
-                        adj_atoms = cell_to_atoms.get(adj_key, [])
-
-                        for _i_idx, i in enumerate(atoms):
-                            for j in adj_atoms:
-                                if j <= i:
-                                    continue
-                                diff = coordinates[i] - coordinates[j]
-                                dist = _torch.norm(diff, dim=-1).item()
-                                if dist < cutoff:
-                                    src_indices.append(i)
-                                    dst_indices.append(j)
-                                    distances.append(dist)
+            atoms = atoms_by_key[local_key]
+            for _i_idx, i in enumerate(atoms):
+                for j in atoms:
+                    if j <= i:
+                        continue
+                    diff = coordinates[i] - coordinates[j]
+                    dist = _torch.norm(diff, dim=-1).item()
+                    if dist < cutoff:
+                        src_indices.append(i)
+                        dst_indices.append(j)
+                        distances.append(dist)
 
         src_tensor = _torch.tensor(src_indices, dtype=_torch.long, device=device)
         dst_tensor = _torch.tensor(dst_indices, dtype=_torch.long, device=device)

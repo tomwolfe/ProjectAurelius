@@ -22,7 +22,6 @@ from aurelius.screening.tier1.loaders import (
 )
 from aurelius.screening.tier1.models import (
     MLXBackend,
-    NumpyBackend,
     PyTorchBackend,
     model_factory,
 )
@@ -41,7 +40,6 @@ __all__ = [
     "MLXNAFilter",
     "MLXBackend",
     "model_factory",
-    "NumpyBackend",
     "PyTorchBackend",
     "_generate_ecfp4_fingerprint",
     "convert_mlx_to_torch_weights",

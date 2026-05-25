@@ -1,8 +1,7 @@
 """Molecular descriptor utilities.
 
-Provides molecular descriptor generation from SMILES strings,
-with RDKit-based real descriptors and deterministic hash-based
-fallback when RDKit is unavailable.
+Provides molecular descriptor generation from SMILES strings.
+RDKit is strictly required; production use without RDKit is not supported.
 """
 
 from __future__ import annotations
@@ -22,37 +21,28 @@ except ImportError:
 import numpy as np
 
 
-def _generate_molecular_descriptors(smiles: str) -> dict[str, float]:
+def generate_molecular_descriptors(smiles: str) -> dict[str, float]:
     """Generate simple molecular descriptors from SMILES for Tier 0 prediction.
 
     Produces a minimal feature vector encoding structural properties
     relevant to SEI formation activation energies. When RDKit is
-    available, uses real descriptors; otherwise falls back to a
-    deterministic hash-based approximation.
+    available, uses real descriptors; raises RuntimeError when RDKit
+    is unavailable.
 
     Args:
         smiles: SMILES string of the molecule.
 
     Returns:
         Dictionary of descriptor name -> value.
-    """
-    if HAS_RDKIT:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is not None:
-            return {
-                "mw": float(Descriptors.MolWt(mol)),  # type: ignore[attr-defined, unused-ignore]
-                "logp": float(Descriptors.MolLogP(mol)),  # type: ignore[attr-defined, unused-ignore]
-                "hba": int(Descriptors.NumHAcceptors(mol)),  # type: ignore[attr-defined, unused-ignore]
-                "hbd": int(Descriptors.NumHDonors(mol)),  # type: ignore[attr-defined, unused-ignore]
-                "tpsa": float(Descriptors.TPSA(mol)),  # type: ignore[attr-defined, unused-ignore]
-                "rot_bonds": int(Descriptors.NumRotatableBonds(mol)),  # type: ignore[attr-defined, unused-ignore]
-                "aromatic_ratio": float(
-                    sum(1 for a in mol.GetAtoms() if a.GetIsAromatic()) / max(mol.GetNumAtoms(), 1)
-                ),  # type: ignore[no-untyped-call, misc, unused-ignore]
-                "heavy_atom_count": float(Descriptors.HeavyAtomCount(mol)),  # type: ignore[no-untyped-call, unused-ignore]
-            }
 
-    return _hash_descriptors(smiles)
+    Raises:
+        RuntimeError: When RDKit is unavailable.
+    """
+
+    raise RuntimeError(
+        "RDKit is required for molecular descriptor generation. "
+        "Install RDKit: pip install rdkit"
+    )
 
 
 def _hash_descriptors(smiles: str) -> dict[str, float]:

@@ -22,7 +22,7 @@ from aurelius.utils.dependencies import (
     report_status,
     routing_info,
 )
-from aurelius.utils.descriptors import _generate_molecular_descriptors, _hash_descriptors
+from aurelius.utils.descriptors import generate_molecular_descriptors
 
 __all__ = [
     "DependencyManager",
@@ -30,8 +30,7 @@ __all__ = [
     "HAS_RDKIT",
     "HAS_TORCH",
     "_deserialize_fp",
-    "_generate_molecular_descriptors",
-    "_hash_descriptors",
+    "generate_molecular_descriptors",
     "_is_valid_mol",
     "_mol_to_fp",
     "_safe_mol_from_smiles",

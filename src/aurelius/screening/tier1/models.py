@@ -35,7 +35,6 @@ __all__ = [
     "HUGGINGFACE_MODELS",
     "MLXBackend",
     "model_factory",
-    "NumpyBackend",
     "PyTorchBackend",
 ]
 
@@ -318,109 +317,29 @@ else:
         parameters: Any
         save_weights: Any
         load_weights: Any
-
-
-# ---------------------------------------------------------------------------
-# NumPy Backend
-# ---------------------------------------------------------------------------
-
-class NumpyBackend:
-    """NumPy-based MLP fallback when neither MLX nor PyTorch is available.
-
-    Produces deterministic results from ECFP4 fingerprints for
-    pipeline validation without requiring any ML framework.
-    """
-
-    def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-        self._init_weights()
-
-    def _init_weights(self) -> None:
-        """Xavier/Glorot initialization for stable training."""
-        scale1 = np.sqrt(2.0 / (self.input_dim + self.hidden_dim))
-        self.W1 = np.random.default_rng().standard_normal((self.input_dim, self.hidden_dim)) * scale1
-        self.b1 = np.zeros((self.hidden_dim,))
-
-        scale2 = np.sqrt(2.0 / (self.hidden_dim + 1))
-        self.W2 = np.random.default_rng().standard_normal((self.hidden_dim, 1)) * scale2
-        self.b2 = np.zeros((1,))
-
-    def __call__(self, x: Any) -> Any:
-        """Forward pass through the 2-layer MLP."""
-        h = x @ self.W1 + self.b1
-        h = np.maximum(h, 0.0)
-        out = h @ self.W2 + self.b2
-        return 1.0 / (1.0 + np.exp(-out))
-
-    def predict(self, x: Any) -> Any:
-        """Run inference and return viability score.
-
-            Args:
-                x: Input array (N, 2048).
-
-            Returns:
-                Predicted viability score (N, 1) or (N,).
-        """
-        return self(x)
-
-    def parameters(self) -> list[Any]:
-        return [self.W1, self.b1, self.W2, self.b2]
-
-    def save_weights(self, path: str) -> None:
-        """Save model weights to individual .npy files.
-
-        Args:
-            path: Directory path to save weights.
-        """
-        os.makedirs(path, exist_ok=True)
-        np.save(os.path.join(path, "W1.npy"), np.asarray(self.W1))
-        np.save(os.path.join(path, "b1.npy"), np.asarray(self.b1))
-        np.save(os.path.join(path, "W2.npy"), np.asarray(self.W2))
-        np.save(os.path.join(path, "b2.npy"), np.asarray(self.b2))
-        meta = {
-            "input_dim": self.input_dim,
-            "hidden_dim": self.hidden_dim,
-            "architecture": "MLP-2048-128-1",
-            "fp_type": "ECFP4_2048",
-        }
-        with open(os.path.join(path), "w") as f:
-            json.dump(meta, f, indent=2)
-
-    def load_weights(self, path: str) -> None:
-        """Load model weights from individual .npy files.
-
-        Args:
-            path: Directory path containing saved weights.
-
-        Raises:
-            FileNotFoundError: If weight files are not found.
-        """
-        W1 = np.load(os.path.join(path, "W1.npy"))
-        b1 = np.load(os.path.join(path, "b1.npy"))
-        W2 = np.load(os.path.join(path, "W2.npy"))
-        b2 = np.load(os.path.join(path, "b2.npy"))
-        self.W1 = W1
-        self.b1 = b1
-        self.W2 = W2
-        self.b2 = b2
-
-
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
+
 def model_factory() -> ModelBackend:
     """Return the appropriate model backend based on framework availability.
 
-    Priority: MLX > PyTorch > NumPy.
+    Priority: MLX > PyTorch.
 
     Returns:
         An instance of the selected backend.
+
+    Raises:
+        ImportError: When neither MLX nor PyTorch is available.
     """
     if HAS_MLX:
         return MLXBackend()
     elif HAS_TORCH:
         return PyTorchBackend()
     else:
-        return NumpyBackend()
+        raise ImportError(
+            "At least one ML framework is required (MLX or PyTorch). "
+            "Install MLX: pip install mlx\n"
+            "Install PyTorch: pip install torch"
+        )

@@ -31,7 +31,6 @@ from aurelius.screening.tier1.models import (
     HAS_RDKIT,
     HAS_TORCH,
     MLXBackend,
-    NumpyBackend,
     PyTorchBackend,
 )
 from aurelius.screening.tier1.training import (
@@ -40,7 +39,6 @@ from aurelius.screening.tier1.training import (
     train_on_esol,
 )
 from aurelius.types import MLXFilterResult
-from aurelius.utils.testing_mocks import _hash_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -150,10 +148,12 @@ class MLXNAFilter:
         """Train the model on real solubility or synthetic data."""
         if not self._use_mlx:
             if not HAS_TORCH:
-                print("[Aurelius v6.0 Tier1] WARNING: Both MLX and PyTorch unavailable. Using numpy-only fallback.")
-                self._model = NumpyBackend()
-                self._model_loaded = True
-                return
+                raise RuntimeError(
+                    "MLX and PyTorch are both unavailable. "
+                    "At least one ML framework is required for molecular screening. "
+                    "Install MLX: pip install mlx\n"
+                    "Install PyTorch: pip install torch"
+                )
 
             print("[Aurelius v6.0 Tier1] MLX unavailable, initializing PyTorch fallback filter...")
             self._model = PyTorchBackend()
@@ -201,13 +201,17 @@ class MLXNAFilter:
             self._train_default_model()
         else:
             if not HAS_TORCH:
-                print("[Aurelius v6.0 Tier1] MLX and PyTorch unavailable, using numpy fallback MLP")
-                self._model = NumpyBackend()
-            else:
-                print("[Aurelius v6.0 Tier1] MLX unavailable, using PyTorch fallback filter")
-                self._model = PyTorchBackend()
-                if os.path.isdir(model_path):
-                    self._model = load_pytorch_fallback_with_mlx_weights(self._model, model_path)
+                raise RuntimeError(
+                    "MLX and PyTorch are both unavailable. "
+                    "At least one ML framework is required for molecular screening. "
+                    "Install MLX: pip install mlx\n"
+                    "Install PyTorch: pip install torch"
+                )
+
+            print("[Aurelius v6.0 Tier1] MLX unavailable, using PyTorch fallback filter")
+            self._model = PyTorchBackend()
+            if os.path.isdir(model_path):
+                self._model = load_pytorch_fallback_with_mlx_weights(self._model, model_path)
         self._model_loaded = True
         print("[Aurelius v6.0 Tier1] Model ready")
 
@@ -230,9 +234,13 @@ class MLXNAFilter:
                 self._train_default_model()
             else:
                 if not HAS_TORCH:
-                    self._model = NumpyBackend()
-                else:
-                    self._model = PyTorchBackend()
+                    raise RuntimeError(
+                        "MLX and PyTorch are both unavailable. "
+                        "At least one ML framework is required for molecular screening. "
+                        "Install MLX: pip install mlx\n"
+                        "Install PyTorch: pip install torch"
+                    )
+                self._model = PyTorchBackend()
             self._model_loaded = True
 
         start = time.perf_counter()
@@ -315,35 +323,26 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
     """Generate a 2048-bit ECFP4 (Morgan radius=2) fingerprint from SMILES.
 
     Uses RDKit's GetMorganFingerprintAsBitVect for production-grade
-    fingerprints. Raises RuntimeError when RDKit is unavailable and
-    use_real_models=True, since hash-based fallbacks break chemical validity.
+    fingerprints. Raises RuntimeError when RDKit is unavailable.
 
     Args:
         smiles: SMILES string of the molecule.
         use_real_models: If True and RDKit is unavailable, raises
-            RuntimeError since hash fingerprints break chemical validity.
+            RuntimeError since hash-based fingerprints are not chemically valid.
 
     Returns:
         numpy float32 array of shape (2048,) with values 0.0 or 1.0.
 
     Raises:
-        RuntimeError: If use_real_models=True and RDKit is unavailable.
+        RuntimeError: If RDKit is unavailable.
     """
     if not HAS_RDKIT:
-        if use_real_models:
-            raise RuntimeError(
-                "[Aurelius v5.2 Tier1] RDKit is required when use_real_models=True. "
-                "Hash-based fingerprints are NOT chemically valid and cannot be used "
-                "for real screening. Install RDKit for chemically meaningful screening:\n"
-                "  pip install rdkit\n"
-                "Or run in demo mode: AureliusPipeline(config, use_real_models=False)"
-            )
-        # Demo mode: produce a deterministic but non-chemical fingerprint
-        logger.warning(
-            "RDKit unavailable. Using deterministic hash-based fingerprint. "
-            "This is NOT a real ECFP4 fingerprint.",
+        raise RuntimeError(
+            "RDKit is required for molecular fingerprint generation. "
+            "Install RDKit for chemically meaningful screening:\n"
+            "  pip install rdkit\n"
+            "Or run in demo mode with use_real_models=False."
         )
-        return _hash_fallback(smiles)
 
     from rdkit import Chem as _Chem
     from rdkit.Chem import AllChem as _AllChem

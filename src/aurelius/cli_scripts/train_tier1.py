@@ -31,7 +31,6 @@ from typing import Any
 import numpy as np
 
 from aurelius.utils.dependencies import HAS_DATASETS, HAS_MLX, HAS_RDKIT
-from aurelius.utils.testing_mocks import _hash_fallback
 
 
 def parse_args() -> argparse.Namespace:
@@ -108,8 +107,7 @@ Examples:
 def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray[Any, Any]:
     """Generate a 2048-bit ECFP4 (Morgan radius=2) fingerprint.
 
-    Uses RDKit if available, otherwise falls back to hash-based
-    deterministic fingerprint.
+    Uses RDKit. Raises RuntimeError when RDKit is unavailable.
 
     Args:
         smiles: SMILES string.
@@ -117,23 +115,32 @@ def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray[An
 
     Returns:
         numpy float32 array of shape (n_bits,).
-    """
-    if HAS_RDKIT:
-        from rdkit import Chem
-        from rdkit.Chem import AllChem
 
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return _hash_fallback(smiles, n_bits)
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=n_bits)
-        bit_list = fp.ToList()
-        arr = np.array(bit_list, dtype=np.float32)
-        if len(arr) < n_bits:
-            padded = np.zeros(n_bits, dtype=np.float32)
-            padded[: len(arr)] = arr
-            return padded
-        return arr[:n_bits]
-    return _hash_fallback(smiles, n_bits)
+    Raises:
+        RuntimeError: When RDKit is unavailable.
+    """
+    if not HAS_RDKIT:
+        raise RuntimeError(
+            "RDKit is required for molecular fingerprint generation. "
+            "Install RDKit: pip install rdkit"
+        )
+
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise RuntimeError(
+            f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
+        )
+    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=n_bits)
+    bit_list = fp.ToList()
+    arr = np.array(bit_list, dtype=np.float32)
+    if len(arr) < n_bits:
+        padded = np.zeros(n_bits, dtype=np.float32)
+        padded[: len(arr)] = arr
+        return padded
+    return arr[:n_bits]
 
 
 

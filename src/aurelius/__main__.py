@@ -79,7 +79,6 @@ def doctor(verbose: bool) -> None:
     - CI pipelines to verify the fallback-only environment
     - Quick system readiness assessment
     """
-    from aurelius.config import validate_environment
     from aurelius.utils.dependencies import (
         HAS_MLX,
         HAS_RDKIT,
@@ -144,7 +143,7 @@ def doctor(verbose: bool) -> None:
     if HAS_RDKIT:
         click.echo("  RDKit:    Available")
     else:
-        click.echo("  RDKit:    Not installed (hash fallback only)")
+        click.echo("  RDKit:    Not installed (real model screening required)")
 
     # HuggingFace
     if deps.is_hf_hub_available():
@@ -154,20 +153,21 @@ def doctor(verbose: bool) -> None:
 
     click.echo("")
 
-    # Environment validation
-    config = get_config()
-    env_result = validate_environment(config, strict=True)
+    # Summary
+    click.echo("[Summary]")
+    issues = []
+    if not HAS_MLX:
+        issues.append("MLX (Apple Silicon optimization)")
+    if not HAS_TORCH:
+        issues.append("PyTorch (Tier 2 physics)")
+    if not HAS_RDKIT:
+        issues.append("RDKit (real model screening)")
 
-    if env_result["mismatches"]:
-        click.echo("[Environment Mismatches]")
-        for m in env_result["mismatches"]:
-            click.echo(f"  {m['env_var']}: expected={m['expected']!r}, actual={m['actual']!r}")
-    elif env_result["missing"]:
-        click.echo("[Missing Environment Variables]")
-        for var in env_result["missing"]:
-            click.echo(f"  {var} (will be set automatically)")
+    if issues:
+        click.echo(f"  WARNING: Missing {len(issues)} framework(s): {', '.join(issues)}")
+        click.echo("  Pipeline will use fallback paths. Some features may be degraded.")
     else:
-        click.echo("[Environment] All variables match config defaults.")
+        click.echo("  All core frameworks available. System ready for full pipeline.")
 
     click.echo("")
 
