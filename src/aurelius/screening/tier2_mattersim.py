@@ -409,6 +409,106 @@ class MatterSimMTSimulator:
             n_scan_points=n_scan_points,
         )
 
+    def _compute_lj_sparse(
+        self,
+        atomic_numbers: _torch.Tensor,
+        src_indices: _torch.Tensor,
+        dst_indices: _torch.Tensor,
+        distances: _torch.Tensor,
+    ) -> _torch.Tensor:
+        """Compute Lennard-Jones potential using sparse neighbor list.
+
+        Uses OPLS-AA / GAFF parameters from force field JSON.
+        Only evaluates pairs in the neighbor list.
+
+        Args:
+            atomic_numbers: (N,) LongTensor.
+            src_indices: Source indices for neighbour pairs.
+            dst_indices: Destination indices for neighbour pairs.
+            distances: Pairwise distances for neighbour pairs.
+
+        Returns:
+            Scalar LJ energy tensor.
+        """
+        n = len(src_indices)
+        eps_tensor = _torch.zeros(n, device=atomic_numbers.device)
+        sig_tensor = _torch.zeros(n, device=atomic_numbers.device)
+
+        for (zi, zj), (eps, sig) in self._LJ_PARAMS.items():
+            for i in range(n):
+                if src_indices[i] == zi:
+                    eps_tensor[i] = eps
+                    sig_tensor[i] = sig
+
+        # Default parameters for unknown pairs
+        for i in range(n):
+            if eps_tensor[i] == 0:
+                eps_tensor[i] = self._default_eps
+            if sig_tensor[i] == 0:
+                sig_tensor[i] = self._default_sig
+
+        # Shifted LJ potential
+        r_soft = _torch.sqrt(distances * distances + sig_tensor**2)
+        sig_over_r = sig_tensor / r_soft
+        sig_over_r6 = sig_over_r**6
+        sig_over_r12 = sig_over_r6**2
+
+        lj_per_pair = 4.0 * eps_tensor * (sig_over_r12 - sig_over_r6)
+
+        # Shift to zero at cutoff
+        r_cutoff_soft = _torch.sqrt(distances * distances + sig_tensor**2)
+        sig_over_r_cutoff = sig_tensor / r_cutoff_soft
+        sig_over_r6_cutoff = sig_over_r_cutoff**6
+        lj_cutoff = 4.0 * eps_tensor * (sig_over_r6_cutoff - sig_over_r6)
+
+        lj_per_pair = lj_per_pair - lj_cutoff
+
+        return lj_per_pair.sum()
+
+    def _compute_coulomb_sparse(
+        self,
+        atomic_numbers: _torch.Tensor,
+        src_indices: _torch.Tensor,
+        dst_indices: _torch.Tensor,
+        distances: _torch.Tensor,
+    ) -> _torch.Tensor:
+        """Compute Coulombic potential using sparse neighbor list.
+
+        Uses OPLS-AA / GAFF partial charges, or dynamically predicted
+        charges when polarization is enabled (GNN-ChargeEq model).
+
+        Args:
+            atomic_numbers: (N,) LongTensor.
+            src_indices: Source indices for neighbor pairs.
+            dst_indices: Destination indices for neighbor pairs.
+            distances: Pairwise distances for neighbor pairs.
+
+        Returns:
+            Scalar Coulomb energy tensor.
+        """
+        coul_total = _torch.tensor(0.0, device=atomic_numbers.device)
+
+        if self._use_polarization:
+            charges = self._predict_charges_atomic(atomic_numbers)
+        else:
+            charges = _torch.zeros(len(src_indices), device=atomic_numbers.device)
+            for z, q in self._CHARGES.items():
+                for i in range(len(src_indices)):
+                    if src_indices[i] == z:
+                        charges[i] = q
+
+        q_i = charges * _torch.ones(len(src_indices), device=atomic_numbers.device)
+        q_j = _torch.zeros(len(dst_indices), device=atomic_numbers.device)
+        for i in range(len(dst_indices)):
+            q_j[i] = charges[dst_indices[i]] if dst_indices[i] < len(charges) else 0.0
+
+        charge_mask = (q_i * q_j) != 0.0
+
+        coulomb_per_pair = COULOMB_EV_A * (q_i * q_j) / _torch.sqrt(distances * distances + 1.0)
+        coul_total += _torch.sum(coulomb_per_pair * charge_mask.float())
+
+        return coul_total
+
     def _compute_lj_potential(self, atomic_numbers: _torch.Tensor, distances: _torch.Tensor) -> _torch.Tensor:
         """Compute Lennard-Jones potential between all atom pairs.
 
@@ -826,7 +926,7 @@ class MatterSimMTSimulator:
 
         # Build cell grid: assign each atom to a cell
         cell_size = cutoff
-        min_coords = coordinates.min(dim=0, keepdim=True()).values
+        min_coords = coordinates.min(dim=0, keepdim=True).values
         cell_indices = ((_torch.round((coordinates - min_coords) / cell_size)).long())
 
         # Group atoms by cell using a hash-based approach

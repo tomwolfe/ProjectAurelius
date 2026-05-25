@@ -66,6 +66,7 @@ def _generate_synthetic_training_data(
     X_train = np.zeros((len(training_data), 2048), dtype=np.float32)
     y_train = np.zeros(len(training_data), dtype=np.float32)
 
+    smiles_list = []
     for i, (smiles, label) in enumerate(training_data):
         fp = generate_fp(smiles, use_real_models=use_real_models)
         X_train[i] = fp
@@ -152,10 +153,7 @@ def train_on_esol(
     optimizer = optimizers.SGD(learning_rate=lr)
 
     def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:
-        h = model.linear1(x)
-        h = mx.maximum(h, 0.0)
-        out = model.linear2(h)
-        pred = mx.sigmoid(out)
+        pred = model(x)
         pred = mx.squeeze(pred, axis=-1)
         return mx.mean((pred - target) ** 2)
 
@@ -185,10 +183,7 @@ def train_on_esol(
 
         if (epoch + 1) % 20 == 0:
             train_loss = float(_loss_fn(X_train_split, y_train_split))
-            preds = model.linear1(X_val_split)
-            preds = mx.maximum(preds, 0.0)
-            preds = mx.sigmoid(model.linear2(preds))
-            preds = mx.squeeze(preds, axis=-1)
+            preds = mx.squeeze(model(X_val_split), axis=-1)
             accuracy = float(mx.mean(preds > 0.5 == y_val_split))  # type: ignore[arg-type, unused-ignore]
             print(
                 f"[Aurelius v5.2 Tier1] Epoch {epoch + 1}/{epochs}: "
@@ -199,7 +194,7 @@ def train_on_esol(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            best_params = [np.array(p) for p in model.trainable_parameters()]
+            best_params = [p.copy() for p in model.trainable_parameters()]
         else:
             patience_counter += 1
             if patience_counter >= patience:
