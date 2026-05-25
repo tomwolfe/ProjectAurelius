@@ -11,9 +11,11 @@ References:
 
 from __future__ import annotations
 
-import torch  # noqa: F401
-
 from aurelius.constants import COULOMB_EV_A
+from aurelius.utils.dependencies import HAS_TORCH
+
+if HAS_TORCH:
+    import torch  # noqa: F401
 
 
 class MatterSimLJPotentials:
