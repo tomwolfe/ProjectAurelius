@@ -90,7 +90,7 @@ if HAS_MLX:
     import mlx.core as _mlx_core
     import mlx.nn as _mlx_nn
 
-    class MLXBackend(_mlx_nn.Module):  # type: ignore[misc]
+    class MLXBackend(_mlx_nn.Module):  # type: ignore[name-defined, misc]
         """MLX-compatible 2-layer MLP for molecular viability scoring.
 
         Input: 2048-bit ECFP4 fingerprint (float array).
@@ -110,9 +110,9 @@ if HAS_MLX:
             self.input_dim = input_dim
             self.hidden_dim = hidden_dim
 
-            self.linear1 = _mlx_nn.Linear(input_dim, hidden_dim)
-            self.relu = _mlx_nn.ReLU()
-            self.linear2 = _mlx_nn.Linear(hidden_dim, 1)
+            self.linear1 = _mlx_nn.Linear(input_dim, hidden_dim)  # type: ignore[attr-defined]
+            self.relu = _mlx_nn.ReLU()  # type: ignore[attr-defined]
+            self.linear2 = _mlx_nn.Linear(hidden_dim, 1)  # type: ignore[attr-defined]
 
             self._init_weights()
 
@@ -139,7 +139,7 @@ if HAS_MLX:
             h = self.linear1(x)
             h = self.relu(h)
             out = self.linear2(h)
-            return _mlx_nn.sigmoid(out)
+            return _mlx_nn.sigmoid(out)  # type: ignore[attr-defined]
 
         def predict(self, x: Any) -> Any:
             """Run inference and return viability score.

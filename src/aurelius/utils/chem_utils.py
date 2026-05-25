@@ -13,21 +13,29 @@ from __future__ import annotations
 
 from typing import Any
 
+from aurelius.utils.dependencies import HAS_RDKIT
+
 # ---------------------------------------------------------------------------
 # RDKit import guard
 # ---------------------------------------------------------------------------
-from rdkit import Chem as _Chem  # type: ignore[import-not-found, unused-ignore]
-from rdkit.Chem import Descriptors as _Descriptors  # type: ignore[import-not-found, unused-ignore]
-from rdkit.DataStructs import (
-    BitVectToText,  # type: ignore[import-not-found, unused-ignore]
-    CreateFromBitString,  # type: ignore[import-not-found, unused-ignore]
-    ExplicitBitVect,  # type: ignore[import-not-found, unused-ignore]
-)
-from rdkit.DataStructs import (
-    FingerprintSimilarity as _FingerprintSimilarity,  # type: ignore[import-not-found, unused-ignore]
-)
-
-from aurelius.utils.dependencies import HAS_RDKIT
+if HAS_RDKIT:
+    from rdkit import Chem as _Chem  # type: ignore[import-not-found, unused-ignore]
+    from rdkit.Chem import Descriptors as _Descriptors  # type: ignore[import-not-found, unused-ignore]
+    from rdkit.DataStructs import (
+        BitVectToText,  # type: ignore[import-not-found, unused-ignore]
+        CreateFromBitString,  # type: ignore[import-not-found, unused-ignore]
+        ExplicitBitVect,  # type: ignore[import-not-found, unused-ignore]
+    )
+    from rdkit.DataStructs import (
+        FingerprintSimilarity as _FingerprintSimilarity,  # type: ignore[import-not-found, unused-ignore]
+    )
+else:
+    _Chem = None  # type: ignore[assignment]
+    _Descriptors = None  # type: ignore[assignment]
+    BitVectToText = None  # type: ignore[assignment, misc]
+    CreateFromBitString = None  # type: ignore[assignment, misc]
+    ExplicitBitVect = None  # type: ignore[assignment, misc]
+    _FingerprintSimilarity = None  # type: ignore[assignment, misc]
 
 
 def _safe_mol_from_smiles(smiles: str) -> Any | None:

@@ -155,7 +155,7 @@ def train_on_esol(
     # Use MLX optimizers for clean training loop
     optimizer = optimizers.SGD(learning_rate=lr)
 
-    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:
+    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:  # type: ignore[name-defined]
         pred = model(x)
         pred = mx.squeeze(pred, axis=-1)
         return mx.mean((pred - target) ** 2)
@@ -176,7 +176,7 @@ def train_on_esol(
             y_batch = y_train_split[start:end]
 
             # Compute gradients using mlx.nn.value_and_grad
-            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)
+            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
 
             # Apply optimizer step
             optimizer.update(model, grads)
@@ -274,7 +274,7 @@ def train_on_qm9(
     # Use MLX optimizers for clean training loop
     optimizer = optimizers.SGD(learning_rate=lr)
 
-    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:
+    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:  # type: ignore[name-defined]
         h = model.linear1(x)
         h = mx.maximum(h, 0.0)
         out = model.linear2(h)
@@ -301,7 +301,7 @@ def train_on_qm9(
             y_batch = y_shuffled[start:end]
 
             # Compute gradients using mlx.nn.value_and_grad
-            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)
+            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
 
             # Apply optimizer step
             optimizer.update(model, grads)
@@ -354,7 +354,7 @@ def _train_synthetic_mlx(
     # Use MLX optimizers for clean training loop
     optimizer = optimizers.SGD(learning_rate=0.01)
 
-    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:
+    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:  # type: ignore[name-defined]
         h = model.linear1(x)
         h = mx.maximum(h, 0.0)
         out = model.linear2(h)
@@ -379,7 +379,7 @@ def _train_synthetic_mlx(
             y_batch = y_shuffled[start:end]
 
             # Compute gradients using mlx.nn.value_and_grad
-            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)
+            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
 
             # Apply optimizer step
             optimizer.update(model, grads)

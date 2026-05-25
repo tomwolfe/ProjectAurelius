@@ -285,7 +285,7 @@ class MatterSimMTSimulator:
                 AllChem.EmbedMolecule(mol, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
                 AllChem.MMFFOptimizeMolecule(mol)  # type: ignore[attr-defined, unused-ignore]
 
-                for atom in mol.GetAtoms():
+                for atom in mol.GetAtoms():  # type: ignore[no-untyped-call]
                     atomic_numbers_list.append(atom.GetAtomicNum())
                 conf = mol.GetConformer()
                 for atom_idx in range(mol.GetNumAtoms()):
@@ -612,7 +612,7 @@ class MatterSimMTSimulator:
         try:
             with _torch.no_grad():
                 charges = self._compiled_model.predict_charges(atomic_numbers)
-            return charges
+            return charges  # type: ignore[no-any-return]
         except Exception:
             # Fallback to static charges on failure
             device = atomic_numbers.device
@@ -959,6 +959,6 @@ class MatterSimMTSimulator:
 
         src_tensor = _torch.tensor(src_indices, dtype=_torch.long, device=device)
         dst_tensor = _torch.tensor(dst_indices, dtype=_torch.long, device=device)
-        dist_tensor = _torch.stack(distances) if distances else _torch.empty(0, dtype=_torch.float32, device=device)
+        dist_tensor = _torch.stack(distances) if distances else _torch.empty(0, dtype=_torch.float32, device=device)  # type: ignore[arg-type]
 
         return src_tensor, dst_tensor, dist_tensor

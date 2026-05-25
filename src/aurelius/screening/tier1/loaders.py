@@ -146,7 +146,7 @@ def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, Any]:
                 "Run `aurelius train --task tier1` to train properly."
             )
             return {}
-        torch_weights[name] = _torch.from_numpy(arr.astype(np.float32))
+        torch_weights[name] = _torch.from_numpy(arr.astype(np.float32))  # type: ignore[union-attr]
 
     return torch_weights
 

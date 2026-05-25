@@ -60,7 +60,7 @@ _TORCH_DLPACK_UNSUPPORTED_MSG = (
 )
 
 
-def bridge_mlx_to_pytorch(mlx_array: _mx.array) -> _torch.Tensor:
+def bridge_mlx_to_pytorch(mlx_array: Any) -> Any:
     """Bridge MLX array memory to PyTorch via DLPack.
 
     Uses DLpack to export the MLX array memory view into a DLPack
@@ -96,7 +96,7 @@ def bridge_mlx_to_pytorch(mlx_array: _mx.array) -> _torch.Tensor:
         raise AttributeError(_DLPACK_UNSUPPORTED_MSG) from err
 
     # Consume the capsule natively inside PyTorch
-    torch_tensor = _torch.from_dlpack(capsule)  # type: ignore[attr-defined, unused-ignore]
+    torch_tensor = _torch.from_dlpack(capsule)  # type: ignore[union-attr]
 
     # DLpack bridges MLX to PyTorch on CPU/Unified Memory.
     # Callers must explicitly call .to('mps') if Metal buffer allocation
@@ -104,7 +104,7 @@ def bridge_mlx_to_pytorch(mlx_array: _mx.array) -> _torch.Tensor:
     return torch_tensor  # type: ignore[no-any-return, unused-ignore]
 
 
-def bridge_pytorch_to_mlx(torch_tensor: _torch.Tensor) -> _mx.array:
+def bridge_pytorch_to_mlx(torch_tensor: Any) -> Any:
     """Bridge PyTorch tensor memory to MLX via DLPack.
 
     Uses DLpack to export the PyTorch tensor memory view into a
@@ -126,7 +126,7 @@ def bridge_pytorch_to_mlx(torch_tensor: _torch.Tensor) -> _mx.array:
 
     # Export the PyTorch tensor memory view into a DLPack capsule
     try:
-        capsule = _torch.utils.dlpack.to_dlpack(torch_tensor)  # type: ignore[attr-defined, unused-ignore]
+        capsule = _torch.utils.dlpack.to_dlpack(torch_tensor)  # type: ignore[union-attr]
     except AttributeError as err:
         raise AttributeError(_TORCH_DLPACK_UNSUPPORTED_MSG) from err
 
@@ -180,7 +180,7 @@ class CrossFrameworkBridge:
         """Return True if PyTorch is available on this platform."""
         return self._torch_available
 
-    def mlx_to_pytorch(self, mlx_array: _mx.array) -> _torch.Tensor:
+    def mlx_to_pytorch(self, mlx_array: Any) -> Any:
         """Bridge an MLX array to a PyTorch tensor on the same device.
 
         Raises:
@@ -191,7 +191,7 @@ class CrossFrameworkBridge:
             raise RuntimeError(_MLX_NOT_AVAILABLE_MSG)
         return bridge_mlx_to_pytorch(mlx_array)
 
-    def pytorch_to_mlx(self, torch_tensor: _torch.Tensor) -> _mx.array:
+    def pytorch_to_mlx(self, torch_tensor: Any) -> Any:
         """Bridge a PyTorch tensor to an MLX array.
 
         Raises:

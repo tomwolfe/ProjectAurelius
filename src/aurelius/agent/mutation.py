@@ -131,7 +131,7 @@ class MutationEngine:
         try:
             mol_h = Chem.AddHs(mol)
             c_atoms = [
-                atom.GetIdx() for atom in mol_h.GetAtoms() if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4
+                atom.GetIdx() for atom in mol_h.GetAtoms() if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4  # type: ignore[no-untyped-call]
             ]
             if not c_atoms:
                 return generated
@@ -169,7 +169,7 @@ class MutationEngine:
         try:
             mol_h = Chem.AddHs(mol)
             c_atoms = [
-                atom.GetIdx() for atom in mol_h.GetAtoms() if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4
+                atom.GetIdx() for atom in mol_h.GetAtoms() if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4  # type: ignore[no-untyped-call]
             ]
             if not c_atoms:
                 return generated

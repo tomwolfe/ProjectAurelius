@@ -133,7 +133,7 @@ def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray[An
         raise RuntimeError(
             f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
         )
-    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=n_bits)
+    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=n_bits)  # type: ignore[attr-defined]
     bit_list = fp.ToList()
     arr = np.array(bit_list, dtype=np.float32)
     if len(arr) < n_bits:
@@ -501,10 +501,10 @@ def train_mlx(
     import mlx.core as mx
     import mlx.nn as nn
 
-    model = nn.Sequential(
-        nn.Linear(2048, 128),
-        nn.ReLU(),
-        nn.Linear(128, 1),
+    model = nn.Sequential(  # type: ignore[attr-defined]
+        nn.Linear(2048, 128),  # type: ignore[attr-defined]
+        nn.ReLU(),  # type: ignore[attr-defined]
+        nn.Linear(128, 1),  # type: ignore[attr-defined]
     )
 
     def loss_fn(x: Any, y: Any) -> Any:
@@ -533,7 +533,7 @@ def train_mlx(
             x_batch = X_shuffled[start:end]
             y_batch = y_shuffled[start:end].reshape(-1, 1)
 
-            loss, grads = nn.value_and_grad(model, loss_fn)(x_batch, y_batch)
+            loss, grads = nn.value_and_grad(model, loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
 
             # Update model with gradients - nested structure: {'layers': [layer0, layer1, ...]}
             grad_layers = grads["layers"]
