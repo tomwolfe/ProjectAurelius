@@ -26,7 +26,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config = get_config()
-    pipeline = AureliusPipeline(config)
+    pipeline = AureliusPipeline(config, use_real_models=False)
     pipeline.initialize()
 
     results = pipeline.screen_molecule(
