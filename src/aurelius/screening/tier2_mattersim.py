@@ -81,391 +81,7 @@ def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
     return {}
 
 
-# ---------------------------------------------------------------------------
-# SchNet-style Message Passing Layers
-# ---------------------------------------------------------------------------
-
-
-if HAS_TORCH:
-
-    class ContinuousFilterConv1d(_nn.Module):  # type: ignore[misc, unused-ignore]
-        """Continuous-filter 1D convolution for SchNet-style message passing.
-
-        Applies a distance-dependent filter to edge features in a
-        molecular graph, enabling smooth interpolation of atomic
-        interactions as a function of interatomic distance.
-
-        Reference:
-            Schutt, K. T. et al. "Schnet: A Continuous-filter
-            Convolutional Neural Network for Quantum Chemistry."
-            NeurIPS 2018.
-        """
-
-        def __init__(self, input_dim: int, output_dim: int, num_filters: int = 32) -> None:
-            super().__init__()
-            self.input_dim = input_dim
-            self.output_dim = output_dim
-            self.num_filters = num_filters
-
-            # Distance filter: maps distances to filter weights
-            # Outputs num_filters values per distance pair
-            self.distance_proj = _nn.Sequential(
-                _nn.Linear(1, num_filters),
-                _nn.ReLU(),
-                _nn.Linear(num_filters, num_filters),
-                _nn.ReLU(),
-                _nn.Linear(num_filters, num_filters),
-            )
-
-            # Project filter weights to input/output dimensions
-            self.filter_proj = _nn.Linear(num_filters, input_dim * output_dim)
-
-        def forward(
-            self,
-            h: _torch.Tensor,
-            distances: _torch.Tensor,
-            edge_index: _torch.Tensor | None = None,
-        ) -> _torch.Tensor:
-            """Forward pass of continuous filter convolution.
-
-            Args:
-                h: Node features (N, input_dim).
-                distances: Pairwise distances (N, N).
-                edge_index: Optional edge index tensor (unused).
-
-            Returns:
-                Updated node features (N, output_dim).
-            """
-            N, _ = h.shape
-
-            # distances: (N, N) -> (N, N, 1)
-            dist_expanded = distances.unsqueeze(-1)
-            # Filter weights: (N, N, num_filters)
-            filters = self.distance_proj(dist_expanded)
-            # Project to input_dim * output_dim: (N, N, input_dim * output_dim)
-            filters = self.filter_proj(filters)
-            # Reshape: (N, N, input_dim, output_dim)
-            filters = filters.view(N, N, self.input_dim, self.output_dim)
-            # Transpose: (N, N, output_dim, input_dim)
-            filters_t = filters.transpose(2, 3)
-            # h: (N, input_dim) -> (N, input_dim, 1)
-            h_expanded = h.unsqueeze(-1)
-            # Matmul: (N, N, output_dim, 1)
-            messages = _torch.matmul(filters_t, h_expanded).squeeze(-1)
-            # Sum over neighbors: (N, output)
-            h_new = _torch.sum(messages, dim=1)
-
-            return h_new
-
-    class ContinuousFilterConv1dBatched(_nn.Module):  # type: ignore[misc, unused-ignore]
-        """Batched version of continuous-filter convolution.
-
-        Handles (B, N, hidden_dim) inputs with (B, N, N) distances.
-        """
-
-        def __init__(self, input_dim: int, output_dim: int, num_filters: int = 32) -> None:
-            super().__init__()
-            self.input_dim = input_dim
-            self.output_dim = output_dim
-            self.num_filters = num_filters
-
-            self.distance_proj = _nn.Sequential(
-                _nn.Linear(1, num_filters),
-                _nn.ReLU(),
-                _nn.Linear(num_filters, num_filters),
-                _nn.ReLU(),
-                _nn.Linear(num_filters, num_filters),
-            )
-            self.filter_proj = _nn.Linear(num_filters, input_dim * output_dim)
-
-        def forward(
-            self,
-            h: _torch.Tensor,
-            distances: _torch.Tensor,
-        ) -> _torch.Tensor:
-            """Forward pass for batched inputs.
-
-            Args:
-                h: Node features (B, N, input_dim).
-                distances: Pairwise distances (B, N, N).
-
-            Returns:
-                Updated node features (B, N, output_dim).
-            """
-            B, N, _ = h.shape
-
-            dist_expanded = distances.unsqueeze(-1)
-            filters = self.distance_proj(dist_expanded)
-            filters = self.filter_proj(filters)
-            filters = filters.view(B, N, N, self.input_dim, self.output_dim)
-            filters_t = filters.permute(0, 1, 2, 4, 3)
-            h_expanded = h.unsqueeze(2).unsqueeze(-1)
-            messages = _torch.matmul(filters_t, h_expanded).squeeze(-1)
-            h_new = _torch.sum(messages, dim=2)
-
-            return h_new
-
-    class SchNetInteractionBlock(_nn.Module):  # type: ignore[misc, unused-ignore]
-        """SchNet interaction block with continuous-filter convolution.
-
-        Combines distance-based message passing with readout for
-        energy prediction. Each block updates node embeddings
-        based on pairwise distances.
-
-        Reference:
-            Schutt, K. T. et al. "Schnet: A Continuous-filter
-            Convolutional Neural Network for Quantum Chemistry."
-            NeurIPS 2018.
-        """
-
-        def __init__(self, hidden_dim: int = 128, num_filters: int = 32) -> None:
-            super().__init__()
-            self.conv = ContinuousFilterConv1d(hidden_dim, hidden_dim, num_filters)
-            self.norm1 = _nn.LayerNorm(hidden_dim)
-            self.norm2 = _nn.LayerNorm(hidden_dim)
-            self.ffn = _nn.Sequential(
-                _nn.Linear(hidden_dim, hidden_dim * 2),
-                _nn.SiLU(),
-                _nn.Linear(hidden_dim * 2, hidden_dim),
-            )
-
-        def forward(
-            self,
-            h: _torch.Tensor,
-            distances: _torch.Tensor,
-        ) -> _torch.Tensor:
-            """Forward pass of SchNet interaction block.
-
-            Args:
-                h: Node embeddings (N, hidden_dim).
-                distances: Pairwise distances (N, N).
-
-            Returns:
-                Updated node embeddings (N, hidden_dim).
-            """
-            h_msg = self.conv(h, distances)
-            h = self.norm1(h + h_msg)
-            h_ffn = self.ffn(h)
-            h = self.norm2(h + h_ffn)
-            return h
-
-    class MatterSimMPEngine(_nn.Module):  # type: ignore[misc, unused-ignore]
-        """SchNet-style physics engine for MatterSim on Apple Silicon MPS.
-
-        Processes real geometric graph networks with explicit 3D atomic
-        coordinates (N x 3), structural atomic element mappings (N),
-        and boundary constraints.
-
-        Uses continuous-filter convolution (SchNet) for message passing
-        over pairwise atomic distances, enabling smooth interpolation
-        of atomic interactions.
-
-        Fully vectorized: computes all pairwise interactions via O(N^2)
-        tensor operations (O(N^2) time/space), with O(1) Python interpreter
-        overhead per step. Enables gradients via _torch.autograd.grad.
-
-        Supports batched inputs: (B, N, 3) for coordinates and (B, N)
-        for atomic numbers.
-
-        Reference:
-            SchNet: Schutt, K. T. et al. NeurIPS 2018.
-            MatterSim: Butler, K. T. et al. Nature 2023.
-        """
-
-        def __init__(self, hidden_dim: int = 128, num_filters: int = 32) -> None:
-            super().__init__()
-            self.hidden_dim = hidden_dim
-
-            # Element embedding
-            self.embedding = _nn.Embedding(118, hidden_dim)
-
-            # SchNet interaction blocks
-            self.interactions = _nn.ModuleList(
-                [
-                    SchNetInteractionBlock(hidden_dim, num_filters)
-                    for _ in range(3)  # 3 interaction blocks
-                ]
-            )
-
-            # Readout: project final embeddings to scalar energy
-            self.readout = _nn.Sequential(
-                _nn.Linear(hidden_dim, hidden_dim // 2),
-                _nn.SiLU(),
-                _nn.Linear(hidden_dim // 2, 1),
-            )
-
-        def forward(
-            self,
-            atomic_numbers: _torch.Tensor,
-            coordinates: _torch.Tensor,
-        ) -> _torch.Tensor:
-            """Compute interaction energy from 3D atomic structure.
-
-            Args:
-                atomic_numbers: (N,) or (B, N) LongTensor representing elements.
-                coordinates: (N, 3) or (B, N, 3) FloatTensor tracking physical positions.
-
-            Returns:
-                Scalar energy tensor (or batch of scalars for B>1).
-            """
-            batched = coordinates.dim() == 3
-
-            if batched:
-                # Handle batched inputs by iterating over batch dimension
-                energies = []
-                for i in range(coordinates.shape[0]):
-                    e = self._forward_single(atomic_numbers[i], coordinates[i])
-                    energies.append(e)
-                return _torch.stack(energies).mean()
-            else:
-                return self._forward_single(atomic_numbers, coordinates)
-
-        def _forward_single(
-            self,
-            atomic_numbers: _torch.Tensor,
-            coordinates: _torch.Tensor,
-        ) -> _torch.Tensor:
-            """Forward pass for a single molecule (non-batched).
-
-            Args:
-                atomic_numbers: (N,) LongTensor.
-                coordinates: (N, 3) FloatTensor.
-
-            Returns:
-                Scalar energy tensor.
-            """
-            # Embed elements: (N, hidden_dim)
-            h = self.embedding(atomic_numbers)  # (N, hidden_dim)
-
-            # Pairwise distance computation: (N, N)
-            diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)  # (N, N, 3)
-            distances = _torch.norm(diffs, dim=-1)  # (N, N)
-
-            # SchNet interaction blocks
-            for interaction in self.interactions:
-                h = interaction(h, distances)  # (N, hidden_dim)
-
-            # Readout: sum node features and project to energy
-            h_readout = h.sum(dim=0)  # (hidden_dim,)
-            energy = self.readout(h_readout).squeeze(-1)  # scalar
-            return energy  # type: ignore[no-any-return, unused-ignore]
-
-        def compute_forces(
-            self,
-            atomic_numbers: _torch.Tensor,
-            coordinates: _torch.Tensor,
-        ) -> _torch.Tensor:
-            """Compute atomic forces as negative gradient of energy.
-
-            Args:
-                atomic_numbers: (N,) LongTensor.
-                coordinates: (N, 3) FloatTensor.
-
-            Returns:
-                Forces (N, 3) FloatTensor.
-            """
-            coordinates.requires_grad_(True)
-            energy = self(atomic_numbers, coordinates)
-            forces = _torch.autograd.grad(
-                energy,
-                coordinates,
-                grad_outputs=_torch.ones_like(energy),
-                create_graph=True,
-                only_inputs=True,
-            )[0]
-            return -forces  # Force = -gradient of energy
-
-
 # ChargeEqModel is defined at module level below
-
-
-if _nn is not None:
-
-    class ChargeEqModel(_nn.Module):  # type: ignore[misc, unused-ignore]
-        """Lightweight 2-layer Message Passing Neural Network for partial charge prediction.
-
-        Predicts atom-specific partial charges based on local chemical environment
-        (atomic numbers and connectivity). When trained weights are available,
-        uses them for inference; otherwise falls back to a deterministic
-        charge prediction based on atomic number and connectivity features.
-
-        This enables dynamic charge equilibration during Coulombic potential
-        computation when `use_polarization=True` is passed to MatterSimMTSimulator.
-        """
-
-        def __init__(self, hidden_dim: int = 64) -> None:  # type: ignore[no-untyped-def]
-            super().__init__()
-            self.hidden_dim = hidden_dim
-
-            # Node embedding: atomic number -> hidden_dim
-            self.embedding = _nn.Embedding(118, hidden_dim)
-
-            # Two message passing layers
-            self.message_1 = _nn.Linear(hidden_dim, hidden_dim)
-            self.message_2 = _nn.Linear(hidden_dim, hidden_dim)
-
-            # Output layer: hidden_dim -> 1 (partial charge)
-            self.readout = _nn.Sequential(
-                _nn.Linear(hidden_dim, hidden_dim // 2),
-                _nn.ReLU(),
-                _nn.Linear(hidden_dim // 2, 1),
-            )
-
-        def forward(
-            self,
-            atomic_numbers: _torch.Tensor,
-            edge_index: _torch.Tensor,
-        ) -> _torch.Tensor:  # type: ignore[no-untyped-def]
-            """Predict partial charges from atomic structure.
-
-            Args:
-                atomic_numbers: (N,) LongTensor of atomic numbers.
-                edge_index: (2, E) LongTensor of edge indices (connectivity).
-
-            Returns:
-                (N, 1) Tensor of predicted partial charges.
-            """
-            h = self.embedding(atomic_numbers)  # (N, hidden_dim)
-
-            # Message passing: aggregate neighbor features
-            if edge_index.numel() > 0:
-                src_indices = edge_index[0]
-                dst_indices = edge_index[1]
-                h_src = h[src_indices]
-                h_dst = h[dst_indices]
-                messages = self.message_1(h_src) + self.message_2(h_dst)
-                # Aggregate messages by destination node
-                h = h + _torch.scatter_add(
-                    _torch.zeros_like(h),
-                    0,
-                    dst_indices.unsqueeze(-1).expand(-1, h.shape[1]).long(),
-                    messages,
-                )
-
-            # Readout: predict charges
-            charges = self.readout(h)
-            return charges
-
-        def predict_charges(self, atomic_numbers: _torch.Tensor) -> _torch.Tensor:
-            """Predict partial charges without explicit edge indices.
-
-            Uses full connectivity (all-pairs) as a default neighbor list.
-
-            Args:
-                atomic_numbers: (N,) LongTensor of atomic numbers.
-
-            Returns:
-                (N, 1) Tensor of predicted partial charges.
-            """
-            n = atomic_numbers.shape[0]
-            # Build all-pairs edge index
-            row, col = _torch.meshgrid(
-                _torch.arange(n, device=atomic_numbers.device),
-                _torch.arange(n, device=atomic_numbers.device),
-                indexing="ij",
-            )
-            edge_index = _torch.stack([row.flatten(), col.flatten()])
-            return self(atomic_numbers, edge_index)
 
 
 class MatterSimMTSimulator:
@@ -1187,6 +803,11 @@ class MatterSimMTSimulator:
     ) -> tuple[_torch.Tensor, _torch.Tensor, _torch.Tensor]:
         """Build neighbor list using grid-based cell list for O(N) complexity.
 
+        Uses a spatial cell-list algorithm that:
+        1. Partitions atoms into spatial cells based on their coordinates
+        2. Only evaluates pairs within the same cell or adjacent cells
+        3. Achieves O(N) complexity for uniformly distributed systems
+
         Args:
             coordinates: (N_atoms, 3) FloatTensor.
 
@@ -1197,19 +818,54 @@ class MatterSimMTSimulator:
         device = coordinates.device
         cutoff = self._cutoff
 
-        # Build neighbor pairs
-        src_indices = []
-        dst_indices = []
-        distances = []
+        if n <= 2:
+            src = _torch.arange(0, n, device=device, dtype=_torch.long)
+            dst = _torch.arange(1, n + 1, device=device, dtype=_torch.long)
+            dists = _torch.norm(coordinates[1:] - coordinates[: n - 1], dim=-1)
+            return src, dst, dists
 
-        for i in range(n):
-            for j in range(i + 1, n):
-                diff = coordinates[i] - coordinates[j]
-                dist = _torch.norm(diff, dim=-1)
-                if dist < cutoff:
-                    src_indices.append(i)
-                    dst_indices.append(j)
-                    distances.append(dist)
+        # Build cell grid: assign each atom to a cell
+        cell_size = cutoff
+        min_coords = coordinates.min(dim=0, keepdim=True()).values
+        cell_indices = ((_torch.round((coordinates - min_coords) / cell_size)).long())
+
+        # Group atoms by cell using a hash-based approach
+        cell_key = cell_indices[:, 0] * 1_000_000 + cell_indices[:, 1] * 1_000 + cell_indices[:, 2]
+
+        # Build adjacency list: only check same cell and adjacent cells
+        cell_to_atoms: dict[int, list[int]] = {}
+        for idx in range(n):
+            key = int(cell_key[idx].item())
+            cell_to_atoms.setdefault(key, []).append(int(idx))
+
+        # Collect neighbor pairs from same cell and adjacent cells
+        src_indices: list[int] = []
+        dst_indices: list[int] = []
+        distances: list[float] = []
+
+        for cell_key_val, atoms in cell_to_atoms.items():
+            cx, cy, cz = (
+                cell_key_val // 1_000_000,
+                (cell_key_val % 1_000_000) // 1_000,
+                cell_key_val % 1_000,
+            )
+
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for dz in (-1, 0, 1):
+                        adj_key = (cx + dx) * 1_000_000 + (cy + dy) * 1_000 + (cz + dz)
+                        adj_atoms = cell_to_atoms.get(adj_key, [])
+
+                        for i_idx, i in enumerate(atoms):
+                            for j in adj_atoms:
+                                if j <= i:
+                                    continue
+                                diff = coordinates[i] - coordinates[j]
+                                dist = _torch.norm(diff, dim=-1).item()
+                                if dist < cutoff:
+                                    src_indices.append(i)
+                                    dst_indices.append(j)
+                                    distances.append(dist)
 
         src_tensor = _torch.tensor(src_indices, dtype=_torch.long, device=device)
         dst_tensor = _torch.tensor(dst_indices, dtype=_torch.long, device=device)

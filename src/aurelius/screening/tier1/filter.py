@@ -286,20 +286,23 @@ class MLXNAFilter:
 
     def _run_inference(self, fingerprint: np.ndarray[Any, Any], smiles: str) -> dict[str, Any]:
         """Run molecular viability inference via MLX, PyTorch, or numpy fallback."""
-        if self._use_mlx and self._model is not None and self._mx is not None:
+        if self._model is None:
+            raise RuntimeError("Model not loaded. Call _load_or_train_model() first.")
+
+        # Use unified predict() method across all backends
+        if self._use_mlx and self._mx is not None:
             fp_array = self._mx.array(fingerprint, dtype=self._mx.float32)
             if fp_array.ndim == 1:
                 fp_array = fp_array.reshape(1, -1)
-            logits = self._model(fp_array)
-            confidence = float(self._mx.squeeze(logits))
-        elif HAS_TORCH and isinstance(self._model, PyTorchBackend) and self._torch is not None:
+            output = self._model.predict(fp_array)
+            confidence = float(self._mx.squeeze(output))
+        elif self._torch is not None:
             fp_tensor = self._torch.from_numpy(fingerprint).float().unsqueeze(0)
             with self._torch.no_grad():
-                output = self._model.predict(fp_tensor)  # type: ignore[attr-defined]
+                output = self._model.predict(fp_tensor)
             confidence = float(output.squeeze().item())
         else:
-            assert self._model is not None
-            output = self._model(fingerprint)
+            output = self._model.predict(fingerprint)
             confidence = float(np.squeeze(output))
 
         confidence = float(np.clip(confidence, 0.0, 1.0))

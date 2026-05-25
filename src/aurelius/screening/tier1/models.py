@@ -68,6 +68,7 @@ class ModelBackend(Protocol):
     All backends must implement:
     - __call__: Forward pass returning a scalar or tensor
     - parameters: Return model parameters as a list of arrays/tensors
+    - predict: Prediction method for inference
     - save_weights: Save model weights to disk
     - load_weights: Load model weights from disk
     """
@@ -75,6 +76,8 @@ class ModelBackend(Protocol):
     def __call__(self, x: Any) -> Any: ...
 
     def parameters(self) -> list[Any]: ...
+
+    def predict(self, x: Any) -> Any: ...
 
     def save_weights(self, path: str) -> None: ...
 
@@ -89,7 +92,7 @@ if HAS_MLX:
     import mlx.core as _mlx_core
     import mlx.nn as _mlx_nn
 
-    class MLXBackend:
+    class MLXBackend(_mlx_nn.Module):
         """MLX-compatible 2-layer MLP for molecular viability scoring.
 
         Input: 2048-bit ECFP4 fingerprint (float array).
@@ -140,6 +143,17 @@ if HAS_MLX:
             out = self.linear2(h)
             return _mlx_nn.sigmoid(out)
 
+        def predict(self, x: Any) -> Any:
+            """Run inference and return viability score.
+
+            Args:
+                x: Input tensor/array (N, 2048).
+
+            Returns:
+                Predicted viability score (N, 1) or (N,).
+            """
+            return self(x)
+
         def parameters(self) -> list[Any]:
             return [self.linear1.weight, self.linear1.bias, self.linear2.weight, self.linear2.bias]
 
@@ -182,7 +196,7 @@ if HAS_MLX:
             self.linear2.bias = _mlx_core.array(b2)
 
 else:
-    class MLXBackend:  # type: ignore[no-redef]
+    class MLXBackend(_mlx_nn.Module):  # type: ignore[no-redef]
         """Placeholder when MLX is unavailable."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -255,6 +269,17 @@ if HAS_TORCH:
             h = self.relu(h)
             out = self.fc2(h)
             return _torch.sigmoid(out)
+
+        def predict(self, x: Any) -> Any:
+            """Run inference and return viability score.
+
+            Args:
+                x: Input tensor/array (N, 2048).
+
+            Returns:
+                Predicted viability score (N, 1) or (N,).
+            """
+            return self(x)
 
         def parameters(self) -> list[Any]:
             return [self.fc1.weight, self.fc1.bias, self.fc2.weight, self.fc2.bias]
@@ -337,6 +362,17 @@ class NumpyBackend:
         h = np.maximum(h, 0.0)
         out = h @ self.W2 + self.b2
         return 1.0 / (1.0 + np.exp(-out))
+
+    def predict(self, x: Any) -> Any:
+        """Run inference and return viability score.
+
+            Args:
+                x: Input array (N, 2048).
+
+            Returns:
+                Predicted viability score (N, 1) or (N,).
+        """
+        return self(x)
 
     def parameters(self) -> list[Any]:
         return [self.W1, self.b1, self.W2, self.b2]

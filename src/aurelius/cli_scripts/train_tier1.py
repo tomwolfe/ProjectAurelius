@@ -24,8 +24,11 @@ import json
 import os
 import sys
 import warnings
+from importlib import resources
 from pathlib import Path
 from typing import Any
+
+from aurelius.utils.dependencies import HAS_TORCH, HAS_RDKIT, HAS_DATASETS, HAS_MLX
 
 import numpy as np
 
@@ -114,7 +117,7 @@ def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray[An
     Returns:
         numpy float32 array of shape (n_bits,).
     """
-    try:
+    if HAS_RDKIT:
         from rdkit import Chem
         from rdkit.Chem import AllChem
 
@@ -129,8 +132,7 @@ def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray[An
             padded[: len(arr)] = arr
             return padded
         return arr[:n_bits]
-    except ImportError:
-        return _hash_fallback(smiles, n_bits)
+    return _hash_fallback(smiles, n_bits)
 
 
 def _hash_fallback(smiles: str, n_bits: int = 2048) -> np.ndarray[Any, Any]:
@@ -170,7 +172,13 @@ def load_esol_data(csv_path: str | None = None) -> tuple[np.ndarray[Any, Any], n
         print(f"[train_tier1] Loading ESOL from local CSV: {csv_path}")
         return _load_esol_from_csv(csv_path)
 
-    # Try HuggingFace datasets with verified repository IDs
+    if not HAS_DATASETS:
+        print("[train_tier1] 'datasets' library not available")
+        print("[train_tier1] Installing: pip install datasets")
+        print("[train_tier1] Alternatively, use --csv-path to load local CSV")
+        sys.exit(1)
+
+    # Load HuggingFace datasets
     try:
         from datasets import load_dataset
 
@@ -192,46 +200,6 @@ def load_esol_data(csv_path: str | None = None) -> tuple[np.ndarray[Any, Any], n
         y = np.clip((log_s - log_s_min) / (log_s_max - log_s_min), 0.0, 1.0)
 
         return X, y, smiles_list
-
-    except ImportError:
-        print("[train_tier1] 'datasets' library not available")
-        print("[train_tier1] Installing: pip install datasets")
-        print("[train_tier1] Alternatively, use --csv-path to load local CSV")
-        sys.exit(1)
-    except ValueError as e:
-        print(f"[train_tier1] Dataset loading failed (ValueError): {e}")
-        if csv_path:
-            return _load_esol_from_csv(csv_path)
-        sys.exit(1)
-    except ConnectionError as e:
-        print(f"[train_tier1] Network error loading from HuggingFace: {e}")
-        if csv_path:
-            return _load_esol_from_csv(csv_path)
-        warnings.warn(
-            "[train_tier1] FALLBACK: Using embedded 50-molecule ESOL subset due to network error. "
-            "This is a small curated subset from Delaney 2004, NOT the full 1112-molecule dataset. "
-            "Model quality will be significantly reduced. "
-            "Install 'datasets' and ensure network connectivity for full training, "
-            "or use --csv-path to provide a local CSV file.",
-            UserWarning,
-            stacklevel=2,
-        )
-        print(
-            "\n" + "=" * 60,
-            "[train_tier1] WARNING: Fallback to embedded ESOL subset",
-            "=" * 60,
-            file=sys.stderr,
-        )
-        print(
-            "[train_tier1] The full HuggingFace dataset could not be loaded.\n"
-            "[train_tier1] Training will proceed with only 50 embedded molecules\n"
-            "[train_tier1] from the original Delaney 2004 dataset.\n"
-            "[train_tier1] For full dataset training:\n"
-            "[train_tier1]   - Ensure network connectivity and install 'datasets'\n"
-            "[train_tier1]   - Or use --csv-path to provide a local CSV file\n",
-            file=sys.stderr,
-        )
-        return _load_esol_embedded()
     except Exception as e:
         print(f"[train_tier1] Unexpected error loading ESOL (type={type(e).__name__}): {e}")
         import traceback
@@ -307,76 +275,22 @@ def _load_esol_from_csv(csv_path: str) -> tuple[np.ndarray[Any, Any], np.ndarray
 
 
 def _load_esol_embedded() -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[str]]:
-    """Load a curated 50-molecule ESOL subset embedded in code.
+    """Load ESOL data from packaged CSV resource.
 
-    This is a scientifically valid fallback when HuggingFace download
-    or local CSV is unavailable. Based on the original Delaney 2004
-    dataset.
+    This is a fallback when HuggingFace download or local CSV is
+    unavailable. Uses the packaged esol_fallback.csv resource.
 
     Returns:
         Tuple of (fingerprints, logS_labels, smiles_list).
     """
-    # Curated 50 molecules from Delaney et al. J. Chem. Inf. Model. 2004
-    training_data: list[tuple[str, float]] = [
-        ("O=C(O)C1=CC=CC=C1", -2.93),
-        ("CC(C)CC(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -2.13),
-        ("O=C(O)C(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -1.24),
-        ("CC1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),
-        ("CC(C)CC(O)C(=O)O", -0.88),
-        ("CC(=O)OC1=CC=CC=CC1", -1.74),
-        ("O=C(O)C1=CC=C(O)C=C1", -2.94),
-        ("CC(=O)NC1=CC=CC=C1", -1.39),
-        ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),
-        ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C=C3", -4.08),
-        ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),
-        ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C=C5", -5.00),
-        ("CC(C)CC(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),
-        ("CCO", -0.31),
-        ("CC(C)O", -0.28),
-        ("COCCOC", -0.85),
-        ("CC(=O)OC", -0.12),
-        ("CN(C)C=O", -0.36),
-        ("CC(=O)O", -0.17),
-        ("CCC", -1.65),
-        ("C=CC", -1.25),
-        ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -3.50),
-        ("CCCCCCCCCCCCCCCCCC", -5.67),
-        ("C1CCCCC1C2CCCCC2C3CCCCC3", -4.88),
-        ("C1CCC2C3CCC4CC5CC6CC7CC7CC6CC5CC4C3CCC21", -6.50),
-        ("C1=CC2=C(C=C1)C3=CC=CC=C3C4=CC=CC=C4C2", -4.92),
-        ("CCCCCCCCCCCCCCCCCCO", -3.87),
-        ("C1CCCCC1C2CCCCC2C3CCCCC3C4CCCCC4", -5.75),
-        ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C", -4.54),
-        ("C1=CC2=C(C=C1)C3=CC=CC=C3C4=CC=CC=C24", -4.10),
-        ("C1=CC=C(C=C1)C2=C(C3=CC=CC=C3C4=CC=CC=C24)C", -4.40),
-        ("C1=CC=C(C=C1)C2=C(C3=CC=CC=C3C4=CC=CC=C24)C", -4.60),
-        ("C1=CC2=CC=CC=C2C3=CC=C(C=C1)C4=CC=CC=C43", -4.30),
-        ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C", -6.20),
-        ("C1=CC2=C(C=C1C(=O)C3=CC=CC=C3C4=CC=CC=C24)", -3.90),
-        ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -10.00),
-        ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C", -6.50),
-        ("C1=CC2=C(C=C1C(=O)O)C(=O)C3=CC=CC=C32", -2.80),
-        (
-            "C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C6)C8=CC=C(C=C8)C",
-            -6.80,
-        ),
-        ("c1ccccc1", 2.13),
-        ("CC(C)COC(C)C", -0.50),
-        ("CC(C)C(C)C(C)C(C)C", -2.87),
-        ("C1=CC=C(C=C1)C(=O)O", -2.93),
-        ("C1=CC(=C(C=C1)C(=O)O)C(=O)O", -2.75),
-        ("C1=CC(=C(C=C1)C(=O)O)Cl", -3.10),
-        ("C1=CC(=C(C=C1)C(=O)O)O", -3.00),
-        ("C1=CC(=C(C=C1)C(=O)OC)C(=O)O", -2.50),
-        ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -8.00),
-        ("C1CCCCC1", 1.69),
-        ("C1CCC(CC1)C2CCCCC2", -2.50),
-    ]
+    import csv
 
-    print(
-        f"\n[train_tier1] *** EMBEDDED SUBSET: Using {len(training_data)} molecules "
-        f"from Delaney 2004 (NOT full dataset) ***\n"
-    )
+    training_data_path = resources.files("aurelius.data").joinpath("esol_fallback.csv")
+    print(f"[train_tier1] *** LOADED FROM PACKAGED CSV: {training_data_path} ***")
+
+    with open(training_data_path) as f:
+        reader = csv.DictReader(f)
+        training_data = [(row["smiles"], float(row["logS"])) for row in reader]
 
     n_bits = 2048
     X = np.zeros((len(training_data), n_bits), dtype=np.float32)
@@ -414,33 +328,21 @@ def load_qm9_data() -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[st
         Properties of 134 Kilo Molecules." Sci. Data 2014, 1, 140035.
         DOI: 10.1038/sdata.2014.35
     """
+    if not HAS_DATASETS:
+        print("[train_tier1] 'datasets' library not available")
+        print("[train_tier1] Installing: pip install datasets")
+        sys.exit(1)
+
+    # Load HuggingFace datasets
     try:
         from datasets import load_dataset
 
         print("[train_tier1] Loading QM9 from HuggingFace Hub...")
         # Verified dataset: maastrichtuniversity/qm9
         ds = load_dataset("maastrichtuniversity/qm9", split="train")
-    except ImportError:
-        print("[train_tier1] 'datasets' library not available")
-        print("[train_tier1] Installing: pip install datasets")
-        sys.exit(1)
-    except ValueError as e:
-        print(f"[train_tier1] QM9 dataset error (ValueError): {e}")
-        print("[train_tier1] QM9 requires full HuggingFace download. Use --csv-path for local data.")
-        sys.exit(1)
-    except ConnectionError as e:
-        print(f"[train_tier1] Network error loading QM9: {e}")
-        print("[train_tier1] QM9 requires full HuggingFace download. Use --csv-path for local data.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"[train_tier1] Unexpected error loading QM9 (type={type(e).__name__}): {e}")
-        import traceback
-
-        traceback.print_exc()
-        sys.exit(1)
-
-    smiles_list = list(ds["smiles"])
-    u0_values = np.array(ds["U0"], dtype=np.float32)
+    except ImportError as e:
+        print("[train_tier1] Datasets library not available")
+        raise e
 
     # Filter valid molecules
     valid_mask = ~np.isnan(u0_values)
@@ -597,10 +499,7 @@ def train_mlx(
     Returns:
         Dictionary with trained weights and training history.
     """
-    try:
-        import mlx.core as mx
-        import mlx.nn as nn
-    except ImportError:
+    if not HAS_MLX:
         print("[train_tier1] MLX not available, falling back to numpy training")
         return train_numpy(X_train, y_train, X_val, y_val, epochs, lr, batch_size, seed)
 

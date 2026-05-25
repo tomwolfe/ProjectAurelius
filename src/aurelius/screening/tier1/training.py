@@ -12,35 +12,23 @@ References:
 
 from __future__ import annotations
 
+from importlib import resources
 from typing import Any
 
 import numpy as np
 
-from aurelius.screening.tier1.models import (
-    MLXBackend,
-    PyTorchBackend,
-)
 from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
-
-# Import fingerprint generation from filter module (circular import guard)
-# We'll import it lazily inside the functions to avoid circular deps.
 
 try:
     import mlx.core as mx
+    import mlx.nn as mlx_nn
+    import mlx.optimizers as optimizers
 
     HAS_MLX = True
 except ImportError:
     mx = None  # type: ignore[assignment, unused-ignore]
-
-try:
-    import torch
-    import torch.nn as torch_nn
-
-    HAS_TORCH = True
-except ImportError:
-    torch = None  # type: ignore[assignment, unused-ignore]
-    torch_nn = None  # type: ignore[assignment, unused-ignore]
-    HAS_TORCH = False
+    mlx_nn = None  # type: ignore[assignment, unused-ignore]
+    optimizers = None  # type: ignore[assignment, unused-ignore]
 
 
 def _get_fingerprint_fn() -> Any:
@@ -64,31 +52,19 @@ def _generate_synthetic_training_data(
     Returns:
         Tuple of (X_train, y_train, smiles_list).
     """
-    training_data: list[tuple[str, float]] = [
-        ("CCO", 1.0),
-        ("CC(=O)OC", 1.0),
-        ("CN(C)C=O", 1.0),
-        ("C1=CC=CC=C1", 1.0),
-        ("CC(=O)O", 1.0),
-        ("COCCOC", 1.0),
-        ("CCC", 1.0),
-        ("CC(C)O", 1.0),
-        ("C=CC", 1.0),
-        ("CC(=O)CC(=O)C", 1.0),
-        ("C1CCCCC1C2CCCCC2C3CCCCC3", 0.0),
-        ("C1CCC2C3CCC4CC5CC6CC7CCCCC7CC6CC5CC4C3CCC21", 0.0),
-        ("CCCCCCCCCCCCCCCCCC", 0.0),
-        ("C1=CC2=C(C=C1)C3=CC=CC=C3C4=CC=CC=C4C2", 0.0),
-        ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C", 0.0),
-        ("CCCCCCCCCCCCCCCCCCO", 0.0),
-        ("C1CCCCC1C2CCCCC2C3CCCCC3C4CCCCC4", 0.0),
-        ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C", 0.0),
-    ]
+    import csv
+
+    synthetic_data_path = resources.files("aurelius.data").joinpath("synthetic_training_data.csv")
+
+    training_data: list[tuple[str, float]] = []
+    with open(synthetic_data_path) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            training_data.append((row["smiles"], float(row["label"])))
 
     generate_fp = _get_fingerprint_fn()
     X_train = np.zeros((len(training_data), 2048), dtype=np.float32)
     y_train = np.zeros(len(training_data), dtype=np.float32)
-    smiles_list: list[str] = []
 
     for i, (smiles, label) in enumerate(training_data):
         fp = generate_fp(smiles, use_real_models=use_real_models)
@@ -138,66 +114,19 @@ def train_on_esol(
         from datasets import load_dataset
 
         _ds = load_dataset("deepchem/esol", split="train")
-    except ImportError:
-        training_data: list[tuple[str, float]] = [
-            ("O=C(O)C1=CC=CC=C1", -2.93),
-            ("CC(C)CC(C1=CC=CC=C1)(C2=CC=CC=C2)C3=CC=CC=C3", -0.73),
-            ("O=C(O)C(C1=CC=C(Cl)C=C1)C2=CC=C(Cl)C=C2", -1.24),
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)OC2=O", -1.58),
-            ("CC(C)CC(C)O", -0.88),
-            ("CC(=O)OC1=CC=CC=C1", -1.74),
-            ("O=C(O)C1=CC=C(O)C=C1", -2.94),
-            ("CC(=O)NC1=CC=CC=C1", -1.39),
-            ("CC(=O)NC1=CC=C(C=C1)OC", -1.42),
-            ("C1=CC2=C(C=C1)C3=CC=CC=C3C4=CC=CC=C4C2", -4.08),
-            ("C1=CC2=C(C=C1C(=O)O)C(=O)C3=CC=CC=C32", -2.80),
-            ("CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -10.00),
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C", -6.20),
-            ("C1=CC2=C(C=C1)C3=CC=CC=C3C4=CC=CC=C24", -4.10),
-            ("C1=CC=C(C=C1)C2=C(C3=CC=CC=C3C4=CC=CC=C24)C", -4.40),
-            ("C1=CC2=CC=CC=C2C3=CC=C(C=C1)C4=CC=CC=C43", -4.30),
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C", -6.20),
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C", -6.50),
-            (
-                "C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C8=CC=C(C=C8)C",
-                -6.80,
-            ),
-            ("CCCCCCCCCCCCCCCCCCO", -3.87),
-            ("C1CCCCC1C2CCCCC2C3CCCCC3C4CCCCC4", -5.75),
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C", -4.54),
-            ("C1=CC2=C(C=C1)C3=CC=CC=C3C4=CC=CC=C2", -4.92),
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C", -4.92),
-            ("C1=CC2=C(C=C1)C3=CC=CC=C3C4=CC=CC=C24", -4.10),
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C", -4.40),
-            ("C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C", -6.20),
-            (
-                "C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C8=CC=C(C=C8)C",
-                -6.50,
-            ),
-            (
-                "C1=CC=C(C=C1)C2=CC=C(C=C2)C3=CC=C(C=C3)C4=CC=C(C=C4)C5=CC=C(C=C5)C6=CC=C(C=C6)C7=CC=C(C=C7)C8=CC=C(C=C8)C9=CC=C(C=C9)C",
-                -6.80,
-            ),
-            ("CCCCCCCCCCCCCCCCCC", -5.67),
-            ("CCC", -1.65),
-            ("C=CC", -1.25),
-            ("CC(C)CC(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C(C)C", -3.50),
-            ("C1CCC2C3CCC4CC5CC6CC7CC7CC6CC5CC4C3CCC21", -6.50),
-            ("C1CCCCC1C2CCCCC2C3CCCCC3", -4.88),
-            ("CCO", -0.31),
-            ("CC(C)O", -0.28),
-            ("COCCOC", -0.85),
-            ("CC(=O)OC", -0.12),
-            ("CN(C)C=O", -0.36),
-            ("CC(=O)O", -0.17),
-            ("CCC", -1.65),
-            ("C=CC", -1.25),
-        ]
-        print("[tier1] 'datasets' library not available, using embedded ESOL subset")
-        print("[Aurelius v5.2 Tier1] Using curated ESOL subset (50 molecules from Delaney 2004)")
-        print("[Aurelius v5.2 Tier1] Note: Install 'datasets' for full ESOL dataset (1112 molecules)")
+        training_data = [(sm, float(v)) for sm, v in zip(_ds["smiles"], _ds["logS"])]
+    except Exception:
+        # Fallback to packaged CSV resource
+        training_data_path = resources.files("aurelius.data").joinpath("esol_fallback.csv")
+        print(f"[tier1] 'datasets' library not available, loading from packaged CSV: {training_data_path}")
+        print("[Aurelius v5.2 Tier1] Using packaged ESOL fallback data (50 molecules from Delaney 2004)")
 
-    # Generate fingerprints and labels
+        import csv
+
+        with open(training_data_path) as f:
+            reader = csv.DictReader(f)
+            training_data = [(row["smiles"], float(row["logS"])) for row in reader]
+
     X_train = np.zeros((len(training_data), 2048), dtype=np.float32)
     y_train = np.zeros(len(training_data), dtype=np.float32)
 
@@ -219,15 +148,13 @@ def train_on_esol(
     X_val_split = X_mx[perm[n_samples - n_val :]]
     y_val_split = y_mx[perm[n_samples - n_val :]]
 
-    # Prepare parameter list for optimization
-    params = [mx.array(p) for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]]
+    # Use MLX optimizers for clean training loop
+    optimizer = optimizers.SGD(learning_rate=lr)
 
-    # Loss function: mean squared error
-    def loss_fn(params: list[Any], x: mx.Array, target: mx.Array) -> mx.Array:
-        W1, b1, W2, b2 = params
-        h = mx.addmm(b1, x, W1, alpha=1.0, beta=1.0)
+    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:
+        h = model.linear1(x)
         h = mx.maximum(h, 0.0)
-        out = mx.addmm(b2, h, W2, alpha=1.0, beta=1.0)
+        out = model.linear2(h)
         pred = mx.sigmoid(out)
         pred = mx.squeeze(pred, axis=-1)
         return mx.mean((pred - target) ** 2)
@@ -246,32 +173,23 @@ def train_on_esol(
         for start in range(0, n_samples - n_val, batch_size):
             end = min(start + batch_size, n_samples - n_val)
             x_batch = X_shuffled[start:end]
-            y_batch = y_shuffled[start:end]
+            y_batch = y_train_split[start:end]
 
-            # Compute gradients using mlx.value_and_grad
-            loss, grads = mx.value_and_grad(loss_fn)(params, x_batch, y_batch)
+            # Compute gradients using mlx.nn.value_and_grad
+            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)
 
-            # Apply SGD update (manual weight updates)
-            model.linear1.weight = mx.array(params[0]) - lr * grads[0]
-            model.linear1.bias = mx.array(params[1]) - lr * grads[1]
-            model.linear2.weight = mx.array(params[2]) - lr * grads[2]
-            model.linear2.bias = mx.array(params[3]) - lr * grads[3]
+            # Apply optimizer step
+            optimizer.update(model, grads)
 
-            # Update params for next iteration
-            params = [
-                model.linear1.weight,
-                model.linear1.bias,
-                model.linear2.weight,
-                model.linear2.bias,
-            ]
-
-        val_loss = float(loss_fn(params, X_val_split, y_val_split))
+        val_loss = float(_loss_fn(X_val_split, y_val_split))
 
         if (epoch + 1) % 20 == 0:
-            train_loss = float(loss_fn(params, X_train_split, y_train_split))
-            preds = model(X_val_split)
-            preds_binary = mx.squeeze(preds) > 0.5
-            accuracy = float(mx.mean(preds_binary == y_val_split))  # type: ignore[arg-type, unused-ignore]
+            train_loss = float(_loss_fn(X_train_split, y_train_split))
+            preds = model.linear1(X_val_split)
+            preds = mx.maximum(preds, 0.0)
+            preds = mx.sigmoid(model.linear2(preds))
+            preds = mx.squeeze(preds, axis=-1)
+            accuracy = float(mx.mean(preds > 0.5 == y_val_split))  # type: ignore[arg-type, unused-ignore]
             print(
                 f"[Aurelius v5.2 Tier1] Epoch {epoch + 1}/{epochs}: "
                 f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, "
@@ -281,7 +199,7 @@ def train_on_esol(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            best_params = [np.array(p) for p in params]
+            best_params = [np.array(p) for p in model.trainable_parameters()]
         else:
             patience_counter += 1
             if patience_counter >= patience:
@@ -289,10 +207,9 @@ def train_on_esol(
                 break
 
     if best_params is not None:
-        model.linear1.weight = best_params[0]
-        model.linear1.bias = best_params[1]
-        model.linear2.weight = best_params[2]
-        model.linear2.bias = best_params[3]
+        # Apply best weights to model
+        for param, weight in zip(model.trainable_parameters(), best_params):
+            param[...] = weight
 
     return model
 
@@ -369,20 +286,23 @@ def train_on_qm9(
     X_mx = mx.array(X_train)
     y_mx = mx.array(y_train)
 
-    # Prepare parameter list for optimization
-    params = [mx.array(p) for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]]
+    # Use MLX optimizers for clean training loop
+    optimizer = optimizers.SGD(learning_rate=lr)
 
-    # Loss function: mean squared error
-    def loss_fn(params: list[Any], x: mx.Array, target: mx.Array) -> mx.Array:
-        W1, b1, W2, b2 = params
-        h = mx.addmm(b1, x, W1, alpha=1.0, beta=1.0)
+    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:
+        h = model.linear1(x)
         h = mx.maximum(h, 0.0)
-        out = mx.addmm(b2, h, W2, alpha=1.0, beta=1.0)
+        out = model.linear2(h)
         pred = mx.sigmoid(out)
         pred = mx.squeeze(pred, axis=-1)
         return mx.mean((pred - target) ** 2)
 
-    _loss_grad = mx.grad(loss_fn)
+    # Training loop with early stopping
+    best_val_loss = float("inf")
+    patience = 30
+    patience_counter = 0
+    best_params = None
+
     rng_state = mx.random.key(seed)
 
     for epoch in range(epochs):
@@ -395,23 +315,32 @@ def train_on_qm9(
             x_batch = X_shuffled[start:end]
             y_batch = y_shuffled[start:end]
 
-            grads = _loss_grad(params, x_batch, y_batch)
+            # Compute gradients using mlx.nn.value_and_grad
+            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)
 
-            model.linear1.weight = mx.array(params[0]) - lr * grads[0]
-            model.linear1.bias = mx.array(params[1]) - lr * grads[1]
-            model.linear2.weight = mx.array(params[2]) - lr * grads[2]
-            model.linear2.bias = mx.array(params[3]) - lr * grads[3]
+            # Apply optimizer step
+            optimizer.update(model, grads)
 
-            params = [
-                model.linear1.weight,
-                model.linear1.bias,
-                model.linear2.weight,
-                model.linear2.bias,
-            ]
+        val_loss = float(_loss_fn(X_mx, y_mx))
 
         if (epoch + 1) % 50 == 0:
-            current_loss = float(loss_fn(params, X_mx, y_mx))
+            current_loss = val_loss
             print(f"[Aurelius v5.2 Tier1] QM9 training epoch {epoch + 1}/{epochs}: loss={current_loss:.4f}")
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            best_params = [p.copy() for p in model.trainable_parameters()]
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f"[Aurelius v5.2 Tier1] Early stopping at epoch {epoch + 1} (best val_loss={best_val_loss:.4f})")
+                break
+
+    if best_params is not None:
+        # Apply best weights to model
+        for param, weight in zip(model.trainable_parameters(), best_params):
+            param[...] = weight
 
     return model
 
@@ -434,18 +363,17 @@ def _train_synthetic_mlx(
     n_samples = X_train.shape[0]
     _n_val = max(1, int(n_samples * 0.15))
 
-    # Prepare parameter list for optimization
-    params = [
-        mx.array(p) if isinstance(p, np.ndarray) else p
-        for p in [model.linear1.weight, model.linear1.bias, model.linear2.weight, model.linear2.bias]
-    ]
+    # Convert numpy arrays to MLX arrays for training
+    X_mx = mx.array(X_train)
+    y_mx = mx.array(y_train)
 
-    # Loss function: mean squared error
-    def loss_fn(params: list[Any], x: mx.Array, target: mx.Array) -> mx.Array:
-        W1, b1, W2, b2 = params
-        h = mx.addmm(b1, x, W1, alpha=1.0, beta=1.0)
+    # Use MLX optimizers for clean training loop
+    optimizer = optimizers.SGD(learning_rate=0.01)
+
+    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:
+        h = model.linear1(x)
         h = mx.maximum(h, 0.0)
-        out = mx.addmm(b2, h, W2, alpha=1.0, beta=1.0)
+        out = model.linear2(h)
         pred = mx.sigmoid(out)
         pred = mx.squeeze(pred, axis=-1)
         return mx.mean((pred - target) ** 2)
@@ -458,32 +386,21 @@ def _train_synthetic_mlx(
 
     for epoch in range(100):
         perm = mx.random.permutation(n_samples, key=mx.random.key(42))
-        X_shuffled = X_train[perm]
-        y_shuffled = y_train[perm]
+        X_shuffled = X_mx[perm]
+        y_shuffled = y_mx[perm]
 
         for start in range(0, n_samples, 16):
             end = min(start + 16, n_samples)
             x_batch = X_shuffled[start:end]
             y_batch = y_shuffled[start:end]
 
-            # Compute gradients using mlx.value_and_grad
-            loss, grads = mx.value_and_grad(loss_fn)(params, x_batch, y_batch)
+            # Compute gradients using mlx.nn.value_and_grad
+            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)
 
-            # Apply SGD update (manual weight updates)
-            model.linear1.weight = mx.array(params[0]) - 0.01 * grads[0]
-            model.linear1.bias = mx.array(params[1]) - 0.01 * grads[1]
-            model.linear2.weight = mx.array(params[2]) - 0.01 * grads[2]
-            model.linear2.bias = mx.array(params[3]) - 0.01 * grads[3]
+            # Apply optimizer step
+            optimizer.update(model, grads)
 
-            # Update params for next iteration
-            params = [
-                model.linear1.weight,
-                model.linear1.bias,
-                model.linear2.weight,
-                model.linear2.bias,
-            ]
-
-        val_loss = float(loss_fn(params, X_train, y_train))
+        val_loss = float(_loss_fn(X_mx, y_mx))
 
         if (epoch + 1) % 20 == 0:
             print(f"[Aurelius v6.0 Tier1] Synthetic epoch {epoch + 1}/100: loss={val_loss:.4f}")
@@ -491,7 +408,7 @@ def _train_synthetic_mlx(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            best_params = [np.array(p) for p in params]
+            best_params = [p.copy() for p in model.trainable_parameters()]
         else:
             patience_counter += 1
             if patience_counter >= patience:
@@ -499,10 +416,9 @@ def _train_synthetic_mlx(
                 break
 
     if best_params is not None:
-        model.linear1.weight = best_params[0]
-        model.linear1.bias = best_params[1]
-        model.linear2.weight = best_params[2]
-        model.linear2.bias = best_params[3]
+        # Apply best weights to model
+        for param, weight in zip(model.trainable_parameters(), best_params):
+            param[...] = weight
 
     return model
 
@@ -569,7 +485,7 @@ def _train_synthetic_pytorch() -> PyTorchBackend:
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}  # type: ignore[attr-defined]
+            best_params = [p.copy() for p in model.trainable_parameters()]
         else:
             patience_counter += 1
             if patience_counter >= patience:
