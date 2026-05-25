@@ -183,10 +183,10 @@ class MatterSimMTSimulator:
         Priority: CUDA > MPS (Apple Silicon) > CPU.
         Returns the device string for PyTorch tensor placement.
         """
-        if hasattr(_torch.backends, "cuda") and _torch.backends.cuda.is_built() and _torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
+        if _torch is not None and hasattr(_torch.backends, "cuda") and _torch.backends.cuda.is_built() and _torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
             return "cuda"
 
-        if hasattr(_torch.backends, "mps") and _torch.backends.mps.is_available():
+        if _torch is not None and hasattr(_torch.backends, "mps") and _torch.backends.mps.is_available():
             return "mps"
 
         return "cpu"

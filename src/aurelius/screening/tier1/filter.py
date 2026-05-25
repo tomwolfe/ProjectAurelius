@@ -218,7 +218,7 @@ class MLXNAFilter:
             na_utilization_pct=85.0,
         )
 
-    def load_model(self, model_path: str) -> None:
+    def load_model(self, model_path: str) -> MLXFilterResult | None:
         """Load ChemVLM-2 model from a saved path.
 
         In production, model_path points to a saved MLX model.
@@ -231,6 +231,7 @@ class MLXNAFilter:
             print(f"[Aurelius v6.0 Tier1] Loading model from {model_path}")
             self._model = MLXBackend()
             self._train_default_model()
+            return None
         else:
             if not HAS_TORCH:
                 return self._get_demo_result()
@@ -239,6 +240,7 @@ class MLXNAFilter:
                 self._model = load_pytorch_fallback_with_mlx_weights(self._model, model_path)
             self._model_loaded = True
             print("[Aurelius v6.0 Tier1] Model ready")
+            return None
 
     def screen_molecule(self, smiles: str) -> MLXFilterResult:
         """Screen a single molecule through the MLX-NA filter.
