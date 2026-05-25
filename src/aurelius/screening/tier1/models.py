@@ -23,11 +23,10 @@ from typing import Any, Protocol, runtime_checkable
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# Centralized dependency detection
+# Re-export for backward compatibility (modules that check these booleans)
 # ---------------------------------------------------------------------------
 from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 
-# Re-export for backward compatibility (modules that check these booleans)
 __all__ = [
     "DEFAULT_MODEL_DIR",
     "HAS_MLX",
@@ -213,17 +212,8 @@ else:
 # ---------------------------------------------------------------------------
 
 if HAS_TORCH:
-    _torch: Any = None
-    _torch_nn: Any = None
-    if HAS_TORCH:
-        try:
-            import torch  # type: ignore[import-not-found, unused-ignore]
-            import torch.nn as torch_nn  # type: ignore[import-not-found, unused-ignore]
-
-            _torch = torch
-            _torch_nn = torch_nn
-        except Exception:
-            pass
+    import torch as _torch  # type: ignore[import-not-found, unused-ignore]
+    import torch.nn as _torch_nn  # type: ignore[import-not-found, unused-ignore]
 
     class PyTorchBackend:
         """PyTorch-based MLP replicating the ChemVLM2MLP architecture.

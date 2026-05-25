@@ -12,7 +12,6 @@ from aurelius.screening.tier1.filter import (
     HAS_TORCH,
     MLXNAFilter,
     _generate_ecfp4_fingerprint,
-    _hash_fallback,
 )
 from aurelius.screening.tier1.loaders import (
     DEFAULT_MODEL_DIR,
@@ -45,7 +44,6 @@ __all__ = [
     "NumpyBackend",
     "PyTorchBackend",
     "_generate_ecfp4_fingerprint",
-    "_hash_fallback",
     "convert_mlx_to_torch_weights",
     "load_pytorch_fallback_with_mlx_weights",
     "train_on_esol",

@@ -31,6 +31,7 @@ from typing import Any
 import numpy as np
 
 from aurelius.utils.dependencies import HAS_DATASETS, HAS_MLX, HAS_RDKIT
+from aurelius.utils.testing_mocks import _hash_fallback
 
 
 def parse_args() -> argparse.Namespace:
@@ -134,16 +135,6 @@ def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray[An
         return arr[:n_bits]
     return _hash_fallback(smiles, n_bits)
 
-
-def _hash_fallback(smiles: str, n_bits: int = 2048) -> np.ndarray[Any, Any]:
-    """Deterministic hash-based fingerprint fallback."""
-    arr = np.zeros(n_bits, dtype=np.float32)
-    seed = hash(smiles) & 0xFFFFFFFF
-    rng = np.random.RandomState(seed)
-    n_bits_set = rng.randint(80, 200)
-    indices = rng.randint(0, n_bits, size=n_bits_set)
-    arr[indices] = 1.0
-    return arr
 
 
 def load_esol_data(csv_path: str | None = None) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[str]]:

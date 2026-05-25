@@ -24,17 +24,10 @@ import numpy as np
 
 from aurelius.utils.dependencies import HAS_TORCH
 
-try:
-    import torch
-    import torch.nn as nn
-
-    _HAS_TORCH = True
-except ImportError:
-    _HAS_TORCH = False
-    torch = None  # type: ignore[assignment, unused-ignore]
-    nn = None  # type: ignore[assignment, unused-ignore]
-
 if HAS_TORCH:
+    import torch  # type: ignore[import-not-found, unused-ignore]
+    import torch.nn as nn  # type: ignore[import-not-found, unused-ignore]
+
     from aurelius.screening.tier0.models import PyTorchBackend
 
 
@@ -202,22 +195,14 @@ def generate_synthetic_training_data(
 ) -> list[dict[str, Any]]:
     """Generate a deterministic synthetic training dataset.
 
-    Uses RDKit to compute molecular descriptors, then applies
-    Arrhenius-shifted activation energy models with Gaussian noise
-    (sigma=0.05 eV) to create training targets.
-
-    The targets use Arrhenius exponential scaling (k = k0 * exp(-Ea/(kB*T)))
-    instead of arbitrary sine/cosine transforms, ensuring the MPNN learns
-    physically-motivated non-linear relationships.
+    Uses trivial deterministic math (hash-based pseudo-random values)
+    to produce fake training targets.  No chemistry libraries are used
+    because the data is synthetic — real descriptors are not needed.
 
     .. warning::
         This is a synthetic placeholder dataset.  Production use
         should prioritize real QM9 LUMO data via :func:`load_qm9_lumo_data`
         or provide a --csv-path with real DFT/experimental targets.
-
-    .. warning::
-        This is a synthetic placeholder dataset.  Production use
-        requires fine-tuning on real DFT or experimental datasets.
 
     Args:
         n_samples: Number of samples to generate (default: 500).
@@ -226,79 +211,41 @@ def generate_synthetic_training_data(
 
     Returns:
         List of dictionaries with SMILES and activation energy targets.
-
-    Raises:
-        RuntimeError: If RDKit is not available.
     """
-    try:
-        from rdkit import Chem
-        from rdkit.Chem import Descriptors
-    except ImportError:
-        raise RuntimeError("RDKit is required for synthetic data generation. Install with: pip install rdkit") from None
+    rng = np.random.RandomState(42)
 
     # Load seed SMILES from external file
     base_smiles = _load_tier0_seed_smiles()
 
     valid_smiles: list[str] = []
     for smi in base_smiles:
-        mol = Chem.MolFromSmiles(smi)
-        if mol is not None:
-            valid_smiles.append(smi)
+        valid_smiles.append(smi)
 
     while len(valid_smiles) < n_samples:
         valid_smiles.extend(valid_smiles[: n_samples - len(valid_smiles)])
     valid_smiles = valid_smiles[:n_samples]
 
-    rng = np.random.RandomState(42)
-
-    from rdkit.Chem import AllChem
-
     training_data: list[dict[str, Any]] = []
-    for smi in valid_smiles:
-        mol = Chem.MolFromSmiles(smi)
-        mol_with_h = Chem.AddHs(mol)
-        AllChem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
-
-        logp = float(Descriptors.MolLogP(mol_with_h))  # type: ignore[attr-defined, unused-ignore]
-        hba = int(Descriptors.NumHAcceptors(mol_with_h))  # type: ignore[attr-defined, unused-ignore]
-        hbd = int(Descriptors.NumHDonors(mol_with_h))  # type: ignore[attr-defined, unused-ignore]
-        tpsa = float(Descriptors.TPSA(mol_with_h))  # type: ignore[attr-defined, unused-ignore]
-        aromatic_count = sum(1 for a in mol_with_h.GetAtoms() if a.GetIsAromatic())  # type: ignore[no-untyped-call, misc, unused-ignore]
-        aromatic_ratio = aromatic_count / max(mol_with_h.GetNumAtoms(), 1)
-
-        ec_base = 0.65 + 0.08 * logp - 0.02 * hba - 0.03 * hbd - 0.003 * tpsa + 0.15 * aromatic_ratio
-        dm_base = ec_base * 1.15
-        pf6_base = 1.15 + 0.05 * logp + 0.01 * hba + 0.02 * hbd + 0.002 * tpsa + 0.10 * aromatic_ratio
-        poly_base = 0.45 + 0.06 * logp - 0.01 * hba - 0.02 * hbd - 0.002 * tpsa + 0.20 * aromatic_ratio
-
-        ec_base = float(np.clip(ec_base, 0.45, 0.95))
-        dm_base = float(np.clip(dm_base, 0.45, 1.10))
-        pf6_base = float(np.clip(pf6_base, 0.90, 1.50))
-        poly_base = float(np.clip(poly_base, 0.30, 0.70))
-
-        # Apply Gaussian noise
-        ec = float(ec_base + rng.normal(0, noise_sigma))
-        dm = float(dm_base + rng.normal(0, noise_sigma))
-        pf6 = float(pf6_base + rng.normal(0, noise_sigma))
-        poly = float(poly_base + rng.normal(0, noise_sigma))
-
-        # Step function: threshold-based activation of polymerization pathway
-        if aromatic_count > 0:
-            poly = float(poly + rng.normal(0, noise_sigma))
+    for idx, smi in enumerate(valid_smiles):
+        # Trivial deterministic pseudo-targets — no real chemistry involved
+        seed = hash(smi) % 10000
+        ec = 0.5 + (seed % 500) / 1000.0 + rng.normal(0, noise_sigma)
+        dm = ec * 1.15 + rng.normal(0, noise_sigma)
+        pf6 = 0.8 + (seed % 300) / 1000.0 + rng.normal(0, noise_sigma)
+        poly = 0.35 + (seed % 200) / 1000.0 + rng.normal(0, noise_sigma)
 
         ec = float(np.clip(ec, 0.45, 0.95))
         dm = float(np.clip(dm, 0.45, 1.10))
         pf6 = float(np.clip(pf6, 0.90, 1.50))
         poly = float(np.clip(poly, 0.30, 0.70))
 
-        entry = {
+        training_data.append({
             "smiles": smi,
             "ec_reduction": round(ec, 6),
             "dm_reduction": round(dm, 6),
             "pf6_decomposition": round(pf6, 6),
             "polymerization": round(poly, 6),
-        }
-        training_data.append(entry)
+        })
 
     if output_path:
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -553,87 +500,41 @@ def train_tier0_model(
 class MockDFTOracle:
     """Mock DFT Oracle for CI/testing only.
 
-    WARNING: This class is a fake implementation that returns deterministic
-    hash-based pseudo-energies. It MUST NOT be used in production.
-
-    For production use, implement a real uncertainty-sampling stub that queries
-    a local CSV of pre-computed DFT values.
+    Returns trivially simple deterministic pseudo-energies.
+    This MUST NOT be used in production.
     """
 
     def __init__(self, api_base_url: str = "", api_token: str | None = None) -> None:
-        """Initialize the active learning oracle.
-
-        Args:
-            api_base_url: Base URL of the DFT API (e.g., "https://api.dft-service.example.com").
-            api_token: Optional authentication token for the DFT API.
-        """
         self._api_base_url = api_base_url
         self._api_token = api_token
         self._cache: dict[str, float] = {}
         self._pending: dict[str, float] = {}
 
     def query(self, smiles: str) -> float | None:
-        """Query the DFT API for activation energy of a single molecule.
-
-        Returns cached value if available; otherwise returns None to
-        indicate the molecule should be skipped in the current batch.
-
-        Args:
-            smiles: SMILES string of the molecule.
-
-        Returns:
-            Activation energy in eV, or None if not found in cache.
-        """
         if smiles in self._cache:
             return self._cache[smiles]
-
-        # Stub: deterministic synthetic target
         seed = hash(smiles) % 10000
         energy = 0.5 + (seed % 500) / 1000.0
         self._cache[smiles] = energy
         return energy
 
     def query_batch(self, smiles_list: list[str]) -> list[float | None]:
-        """Query multiple molecules, returning cached or None values.
-
-        Args:
-            smiles_list: List of SMILES strings.
-
-        Returns:
-            List of activation energies (or None for uncached entries).
-        """
         return [self.query(smi) for smi in smiles_list]
 
     def append_to_dataset(self, smiles_list: list[str], energies: list[float]) -> list[dict[str, Any]]:
-        """Append real DFT data to the training dataset.
-
-        Args:
-            smiles_list: SMILES strings of queried molecules.
-            energies: Corresponding activation energies from the DFT API.
-
-        Returns:
-            List of training data entries.
-        """
         entries: list[dict[str, Any]] = []
         for smi, e in zip(smiles_list, energies, strict=True):
             if e is not None:
-                entries.append(
-                    {
-                        "smiles": smi,
-                        "ec_reduction": e,
-                        "dm_reduction": e * 1.15,
-                        "pf6_decomposition": e * 1.3,
-                        "polymerization": e * 0.85,
-                    }
-                )
+                entries.append({
+                    "smiles": smi,
+                    "ec_reduction": e,
+                    "dm_reduction": e * 1.15,
+                    "pf6_decomposition": e * 1.3,
+                    "polymerization": e * 0.85,
+                })
         return entries
 
     def clear_cache(self) -> int:
-        """Clear the query cache and return the number of cleared entries.
-
-        Returns:
-            Number of cache entries removed.
-        """
         n = len(self._cache)
         self._cache.clear()
         return n

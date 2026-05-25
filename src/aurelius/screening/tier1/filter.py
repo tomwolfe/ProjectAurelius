@@ -40,6 +40,7 @@ from aurelius.screening.tier1.training import (
     train_on_esol,
 )
 from aurelius.types import MLXFilterResult
+from aurelius.utils.testing_mocks import _hash_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -314,8 +315,8 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
     """Generate a 2048-bit ECFP4 (Morgan radius=2) fingerprint from SMILES.
 
     Uses RDKit's GetMorganFingerprintAsBitVect for production-grade
-    fingerprints. Falls back to a deterministic hash-based vector
-    when RDKit is not installed.
+    fingerprints. Raises RuntimeError when RDKit is unavailable and
+    use_real_models=True, since hash-based fallbacks break chemical validity.
 
     Args:
         smiles: SMILES string of the molecule.
@@ -328,87 +329,38 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
     Raises:
         RuntimeError: If use_real_models=True and RDKit is unavailable.
     """
-    if HAS_RDKIT:
-        from rdkit import Chem as _Chem
-        from rdkit.Chem import AllChem as _AllChem
-
-        mol = _Chem.MolFromSmiles(smiles)
-        if mol is None:
-            logger.warning(
-                "RDKit failed to parse SMILES '%s', using hash fallback. This fingerprint is NOT chemically valid.",
-                smiles,
+    if not HAS_RDKIT:
+        if use_real_models:
+            raise RuntimeError(
+                "[Aurelius v5.2 Tier1] RDKit is required when use_real_models=True. "
+                "Hash-based fingerprints are NOT chemically valid and cannot be used "
+                "for real screening. Install RDKit for chemically meaningful screening:\n"
+                "  pip install rdkit\n"
+                "Or run in demo mode: AureliusPipeline(config, use_real_models=False)"
             )
-            return _hash_fallback(smiles)
-        fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-        bit_list = fp.ToList()
-        arr = np.array(bit_list, dtype=np.float32)
-        if len(arr) < 2048:
-            padded = np.zeros(2048, dtype=np.float32)
-            padded[: len(arr)] = arr
-            return padded
-        return arr[:2048]
-
-    if use_real_models:
-        raise RuntimeError(
-            "[Aurelius v5.2 Tier1] RDKit is required when use_real_models=True. "
-            "Hash-based fingerprints are NOT chemically valid and cannot be used "
-            "for real screening. Install RDKit for chemically meaningful screening:\n"
-            "  pip install rdkit\n"
-            "Or run in demo mode: AureliusPipeline(config, use_real_models=False)"
+        # Demo mode: produce a deterministic but non-chemical fingerprint
+        logger.warning(
+            "RDKit unavailable. Using deterministic hash-based fingerprint. "
+            "This is NOT a real ECFP4 fingerprint.",
         )
+        return _hash_fallback(smiles)
 
-    print(
-        "[Aurelius v5.2 Tier1] WARNING: RDKit is not installed. "
-        "Using deterministic hash-based fingerprint fallback. "
-        "This is NOT a real ECFP4 fingerprint and breaks chemical validity. "
-        "Install RDKit for chemically meaningful screening: "
-        "pip install rdkit"
-    )
-    return _hash_fallback(smiles)
+    from rdkit import Chem as _Chem
+    from rdkit.Chem import AllChem as _AllChem
 
-
-def _hash_fallback(smiles: str) -> np.ndarray[Any, Any]:
-    """Deterministic hash-based fingerprint fallback when RDKit is unavailable.
-
-    Produces a 2048-bit vector from the SMILES hash using SHA-256.
-    This is NOT a real ECFP4 fingerprint but provides deterministic,
-    reproducible input for pipeline validation.
-
-    Args:
-        smiles: SMILES string.
-
-    Returns:
-        numpy float32 array of shape (2048,).
-    """
-    import hashlib
-
-    n_bits = 2048
-    min_set = 80
-    max_set = 200
-
-    tier1_params: dict[str, Any] = {}
-    try:
-        ff_path = str(resources.files("aurelius.data").joinpath("force_field_params.json"))
-        if os.path.isfile(ff_path):
-            with open(ff_path) as f:
-                data = json.load(f)
-                tier1_params = data.get("tier1_parameters", {})
-    except (json.JSONDecodeError, OSError):
-        pass
-
-    if tier1_params:
-        hash_params = tier1_params.get("hash_fallback", {})
-        n_bits = hash_params.get("n_bits", n_bits)
-        min_set = hash_params.get("min_set_bits", min_set)
-        max_set = hash_params.get("max_set_bits", max_set)
-
-    arr = np.zeros(n_bits, dtype=np.float32)
-    seed = int(hashlib.sha256(smiles.encode()).hexdigest()[:8], 16)
-    rng = np.random.RandomState(seed)
-    n_set = rng.randint(min_set, max_set)
-    indices = rng.randint(0, n_bits, size=n_set)
-    arr[indices] = 1.0
-    return arr
+    mol = _Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise RuntimeError(
+            f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
+        )
+    fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+    bit_list = fp.ToList()
+    arr = np.array(bit_list, dtype=np.float32)
+    if len(arr) < 2048:
+        padded = np.zeros(2048, dtype=np.float32)
+        padded[: len(arr)] = arr
+        return padded
+    return arr[:2048]
 
 
 __all__ = [
@@ -417,5 +369,4 @@ __all__ = [
     "HAS_TORCH",
     "MLXNAFilter",
     "_generate_ecfp4_fingerprint",
-    "_hash_fallback",
 ]

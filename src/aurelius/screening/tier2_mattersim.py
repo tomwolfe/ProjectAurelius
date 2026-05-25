@@ -44,17 +44,12 @@ from aurelius.utils.dependencies import HAS_TORCH
 logger = logging.getLogger(__name__)
 
 # Conditional torch/nn imports (framework availability from central manager)
-_torch: Any = None
-_nn: Any = None
 if HAS_TORCH:
-    try:
-        import torch  # type: ignore[import-not-found, unused-ignore]
-        import torch.nn as nn  # type: ignore[import-not-found, unused-ignore]
-
-        _torch = torch
-        _nn = nn
-    except Exception:
-        pass
+    import torch as _torch  # type: ignore[import-not-found, unused-ignore]
+    import torch.nn as _nn  # type: ignore[import-not-found, unused-ignore]
+else:
+    _torch = None  # type: ignore[assignment, unused-ignore]
+    _nn = None  # type: ignore[assignment, unused-ignore]
 
 if TYPE_CHECKING:
     pass
@@ -91,7 +86,6 @@ class MatterSimMTSimulator:
         force_field_path: str | None = None,
         use_neighbor_list: bool = False,
         neighbor_list_cutoff: float = 12.0,
-        use_pbc: bool = False,
         use_polarization: bool = False,
     ) -> None:
         """Initialize MatterSim-MT simulator.
@@ -108,21 +102,9 @@ class MatterSimMTSimulator:
                 (n_atoms < 50).
             neighbor_list_cutoff: Cutoff radius in Angstroms for neighbor
                 list (default: 12.0). Must be >= self._cutoff.
-            use_pbc: Periodic Boundary Conditions flag.
-                When True, applies minimum image convention for distance
-                calculations, enabling periodic boundary condition (PBC)
-                simulations compatible with MPS/CUDA backends.
             use_polarization: If True, enables GNN-ChargeEq dynamic
                 charge prediction for Coulombic potential computation.
         """
-        # Periodic Boundary Conditions support (v7.0)
-        if use_pbc:
-            raise NotImplementedError(
-                "PBC support will be introduced in v7.0. "
-                "Use use_pbc=False for now."
-            )
-        self._use_pbc = use_pbc
-        self._cell_vectors: _torch.Tensor | None = None
         self._use_polarization = use_polarization
         self._use_neighbor_list = use_neighbor_list
         self._neighbor_list_cutoff = neighbor_list_cutoff

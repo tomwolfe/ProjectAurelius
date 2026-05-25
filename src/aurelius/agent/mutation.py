@@ -29,7 +29,9 @@ from aurelius.utils.chem_utils import (
     _tanimoto,
 )
 
-try:
+from aurelius.utils.dependencies import HAS_RDKIT
+
+if HAS_RDKIT:
     from rdkit import Chem  # type: ignore[import-not-found, unused-ignore]
     from rdkit.Chem import (
         BRICS,  # type: ignore[import-not-found, unused-ignore]
@@ -37,15 +39,6 @@ try:
         Descriptors,  # type: ignore[import-not-found, unused-ignore]
     )
     from rdkit.DataStructs import FingerprintSimilarity  # type: ignore[import-not-found, unused-ignore]
-
-    HAS_RDKIT = True
-except ImportError:
-    Chem = None  # type: ignore[assignment, unused-ignore]
-    AllChem = None  # type: ignore[assignment, unused-ignore]
-    Descriptors = None  # type: ignore[assignment, unused-ignore]
-    BRICS = None  # type: ignore[assignment, unused-ignore]
-    FingerprintSimilarity = None  # type: ignore[assignment, unused-ignore]
-    HAS_RDKIT = False
 
 logger = logging.getLogger(__name__)
 
