@@ -30,6 +30,14 @@ except ImportError:
     mlx_nn = None  # type: ignore[assignment, unused-ignore]
     optimizers = None  # type: ignore[assignment, unused-ignore]
 
+if HAS_TORCH:
+    try:
+        import torch
+        import torch.nn as torch_nn
+    except ImportError:
+        torch = None  # type: ignore[assignment, unused-ignore]
+        torch_nn = None  # type: ignore[assignment, unused-ignore]
+
 
 def _get_fingerprint_fn() -> Any:
     """Lazily import fingerprint generation to avoid circular imports."""

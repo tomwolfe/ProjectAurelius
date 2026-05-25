@@ -93,7 +93,6 @@ class TestChemModule:
             assert abs(similarity - 1.0) < 0.01
         except (ImportError, NotImplementedError) as exc:
             pytest.skip(f"PBC not implemented: {exc}")
-            pytest.skip("RDKit not available")
         except Exception:
             pytest.skip("RDKit fingerprint conversion failed")
 

@@ -118,22 +118,9 @@ class MatterSimMTSimulator:
         # Periodic Boundary Conditions support (v7.0)
         self._use_pbc = use_pbc
         self._cell_vectors: _torch.Tensor | None = None
-        if use_pbc:
-            raise NotImplementedError(
-                "PBC (Periodic Boundary Conditions) is not yet implemented. "
-                "This feature will be fully implemented in v7.0. "
-                "Please use use_pbc=False for now."
-            )
-            # Default to cubic box sized to self._cutoff
-            box_len = self._cutoff
-            self._cell_vectors = _torch.tensor(
-                [[box_len, 0.0, 0.0], [0.0, box_len, 0.0], [0.0, 0.0, box_len]],
-                dtype=_torch.float32,
-            )
         self._use_polarization = use_polarization
         self._use_neighbor_list = use_neighbor_list
         self._neighbor_list_cutoff = neighbor_list_cutoff
-        # Load parameters from force field JSON
         self._LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {}
         self._CHARGES: dict[int, float] = {}
         self._ATOMIC_RADII: dict[int, float] = {}
@@ -192,6 +179,14 @@ class MatterSimMTSimulator:
         self._nl_rebuild_counter = 0
         self._nl_rebuild_interval = 100
         self._neighbor_list: tuple[Any, Any, Any] | None = None
+
+        # PBC cell vectors (must come after _cutoff is defined)
+        if self._use_pbc and _torch is not None:
+            box_len = self._cutoff
+            self._cell_vectors = _torch.tensor(
+                [[box_len, 0.0, 0.0], [0.0, box_len, 0.0], [0.0, 0.0, box_len]],
+                dtype=_torch.float32,
+            )
 
     def _select_device(self) -> str:
         """Select the best available compute device.
