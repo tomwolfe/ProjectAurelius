@@ -5,13 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-try:
-    import torch
+from aurelius.utils.dependencies import HAS_TORCH
 
-    HAS_TORCH = True
-except ImportError:
-    torch = None  # type: ignore
-    HAS_TORCH = False
+if HAS_TORCH:
+    import torch  # noqa: F401
+else:
+    torch = None  # type: ignore[assignment, unused-ignore]
 
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
 

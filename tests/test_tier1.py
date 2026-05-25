@@ -5,21 +5,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-try:
-    import mlx.core as mx
+from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT
 
-    HAS_MLX = True
-except ImportError:
-    mx = None  # type: ignore
-    HAS_MLX = False
-
-try:
-    from rdkit import Chem
-
-    HAS_RDKIT = True
-except ImportError:
-    HAS_RDKIT = False
-    Chem = None  # type: ignore[assignment, unused-ignore]
+from aurelius.screening.tier1.filter import MLXNAFilter
 
 
 @pytest.mark.skip(reason="Training has shape mismatch issues - fix training code first")

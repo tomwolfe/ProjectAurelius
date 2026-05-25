@@ -29,6 +29,7 @@ from aurelius.cli_scripts import (
 )
 from aurelius.config import get_config
 from aurelius.pipeline import AureliusPipeline
+from aurelius.utils.dependencies import HAS_RDKIT
 
 
 def _apply_env_thread_safe(env_vars: dict[str, str]) -> None:
@@ -234,23 +235,20 @@ def screen(
         )
 
     # Enforce RDKit for real models (unless --allow-fallback is set)
-    if use_real_models and not allow_fallback:
-        try:
-            from rdkit import Chem  # noqa: F401
-        except ImportError:
-            raise RuntimeError(
-                "RDKit is required for real model screening.\n\n"
-                "Install RDKit:\n"
-                "  pip install rdkit\n"
-                "  conda install -c conda-forge rdkit\n\n"
-                "Platform notes:\n"
-                "  - macOS: pip install rdkit (or conda install -c conda-forge rdkit)\n"
-                "  - Linux: pip install rdkit (requires libcdt5, libgtsb0, libgl1)\n"
-                "  - Windows: pip install rdkit (pre-built wheels available)\n\n"
-                "Dependency guide: https://github.com/rdkit/rdkit#installation\n\n"
-                "To use hash-based fallback (demo/CI only), add --allow-fallback.\n"
-                "To run in demo mode without RDKit, use: aurelius screen <smiles> --demo"
-            ) from None
+    if use_real_models and not allow_fallback and not HAS_RDKIT:
+        raise RuntimeError(
+            "RDKit is required for real model screening.\n\n"
+            "Install RDKit:\n"
+            "  pip install rdkit\n"
+            "  conda install -c conda-forge rdkit\n\n"
+            "Platform notes:\n"
+            "  - macOS: pip install rdkit (or conda install -c conda-forge rdkit)\n"
+            "  - Linux: pip install rdkit (requires libcdt5, libgtsb0, libgl1)\n"
+            "  - Windows: pip install rdkit (pre-built wheels available)\n\n"
+            "Dependency guide: https://github.com/rdkit/rdkit#installation\n\n"
+            "To use hash-based fallback (demo/CI only), add --allow-fallback.\n"
+            "To run in demo mode without RDKit, use: aurelius screen <smiles> --demo"
+        ) from None
 
     config = get_config()
     env_vars = config.apply_environment()

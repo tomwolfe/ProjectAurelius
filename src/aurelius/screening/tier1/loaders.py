@@ -24,13 +24,16 @@ from aurelius.screening.tier1.models import (
 logger = logging.getLogger(__name__)
 
 # Conditional torch import for weight conversion
-_torch: Any | None = None
-try:
-    import torch  # noqa: F401
+from aurelius.utils.dependencies import HAS_TORCH
 
-    _torch = torch
-except ImportError:
-    pass
+_torch: Any | None = None
+if HAS_TORCH:
+    try:
+        import torch  # noqa: F401
+
+        _torch = torch
+    except ImportError:
+        pass
 
 # ---------------------------------------------------------------------------
 # HuggingFace symlink control

@@ -41,8 +41,6 @@ from aurelius.constants import COULOMB_EV_A
 # ---------------------------------------------------------------------------
 
 
-# Use importlib.resources for wheel-compatible path resolution.
-# Works in both `pip install -e .` and installed wheels.
 def _default_ff_path() -> str:
     """Return the path to force_field_params.json via importlib.resources."""
     return str(resources.files("aurelius.data").joinpath("force_field_params.json"))
@@ -64,101 +62,6 @@ def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
     return {}
 
 
-# Load parameters at module level
-_FF_PARAMS = _load_force_field_params()
-
-# Extract dielectric constants from loaded params
-_DIELECTRIC_CONSTANTS: dict[str, float] = _FF_PARAMS.get("dielectric_constants", {}).get(
-    "solvents",
-    {
-        "water": 78.36,
-        "ec": 89.91,
-        "dm": 31.17,
-        "dmc": 31.17,
-        "emc": 33.00,
-        "propylene_carbonate": 64.92,
-        "pc": 64.92,
-        "dimethyl_sulfoxide": 46.68,
-        "dmsO": 46.68,
-        "acetonitrile": 36.61,
-        "acn": 36.61,
-    },
-)
-
-# Extract LJ parameters
-_LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {}
-for key, val in _FF_PARAMS.get("lennard_jones", {}).get("parameters", {}).items():
-    try:
-        key_tuple = ast.literal_eval(key)  # Convert string key like "(1, 1)" to tuple
-        _LJ_PARAMS[key_tuple] = (val["epsilon"], val["sigma"])
-    except (SyntaxError, ValueError):
-        pass
-
-# Extract partial charges
-_PARTIAL_CHARGES: dict[int, float] = {}
-for z_str, val in _FF_PARAMS.get("partial_charges", {}).get("parameters", {}).items():
-    _PARTIAL_CHARGES[int(z_str)] = val["charge"]
-
-# Extract Born effective charges
-_BORN_CHARGES_LI: np.ndarray[Any, Any] = np.array(
-    _FF_PARAMS.get("born_effective_charges", {}).get("Li+", np.eye(3) * 1.32)
-)
-_BORN_CHARGES_NA: np.ndarray[Any, Any] = np.array(
-    _FF_PARAMS.get("born_effective_charges", {}).get("Na+", np.eye(3) * 1.12)
-)
-_BORN_CHARGES_K: np.ndarray[Any, Any] = np.array(
-    _FF_PARAMS.get("born_effective_charges", {}).get("K+", np.eye(3) * 0.92)
-)
-
-# Arrhenius parameters
-_ARRHENIUS_BARRIERS: dict[str, float] = _FF_PARAMS.get("arrhenius_parameters", {}).get("barriers_eV", {})
-
-
-# ---------------------------------------------------------------------------
-# Solvation-specific parameter loading
-# ---------------------------------------------------------------------------
-
-
-def _load_solvation_params(path: str | None = None) -> dict[str, Any]:
-    """Load solvation-specific parameters from force field JSON.
-
-    Args:
-        path: Optional path to force field params JSON file.
-
-    Returns:
-        Dictionary of solvation parameters, or empty dict on failure.
-    """
-    ff_path = path or _default_ff_path()
-    if os.path.isfile(ff_path):
-        try:
-            with open(ff_path) as f:
-                data = json.load(f)
-                return data.get("solvation_parameters", {})  # type: ignore[no-any-return]
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {}
-
-
-_SOLVATION_PARAMS = _load_solvation_params()
-
-
-# Also load scoring params for MWSE stability threshold
-def _load_scoring_params_for_solvation(path: str | None = None) -> dict[str, Any]:
-    """Load scoring parameters from force field JSON for MWSE evaluation."""
-    ff_path = path or _default_ff_path()
-    if os.path.isfile(ff_path):
-        try:
-            with open(ff_path) as f:
-                data = json.load(f)
-                return data.get("scoring_parameters", {})  # type: ignore[no-any-return]
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {}
-
-
-_SCORING_PARAMS = _load_scoring_params_for_solvation()
-
-
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -174,85 +77,6 @@ class SolvationShell:
     shell_radius_angstrom: float = 3.0
     k_ex_ps: float = 1.0  # Solvent exchange rate (ps^-1)
     e_des_eV: float = 0.3  # Desolvation energy (eV)
-
-
-# ---------------------------------------------------------------------------
-# Solvation parameter accessors
-# ---------------------------------------------------------------------------
-
-
-def _get_coordination_number(ion_type: str) -> int:
-    """Get coordination number for ion from force field params."""
-    return int(_SOLVATION_PARAMS.get("coordination_numbers", {}).get(ion_type, 6))
-
-
-def _get_shell_radius(ion_type: str) -> float:
-    """Get solvation shell radius for ion from force field params."""
-    return float(_SOLVATION_PARAMS.get("shell_radii_angstrom", {}).get(ion_type, 3.0))
-
-
-def _get_desolvation_energy(ion_type: str, solvent_type: str) -> float:
-    """Get desolvation energy for ion-solvent pair from force field params."""
-    base = _SOLVATION_PARAMS.get("desolvation_energies_eV", {})
-    key = f"{ion_type}_{solvent_type.replace(':', '_')}"
-    return float(base.get(key, _SOLVATION_PARAMS.get("default_desolvation_eV", 0.10)))
-
-
-def _get_surface_tension() -> float:
-    """Get surface tension parameter from force field params."""
-    return float(_SOLVATION_PARAMS.get("surface_tension_eV_per_A2", 0.00542))
-
-
-def _get_numerical_floor() -> float:
-    """Get numerical stability floor from force field params."""
-    return float(_SOLVATION_PARAMS.get("numerical_stability_floor", 1e-10))
-
-
-def _get_gb_prefactor_sign() -> float:
-    """Get GBSA prefactor sign from force field params."""
-    return float(_SOLVATION_PARAMS.get("gb_prefactor_sign", -0.5))
-
-
-def _get_labile_kex_lower_bound() -> float:
-    """Get lower bound for labile k_ex from force field params."""
-    return float(_SOLVATION_PARAMS.get("labile_kex_lower_bound", 0.01))
-
-
-def _get_rejection_threshold() -> float:
-    """Get local maxima rejection threshold from force field params."""
-    return float(_SOLVATION_PARAMS.get("rejection_threshold_eV", 0.5))
-
-
-def _get_max_trajectory_distance() -> float:
-    """Get max trajectory distance from force field params."""
-    return float(_SOLVATION_PARAMS.get("max_trajectory_distance_angstrom", 5.0))
-
-
-def _get_energy_profile_gaussians() -> tuple[list[float], list[float], list[float]]:
-    """Get energy profile Gaussian parameters from force field params."""
-    gaussians = _SOLVATION_PARAMS.get("energy_profile_gaussians", {})
-    centers = gaussians.get("centers_angstrom", [1.5, 3.0, 4.2])
-    widths = gaussians.get("widths_angstrom", [0.4, 0.5, 0.3])
-    heights = gaussians.get("heights_eV", [0.15, 0.25, 0.10])
-    return centers, widths, heights
-
-
-def _get_repulsive_wall_params() -> tuple[float, float]:
-    """Get repulsive wall parameters from force field params."""
-    wall = _SOLVATION_PARAMS.get("repulsive_wall", {})
-    amplitude = wall.get("amplitude_eV", 0.02)
-    decay = wall.get("decay_length_angstrom", 0.5)
-    return amplitude, decay
-
-
-def _get_attempt_frequency() -> float:
-    """Get attempt frequency from force field params."""
-    return float(_SOLVATION_PARAMS.get("attempt_frequency_ps", 2.0))
-
-
-def _get_ion_pair_separation() -> float:
-    """Get ion-pair separation distance from force field params."""
-    return float(_SOLVATION_PARAMS.get("ion_pair_separation_angstrom", 2.3))
 
 
 @dataclass
@@ -292,7 +116,7 @@ class BornEffectiveCharges:
             Solvation of Na+ and Li+." J. Phys. Chem. B 2007,
             111, 13529-13537.
         """
-        r_angstrom = _get_ion_pair_separation()
+        r_angstrom = _SolvationParams.get_ion_pair_separation()
         mu = self.z_star_scalar * r_angstrom * 4.803
         return float(mu)
 
@@ -311,7 +135,7 @@ class MWSEState:
         self.dipole_moment_debye = self.born_charges.dipole_moment_debye
         # PNNL benchmark: dipole moments > 3.5 Debye correlate with 500-cycle
         # stability for Na+ in carbonate solvents
-        scoring = _SCORING_PARAMS.get("mwse_stability", {})
+        scoring = _ScoringParams.get_mwse_stability()
         dipole_threshold = scoring.get("dipole_threshold_debye", 3.5)
         self.is_stable_500cycle = self.dipole_moment_debye > dipole_threshold
 
@@ -324,6 +148,182 @@ class DesolvationBarrier:
     has_local_maxima: bool
     local_maxima_eV: float = 0.0
     path_integral_energy: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Solvation parameter accessors
+# ---------------------------------------------------------------------------
+
+
+class _SolvationParams:
+    """Lazy-loaded solvation parameters with caching.
+
+    Parameters are loaded once per instance and cached, eliminating
+    repeated disk I/O on every access. Importing this module has
+    zero side effects — no I/O occurs until the first access.
+    """
+
+    _cache: dict[str, Any] | None = None
+
+    @classmethod
+    def _ensure_loaded(cls) -> dict[str, Any]:
+        """Load force field params once and cache the result."""
+        if cls._cache is None:
+            cls._cache = _load_force_field_params()
+        return cls._cache
+
+    @classmethod
+    def get_coordination_number(cls, ion_type: str) -> int:
+        """Get coordination number for ion from force field params."""
+        params = cls._ensure_loaded()
+        return int(params.get("coordination_numbers", {}).get(ion_type, 6))
+
+    @classmethod
+    def get_shell_radius(cls, ion_type: str) -> float:
+        """Get solvation shell radius for ion from force field params."""
+        params = cls._ensure_loaded()
+        return float(params.get("shell_radii_angstrom", {}).get(ion_type, 3.0))
+
+    @classmethod
+    def get_desolvation_energy(cls, ion_type: str, solvent_type: str) -> float:
+        """Get desolvation energy for ion-solvent pair from force field params."""
+        params = cls._ensure_loaded()
+        base = params.get("desolvation_energies_eV", {})
+        key = f"{ion_type}_{solvent_type.replace(':', '_')}"
+        return float(base.get(key, params.get("default_desolvation_eV", 0.10)))
+
+    @classmethod
+    def get_surface_tension(cls) -> float:
+        """Get surface tension parameter from force field params."""
+        params = cls._ensure_loaded()
+        return float(params.get("surface_tension_eV_per_A2", 0.00542))
+
+    @classmethod
+    def get_numerical_floor(cls) -> float:
+        """Get numerical stability floor from force field params."""
+        params = cls._ensure_loaded()
+        return float(params.get("numerical_stability_floor", 1e-10))
+
+    @classmethod
+    def get_gb_prefactor_sign(cls) -> float:
+        """Get GBSA prefactor sign from force field params."""
+        params = cls._ensure_loaded()
+        return float(params.get("gb_prefactor_sign", -0.5))
+
+    @classmethod
+    def get_labile_kex_lower_bound(cls) -> float:
+        """Get lower bound for labile k_ex from force field params."""
+        params = cls._ensure_loaded()
+        return float(params.get("labile_kex_lower_bound", 0.01))
+
+    @classmethod
+    def get_rejection_threshold(cls) -> float:
+        """Get local maxima rejection threshold from force field params."""
+        params = cls._ensure_loaded()
+        return float(params.get("rejection_threshold_eV", 0.5))
+
+    @classmethod
+    def get_max_trajectory_distance(cls) -> float:
+        """Get max trajectory distance from force field params."""
+        params = cls._ensure_loaded()
+        return float(params.get("max_trajectory_distance_angstrom", 5.0))
+
+    @classmethod
+    def get_energy_profile_gaussians(cls) -> tuple[list[float], list[float], list[float]]:
+        """Get energy profile Gaussian parameters from force field params."""
+        params = cls._ensure_loaded()
+        gaussians = params.get("energy_profile_gaussians", {})
+        centers = gaussians.get("centers_angstrom", [1.5, 3.0, 4.2])
+        widths = gaussians.get("widths_angstrom", [0.4, 0.5, 0.3])
+        heights = gaussians.get("heights_eV", [0.15, 0.25, 0.10])
+        return centers, widths, heights
+
+    @classmethod
+    def get_repulsive_wall_params(cls) -> tuple[float, float]:
+        """Get repulsive wall parameters from force field params."""
+        params = cls._ensure_loaded()
+        wall = params.get("repulsive_wall", {})
+        amplitude = wall.get("amplitude_eV", 0.02)
+        decay = wall.get("decay_length_angstrom", 0.5)
+        return amplitude, decay
+
+    @classmethod
+    def get_attempt_frequency(cls) -> float:
+        """Get attempt frequency from force field params."""
+        params = cls._ensure_loaded()
+        return float(params.get("attempt_frequency_ps", 2.0))
+
+    @classmethod
+    def get_ion_pair_separation(cls) -> float:
+        """Get ion-pair separation distance from force field params."""
+        params = cls._ensure_loaded()
+        return float(params.get("ion_pair_separation_angstrom", 2.3))
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Clear the loaded params cache (useful for testing)."""
+        cls._cache = None
+
+
+class _ScoringParams:
+    """Lazy-loaded scoring parameters with caching.
+
+    Parameters are loaded once per instance and cached, eliminating
+    repeated disk I/O on every access. Importing this module has
+    zero side effects — no I/O occurs until the first access.
+    """
+
+    _cache: dict[str, Any] | None = None
+
+    @classmethod
+    def _ensure_loaded(cls) -> dict[str, Any]:
+        """Load scoring params once and cache the result."""
+        if cls._cache is None:
+            cls._cache = _load_scoring_params()
+        return cls._cache
+
+    @classmethod
+    def get_mwse_stability(cls) -> dict[str, Any]:
+        """Get MWSE stability parameters."""
+        params = cls._ensure_loaded()
+        return params.get("mwse_stability", {})
+
+    @classmethod
+    def get_default_tier_score(cls) -> float:
+        """Get default tier score."""
+        params = cls._ensure_loaded()
+        return params.get("default_tier_score", 50.0)
+
+    @classmethod
+    def get_desolvation_normalization(cls) -> dict[str, Any]:
+        """Get desolvation normalization parameters."""
+        params = cls._ensure_loaded()
+        return params.get("desolvation_normalization", {})
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Clear the loaded params cache (useful for testing)."""
+        cls._cache = None
+
+
+def _load_scoring_params(path: str | None = None) -> dict[str, Any]:
+    """Load scoring parameters from force field JSON for MWSE evaluation.
+
+    Args:
+        path: Optional path to force field params JSON file.
+
+    Returns:
+        Dictionary of scoring parameters, or empty dict on failure.
+    """
+    ff_path = path or _default_ff_path()
+    if os.path.isfile(ff_path):
+        try:
+            with open(ff_path) as f:
+                data = json.load(f)
+                return data.get("scoring_parameters", {})  # type: ignore[no-any-return]
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -373,9 +373,9 @@ def compute_gbsa_solvation_energy(
     if n < 2:
         return offset
 
-    surface_tension_val = surface_tension if surface_tension is not None else _get_surface_tension()
-    floor = _get_numerical_floor()
-    prefactor_sign = _get_gb_prefactor_sign()
+    surface_tension_val = surface_tension if surface_tension is not None else _SolvationParams.get_surface_tension()
+    floor = _SolvationParams.get_numerical_floor()
+    prefactor_sign = _SolvationParams.get_gb_prefactor_sign()
     if surface_tension_val is None:
         surface_tension_val = 0.00542  # Fallback default
 
@@ -453,9 +453,11 @@ class MWSESolvationEngine:
 
     # Born effective charge tensors (Z*) from DFT literature
     # Values are from linear-response calculations in vacuum/solvent
-    _BORN_CHARGES_LI = _BORN_CHARGES_LI
-    _BORN_CHARGES_NA = _BORN_CHARGES_NA
-    _BORN_CHARGES_K = _BORN_CHARGES_K
+    _BORN_CHARGES_LI: np.ndarray[Any, Any]
+    _BORN_CHARGES_NA: np.ndarray[Any, Any]
+    _BORN_CHARGES_K: np.ndarray[Any, Any]
+    _DIELECTRIC_CONSTANTS: dict[str, float]
+    _ARRHENIUS_BARRIERS: dict[str, float]
 
     def __init__(
         self,
@@ -471,23 +473,57 @@ class MWSESolvationEngine:
         """
         self.kex_window_ps = kex_window_ps
         self.use_explicit_solvation_correction = use_explicit_solvation_correction
-        # Reload force field params if custom path provided
+        self._ff_path = force_field_path
+        _SolvationParams.clear_cache()
+        _ScoringParams.clear_cache()
+
+        # Load force field params if custom path provided
         if force_field_path is not None:
-            global _FF_PARAMS, _DIELECTRIC_CONSTANTS, _LJ_PARAMS
-            global _PARTIAL_CHARGES, _BORN_CHARGES_LI, _BORN_CHARGES_NA, _BORN_CHARGES_K
-            global _ARRHENIUS_BARRIERS
-            _FF_PARAMS = _load_force_field_params(force_field_path)
-            _DIELECTRIC_CONSTANTS = _FF_PARAMS.get("dielectric_constants", {}).get("solvents", {})
-            _LJ_PARAMS = {}
-            for key, val in _FF_PARAMS.get("lennard_jones", {}).get("parameters", {}).items():
-                with contextlib.suppress(SyntaxError, ValueError):
-                    _LJ_PARAMS[ast.literal_eval(key)] = (val["epsilon"], val["sigma"])
-            for z_str, val in _FF_PARAMS.get("partial_charges", {}).get("parameters", {}).items():
-                _PARTIAL_CHARGES[int(z_str)] = val["charge"]
-            _BORN_CHARGES_LI = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("Li+", np.eye(3) * 1.32))
-            _BORN_CHARGES_NA = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("Na+", np.eye(3) * 1.12))
-            _BORN_CHARGES_K = np.array(_FF_PARAMS.get("born_effective_charges", {}).get("K+", np.eye(3) * 0.92))
-            _ARRHENIUS_BARRIERS = _FF_PARAMS.get("arrhenius_parameters", {}).get("barriers_eV", {})
+            ff_params = _load_force_field_params(force_field_path)
+        else:
+            ff_params = _load_force_field_params()
+
+        self._DIELECTRIC_CONSTANTS = ff_params.get("dielectric_constants", {}).get(
+            "solvents",
+            {
+                "water": 78.36,
+                "ec": 89.91,
+                "dm": 31.17,
+                "dmc": 31.17,
+                "emc": 33.00,
+                "propylene_carbonate": 64.92,
+                "pc": 64.92,
+                "dimethyl_sulfoxide": 46.68,
+                "dmsO": 46.68,
+                "acetonitrile": 36.61,
+                "acn": 36.61,
+            },
+        )
+
+        lj_params = ff_params.get("lennard_jones", {}).get("parameters", {})
+        self._LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {}
+        for key, val in lj_params.items():
+            with contextlib.suppress(SyntaxError, ValueError):
+                self._LJ_PARAMS[ast.literal_eval(key)] = (val["epsilon"], val["sigma"])
+
+        charge_data = ff_params.get("partial_charges", {}).get("parameters", {})
+        self._PARTIAL_CHARGES: dict[int, float] = {}
+        for z_str, val in charge_data.items():
+            self._PARTIAL_CHARGES[int(z_str)] = val["charge"]
+
+        born_charges_data = ff_params.get("born_effective_charges", {})
+        self._BORN_CHARGES_LI = np.array(
+            born_charges_data.get("Li+", np.eye(3) * 1.32)
+        )
+        self._BORN_CHARGES_NA = np.array(
+            born_charges_data.get("Na+", np.eye(3) * 1.12)
+        )
+        self._BORN_CHARGES_K = np.array(
+            born_charges_data.get("K+", np.eye(3) * 0.92)
+        )
+
+        arrhenius_params = ff_params.get("arrhenius_parameters", {})
+        self._ARRHENIUS_BARRIERS = arrhenius_params.get("barriers_eV", {})
 
     def compute_solvent_exchange_rate(
         self,
@@ -523,10 +559,10 @@ class MWSESolvationEngine:
         kB = 8.617e-5  # eV/K
 
         # Attempt frequency for solvent exchange (ps^-1)
-        attempt_freq = _get_attempt_frequency()
+        attempt_freq = _SolvationParams.get_attempt_frequency()
 
         # Activation barriers from force field parameters
-        delta_g_dag = _ARRHENIUS_BARRIERS.get(f"{ion_type}_{solvent_type}", 0.10)
+        delta_g_dag = self._ARRHENIUS_BARRIERS.get(f"{ion_type}_{solvent_type}", 0.10)
         k_ex = attempt_freq * math.exp(-delta_g_dag / (kB * temperature_k))
 
         return float(k_ex)
@@ -541,15 +577,15 @@ class MWSESolvationEngine:
         k_ex = self.compute_solvent_exchange_rate(solvent_type, ion_type, temperature_k)
 
         # Shell is "labile" if k_ex is within screening window
-        is_labile = _get_labile_kex_lower_bound() < k_ex < self.kex_window_ps
+        is_labile = _SolvationParams.get_labile_kex_lower_bound() < k_ex < self.kex_window_ps
 
         shell = SolvationShell(
             ion_type=ion_type,
             solvent_type=solvent_type,
-            coordination_number=_get_coordination_number(ion_type),
-            shell_radius_angstrom=_get_shell_radius(ion_type),
+            coordination_number=_SolvationParams.get_coordination_number(ion_type),
+            shell_radius_angstrom=_SolvationParams.get_shell_radius(ion_type),
             k_ex_ps=k_ex,
-            e_des_eV=_get_desolvation_energy(ion_type, solvent_type),
+            e_des_eV=_SolvationParams.get_desolvation_energy(ion_type, solvent_type),
         )
 
         if is_labile:
@@ -622,9 +658,9 @@ class MWSESolvationEngine:
             if len(components) == 2:
                 solvent_a = components[0].strip()
                 solvent_b = components[1].strip()
-                eps_a = _DIELECTRIC_CONSTANTS.get(solvent_a, 30.0)
-                eps_b = _DIELECTRIC_CONSTANTS.get(solvent_b, 30.0)
-                eps_water = _DIELECTRIC_CONSTANTS.get("water", 78.36)
+                eps_a = self._DIELECTRIC_CONSTANTS.get(solvent_a, 30.0)
+                eps_b = self._DIELECTRIC_CONSTANTS.get(solvent_b, 30.0)
+                eps_water = self._DIELECTRIC_CONSTANTS.get("water", 78.36)
 
                 eps_vac = 1.0
                 w = (eps_a * 0.5 + eps_b * 0.5 - eps_vac) / (eps_water - eps_vac)
@@ -634,8 +670,8 @@ class MWSESolvationEngine:
                 return z_interpolated
 
         # Single solvent
-        eps = _DIELECTRIC_CONSTANTS.get(solvent_type, 30.0)
-        eps_water = _DIELECTRIC_CONSTANTS.get("water", 78.36)
+        eps = self._DIELECTRIC_CONSTANTS.get(solvent_type, 30.0)
+        eps_water = self._DIELECTRIC_CONSTANTS.get("water", 78.36)
         eps_vac = 1.0
 
         w = (eps - eps_vac) / (eps_water - eps_vac)
@@ -689,7 +725,7 @@ class MWSESolvationEngine:
         Returns:
             GBSA solvation energy in eV.
         """
-        eps = _DIELECTRIC_CONSTANTS.get(solvent_type, 30.0)
+        eps = self._DIELECTRIC_CONSTANTS.get(solvent_type, 30.0)
         return compute_gbsa_solvation_energy(charges, radii, eps)
 
     def compute_desolvation_path_integral(
@@ -705,7 +741,7 @@ class MWSESolvationEngine:
         Rejects if any local maxima > 0.5 eV.
         """
         # Simulate ion trajectory through solvent layer
-        max_traj = _get_max_trajectory_distance()
+        max_traj = _SolvationParams.get_max_trajectory_distance()
         positions = np.linspace(0, max_traj, n_steps)  # Angstroms through solvent
         energies = self._simulate_energy_profile(positions, ion_type, solvent_type)
 
@@ -718,7 +754,7 @@ class MWSESolvationEngine:
             path_integral_energy=float(np.trapezoid(energies, positions)),  # type: ignore[attr-defined]
         )
 
-        rejection_threshold = _get_rejection_threshold()
+        rejection_threshold = _SolvationParams.get_rejection_threshold()
         if barrier.local_maxima_eV > rejection_threshold:
             print(
                 f"[Aurelius v5.2 MWSE] REJECTED: Local maxima {barrier.local_maxima_eV:.3f} eV > {rejection_threshold} eV"
@@ -737,13 +773,13 @@ class MWSESolvationEngine:
     ) -> np.ndarray[Any, Any]:
         """Simulate energy profile of ion moving through solvent layer."""
         energies = np.zeros_like(positions)
-        centers, widths, heights = _get_energy_profile_gaussians()
+        centers, widths, heights = _SolvationParams.get_energy_profile_gaussians()
 
         for c, w, h in zip(centers, widths, heights, strict=True):
             energies += h * np.exp(-0.5 * ((positions - c) / w) ** 2)
 
         # Add a smooth repulsive wall at the anode surface
-        wall_amp, wall_decay = _get_repulsive_wall_params()
+        wall_amp, wall_decay = _SolvationParams.get_repulsive_wall_params()
         energies += wall_amp * np.exp(-positions / wall_decay)
 
         return energies

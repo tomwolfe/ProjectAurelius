@@ -4,20 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-try:
-    import torch
-
-    HAS_TORCH = True
-except ImportError:
-    torch = None  # type: ignore
-    HAS_TORCH = False
-
-try:
-    from aurelius.screening.tier2_mattersim import MatterSimMPEngine
-except ImportError:
-    MatterSimMPEngine = None  # type: ignore[misc, assignment]
-
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin
+from aurelius.utils.dependencies import HAS_TORCH
+from aurelius.screening.physics.simulator import MatterSimMTSimulator
+
+if HAS_TORCH:
+    import torch  # noqa: F401
+else:
+    torch = None  # type: ignore[assignment, unused-ignore]
 
 
 class TestArrheniusBehavior:
@@ -132,8 +126,8 @@ class TestPhysicsConservation:
         coordinate tensor and not just computing a static value based
         on atomic numbers alone.
         """
-        if not HAS_TORCH or MatterSimMPEngine is None:
-            pytest.skip("PyTorch or MatterSimMPEngine not available")
+        if not HAS_TORCH or MatterSimMTSimulator is None:
+            pytest.skip("PyTorch or MatterSimMTSimulator not available")
 
         # Build a simple water-like cluster (H2O-like: O at center, H on sides)
         atomic_numbers = torch.tensor([8, 1, 1], dtype=torch.long)  # O, H, H
@@ -146,7 +140,7 @@ class TestPhysicsConservation:
             dtype=torch.float32,
         )
 
-        engine = MatterSimMPEngine()
+        engine = MatterSimMTSimulator()
         baseline_energy = engine(atomic_numbers, coordinates)
 
         # Add small Gaussian noise to coordinates

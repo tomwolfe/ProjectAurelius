@@ -32,6 +32,65 @@ from aurelius.types import (
 )
 
 
+class _ScoringParams:
+    """Lazy-loaded scoring parameters with caching.
+
+    Parameters are loaded once per instance and cached, eliminating
+    repeated disk I/O on every access. Importing this module has
+    zero side effects — no I/O occurs until the first access.
+    """
+
+    _cache: dict[str, Any] | None = None
+
+    @classmethod
+    def _ensure_loaded(cls) -> dict[str, Any]:
+        """Load scoring params once and cache the result."""
+        if cls._cache is None:
+            cls._cache = _load_scoring_params()
+        return cls._cache
+
+    @classmethod
+    def get_mwse_stability(cls) -> dict[str, Any]:
+        """Get MWSE stability parameters."""
+        params = cls._ensure_loaded()
+        return params.get("mwse_stability", {})
+
+    @classmethod
+    def get_default_tier_score(cls) -> float:
+        """Get default tier score."""
+        params = cls._ensure_loaded()
+        return params.get("default_tier_score", 50.0)
+
+    @classmethod
+    def get_desolvation_normalization(cls) -> dict[str, Any]:
+        """Get desolvation normalization parameters."""
+        params = cls._ensure_loaded()
+        return params.get("desolvation_normalization", {})
+
+    @classmethod
+    def get_component_weights(cls) -> dict[str, Any]:
+        """Get component weight parameters."""
+        params = cls._ensure_loaded()
+        return params.get("component_weights", {})
+
+    @classmethod
+    def get_viability_threshold(cls) -> float:
+        """Get viability threshold."""
+        params = cls._ensure_loaded()
+        return params.get("viability_threshold", 65.0)
+
+    @classmethod
+    def get_mx_synthesis(cls) -> dict[str, Any]:
+        """Get MX synthesis parameters."""
+        params = cls._ensure_loaded()
+        return params.get("mx_synthesis", {})
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Clear the loaded params cache (useful for testing)."""
+        cls._cache = None
+
+
 def _load_scoring_params(path: str | None = None) -> dict[str, Any]:
     """Load scoring parameters from force field JSON.
 
@@ -52,9 +111,6 @@ def _load_scoring_params(path: str | None = None) -> dict[str, Any]:
     return {}
 
 
-_SCORING_PARAMS = _load_scoring_params()
-
-
 class AureliusScoringEngine:
     """Revised Aurelius Score v5.2 calculation engine.
 
@@ -72,7 +128,10 @@ class AureliusScoringEngine:
         weight_gwp: float | None = None,
         viability_threshold: float | None = None,
     ) -> None:
-        scoring = _SCORING_PARAMS.get("component_weights", {})
+        # Clear cache to ensure fresh load per instance
+        _ScoringParams.clear_cache()
+
+        scoring = _ScoringParams.get_component_weights()
         self.weights = {
             "sigma": weight_sigma if weight_sigma is not None else scoring.get("sigma", 0.3),
             "desolvation": weight_desolvation if weight_desolvation is not None else scoring.get("desolvation", 0.2),
@@ -85,7 +144,7 @@ class AureliusScoringEngine:
             "gwp": weight_gwp if weight_gwp is not None else scoring.get("gwp", 0.1),
         }
         self.viability_threshold = (
-            viability_threshold if viability_threshold is not None else _SCORING_PARAMS.get("viability_threshold", 65.0)
+            viability_threshold if viability_threshold is not None else _ScoringParams.get_viability_threshold()
         )
 
     def compute_score(
@@ -116,7 +175,7 @@ class AureliusScoringEngine:
             result.sigma_score = self._normalize_sigma(tier1_result.confidence_score)
             result.tier1_viable = tier1_result.is_viable
         else:
-            result.sigma_score = _SCORING_PARAMS.get("default_tier_score", 50.0)
+            result.sigma_score = _ScoringParams.get_default_tier_score()
             result.tier1_viable = True
 
         # Component 2: E_des_barrier (Normalized desolvation path integral)
@@ -124,7 +183,7 @@ class AureliusScoringEngine:
             result.desolvation_score = self._normalize_desolvation_barrier(tier2_result.desolvation_path)
             result.tier2_viable = tier2_result.is_viable
         else:
-            result.desolvation_score = _SCORING_PARAMS.get("default_tier_score", 50.0)
+            result.desolvation_score = _ScoringParams.get_default_tier_score()
             result.tier2_viable = True
 
         # Component 3: SEI Homogeneity
@@ -132,7 +191,7 @@ class AureliusScoringEngine:
             result.sei_homogeneity_score = self._normalize_sei_homogeneity(tier3_result.sei_evolution)
             result.tier3_viable = tier3_result.sei_evolution.electronic_insulation
         else:
-            result.sei_homogeneity_score = _SCORING_PARAMS.get("default_tier_score", 50.0)
+            result.sei_homogeneity_score = _ScoringParams.get_default_tier_score()
             result.tier3_viable = True
 
         # Component 4: MX_Synthesis_Score (Automated lab compatibility)
@@ -216,7 +275,7 @@ class AureliusScoringEngine:
         if path_result.rejected:
             return 0.0
 
-        normalization = _SCORING_PARAMS.get("desolvation_normalization", {})
+        normalization = _ScoringParams.get_desolvation_normalization()
         scale_factor = normalization.get("scale_factor", 100.0)
         scale_denom = normalization.get("scale_denominator_eV", 0.3)
 
@@ -243,7 +302,7 @@ class AureliusScoringEngine:
         Assesses how well a molecule's properties align with
         automated synthesis laboratory capabilities.
         """
-        mx_params = _SCORING_PARAMS.get("mx_synthesis", {})
+        mx_params = _ScoringParams.get_mx_synthesis()
         score = mx_params.get("base_score", 70.0)
 
         common_solvents = mx_params.get("common_solvents", ["ec:dmc", "ec:emc", "pc:dmc", "water"])

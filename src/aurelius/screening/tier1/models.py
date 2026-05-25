@@ -20,12 +20,49 @@ import os
 from importlib import resources
 from typing import Any, Protocol, runtime_checkable
 
-import numpy as np
+from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 
 # ---------------------------------------------------------------------------
-# Re-export for backward compatibility (modules that check these booleans)
+# Type aliases for model tensor types
 # ---------------------------------------------------------------------------
-from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
+
+# MLX array type (available only when MLX is installed)
+if HAS_MLX:
+    try:
+        import mlx.core as _mlx_core  # noqa: F401
+
+        MLXArray = _mlx_core.array
+    except Exception:
+        MLXArray: Any  # type: ignore[misc, definition]
+else:
+    MLXArray: Any  # type: ignore[misc, assignment]
+
+# PyTorch tensor type (available only when Torch is installed)
+if HAS_TORCH:
+    try:
+        import torch  # noqa: F401
+
+        TTensor = _torch.Tensor
+    except Exception:
+        TTensor: Any  # type: ignore[misc, definition]
+else:
+    TTensor: Any  # type: ignore[misc, assignment]
+
+# TYPE_CHECKING imports for type hints only
+if HAS_MLX:
+    try:
+        import mlx.core as _mlx_core  # noqa: F401
+
+        _mlx_core = _mlx_core
+    except Exception:
+        pass
+if HAS_TORCH:
+    try:
+        import torch  # noqa: F401
+
+        _torch = _torch
+    except Exception:
+        pass
 
 __all__ = [
     "DEFAULT_MODEL_DIR",
@@ -71,11 +108,11 @@ class ModelBackend(Protocol):
     - load_weights: Load model weights from disk
     """
 
-    def __call__(self, x: Any) -> Any: ...
+    def __call__(self, x: MLXArray) -> MLXArray: ...
 
-    def parameters(self) -> list[Any]: ...
+    def parameters(self) -> list[MLXArray]: ...
 
-    def predict(self, x: Any) -> Any: ...
+    def predict(self, x: MLXArray) -> MLXArray: ...
 
     def save_weights(self, path: str) -> None: ...
 
@@ -134,14 +171,14 @@ if HAS_MLX:
             )
             self.linear2.bias = _mlx_core.zeros((1,))
 
-        def __call__(self, x: Any) -> Any:
+        def __call__(self, x: MLXArray) -> MLXArray:
             """Forward pass through the 2-layer MLP."""
             h = self.linear1(x)
             h = self.relu(h)
             out = self.linear2(h)
             return _mlx_nn.sigmoid(out)  # type: ignore[attr-defined]
 
-        def predict(self, x: Any) -> Any:
+        def predict(self, x: MLXArray) -> MLXArray:
             """Run inference and return viability score.
 
             Args:
@@ -152,7 +189,7 @@ if HAS_MLX:
             """
             return self(x)
 
-        def parameters(self) -> list[Any]:
+        def parameters(self) -> list[MLXArray]:
             return [self.linear1.weight, self.linear1.bias, self.linear2.weight, self.linear2.bias]
 
         def save_weights(self, path: str) -> None:
@@ -197,7 +234,7 @@ else:
     class MLXBackend:  # type: ignore[no-redef]
         """Placeholder when MLX is unavailable."""
 
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
+        def __init__(self, *args: int, **kwargs: int) -> None:
             raise ImportError("MLX is required for MLXBackend. Install with: pip install mlx")
 
         __call__: Any
@@ -252,14 +289,14 @@ if HAS_TORCH:
             _torch_nn.init.xavier_uniform_(self.fc2.weight)
             _torch_nn.init.zeros_(self.fc2.bias)
 
-        def __call__(self, x: Any) -> Any:
+        def __call__(self, x: TTensor) -> TTensor:
             """Forward pass through the 2-layer MLP."""
             h = self.fc1(x)
             h = self.relu(h)
             out = self.fc2(h)
             return _torch.sigmoid(out)
 
-        def predict(self, x: Any) -> Any:
+        def predict(self, x: TTensor) -> TTensor:
             """Run inference and return viability score.
 
             Args:
@@ -270,7 +307,7 @@ if HAS_TORCH:
             """
             return self(x)
 
-        def parameters(self) -> list[Any]:
+        def parameters(self) -> list[TTensor]:
             return [self.fc1.weight, self.fc1.bias, self.fc2.weight, self.fc2.bias]
 
         def save_weights(self, path: str) -> None:
@@ -310,7 +347,7 @@ else:
     class PyTorchBackend:  # type: ignore[no-redef]
         """Placeholder when PyTorch is unavailable."""
 
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
+        def __init__(self, *args: int, **kwargs: int) -> None:
             raise ImportError("PyTorch is required for PyTorchBackend. Install with: pip install torch")
 
         __call__: Any
