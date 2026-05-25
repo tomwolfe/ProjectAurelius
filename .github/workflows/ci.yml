@@ -74,7 +74,7 @@ jobs:
           pip install rdkit
 
       - name: Run tier0 tests
-        run: pytest tests/ -v -k "tier0 or mpnn or gnn" --tb=short
+        run: pytest tests/ -v -k "tier1 or tier2 or tier3" --tb=short
 
   test-memory:
     name: Memory Profiler Tests
@@ -159,4 +159,4 @@ jobs:
         run: python -m aurelius doctor --verbose
 
       - name: Run fallback-safe tests
-        run: pytest tests/ -v -k "not (tier0 or mpnn or gnn or profiler or memory)" --tb=short
+        run: pytest tests/ -v -k "not (tier1 or tier2 or tier3 or profiler or memory)" --tb=short
