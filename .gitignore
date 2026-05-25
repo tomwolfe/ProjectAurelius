@@ -82,6 +82,9 @@ memory_profile_*.csv
 
 # Synthetic training data
 data/
+!src/aurelius/data/force_field_params.json
+!src/aurelius/data/__init__.py
+!src/aurelius/data/esol_fallback.csv
 
 # Outputs and research archives
 outputs/
