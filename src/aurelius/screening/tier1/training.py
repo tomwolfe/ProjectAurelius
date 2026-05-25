@@ -447,18 +447,18 @@ def _train_synthetic_pytorch() -> PyTorchBackend:
             y_batch = _torch.from_numpy(y_shuffled[start:end]).float()
 
             optimizer.zero_grad()
-            pred = model(x_batch).squeeze(-1)
+            pred = model(x_batch).squeeze(-1)  # type: ignore[attr-defined]
             loss = criterion(pred, y_batch)
             loss.backward()
             optimizer.step()
 
         with _torch.no_grad():
-            val_pred = model(_torch.from_numpy(X_val_split).float()).squeeze(-1)
+            val_pred = model(_torch.from_numpy(X_val_split).float()).squeeze(-1)  # type: ignore[attr-defined]
             val_loss = criterion(val_pred, _torch.from_numpy(y_val_split).float()).item()
 
         if (epoch + 1) % 20 == 0:
             with _torch.no_grad():
-                train_pred = model(_torch.from_numpy(X_train_split).float()).squeeze(-1)
+                train_pred = model(_torch.from_numpy(X_train_split).float()).squeeze(-1)  # type: ignore[attr-defined]
                 train_loss = criterion(train_pred, _torch.from_numpy(y_train_split).float()).item()
             print(
                 f"[Aurelius v6.0 Tier1] PyTorch synthetic epoch {epoch + 1}/100: "

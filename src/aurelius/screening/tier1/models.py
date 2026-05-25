@@ -19,35 +19,36 @@ import contextlib
 import json
 import os
 from importlib import resources
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
 
 from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 
 # ---------------------------------------------------------------------------
-# Type aliases for model tensor types
+# Type aliases for model tensor types (TYPE_CHECKING only)
 # ---------------------------------------------------------------------------
 
-# MLX array type (available only when MLX is installed)
-if HAS_MLX:
-    try:
-        import mlx.core as _mlx_core  # noqa: F401
+if TYPE_CHECKING:
+    if HAS_MLX:
+        try:
+            import mlx.core as _mlx_core  # noqa: F401
 
-        MLXArray = _mlx_core.array
-    except Exception:
-        MLXArray: Any  # type: ignore[misc, definition]
+            MLXArray = _mlx_core.array
+        except Exception:
+            MLXArray: Any  # type: ignore[no-redef]
+    else:
+        MLXArray: Any  # type: ignore[no-redef]
+
+    if HAS_TORCH:
+        try:
+            import torch as _torch  # noqa: F401
+
+            TTensor = _torch.Tensor
+        except Exception:
+            TTensor: Any  # type: ignore[no-redef]
+    else:
+        TTensor: Any  # type: ignore[no-redef]
 else:
-    MLXArray: Any  # type: ignore[misc, assignment]
-
-# PyTorch tensor type (available only when Torch is installed)
-if HAS_TORCH:
-    try:
-        import torch as _torch  # noqa: F401
-
-        TTensor = _torch.Tensor
-    except Exception:
-        TTensor: Any  # type: ignore[misc, definition]
-else:
-    TTensor: Any  # type: ignore[misc, assignment]
+    pass
 
 # TYPE_CHECKING imports for type hints only
 if HAS_MLX:
@@ -173,7 +174,7 @@ if HAS_MLX:
             h = self.linear1(x)
             h = self.relu(h)
             out = self.linear2(h)
-            return _mlx_nn.sigmoid(out)  # type: ignore[attr-defined]
+            return _mlx_nn.sigmoid(out)  # type: ignore[no-any-return, attr-defined]
 
         def predict(self, x: MLXArray) -> MLXArray:
             """Run inference and return viability score.
@@ -368,9 +369,9 @@ def model_factory() -> ModelBackend:
         ImportError: When neither MLX nor PyTorch is available.
     """
     if HAS_MLX:
-        return MLXBackend()
+        return MLXBackend()  # type: ignore[return-value]
     elif HAS_TORCH:
-        return PyTorchBackend()
+        return PyTorchBackend()  # type: ignore[return-value]
     else:
         raise ImportError(
             "At least one ML framework is required (MLX or PyTorch). "

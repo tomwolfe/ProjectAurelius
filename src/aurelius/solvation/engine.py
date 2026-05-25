@@ -30,7 +30,7 @@ import math
 import os
 from dataclasses import dataclass
 from importlib import resources
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -58,7 +58,7 @@ def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
     ff_path = path or _default_ff_path()
     if os.path.isfile(ff_path):
         with open(ff_path) as f:
-            return json.load(f)  # type: ignore[no-any-return]
+            return cast(dict[str, Any], json.load(f))
     return {}
 
 
@@ -286,19 +286,19 @@ class _ScoringParams:
     def get_mwse_stability(cls) -> dict[str, Any]:
         """Get MWSE stability parameters."""
         params = cls._ensure_loaded()
-        return params.get("mwse_stability", {})
+        return cast(dict[str, Any], params.get("mwse_stability", {}))
 
     @classmethod
     def get_default_tier_score(cls) -> float:
         """Get default tier score."""
         params = cls._ensure_loaded()
-        return params.get("default_tier_score", 50.0)
+        return cast(float, params.get("default_tier_score", 50.0))
 
     @classmethod
     def get_desolvation_normalization(cls) -> dict[str, Any]:
         """Get desolvation normalization parameters."""
         params = cls._ensure_loaded()
-        return params.get("desolvation_normalization", {})
+        return cast(dict[str, Any], params.get("desolvation_normalization", {}))
 
     @classmethod
     def clear_cache(cls) -> None:
@@ -320,7 +320,7 @@ def _load_scoring_params(path: str | None = None) -> dict[str, Any]:
         try:
             with open(ff_path) as f:
                 data = json.load(f)
-                return data.get("scoring_parameters", {})  # type: ignore[no-any-return]
+                return cast(dict[str, Any], data.get("scoring_parameters", {}))
         except (json.JSONDecodeError, OSError):
             pass
     return {}

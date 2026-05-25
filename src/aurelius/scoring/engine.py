@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import os
 from importlib import resources
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -53,37 +53,37 @@ class _ScoringParams:
     def get_mwse_stability(cls) -> dict[str, Any]:
         """Get MWSE stability parameters."""
         params = cls._ensure_loaded()
-        return params.get("mwse_stability", {})
+        return cast(dict[str, Any], params.get("mwse_stability", {}))
 
     @classmethod
     def get_default_tier_score(cls) -> float:
         """Get default tier score."""
         params = cls._ensure_loaded()
-        return params.get("default_tier_score", 50.0)
+        return cast(float, params.get("default_tier_score", 50.0))
 
     @classmethod
     def get_desolvation_normalization(cls) -> dict[str, Any]:
         """Get desolvation normalization parameters."""
         params = cls._ensure_loaded()
-        return params.get("desolvation_normalization", {})
+        return cast(dict[str, Any], params.get("desolvation_normalization", {}))
 
     @classmethod
     def get_component_weights(cls) -> dict[str, Any]:
         """Get component weight parameters."""
         params = cls._ensure_loaded()
-        return params.get("component_weights", {})
+        return cast(dict[str, Any], params.get("component_weights", {}))
 
     @classmethod
     def get_viability_threshold(cls) -> float:
         """Get viability threshold."""
         params = cls._ensure_loaded()
-        return params.get("viability_threshold", 65.0)
+        return cast(float, params.get("viability_threshold", 65.0))
 
     @classmethod
     def get_mx_synthesis(cls) -> dict[str, Any]:
         """Get MX synthesis parameters."""
         params = cls._ensure_loaded()
-        return params.get("mx_synthesis", {})
+        return cast(dict[str, Any], params.get("mx_synthesis", {}))
 
     @classmethod
     def clear_cache(cls) -> None:
@@ -105,7 +105,7 @@ def _load_scoring_params(path: str | None = None) -> dict[str, Any]:
         try:
             with open(ff_path) as f:
                 data = json.load(f)
-                return data.get("scoring_parameters", {})  # type: ignore[no-any-return]
+                return cast(dict[str, Any], data.get("scoring_parameters", {}))
         except (json.JSONDecodeError, OSError):
             pass
     return {}

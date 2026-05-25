@@ -424,7 +424,7 @@ class MatterSimMTSimulator:
             atomic_numbers, src_indices, dst_indices, distances,
             self._CHARGES, self._use_polarization,
             self._CHARGES.get(int(atomic_numbers[0].item()), 0.0),
-            atomic_numbers.device,
+            str(atomic_numbers.device),  # type: ignore[arg-type]
         )
 
     def _compute_lj_potential(
@@ -593,7 +593,7 @@ class MatterSimMTSimulator:
                 atomic_numbers, src, dst, dist,
                 self._CHARGES, self._use_polarization,
                 self._CHARGES.get(int(atomic_numbers[0].item()), 0.0),
-                atomic_numbers.device,
+                str(atomic_numbers.device),  # type: ignore[arg-type]
             )
         else:
             diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)

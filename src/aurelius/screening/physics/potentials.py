@@ -253,18 +253,18 @@ class MatterSimCoulombPotentials:
         mask = torch.triu(torch.ones(n, n, device=device, dtype=torch.bool), diagonal=1)
 
         if use_polarization:
-            charges = [
+            charges_list = [
                 0.0 if atomic_numbers[i].item() not in charges else charges[int(atomic_numbers[i].item())]
                 for i in range(n)
             ]
+            charges_tensor = torch.tensor(charges_list, device=device)
         else:
             charges_tensor = torch.zeros(n, device=device, dtype=torch.float32)
             for z, q in charges.items():
                 charges_tensor = torch.where(atomic_numbers == z, torch.full_like(charges_tensor, q), charges_tensor)
-            charges = charges_tensor
 
-        q_i = charges.unsqueeze(0)
-        q_j = charges.unsqueeze(1)
+        q_i = charges_tensor.unsqueeze(0)
+        q_j = charges_tensor.unsqueeze(1)
         q_product = q_i * q_j
 
         charge_mask = q_product != 0.0
