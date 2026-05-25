@@ -939,7 +939,7 @@ class MatterSimMTSimulator:
         unique_indices = inverse_indices.unique(sorted=True)
         for local_key in unique_indices:
             local_key_int = int(local_key.item())
-            cx, cy, cz = (
+            _ = (
                 int(unique_keys[local_key_int].item()) // 1_000_000,
                 (int(unique_keys[local_key_int].item()) % 1_000_000) // 1_000,
                 int(unique_keys[local_key_int].item()) % 1_000,
