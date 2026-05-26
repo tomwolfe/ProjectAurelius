@@ -19,7 +19,7 @@ import contextlib
 import json
 import os
 from importlib import resources
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 
@@ -27,36 +27,20 @@ from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 # Type aliases for model tensor types
 # ---------------------------------------------------------------------------
 
-if HAS_MLX:
+if TYPE_CHECKING:
     try:
         import mlx.core as _mlx_core  # noqa: F401
 
         MLXArray = _mlx_core.array
     except Exception:
         MLXArray: Any  # type: ignore[no-redef]
-else:
-    MLXArray: Any  # type: ignore[no-redef]
 
-if HAS_TORCH:
     try:
         import torch as _torch  # noqa: F401
 
         TTensor = _torch.Tensor
     except Exception:
         TTensor: Any  # type: ignore[no-redef]
-else:
-    TTensor: Any  # type: ignore[no-redef]
-
-# TYPE_CHECKING imports for type hints only
-if HAS_MLX:
-    try:
-        import mlx.core as _mlx_core  # noqa: F401
-        _mlx_core = _mlx_core
-    except Exception:
-        pass
-if HAS_TORCH:
-    with contextlib.suppress(Exception):
-        import torch as _torch  # noqa: F401
 
 __all__ = [
     "DEFAULT_MODEL_DIR",
