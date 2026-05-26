@@ -198,7 +198,7 @@ class MatterSimMTSimulator:
         """
         size = 119  # Maximum atomic number in periodic table
         matrix = torch.zeros(size, size, dtype=torch.float32, device=device)
-        for (zi, zj), (eps, sig) in params.items():
+        for (zi, zj), (eps, _sig) in params.items():
             matrix[zi][zj] = eps
         return matrix
 
@@ -221,12 +221,6 @@ class MatterSimMTSimulator:
         for z, q in charges.items():
             vector[z] = q
         return vector
-
-        # Precomputed parameter matrices for vectorized tensor lookups
-        device = self._select_device()
-        self._eps_matrix = self._build_param_matrix(self._LJ_PARAMS, device)
-        self._sig_matrix = self._build_param_matrix(self._LJ_PARAMS, device)
-        self._charge_vector = self._build_charge_vector(self._CHARGES, device)
 
     def _select_device(self) -> str:
         """Select the best available compute device.
@@ -522,6 +516,8 @@ class MatterSimMTSimulator:
         device = atomic_numbers.device
         ion_idx = 0
         n_solvent = coordinates.shape[0] - 1
+
+        _ = n_solvent  # Used in _compute_energy_profile below
 
         positions = torch.linspace(0, 8.0, n_scan_points, device=device)
 

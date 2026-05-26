@@ -20,7 +20,7 @@ import os
 from importlib import resources
 from typing import Any, Protocol, runtime_checkable
 
-from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
+from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
 
 # ---------------------------------------------------------------------------
 # Constants

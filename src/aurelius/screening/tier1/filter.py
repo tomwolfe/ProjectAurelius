@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import time
+from importlib import resources
 from typing import Any
 
 import numpy as np
@@ -27,7 +28,6 @@ from aurelius.screening.tier1.loaders import (
 )
 from aurelius.screening.tier1.models import (
     HAS_MLX,
-    HAS_RDKIT,
     HAS_TORCH,
     MLXBackend,
     PyTorchBackend,
@@ -38,6 +38,7 @@ from aurelius.screening.tier1.training import (
     train_on_esol,
 )
 from aurelius.types import MLXFilterResult
+from aurelius.utils.dependencies import HAS_RDKIT
 
 logger = logging.getLogger(__name__)
 
