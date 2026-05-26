@@ -19,6 +19,8 @@ class TestMLXNAFilter:
         self.filter = MLXNAFilter(quantization_format="MX4", train_on_init=False)
 
     def test_screen_molecule(self):
+        if not HAS_MLX:
+            pytest.skip("MLX is required for MLXNAFilter with use_real_models=True")
         if not HAS_RDKIT:
             pytest.skip("RDKit is required for MLXNAFilter with use_real_models=True")
         result = self.filter.screen_molecule("CC(=O)OC1=CC(=O)O1")
@@ -29,6 +31,8 @@ class TestMLXNAFilter:
 
     def test_deterministic_output_same_smiles(self):
         """Tier 1 must produce consistent results for the same SMILES."""
+        if not HAS_MLX:
+            pytest.skip("MLX is required for MLXNAFilter with use_real_models=True")
         if not HAS_RDKIT:
             pytest.skip("RDKit is required for MLXNAFilter with use_real_models=True")
         smiles = "CC(=O)OC1=CC(=O)O1"
@@ -42,6 +46,8 @@ class TestMLXNAFilter:
 
     def test_different_smiles_different_output(self):
         """Different SMILES should produce different confidence scores."""
+        if not HAS_MLX:
+            pytest.skip("MLX is required for MLXNAFilter with use_real_models=True")
         if not HAS_RDKIT:
             pytest.skip("RDKit is required for MLXNAFilter with use_real_models=True")
         smiles_list = [
@@ -55,6 +61,8 @@ class TestMLXNAFilter:
         assert len(set(confidences)) >= 1  # At minimum, valid scores
 
     def test_screen_batch(self):
+        if not HAS_MLX:
+            pytest.skip("MLX is required for MLXNAFilter with use_real_models=True")
         if not HAS_RDKIT:
             pytest.skip("RDKit is required for MLXNAFilter with use_real_models=True")
         molecules = [

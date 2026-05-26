@@ -27,7 +27,12 @@ def main() -> None:
 
     config = get_config()
     pipeline = AureliusPipeline(config)
-    pipeline.initialize()
+    try:
+        pipeline.initialize()
+    except Exception as exc:
+        print(f"[Aurelius Pipeline] Initialization failed: {exc}")
+        print("No score computed.")
+        sys.exit(1)
 
     results = pipeline.screen_molecule(
         args.smiles,
