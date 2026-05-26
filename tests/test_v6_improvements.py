@@ -168,30 +168,6 @@ class TestDiskSpaceCheck:
         assert free_gb == 0.0
 
 
-# ============================================================
-# Environment Validation Tests
-# ============================================================
-
-
-class TestEnvironmentValidation:
-    """Tests for environment variable validation."""
-
-    def test_validate_environment_compliant(self):
-        """Verify validate_environment returns compliant when env matches config."""
-        pytest.skip("validate_environment was removed during refactoring")
-
-    def test_validate_environment_with_mismatch(self):
-        """Verify validate_environment detects env var mismatches."""
-        pytest.skip("validate_environment was removed during refactoring")
-
-    def test_validate_environment_missing_vars(self):
-        """Verify validate_environment detects missing env vars."""
-        pytest.skip("validate_environment was removed during refactoring")
-
-    def test_print_env_diff(self):
-        """Verify print_env_diff produces output."""
-        pytest.skip("print_env_diff was removed during refactoring")
-
 
 # ============================================================
 # CLI Doctor Command Tests

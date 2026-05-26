@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import Protocol, runtime_checkable
+from typing import Any
 
 from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
 
@@ -31,40 +31,6 @@ if HAS_MLX:
 if HAS_TORCH:
     with contextlib.suppress(Exception):
         import torch as _torch  # noqa: F401
-
-# ---------------------------------------------------------------------------
-# Protocol definitions for cross-framework tensor operations
-# ---------------------------------------------------------------------------
-
-
-@runtime_checkable
-class _MlxArrayLike(Protocol):
-    """Protocol for MLX array-like objects that support DLpack export."""
-
-    def to_dlpack(self) -> object:
-        """Export the array memory view into a DLPack capsule."""
-        ...
-
-
-@runtime_checkable
-class _TorchTensorLike(Protocol):
-    """Protocol for PyTorch tensor-like objects that support DLpack consumption."""
-
-    @staticmethod
-    def from_dlpack(cap: object) -> _TorchTensorLike:
-        """Consume a DLPack capsule and create a tensor."""
-        ...
-
-
-@runtime_checkable
-class _TorchDLPackUtils(Protocol):
-    """Protocol for PyTorch DLpack utilities."""
-
-    @staticmethod
-    def to_dlpack(tensor: _TorchTensorLike) -> object:
-        """Export a PyTorch tensor memory view into a DLPack capsule."""
-        ...
-
 
 # ---------------------------------------------------------------------------
 # Bridge functions
@@ -91,7 +57,7 @@ _TORCH_DLPACK_UNSUPPORTED_MSG = (
 )
 
 
-def bridge_mlx_to_pytorch(mlx_array: _MlxArrayLike) -> _TorchTensorLike:
+def bridge_mlx_to_pytorch(mlx_array: Any) -> Any:
     """Bridge MLX array memory to PyTorch via DLPack.
 
     Uses DLpack to export the MLX array memory view into a DLPack
@@ -135,7 +101,7 @@ def bridge_mlx_to_pytorch(mlx_array: _MlxArrayLike) -> _TorchTensorLike:
     return torch_tensor  # type: ignore[return-value, no-any-return]
 
 
-def bridge_pytorch_to_mlx(torch_tensor: _TorchTensorLike) -> _MlxArrayLike:
+def bridge_pytorch_to_mlx(torch_tensor: Any) -> Any:
     """Bridge PyTorch tensor memory to MLX via DLPack.
 
     Uses DLpack to export the PyTorch tensor memory view into a
@@ -211,7 +177,7 @@ class CrossFrameworkBridge:
         """Return True if PyTorch is available on this platform."""
         return self._torch_available
 
-    def mlx_to_pytorch(self, mlx_array: _MlxArrayLike) -> _TorchTensorLike:
+    def mlx_to_pytorch(self, mlx_array: Any) -> Any:
         """Bridge an MLX array to a PyTorch tensor on the same device.
 
         Raises:
@@ -222,7 +188,7 @@ class CrossFrameworkBridge:
             raise RuntimeError(_MLX_NOT_AVAILABLE_MSG)
         return bridge_mlx_to_pytorch(mlx_array)
 
-    def pytorch_to_mlx(self, torch_tensor: _TorchTensorLike) -> _MlxArrayLike:
+    def pytorch_to_mlx(self, torch_tensor: Any) -> Any:
         """Bridge a PyTorch tensor to an MLX array.
 
         Raises:

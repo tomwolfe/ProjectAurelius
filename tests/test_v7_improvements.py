@@ -211,16 +211,18 @@ class TestMockDFTOracle:
 
     def test_oracle_caching(self):
         """Verify MockDFTOracle caches query results."""
-        from aurelius.screening.tier0.data import MockDFTOracle
-
+        from tests.mocks import MockDFTOracle
         oracle = MockDFTOracle()
+
+        # First query should compute
         energy1 = oracle.query("CCO")
+        # Second query should return cached value
         energy2 = oracle.query("CCO")
         assert energy1 == energy2
 
     def test_oracle_query_batch(self):
         """Verify MockDFTOracle can query multiple molecules."""
-        from aurelius.screening.tier0.data import MockDFTOracle
+        from tests.mocks import MockDFTOracle
 
         oracle = MockDFTOracle()
         smiles_list = ["CCO", "CCC", "CCCN"]
@@ -230,7 +232,7 @@ class TestMockDFTOracle:
 
     def test_oracle_append_dataset(self):
         """Verify MockDFTOracle can append data to training dataset."""
-        from aurelius.screening.tier0.data import MockDFTOracle
+        from tests.mocks import MockDFTOracle
 
         oracle = MockDFTOracle()
         smiles_list = ["CCO", "CCC"]
@@ -242,7 +244,7 @@ class TestMockDFTOracle:
 
     def test_oracle_clear_cache(self):
         """Verify MockDFTOracle can clear its cache."""
-        from aurelius.screening.tier0.data import MockDFTOracle
+        from tests.mocks import MockDFTOracle
 
         oracle = MockDFTOracle()
         oracle.query("CCO")

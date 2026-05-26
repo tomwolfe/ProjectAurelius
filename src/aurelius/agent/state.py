@@ -2,54 +2,31 @@
 
 from __future__ import annotations
 
-import sqlite3
+from __future__ import annotations
+
+import json
+import os
 from datetime import UTC, datetime
 from typing import Any
 
-import numpy as np
-
 
 class CheckpointManager:
-    """Manages agent state using a lightweight embedded SQLite database.
+    """Manages agent state using atomic JSON writes.
 
-    Replaces the previous JSON-based checkpoint system with indexed
-    SQL tables for ``screened_molecules`` and ``fingerprints``, enabling
-    O(log N) duplicate detection instead of O(N) list scans.
+    Replaces the previous SQLite-based implementation with a simpler
+    dictionary-backed approach that writes to a JSON file.
 
-    Uses atomic writes to prevent corruption during crashes.
-    Saves state after every molecule (not only per batch) for granular
-    checkpointing.
+    Uses atomic writes (write to .tmp, then os.replace) to prevent
+    corruption during crashes.
     """
 
-    def __init__(self, path: str = "aurelius_state.db") -> None:
+    def __init__(self, path: str = "agent_state.json") -> None:
         """Initialize the checkpoint manager.
 
         Args:
-            path: Path to the SQLite database file.
+            path: Path to the JSON state file.
         """
         self.path = path
-        self._conn = sqlite3.connect(path)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS screened_molecules (
-                smiles  TEXT PRIMARY KEY,
-                score   REAL,
-                tier_status TEXT
-            )
-        """)
-        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_smiles ON screened_molecules(smiles)")
-
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS fingerprints (
-                smiles  TEXT,
-                fp_hex  TEXT,
-                PRIMARY KEY (smiles, fp_hex)
-            )
-        """)
-        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_fp_hex ON fingerprints(fp_hex)")
-
         self._batch = 0
         self._screened_count = 0
         self._best_score = 0.0
@@ -59,61 +36,68 @@ class CheckpointManager:
         self._started_at = datetime.now(UTC).isoformat()
         self._last_updated: str | None = None
 
-        # Create discoveries table for persistent storage
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS discoveries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                discovery_type TEXT,
-                data TEXT,
-                created_at TEXT
-            )
-        """)
-        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_discovery_id ON discoveries(id)")
+        self._screened_smiles: set[str] = set()
+        self._screened_entries: dict[str, tuple[float, str]] = {}
+        self._fingerprints: set[str] = set()
+        self._discoveries: list[dict[str, Any]] = []
 
-        # Create agent_state table for key-value state persistence
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS agent_state (
-                key   TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
+        self._load()
 
-    def _load_state(self) -> dict[str, Any]:
-        """Load checkpoint state from the agent_state key-value table.
+    def _load(self) -> None:
+        """Load checkpoint state from the JSON file.
 
-        Returns:
-            Dict of checkpoint state.
+        If the file does not exist, initializes with default values.
         """
-        state: dict[str, Any] = {}
-        cursor = self._conn.execute("SELECT key, value FROM agent_state")
-        for row in cursor:
-            key, value = row
-            if key == "started_at":
-                state[key] = value
-            elif key in ("batch", "screened_count", "viable_count", "total_generated", "invalid_discarded"):
-                state[key] = int(value)
-            elif key in ("best_score",):
-                state[key] = float(value)
-            elif key == "last_updated":
-                state[key] = value if value else None
-        return state
+        if os.path.exists(self.path):
+            try:
+                with open(self.path) as f:
+                    data = json.load(f)
+                self._batch = data.get("batch", 0)
+                self._screened_count = data.get("screened_count", 0)
+                self._best_score = data.get("best_score", 0.0)
+                self._viable_count = data.get("viable_count", 0)
+                self._total_generated = data.get("total_generated", 0)
+                self._invalid_discarded = data.get("invalid_discarded", 0)
+                self._started_at = data.get("started_at", self._started_at)
+                self._last_updated = data.get("last_updated")
+                self._screened_smiles = set(data.get("screened_smiles", []))
+                self._screened_entries = {
+                    entry["smiles"]: (entry["score"], entry["tier_status"])
+                    for entry in data.get("screened_molecules", [])
+                }
+                self._fingerprints = set(data.get("fingerprints", []))
+                self._discoveries = data.get("discoveries", [])
+            except (json.JSONDecodeError, KeyError, TypeError, OSError):
+                pass
 
-    def _get_state_dict(self) -> dict[str, Any]:
-        """Return current state as a dict (for API compatibility)."""
-        import json
-        cursor = self._conn.execute("SELECT data FROM discoveries")
-        discoveries = [json.loads(row[0]) for row in cursor]
-        return {
+    def _save(self) -> None:
+        """Save checkpoint state to the JSON file atomically.
+
+        Writes to a temporary file first, then uses os.replace() for
+        atomic safety.
+        """
+        data = {
             "batch": self._batch,
             "screened_count": self._screened_count,
             "best_score": self._best_score,
             "viable_count": self._viable_count,
             "total_generated": self._total_generated,
             "invalid_discarded": self._invalid_discarded,
-            "discoveries": discoveries,
             "started_at": self._started_at,
             "last_updated": self._last_updated,
+            "screened_smiles": list(self._screened_smiles),
+            "screened_molecules": [
+                {"smiles": smi, "score": score, "tier_status": status}
+                for smi, (score, status) in self._screened_entries.items()
+            ],
+            "fingerprints": list(self._fingerprints),
+            "discoveries": self._discoveries,
         }
+
+        tmp_path = self.path + ".tmp"
+        with open(tmp_path, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, self.path)
 
     def load(self) -> dict[str, Any]:
         """Load checkpoint state from disk.
@@ -122,22 +106,16 @@ class CheckpointManager:
             Dict of checkpoint state.  Returns empty state if file
             cannot be read.
         """
-        return self._load_state()
+        self._load()
+        return self._get_state_dict()
 
     def save(self) -> None:
-        """Save checkpoint state to the agent_state key-value table.
+        """Save checkpoint state to the JSON file atomically.
 
-        Updates the in-memory state and persists it to the SQLite database.
+        Writes to a temporary file first, then uses os.replace() for
+        atomic safety.
         """
-        state = self._get_state_dict()
-        rows = []
-        for key, value in state.items():
-            rows.append((key, str(value) if value is not None else ""))
-        self._conn.executemany(
-            "INSERT OR REPLACE INTO agent_state (key, value) VALUES (?, ?)",
-            rows,
-        )
-        self._conn.commit()
+        self._save()
 
     def add_discovery(self, discovery: dict[str, Any]) -> None:
         """Add a discovery to the checkpoint.
@@ -145,12 +123,7 @@ class CheckpointManager:
         Args:
             discovery: Dict with discovery data.
         """
-        import json
-        data = json.dumps(discovery)
-        self._conn.execute(
-            "INSERT INTO discoveries (discovery_type, data, created_at) VALUES (?, ?, ?)",
-            ("discovery", data, datetime.now(UTC).isoformat()),
-        )
+        self._discoveries.append(discovery)
 
     def update_stats(
         self,
@@ -186,10 +159,7 @@ class CheckpointManager:
         Returns:
             True if the molecule has already been screened.
         """
-        cursor = self._conn.execute(
-            "SELECT 1 FROM screened_molecules WHERE smiles = ?", (smiles,)
-        )
-        return cursor.fetchone() is not None
+        return smiles in self._screened_smiles
 
     def add_screened_molecule(self, smiles: str, score: float, tier_status: str) -> None:
         """Record a screened molecule.
@@ -199,15 +169,12 @@ class CheckpointManager:
             score: Molecule score.
             tier_status: Status string (e.g. "viable", "rejected").
         """
-        self._conn.execute(
-            "INSERT OR REPLACE INTO screened_molecules (smiles, score, tier_status) VALUES (?, ?, ?)",
-            (smiles, score, tier_status),
-        )
+        self._screened_smiles.add(smiles)
+        self._screened_entries[smiles] = (score, tier_status)
 
     def fps_hex_list(self) -> list[str]:
         """Return list of known fingerprint hex strings."""
-        cursor = self._conn.execute("SELECT fp_hex FROM fingerprints")
-        return [row[0] for row in cursor]
+        return list(self._fingerprints)
 
     def add_fps_hex(self, hex_str: str, smiles: str | None = None) -> None:
         """Add a fingerprint hex string to the known list.
@@ -216,16 +183,7 @@ class CheckpointManager:
             hex_str: Serialized fingerprint string.
             smiles: Associated SMILES (for index lookup).
         """
-        if smiles is None:
-            self._conn.execute(
-                "INSERT OR IGNORE INTO fingerprints (fp_hex) VALUES (?)",
-                (hex_str,),
-            )
-        else:
-            self._conn.execute(
-                "INSERT OR REPLACE INTO fingerprints (smiles, fp_hex) VALUES (?, ?)",
-                (smiles, hex_str),
-            )
+        self._fingerprints.add(hex_str)
 
     def is_known_fps(self, hex_str: str) -> bool:
         """Check if a fingerprint hex has already been recorded.
@@ -236,14 +194,21 @@ class CheckpointManager:
         Returns:
             True if the fingerprint is already known.
         """
-        cursor = self._conn.execute(
-            "SELECT 1 FROM fingerprints WHERE fp_hex = ?", (hex_str,)
-        )
-        return cursor.fetchone() is not None
+        return hex_str in self._fingerprints
 
-    def close(self) -> None:
-        """Close the database connection."""
-        self._conn.close()
+    def clear(self) -> None:
+        """Clear all screened molecules, fingerprints, and agent state."""
+        self._batch = 0
+        self._screened_count = 0
+        self._best_score = 0.0
+        self._viable_count = 0
+        self._total_generated = 0
+        self._invalid_discarded = 0
+        self._screened_smiles.clear()
+        self._screened_entries.clear()
+        self._fingerprints.clear()
+        self._discoveries.clear()
+        self._save()
 
     @property
     def state(self) -> dict[str, Any]:
@@ -254,13 +219,19 @@ class CheckpointManager:
         """
         return self._get_state_dict()
 
-    def clear(self) -> None:
-        """Clear all screened molecules, fingerprints, and agent state."""
-        self._conn.execute("DELETE FROM agent_state")
-        self._conn.execute("DELETE FROM screened_molecules")
-        self._conn.execute("DELETE FROM fingerprints")
-        self._conn.execute("DELETE FROM discoveries")
-        self._conn.commit()
+    def _get_state_dict(self) -> dict[str, Any]:
+        """Return current state as a dict (for API compatibility)."""
+        return {
+            "batch": self._batch,
+            "screened_count": self._screened_count,
+            "best_score": self._best_score,
+            "viable_count": self._viable_count,
+            "total_generated": self._total_generated,
+            "invalid_discarded": self._invalid_discarded,
+            "discoveries": self._discoveries,
+            "started_at": self._started_at,
+            "last_updated": self._last_updated,
+        }
 
 
 class ConvergenceChecker:

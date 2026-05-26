@@ -702,7 +702,3 @@ def main() -> None:
         save_path=args.save_path,
         no_mlx=args.no_mlx,
     )
-
-
-if __name__ == "__main__":
-    main()
