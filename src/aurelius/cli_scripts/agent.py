@@ -23,6 +23,7 @@ from typing import Any
 import numpy as np
 
 from aurelius.agent import MutationEngine
+from aurelius.agent.loop import DiscoveryLoop
 from aurelius.agent.reporting import (
     generate_chemical_insights,
     generate_discovery_results,
@@ -30,7 +31,7 @@ from aurelius.agent.reporting import (
     generate_screening_statistics,
     write_top_discoveries,
 )
-from aurelius.agent.state import CheckpointManager, ConvergenceChecker, FeedbackAdapter
+from aurelius.agent.state import CheckpointManager
 from aurelius.config import AureliusConfig, initialize_environment
 from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
@@ -180,186 +181,26 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
     else:
         print("[AGENT] Fresh start. No checkpoint found.")
 
-    convergence = ConvergenceChecker()
-    if resumed and state.get("batch", 0) > 0:
-        convergence.total_screened = screened_so_far
-        convergence.viable_count = state.get("viable_count", 0)
-        convergence.generations = start_batch
-
-    feedback = FeedbackAdapter()
-    all_results: list[dict[str, Any]] = []
-    discoveries: list[dict[str, Any]] = []
-
-    # ---- Main Loop ----
-    max_generations = args.max_generations or 50
-    batch_size = args.batch_size or 50
-    max_wall_time = 43200  # 12 hours
-
     wall_start = time.time()
-    current_batch = start_batch
-    generation = 0
 
-    print(f"\n[AGENT] Starting screening loop. Batch size: {batch_size}, Max generations: {max_generations}")
-    print(f"[AGENT] Time limit: {max_wall_time}s (12 hours)\n")
-
-    screened_smiles: set[str] = set()
-
-    while generation < max_generations:
-        elapsed = time.time() - wall_start
-        if elapsed > max_wall_time:
-            print(f"\n[AGENT] Time cap reached ({elapsed:.0f}s). Exiting gracefully.")
-            break
-
-        generation += 1
-        current_batch += 1
-
-        # ---- Generation: Mutate seeds ----
-        if generation == 1:
-            candidates = engine.mutate_batch(seed_smiles, batch_size * 3)
-        else:
-            if all_results:
-                scored_results = [
-                    (r["score"].total_score, r["score"].molecule_smiles) for r in all_results if r.get("score")
-                ]
-                scored_results.sort(key=lambda x: -x[0])
-                top_seeds = [s for _, s in scored_results[: max(5, len(scored_results) // 5)]]
-            else:
-                top_seeds = seed_smiles[:5]
-            candidates = engine.mutate_batch(top_seeds, batch_size * 3)
-
-        # Filter invalid & duplicate
-        valid_candidates: list[str] = []
-        invalid_count = 0
-        for smi in candidates:
-            if smi in screened_smiles:
-                invalid_count += 1
-                continue
-            mol = _safe_mol_from_smiles(smi)
-            if mol is None:
-                invalid_count += 1
-                continue
-            if not _is_valid_mol(mol):
-                invalid_count += 1
-                continue
-            valid_candidates.append(smi)
-
-        if len(valid_candidates) > batch_size:
-            valid_candidates = valid_candidates[:batch_size]
-
-        if not valid_candidates:
-            print(f"[AGENT] Generation {generation}: No valid candidates. Skipping.")
-            continue
-
-        print(
-            f"[AGENT] Generation {generation}: Screening {len(valid_candidates)} candidates "
-            f"(invalid discarded: {invalid_count})"
-        )
-
-        # ---- Screening: Batch processing ----
-        batch_scores: list[float] = []
-        batch_viable = 0
-        batch_discoveries: list[dict[str, Any]] = []
-        batch_fps_hex: list[str] = []
-
-        batch_file = f"candidates_batch_{current_batch}.smi"
-        with open(batch_file, "w") as f:
-            for smi in valid_candidates:
-                f.write(f"{smi}\n")
-
-        for smi in valid_candidates:
-            try:
-                result = pipeline.screen_molecule(smi)
-            except Exception as e:
-                log.error("Pipeline error for %s: %s", smi, e, exc_info=True)
-                continue
-
-            score = result.get("score")
-            if score is None:
-                continue
-
-            screened_smiles.add(smi)
-            engine.add_to_db(smi)
-
-            total_score = score.total_score
-            batch_scores.append(total_score)
-
-            is_discovery = (
-                total_score >= 65.0
-                and score.tier1_viable
-                and score.tier2_viable
-                and score.tier3_viable
-                and len(score.rejection_reasons) == 0
-            )
-
-            if is_discovery:
-                batch_viable += 1
-                discovery_entry = {
-                    "smiles": smi,
-                    "total_score": total_score,
-                    "sigma": score.sigma_score,
-                    "desolvation": score.desolvation_score,
-                    "sei_homogeneity": score.sei_homogeneity_score,
-                    "mx_synthesis": score.mx_synthesis_score,
-                    "gwp_penalty": score.gwp_penalty,
-                    "is_viable": True,
-                    "rejection_reasons": score.rejection_reasons,
-                    "components": score.rejection_reasons,
-                }
-                batch_discoveries.append(discovery_entry)
-                discoveries.append(discovery_entry)
-                checkpoint.add_discovery(discovery_entry)
-                print(f"  ** DISCOVERY ** {smi} (score={total_score:.1f})")
-
-            all_results.append(result)
-            feedback.record(result)
-
-        new_fps_count = 0
-        for smi in valid_candidates:
-            mol = _safe_mol_from_smiles(smi)
-            if mol is not None:
-                fp_hex = _serialize_fp(_mol_to_fp(mol))
-                batch_fps_hex.append(fp_hex)
-                checkpoint.add_fps_hex(fp_hex)
-                new_fps_count += 1
-
-        convergence.record_batch(batch_scores, batch_viable, new_fps_count)
-        checkpoint.update_stats(valid_candidates, batch_scores, batch_viable, invalid_count)
-
-        print(
-            f"  Generation {generation} complete: "
-            f"{len(valid_candidates)} screened, {batch_viable} viable, "
-            f"best={max(batch_scores) if batch_scores else 0:.1f}"
-        )
-
-        if profiler:
-            profiler.sample(
-                generation=generation,
-                screened_count=convergence.total_screened,
-                gc_collected=0,
-            )
-
-        strategy = feedback.get_adaptation_strategy()
-        if generation % 5 == 0:
-            print(f"  [Feedback] Strategy: {strategy['recommendation']}")
-
-        should_stop, reason = convergence.should_terminate()
-        if should_stop:
-            print(f"\n[AGENT] Convergence reached: {reason}")
-            break
-
-        # ---- Atomic checkpoint save after every molecule ----
-        checkpoint.save()
-
-        print(
-            f"  [Progress] Screened: {convergence.total_screened}, "
-            f"Viable: {convergence.viable_count}, "
-            f"Generations: {generation}/{max_generations}\n"
-        )
+    # Build the discovery loop and run it
+    loop = DiscoveryLoop(
+        pipeline=pipeline,
+        engine=engine,
+        checkpoint=checkpoint,
+        max_generations=args.max_generations or 50,
+        batch_size=args.batch_size or 50,
+    )
+    results = loop.execute()
 
     # ---- Post-loop: Generate all deliverables ----
     print("\n" + "=" * 60)
     print("  GENERATING DELIVERABLES")
     print("=" * 60)
+
+    all_results = results["all_results"]
+    discoveries = results["discoveries"]
+    convergence = loop.convergence  # type: ignore[union-attr]
 
     generate_discovery_results(all_results)
     write_top_discoveries(discoveries)
@@ -380,11 +221,11 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
     print("\n" + "=" * 60)
     print("  SCREENING COMPLETE")
     print("=" * 60)
-    print(f"  Total screened:     {convergence.total_screened}")
+    print(f"  Total screened:     {results['total_screened']}")
     print(f"  Generations run:    {convergence.generations}")
-    print(f"  Viable discoveries: {convergence.viable_count}")
+    print(f"  Viable discoveries: {results['total_viable']}")
     print(f"  Best score:         {checkpoint.state['best_score']:.1f}")
-    print(f"  Invalid discarded:  {checkpoint.state['invalid_discarded']}")
+    print(f"  Invalid discarded:  {results['total_invalid']}")
     print(f"  Wall time:          {time.time() - wall_start:.0f}s")
     print("\n  Output files:")
     print("    - discovery_results_final.json")

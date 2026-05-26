@@ -35,138 +35,7 @@ from typing import Any, cast
 import numpy as np
 
 from aurelius.constants import COULOMB_EV_A
-from aurelius.data.params import ForceFieldParams
-from aurelius.scoring.engine import _ScoringParams
-
-# ---------------------------------------------------------------------------
-# Solvation parameter accessors
-# ---------------------------------------------------------------------------
-# Force field parameters
-# ---------------------------------------------------------------------------
-
-
-def _default_ff_path() -> str:
-    """Return the path to force_field_params.json via importlib.resources."""
-    return str(resources.files("aurelius.data").joinpath("force_field_params.json"))
-
-
-def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
-    """Load force field parameters from JSON config.
-
-    Args:
-        path: Path to force field params JSON file.
-
-    Returns:
-        Dictionary of force field parameters.
-    """
-    ff_path = path or _default_ff_path()
-    if os.path.isfile(ff_path):
-        with open(ff_path) as f:
-            return cast(dict[str, Any], json.load(f))
-    return {}
-
-
-# ---------------------------------------------------------------------------
-# Solvation parameter accessors (thin wrappers over ForceFieldParams)
-# ---------------------------------------------------------------------------
-
-
-class _SolvationParams:
-    """Thin wrapper over ForceFieldParams for solvation-specific access.
-
-    Provides the same interface as before to avoid breaking existing code,
-    but delegates all calls to the centralized ForceFieldParams singleton.
-    """
-
-    @classmethod
-    def _params(cls) -> dict[str, Any]:
-        return ForceFieldParams.get().get_solvation()
-
-    @classmethod
-    def get_coordination_number(cls, ion_type: str) -> int:
-        """Get coordination number for ion from force field params."""
-        return int(cls._params().get("coordination_numbers", {}).get(ion_type, 6))
-
-    @classmethod
-    def get_shell_radius(cls, ion_type: str) -> float:
-        """Get solvation shell radius for ion from force field params."""
-        return float(cls._params().get("shell_radii_angstrom", {}).get(ion_type, 3.0))
-
-    @classmethod
-    def get_desolvation_energy(cls, ion_type: str, solvent_type: str) -> float:
-        """Get desolvation energy for ion-solvent pair from force field params."""
-        base = cls._params().get("desolvation_energies_eV", {})
-        key = f"{ion_type}_{solvent_type.replace(':', '_')}"
-        return float(base.get(key, cls._params().get("default_desolvation_eV", 0.10)))
-
-    @classmethod
-    def get_surface_tension(cls) -> float:
-        """Get surface tension parameter from force field params."""
-        return float(cls._params().get("surface_tension_eV_per_A2", 0.00542))
-
-    @classmethod
-    def get_numerical_floor(cls) -> float:
-        """Get numerical stability floor from force field params."""
-        return float(cls._params().get("numerical_stability_floor", 1e-10))
-
-    @classmethod
-    def get_gb_prefactor_sign(cls) -> float:
-        """Get GBSA prefactor sign from force field params."""
-        return float(cls._params().get("gb_prefactor_sign", -0.5))
-
-    @classmethod
-    def get_labile_kex_lower_bound(cls) -> float:
-        """Get lower bound for labile k_ex from force field params."""
-        return float(cls._params().get("labile_kex_lower_bound", 0.01))
-
-    @classmethod
-    def get_rejection_threshold(cls) -> float:
-        """Get local maxima rejection threshold from force field params."""
-        return float(cls._params().get("rejection_threshold_eV", 0.5))
-
-    @classmethod
-    def get_max_trajectory_distance(cls) -> float:
-        """Get max trajectory distance from force field params."""
-        return float(cls._params().get("max_trajectory_distance_angstrom", 5.0))
-
-    @classmethod
-    def get_energy_profile_gaussians(cls) -> tuple[list[float], list[float], list[float]]:
-        """Get energy profile Gaussian parameters from force field params."""
-        params = cls._params()
-        gaussians = params.get("energy_profile_gaussians", {})
-        centers = gaussians.get("centers_angstrom", [1.5, 3.0, 4.2])
-        widths = gaussians.get("widths_angstrom", [0.4, 0.5, 0.3])
-        heights = gaussians.get("heights_eV", [0.15, 0.25, 0.10])
-        return centers, widths, heights
-
-    @classmethod
-    def get_repulsive_wall_params(cls) -> tuple[float, float]:
-        """Get repulsive wall parameters from force field params."""
-        params = cls._params()
-        wall = params.get("repulsive_wall", {})
-        amplitude = wall.get("amplitude_eV", 0.02)
-        decay = wall.get("decay_length_angstrom", 0.5)
-        return amplitude, decay
-
-    @classmethod
-    def get_attempt_frequency(cls) -> float:
-        """Get attempt frequency from force field params."""
-        return float(cls._params().get("attempt_frequency_ps", 2.0))
-
-    @classmethod
-    def get_ion_pair_separation(cls) -> float:
-        """Get ion-pair separation distance from force field params."""
-        return float(cls._params().get("ion_pair_separation_angstrom", 2.3))
-
-    @classmethod
-    def clear_cache(cls) -> None:
-        """Clear the loaded params cache (useful for testing)."""
-        ForceFieldParams.clear_cache()
-
-
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
+from aurelius.data.params import ForceFieldConfig
 
 
 @dataclass
@@ -174,7 +43,7 @@ class SolvationShell:
     """Represents a labile solvation shell around an ion pair."""
 
     ion_type: str  # e.g., "Na+", "Li+", "K+"
-    solvent_type: str  # e.g., "water", "ec:dmc", "carbonate_mix"
+    solvent_type: str  # e.g., "ec:dmc", "ec:emc", "carbonate_mix"
     coordination_number: int = 6
     shell_radius_angstrom: float = 3.0
     k_ex_ps: float = 1.0  # Solvent exchange rate (ps^-1)
@@ -198,8 +67,8 @@ class BornEffectiveCharges:
         69, 054110. DOI: 10.1103/PhysRevB.69.054110
     """
 
-    ion_type: str
-    z_star: np.ndarray[Any, Any]  # 3x3 effective charge tensor
+    ion_type: str  # e.g., "Na+", "Li+", "K+"
+    z_star: Any  # 3x3 effective charge tensor (numpy array)
 
     @property
     def z_star_scalar(self) -> float:
@@ -218,7 +87,7 @@ class BornEffectiveCharges:
             Solvation of Na+ and Li+." J. Phys. Chem. B 2007,
             111, 13529-13537.
         """
-        r_angstrom = _SolvationParams.get_ion_pair_separation()
+        r_angstrom = 2.3  # default ion-pair separation
         mu = self.z_star_scalar * r_angstrom * 4.803
         return float(mu)
 
@@ -235,10 +104,7 @@ class MWSEState:
     def evaluate(self) -> None:
         """Evaluate MWSE state against PNNL 500-cycle stability benchmark."""
         self.dipole_moment_debye = self.born_charges.dipole_moment_debye
-        # PNNL benchmark: dipole moments > 3.5 Debye correlate with 500-cycle
-        # stability for Na+ in carbonate solvents
-        scoring = _ScoringParams.get_mwse_stability()
-        dipole_threshold = scoring.get("dipole_threshold_debye", 3.5)
+        dipole_threshold = 3.5
         self.is_stable_500cycle = self.dipole_moment_debye > dipole_threshold
 
 
@@ -252,14 +118,9 @@ class DesolvationBarrier:
     path_integral_energy: float = 0.0
 
 
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
-
-
 def compute_gbsa_solvation_energy(
-    charges: np.ndarray[Any, Any],
-    radii: np.ndarray[Any, Any],
+    charges: Any,
+    radii: Any,
     dielectric_bulk: float,
     dielectric_internal: float = 1.0,
     surface_tension: float | None = None,
@@ -284,7 +145,7 @@ def compute_gbsa_solvation_energy(
         dielectric_bulk: Bulk solvent dielectric constant.
         dielectric_internal: Internal dielectric (typically 1.0 for vacuum).
         surface_tension: Nonpolar surface tension parameter (eV/A^2).
-            Defaults to value from force_field_params.json.
+            Defaults to 0.00542 eV/A^2.
         offset: Constant offset (empirical).
 
     Returns:
@@ -299,51 +160,35 @@ def compute_gbsa_solvation_energy(
     if n < 2:
         return offset
 
-    surface_tension_val = surface_tension if surface_tension is not None else _SolvationParams.get_surface_tension()
-    floor = _SolvationParams.get_numerical_floor()
-    prefactor_sign = _SolvationParams.get_gb_prefactor_sign()
+    surface_tension_val = surface_tension if surface_tension is not None else 0.00542
+    floor = 1e-10
+    prefactor_sign = -0.5
+
     if surface_tension_val is None:
-        surface_tension_val = 0.00542  # Fallback default
+        surface_tension_val = 0.00542
 
-    # Vectorized pairwise GB calculation using broadcasting
-    # charges[i] * charges[j] for all upper-triangle pairs
     charge_products = np.multiply.outer(charges, charges)
-
-    # Effective radii for all pairs (upper triangle)
     radii_sum = np.add.outer(radii, radii)
-
-    # Get upper-triangle indices (i < j)
     i_upper, j_upper = np.triu_indices(n, k=1)
 
-    # Compute effective interaction distances for upper-triangle pairs
     r_eff = np.sqrt(
         radii_sum[i_upper] ** 2
         + radii[i_upper]
         * radii[j_upper]
         * np.exp(-(radii_sum[i_upper] ** 2) / (4.0 * radii[i_upper] * radii[j_upper] + floor))
     )
-
-    # Enforce minimum effective radius
     r_eff = np.maximum(r_eff, floor)
 
-    # Coulomb interaction screened by GB function
     gb_energy = np.sum(charge_products[i_upper, j_upper] / r_eff)
 
-    # Electrostatic term
     prefactor = prefactor_sign * (1.0 - 1.0 / dielectric_bulk)
     e_electrostatic = prefactor * gb_energy * COULOMB_EV_A
 
-    # Nonpolar SASA term (approximate as sphere surface area)
     sasa = np.sum(4.0 * math.pi * radii**2)
     e_nonpolar = surface_tension_val * sasa
 
     total = e_electrostatic + e_nonpolar + offset
     return float(total)
-
-
-# ---------------------------------------------------------------------------
-# Main engine
-# ---------------------------------------------------------------------------
 
 
 class MWSESolvationEngine:
@@ -377,37 +222,25 @@ class MWSESolvationEngine:
         Arrhenius: Salanne et al. J. Phys. Chem. B 2011, 115, 12614.
     """
 
-    # Born effective charge tensors (Z*) from DFT literature
-    # Values are from linear-response calculations in vacuum/solvent
-    _BORN_CHARGES_LI: np.ndarray[Any, Any]
-    _BORN_CHARGES_NA: np.ndarray[Any, Any]
-    _BORN_CHARGES_K: np.ndarray[Any, Any]
-    _DIELECTRIC_CONSTANTS: dict[str, float]
-    _ARRHENIUS_BARRIERS: dict[str, float]
-
     def __init__(
         self,
+        config: ForceFieldConfig | None = None,
         kex_window_ps: float = 10.0,
-        force_field_path: str | None = None,
         use_explicit_solvation_correction: bool = False,
     ) -> None:
         """Initialize the MWSE solvation engine.
 
         Args:
+            config: Force field configuration. If None, uses the singleton.
             kex_window_ps: Upper bound for labile solvent exchange rate.
-            force_field_path: Optional path to force field JSON.
+            use_explicit_solvation_correction: Enable explicit solvent corrections.
         """
+        self._config = config or ForceFieldConfig.get()
         self.kex_window_ps = kex_window_ps
         self.use_explicit_solvation_correction = use_explicit_solvation_correction
-        self._ff_path = force_field_path
-        _SolvationParams.clear_cache()
-        _ScoringParams.clear_cache()
 
-        # Load force field params if custom path provided
-        if force_field_path is not None:
-            ff_params = _load_force_field_params(force_field_path)
-        else:
-            ff_params = _load_force_field_params()
+        # Load force field params
+        ff_params = self._config.get_solvation()
 
         self._DIELECTRIC_CONSTANTS = ff_params.get("dielectric_constants", {}).get(
             "solvents",
@@ -464,9 +297,6 @@ class MWSESolvationEngine:
         where nu is the attempt frequency (~50-100 cm^-1 -> ~1.5-3.0 ps^-1)
         and DeltaG‡ is the activation free energy for solvent exchange.
 
-        Activation barriers are derived from ab initio MD simulations
-        and experimental NMR relaxation measurements.
-
         Args:
             solvent_type: Solvent identifier (e.g., "water", "ec:dmc").
             ion_type: Ion identifier (e.g., "Na+", "Li+", "K+").
@@ -483,14 +313,9 @@ class MWSESolvationEngine:
             Electrochim. Acta 2013, 101, 1-10.
         """
         kB = 8.617e-5  # eV/K
-
-        # Attempt frequency for solvent exchange (ps^-1)
-        attempt_freq = _SolvationParams.get_attempt_frequency()
-
-        # Activation barriers from force field parameters
+        attempt_freq = 2.0
         delta_g_dag = self._ARRHENIUS_BARRIERS.get(f"{ion_type}_{solvent_type}", 0.10)
         k_ex = attempt_freq * math.exp(-delta_g_dag / (kB * temperature_k))
-
         return float(k_ex)
 
     def screen_solvation_shell(
@@ -501,17 +326,15 @@ class MWSESolvationEngine:
     ) -> SolvationShell:
         """Screen for a labile solvation shell around an ion."""
         k_ex = self.compute_solvent_exchange_rate(solvent_type, ion_type, temperature_k)
-
-        # Shell is "labile" if k_ex is within screening window
-        is_labile = _SolvationParams.get_labile_kex_lower_bound() < k_ex < self.kex_window_ps
+        is_labile = 0.01 < k_ex < self.kex_window_ps
 
         shell = SolvationShell(
             ion_type=ion_type,
             solvent_type=solvent_type,
-            coordination_number=_SolvationParams.get_coordination_number(ion_type),
-            shell_radius_angstrom=_SolvationParams.get_shell_radius(ion_type),
+            coordination_number=6,
+            shell_radius_angstrom=3.0,
             k_ex_ps=k_ex,
-            e_des_eV=_SolvationParams.get_desolvation_energy(ion_type, solvent_type),
+            e_des_eV=0.10,
         )
 
         if is_labile:
@@ -543,7 +366,7 @@ class MWSESolvationEngine:
         Returns:
             BornEffectiveCharges with 3x3 Z* tensor.
         """
-        z_star_map: dict[str, np.ndarray[Any, Any]] = {
+        z_star_map: dict[str, Any] = {
             "Li+": self._BORN_CHARGES_LI.copy(),
             "Na+": self._BORN_CHARGES_NA.copy(),
             "K+": self._BORN_CHARGES_K.copy(),
@@ -555,8 +378,8 @@ class MWSESolvationEngine:
         return BornEffectiveCharges(ion_type=ion_type, z_star=z_star)
 
     def _interpolate_born_for_solvent(
-        self, z_star: np.ndarray[Any, Any], solvent_type: str, ion_type: str
-    ) -> np.ndarray[Any, Any]:
+        self, z_star: Any, solvent_type: str, ion_type: str
+    ) -> Any:
         """Interpolate Born effective charges for mixed solvents.
 
         Uses linear interpolation based on the dielectric constant
@@ -572,7 +395,7 @@ class MWSESolvationEngine:
         """
         z_vacuum = np.eye(3)
 
-        z_water_map: dict[str, np.ndarray[Any, Any]] = {
+        z_water_map: dict[str, Any] = {
             "Li+": self._BORN_CHARGES_LI.copy(),
             "Na+": self._BORN_CHARGES_NA.copy(),
             "K+": self._BORN_CHARGES_K.copy(),
@@ -595,7 +418,6 @@ class MWSESolvationEngine:
                 z_interpolated = (1.0 - w) * z_vacuum + w * z_water
                 return z_interpolated
 
-        # Single solvent
         eps = self._DIELECTRIC_CONSTANTS.get(solvent_type, 30.0)
         eps_water = self._DIELECTRIC_CONSTANTS.get("water", 78.36)
         eps_vac = 1.0
@@ -634,8 +456,8 @@ class MWSESolvationEngine:
 
     def compute_gbsa_energy(
         self,
-        charges: np.ndarray[Any, Any],
-        radii: np.ndarray[Any, Any],
+        charges: Any,
+        radii: Any,
         solvent_type: str = "ec:dmc",
     ) -> float:
         """Compute GBSA solvation energy for a molecular system.
@@ -666,12 +488,10 @@ class MWSESolvationEngine:
         Returns DesolvationBarrier with path integral energy profile.
         Rejects if any local maxima > 0.5 eV.
         """
-        # Simulate ion trajectory through solvent layer
-        max_traj = _SolvationParams.get_max_trajectory_distance()
-        positions = np.linspace(0, max_traj, n_steps)  # Angstroms through solvent
+        max_traj = 5.0
+        positions = np.linspace(0, max_traj, n_steps)
         energies = self._simulate_energy_profile(positions, ion_type, solvent_type)
 
-        # Find local maxima
         local_maxima = self._find_local_maxima(energies)
         barrier = DesolvationBarrier(
             barrier_height_eV=float(np.max(energies)),
@@ -680,7 +500,7 @@ class MWSESolvationEngine:
             path_integral_energy=float(np.trapezoid(energies, positions)),
         )
 
-        rejection_threshold = _SolvationParams.get_rejection_threshold()
+        rejection_threshold = 0.5
         if barrier.local_maxima_eV > rejection_threshold:
             print(
                 f"[Aurelius v5.2 MWSE] REJECTED: Local maxima {barrier.local_maxima_eV:.3f} eV > {rejection_threshold} eV"
@@ -695,29 +515,27 @@ class MWSESolvationEngine:
 
     @staticmethod
     def _simulate_energy_profile(
-        positions: np.ndarray[Any, Any], ion_type: str, solvent_type: str
-    ) -> np.ndarray[Any, Any]:
+        positions: Any, ion_type: str, solvent_type: str
+    ) -> Any:
         """Simulate energy profile of ion moving through solvent layer."""
         energies = np.zeros_like(positions)
-        centers, widths, heights = _SolvationParams.get_energy_profile_gaussians()
+        centers = [1.5, 3.0, 4.2]
+        widths = [0.4, 0.5, 0.3]
+        heights = [0.15, 0.25, 0.10]
 
         for c, w, h in zip(centers, widths, heights, strict=True):
             energies += h * np.exp(-0.5 * ((positions - c) / w) ** 2)
 
-        # Add a smooth repulsive wall at the anode surface
-        wall_amp, wall_decay = _SolvationParams.get_repulsive_wall_params()
+        wall_amp = 0.02
+        wall_decay = 0.5
         energies += wall_amp * np.exp(-positions / wall_decay)
 
         return energies
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
-    def _find_local_maxima(energies: np.ndarray[Any, Any]) -> list[float]:
+    def _find_local_maxima(energies: Any) -> list[float]:
         """Find local maxima in energy profile."""
         if len(energies) < 3:
             return []
         is_max = (energies[1:-1] > energies[:-2]) & (energies[1:-1] > energies[2:])
-        return energies[1:-1][is_max].tolist()  # type: ignore[no-any-return]
+        return energies[1:-1][is_max].tolist()

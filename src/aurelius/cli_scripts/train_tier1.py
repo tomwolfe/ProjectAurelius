@@ -30,7 +30,7 @@ from typing import Any
 
 import numpy as np
 
-from aurelius.utils.dependencies import HAS_DATASETS, HAS_MLX, HAS_RDKIT
+from aurelius.utils.dependencies import HAS_DATASETS, HAS_MLX, HAS_RDKIT, HAS_TORCH
 
 
 def parse_args() -> argparse.Namespace:
@@ -89,11 +89,6 @@ Examples:
         type=str,
         default=None,
         help="Path to save trained model (default: models/tier1/<dataset>)",
-    )
-    parser.add_argument(
-        "--no-mlx",
-        action="store_true",
-        help="Train without MLX (uses numpy only)",
     )
     parser.add_argument(
         "--csv-path",
@@ -359,116 +354,6 @@ def load_qm9_data() -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[st
     return X, y, valid_smiles
 
 
-def train_numpy(
-    X_train: np.ndarray[Any, Any],
-    y_train: np.ndarray[Any, Any],
-    X_val: np.ndarray[Any, Any],
-    y_val: np.ndarray[Any, Any],
-    epochs: int,
-    lr: float,
-    batch_size: int,
-    seed: int,
-) -> dict[str, Any]:
-    """Train MLP on CPU using numpy (no MLX required).
-
-    Args:
-        X_train: Training fingerprints (N, 2048).
-        y_train: Training labels (N,).
-        X_val: Validation fingerprints (M, 2048).
-        y_val: Validation labels (M,).
-        epochs: Number of epochs.
-        lr: Learning rate.
-        batch_size: Batch size.
-        seed: Random seed.
-
-    Returns:
-        Dictionary with trained weights and training history.
-    """
-    rng = np.random.RandomState(seed)
-    input_dim, hidden_dim = 2048, 128
-
-    # Xavier initialization
-    scale1 = np.sqrt(2.0 / (input_dim + hidden_dim))
-    W1 = rng.randn(input_dim, hidden_dim).astype(np.float32) * scale1
-    b1 = np.zeros(hidden_dim, dtype=np.float32)
-    scale2 = np.sqrt(2.0 / (hidden_dim + 1))
-    W2 = rng.randn(hidden_dim, 1).astype(np.float32) * scale2
-    b2 = np.zeros(1, dtype=np.float32)
-
-    n_samples = X_train.shape[0]
-    history: dict[str, list[float]] = {"train_loss": [], "val_loss": []}
-    best_val_loss = float("inf")
-    best_weights = {"W1": W1.copy(), "b1": b1.copy(), "W2": W2.copy(), "b2": b2.copy()}
-    patience = 30
-    patience_counter = 0
-
-    for epoch in range(epochs):
-        # Shuffle
-        perm = rng.permutation(n_samples)
-        X_shuffled = X_train[perm]
-        y_shuffled = y_train[perm]
-
-        for start in range(0, n_samples, batch_size):
-            end = min(start + batch_size, n_samples)
-            x_batch = X_shuffled[start:end]
-            y_batch = y_shuffled[start:end]
-
-            # Forward pass
-            h = x_batch @ W1 + b1
-            h = np.maximum(h, 0.0)
-            out = h @ W2 + b2
-            pred = 1.0 / (1.0 + np.exp(-np.clip(out, -500, 500)))
-            pred = pred.squeeze(axis=-1)
-
-            # Loss
-            loss = np.mean((pred - y_batch) ** 2)
-
-            # Backward pass
-            d_pred = 2.0 * (pred - y_batch) / len(y_batch)
-            d_sigmoid = pred * (1.0 - pred)
-            d_out = d_pred * d_sigmoid
-
-            d_h2 = d_out.reshape(-1, 1) @ W2.T
-            d_W2 = h.T @ d_out
-            d_b2 = np.sum(d_out, axis=0)
-
-            d_h1 = d_h2 * (h > 0.0)
-            d_W1 = x_batch.T @ d_h1
-            d_b1 = np.sum(d_h1, axis=0)
-
-            # Update weights
-            W1 -= lr * d_W1
-            b1 -= lr * d_b1
-            W2 -= lr * d_W2
-            b2 -= lr * d_b2
-
-        # Validation
-        h_val = X_val @ W1 + b1
-        h_val = np.maximum(h_val, 0.0)
-        out_val = h_val @ W2 + b2
-        pred_val = 1.0 / (1.0 + np.exp(-np.clip(out_val, -500, 500)))
-        val_loss = np.mean((pred_val.squeeze(axis=-1) - y_val) ** 2)
-
-        history["train_loss"].append(float(loss))
-        history["val_loss"].append(float(val_loss))
-
-        if (epoch + 1) % 20 == 0:
-            print(f"[train_tier1] Epoch {epoch + 1}/{epochs}: train_loss={loss:.4f}, val_loss={val_loss:.4f}")
-
-        # Early stopping
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            patience_counter = 0
-            best_weights = {"W1": W1.copy(), "b1": b1.copy(), "W2": W2.copy(), "b2": b2.copy()}
-        else:
-            patience_counter += 1
-            if patience_counter >= patience:
-                print(f"[train_tier1] Early stopping at epoch {epoch + 1}")
-                break
-
-    return {"weights": best_weights, "history": history}
-
-
 def train_mlx(
     X_train: np.ndarray[Any, Any],
     y_train: np.ndarray[Any, Any],
@@ -603,7 +488,6 @@ def train_main(
     seed: int = 42,
     val_split: float = 0.15,
     save_path: str | None = None,
-    no_mlx: bool = False,
 ) -> dict[str, Any]:
     """Train Tier 1 model on a dataset (esol or qm9).
 
@@ -619,7 +503,7 @@ def train_main(
         seed: Random seed for reproducibility.
         val_split: Fraction of data held out for validation.
         save_path: Optional path to save the trained model.
-        no_mlx: If True, train with numpy only (no MLX required).
+
 
     Returns:
         Dictionary with training results and metadata.
@@ -650,12 +534,8 @@ def train_main(
     print(f"[train_tier1] Train: {len(X_train)}, Val: {len(X_val)}")
 
     # Train model
-    if no_mlx:
-        print("[train_tier1] Training with numpy (CPU only)")
-        result = train_numpy(X_train, y_train, X_val, y_val, epochs, learning_rate, batch_size, seed)
-    else:
-        print("[train_tier1] Training with MLX (Apple Silicon)")
-        result = train_mlx(X_train, y_train, X_val, y_val, epochs, learning_rate, batch_size, seed)
+    print("[train_tier1] Training with MLX (Apple Silicon)")
+    result = train_mlx(X_train, y_train, X_val, y_val, epochs, learning_rate, batch_size, seed)
 
     # Print final metrics
     print("\n[train_tier1] Training complete!")
@@ -700,5 +580,4 @@ def main() -> None:
         seed=args.seed,
         val_split=args.val_split,
         save_path=args.save_path,
-        no_mlx=args.no_mlx,
     )

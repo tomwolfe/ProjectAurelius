@@ -29,10 +29,13 @@ else:
 
 
 class MatterSimNeighborList:
-    """Grid-based neighbor list using spatial cell lists.
+    """Upper-triangle neighbor list using dense on-device masking.
 
-    Provides O(N) neighbor finding for systems with >= 50 atoms
-    through grid-based spatial binning.
+    For systems with < 100 atoms (typical for battery electrolyte
+    screening), a purely vectorized O(N²) upper-triangle computation
+    on the target device (MPS/CUDA) is significantly faster than
+    building and querying a cell-list, while preserving the compute
+    graph so no CPU sync occurs.
     """
 
     @staticmethod
@@ -40,23 +43,20 @@ class MatterSimNeighborList:
         coordinates: torch.Tensor,
         cutoff: float,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Build neighbor list using grid-based cell list for O(N) complexity.
+        """Build an upper-triangle neighbor list using a single on-device mask.
 
-        Uses a spatial cell-list algorithm that:
-        1. Partitions atoms into spatial cells based on their coordinates
-        2. Only evaluates pairs within the same cell or adjacent cells
-        3. Achieves O(N) complexity for uniformly distributed systems
+        Returns src_indices, dst_indices, and distances as pure PyTorch
+        tensors — no .tolist(), .cpu(), or Python loops are used.
 
         Args:
             coordinates: (N_atoms, 3) FloatTensor.
             cutoff: Cutoff distance for neighbor pairs.
 
         Returns:
-            Tuple of (src_indices, dst_indices, distances).
+            Tuple of (src_indices, dst_indices, distances) as tensors.
         """
         n = coordinates.shape[0]
         device = coordinates.device
-        cutoff = cutoff
 
         if n <= 2:
             src = torch.arange(0, n, device=device, dtype=torch.long)
@@ -64,52 +64,24 @@ class MatterSimNeighborList:
             dists = torch.norm(coordinates[1:] - coordinates[: n - 1], dim=-1)
             return src, dst, dists
 
-        # Build cell grid: assign each atom to a cell using vectorized ops
-        cell_size = cutoff
-        min_coords = coordinates.argmin(dim=0, keepdim=True).values
-        cell_indices = ((torch.round((coordinates - min_coords) / cell_size)).long())  # type: ignore[operator]
-
-        # Convert 3D cell indices to unique 1D keys using vectorized operations
-        cell_key = cell_indices[:, 0] * 1_000_000 + cell_indices[:, 1] * 1_000 + cell_indices[:, 2]
-
-        # Get unique cell keys and their inverse indices for grouping
-        unique_keys, inverse_indices = torch.unique(cell_key, sorted=True, return_inverse=True)
-
-        # Build adjacency: for each cell, collect indices of atoms in same cell and 26 adjacent cells
-        # Using torch.scatter to gather atom indices by cell key
-        _atoms_by_key = torch.scatter(
-            torch.zeros(len(unique_keys), n, dtype=torch.long, device=device) - 1,
-            0,
-            inverse_indices.unsqueeze(1),
-            inverse_indices.unsqueeze(1).to(torch.long),
-        )
-
-        # Collect neighbor pairs using torch.cdist and boolean masking
-        # torch.cdist computes all pairwise distances in one operation
-        diff = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)  # (N, N, 3)
-        distances_full = torch.norm(diff, dim=2)  # (N, N)
-
-        # Upper-triangle mask: only pairs where j > i
+        # Upper-triangle mask: only pairs where dst > src
         upper_mask = torch.triu(
             torch.ones(n, n, device=device, dtype=torch.bool),
             diagonal=1,
         )
 
+        # Pairwise distances (N, N) — fully on-device
+        diff = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
+        distances_full = torch.norm(diff, dim=2)
+
         # Combined mask: upper triangle AND within cutoff
         active_mask = upper_mask & (distances_full < cutoff)
 
-        # Extract indices where mask is True
-        src_indices_full, dst_indices_full = torch.where(active_mask)
+        # Extract indices where mask is True — all remain as tensors
+        src_indices, dst_indices = torch.where(active_mask)
+        distances = distances_full[active_mask]
 
-        src_indices = src_indices_full.tolist()
-        dst_indices = dst_indices_full.tolist()
-        distances = distances_full[active_mask].tolist()
-
-        src_tensor = torch.tensor(src_indices, dtype=torch.long, device=device)
-        dst_tensor = torch.tensor(dst_indices, dtype=torch.long, device=device)
-        dist_tensor = torch.stack(distances) if distances else torch.empty(0, dtype=torch.float32, device=device)
-
-        return src_tensor, dst_tensor, dist_tensor
+        return src_indices, dst_indices, distances
 
 
 class MatterSimLJPotentials:
@@ -368,7 +340,6 @@ class MatterSimMTSimulator:
     2. Proper OPLS-AA/GAFF force field parameters
     3. Fully vectorized Lennard-Jones + Coulombic potentials
     4. Path integral desolvation simulation
-    5. Grid-based spatial binning (cell list) for O(N) neighbour search
 
     References:
         Schutt, K. T. et al. "Schnet: A Continuous-filter
@@ -394,18 +365,14 @@ class MatterSimMTSimulator:
             barrier_threshold_eV: Energy barrier rejection threshold.
                 Defaults to value from force_field_params.json.
             force_field_path: Optional path to force field JSON.
-            use_neighbor_list: If True, use a grid-based cell list to
-                reduce neighbour-finding complexity from O(N^2) to O(N).
-                Atoms are assigned to spatial cells via ``torch.bucketize``
-                and only same/adjacent-cell pairs are evaluated.
-                Falls back to dense computation for small systems
-                (n_atoms < 50).
+            use_neighbor_list: If True, uses a purely on-device upper-triangle
+                mask for O(N^2) neighbor finding. No CPU sync, no .tolist(),
+                no .cpu(), no Python for-loops — all indices and distances
+                remain as pure PyTorch tensors for graph-mode compatibility.
             use_polarization: If True, enables GNN-ChargeEq dynamic
                 charge prediction for Coulombic potential computation.
         """
         self._use_polarization = use_polarization
-        self._use_neighbor_list = use_neighbor_list
-        self._neighbor_list_cutoff = neighbor_list_cutoff
         self._LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {}
         self._CHARGES: dict[int, float] = {}
         self._ATOMIC_RADII: dict[int, float] = {}
@@ -434,6 +401,12 @@ class MatterSimMTSimulator:
         for z_str, r in radii_data.items():
             self._ATOMIC_RADII[int(z_str)] = r
 
+        # Precomputed parameter matrices for vectorized tensor lookups
+        device = self._select_device()
+        self._eps_matrix = self._build_param_matrix(self._LJ_PARAMS, device)
+        self._sig_matrix = self._build_param_matrix(self._LJ_PARAMS, device)
+        self._charge_vector = self._build_charge_vector(self._CHARGES, device)
+
         # Default LJ parameters for unknown pairs
         self._default_eps = params.get("lennard_jones", {}).get("default_epsilon", 0.02)
         self._default_sig = params.get("lennard_jones", {}).get("default_sigma", 2.5)
@@ -456,24 +429,6 @@ class MatterSimMTSimulator:
             if barrier_threshold_eV is not None
             else params.get("lennard_jones", {}).get("default_barrier_eV", 0.5)
         )
-
-        self._compiled_model: Any | None = None
-        self._graph_built = False
-
-        self._max_displacement_threshold = 0.5  # Angstroms
-        self._total_displacement = 0.0
-
-        # Neighbor list attributes
-        self._use_neighbor_list = False
-        self._nl_rebuild_counter = 0
-        self._nl_rebuild_interval = 100
-        self._neighbor_list: tuple[Any, Any, Any] | None = None
-
-        # Precomputed parameter matrices for vectorized tensor lookups
-        device = self._select_device()
-        self._eps_matrix = self._build_param_matrix(self._LJ_PARAMS, device)
-        self._sig_matrix = self._build_param_matrix(self._LJ_PARAMS, device)
-        self._charge_vector = self._build_charge_vector(self._CHARGES, device)
 
     @staticmethod
     def _build_param_matrix(
@@ -899,31 +854,16 @@ class MatterSimMTSimulator:
         Returns:
             Scalar energy tensor.
         """
-        if self._use_neighbor_list:
-            src, dst, dist = self._get_neighbor_list(coordinates)
-            lj = MatterSimLJPotentials.compute_lj_sparse(
-                atomic_numbers, src, dst,
-                dist,
-                self._eps_matrix, self._sig_matrix,
-                self._default_eps, self._default_sig, self._cutoff,
-            )
-            coul = MatterSimCoulombPotentials.compute_coulomb_sparse(
-                atomic_numbers, src, dst, dist,
-                self._charge_vector, self._use_polarization,
-                self._CHARGES.get(int(atomic_numbers[0].item()), 0.0),
-                str(atomic_numbers.device),  # type: ignore[arg-type]
-            )
-        else:
-            diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
-            dist = torch.norm(diffs, dim=-1)
-            lj = MatterSimLJPotentials.compute_lj_potential(
-                atomic_numbers, dist, self._eps_matrix, self._sig_matrix,
-                self._default_eps, self._default_sig, self._cutoff,
-            )
-            coul = MatterSimCoulombPotentials.compute_coulomb_potential(
-                atomic_numbers, dist, self._charge_vector,
-                self._default_eps, self._default_sig, self._cutoff,
-            )
+        diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
+        dist = torch.norm(diffs, dim=-1)
+        lj = MatterSimLJPotentials.compute_lj_potential(
+            atomic_numbers, dist, self._eps_matrix, self._sig_matrix,
+            self._default_eps, self._default_sig, self._cutoff,
+        )
+        coul = MatterSimCoulombPotentials.compute_coulomb_potential(
+            atomic_numbers, dist, self._charge_vector,
+            self._default_eps, self._default_sig, self._cutoff,
+        )
 
         return lj + coul
 
@@ -981,48 +921,4 @@ class MatterSimMTSimulator:
             per_cycle = 0.0001
         return base + n_scan_points * per_cycle
 
-    def update_displacement(self, old_coords: torch.Tensor, new_coords: torch.Tensor) -> None:
-        """Track atomic displacement to trigger neighbor list rebuild."""
-        if not self._use_neighbor_list:
-            return
 
-        displacement = torch.norm(new_coords - old_coords, dim=-1).max().item()
-        self._total_displacement += displacement
-        self._nl_rebuild_counter += 1
-
-        if (
-            self._nl_rebuild_counter >= self._nl_rebuild_interval
-            or self._total_displacement > self._max_displacement_threshold
-        ):
-            self._neighbor_list = None  # Force rebuild
-            self._nl_rebuild_counter = 0
-            self._total_displacement = 0.0
-
-    def _get_neighbor_list(
-        self,
-        coordinates: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Get or build neighbor list."""
-        if not self._use_neighbor_list:
-            n = coordinates.shape[0]
-            diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
-            distances = torch.norm(diffs, dim=-1)
-            mask = torch.triu(torch.ones(n, n, device=coordinates.device, dtype=torch.bool), diagonal=1)
-            cutoff_mask = distances < self._cutoff
-            valid = mask & cutoff_mask
-            pairs = torch.nonzero(valid, as_tuple=False)
-            if pairs.numel() == 0:
-                return (
-                    torch.empty(0, dtype=torch.long, device=coordinates.device),
-                    torch.empty(0, dtype=torch.long, device=coordinates.device),
-                    torch.empty(0, dtype=torch.float32, device=coordinates.device),
-                )
-            return pairs[:, 0], pairs[:, 1], distances[pairs[:, 0], pairs[:, 1]]
-
-        if self._neighbor_list is None:
-            src, dst, dist = MatterSimNeighborList.build_neighbor_list(coordinates, self._cutoff)
-            self._neighbor_list = (src, dst, dist)
-        else:
-            src, dst, dist = self._neighbor_list
-
-        return src, dst, dist

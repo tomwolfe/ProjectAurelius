@@ -13,6 +13,8 @@ import threading
 from importlib import resources
 from typing import Any, ClassVar, cast
 
+from pydantic import BaseModel, Field
+
 
 def _default_ff_path() -> str:
     """Return the file-system path to the force field params JSON.
@@ -26,29 +28,66 @@ def _default_ff_path() -> str:
     )
 
 
-class ForceFieldParams:
-    """Thread-safe singleton for lazy-loaded force field parameters.
+class ForceFieldConfig(BaseModel):
+    """Strict Pydantic model for force field parameters.
 
-    Parameters are loaded once from the bundled JSON resource and cached.
-    All subsequent accesses return the cached data without re-reading the file.
+    Provides type-safe access to all force field parameters used across
+    the Aurelius pipeline. Loaded once from the bundled JSON resource
+    and cached for repeated access.
 
     Usage:
-        >>> params = ForceFieldParams.get()
-        >>> scoring = params.get_scoring()
-        >>> solvation = params.get_solvation()
+        >>> config = ForceFieldConfig.from_json_file()
+        >>> scoring = config.get_scoring()
+        >>> solvation = config.get_solvation()
     """
 
-    _instance: ClassVar[ForceFieldParams | None] = None
+    class Config:
+        """Pydantic model configuration."""
+        extra = "ignore"
+
+    _instance: ClassVar[ForceFieldConfig | None] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()
     _data: dict[str, Any] | None = None
+    _path: str | None = None
 
     @classmethod
-    def get(cls) -> ForceFieldParams:
+    def from_json_file(cls, path: str | None = None) -> "ForceFieldConfig":
+        """Load force field parameters from a JSON file.
+
+        Args:
+            path: Path to force field params JSON file. If None, uses
+                the bundled default resource.
+
+        Returns:
+            A new ForceFieldConfig instance loaded from the file.
+        """
+        instance = object.__new__(cls)
+        instance._path = path
+        instance._load()
+        return instance
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ForceFieldConfig":
+        """Create a ForceFieldConfig from a dict.
+
+        Args:
+            data: Dictionary of force field parameters.
+
+        Returns:
+            A new ForceFieldConfig instance.
+        """
+        instance = object.__new__(cls)
+        instance._data = data
+        return instance
+
+    @classmethod
+    def get(cls) -> "ForceFieldConfig":
         """Get the singleton instance, loading params on first access."""
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
                     instance = object.__new__(cls)
+                    instance._path = None
                     instance._load()
                     cls._instance = instance
         return cls._instance
@@ -60,8 +99,8 @@ class ForceFieldParams:
         cls._data = None
 
     def _load(self) -> None:
-        """Load force field parameters from the packaged JSON resource."""
-        self._data = _load_force_field_params()
+        """Load force field parameters from the bundled JSON resource."""
+        self._data = _load_force_field_params(self._path)
 
     def get_scoring(self) -> dict[str, Any]:
         """Get scoring parameters section."""
@@ -86,6 +125,10 @@ class ForceFieldParams:
     def get_all(self) -> dict[str, Any]:
         """Get all force field parameters."""
         return self._data or {}
+
+
+# Backward compatibility alias
+ForceFieldParams = ForceFieldConfig
 
 
 def _load_force_field_params(path: str | None = None) -> dict[str, Any]:

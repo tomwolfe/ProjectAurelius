@@ -11,7 +11,6 @@ from importlib import metadata
 
 __version__: str = metadata.version("aurelius")
 
-from aurelius import bridge
 from aurelius.config import (
     AureliusConfig,
     apply_global_config,
@@ -63,7 +62,6 @@ __all__ = [
     "Tier2Result",
     "ZeroCopyMemoryManager",
     "apply_global_config",
-    "bridge",
-    "get_config",
+        "get_config",
     "AureliusScoringEngine",
 ]
