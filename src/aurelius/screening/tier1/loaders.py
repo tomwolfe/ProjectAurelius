@@ -299,10 +299,14 @@ class HuggingFaceWeightLoader:
         if evicted > 0:
             logger.info("LRU cache eviction: removed %d old model(s)", evicted)
 
-        snapshot_download(
-            repo_id=model_id,
-            local_dir=local_dir,
-        )
+        try:
+            snapshot_download(
+                repo_id=model_id,
+                local_dir=local_dir,
+            )
+        except Exception as e:
+            logger.warning("Failed to download model from HuggingFace Hub: %s", e)
+            return None
 
         # NOTE: AURELIUS_HF_USE_SYMLINKS env var is tracked for
         # documentation purposes. The huggingface_hub library has
