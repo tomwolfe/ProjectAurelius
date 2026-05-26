@@ -122,17 +122,17 @@ def bridge_mlx_to_pytorch(mlx_array: _MlxArrayLike) -> _TorchTensorLike:
 
     # Export the MLX array memory view into a DLPack capsule
     try:
-        capsule = _mlx.to_dlpack(mlx_array)  # type: ignore[attr-defined]
+        capsule = _mlx.to_dlpack(mlx_array)
     except AttributeError as err:
         raise AttributeError(_DLPACK_UNSUPPORTED_MSG) from err
 
     # Consume the capsule natively inside PyTorch
-    torch_tensor = _torch.from_dlpack(capsule)  # type: ignore[attr-defined]
+    torch_tensor = _torch.from_dlpack(capsule)
 
     # DLpack bridges MLX to PyTorch on CPU/Unified Memory.
     # Callers must explicitly call .to('mps') if Metal buffer allocation
     # is required, which will incur a deep copy.
-    return torch_tensor  # type: ignore[return-value]
+    return torch_tensor
 
 
 def bridge_pytorch_to_mlx(torch_tensor: _TorchTensorLike) -> _MlxArrayLike:
@@ -157,13 +157,13 @@ def bridge_pytorch_to_mlx(torch_tensor: _TorchTensorLike) -> _MlxArrayLike:
 
     # Export the PyTorch tensor memory view into a DLPack capsule
     try:
-        capsule = _torch.utils.dlpack.to_dlpack(torch_tensor)  # type: ignore[attr-defined, arg-type]
+        capsule = _torch.utils.dlpack.to_dlpack(torch_tensor)
     except AttributeError as err:
         raise AttributeError(_TORCH_DLPACK_UNSUPPORTED_MSG) from err
 
     # Consume the capsule natively inside MLX
     try:
-        mlx_array = _mlx.from_dlpack(capsule)  # type: ignore[attr-defined]
+        mlx_array = _mlx.from_dlpack(capsule)
     except AttributeError as err:
         raise AttributeError(_DLPACK_UNSUPPORTED_MSG) from err
 

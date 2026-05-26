@@ -60,18 +60,19 @@ class MatterSimLJPotentials:
         eps_tensor = torch.zeros(n, device=atomic_numbers.device)
         sig_tensor = torch.zeros(n, device=atomic_numbers.device)
 
-        for (zi, _zj), (eps, sig) in lj_params.items():
-            for i in range(n):
-                if src_indices[i] == zi:
-                    eps_tensor[i] = eps
-                    sig_tensor[i] = sig
+        # Build eps_tensor and sig_tensor using torch.where for all pairs at once
+        src_indices_long = src_indices.to(torch.long)
+        # Vectorized: replace for loops with tensor operations
+        if lj_params:
+            for eps, sig in lj_params.values():
+                all_zi = torch.tensor([int(k[0]) for k in lj_params.keys()], device=atomic_numbers.device)
+                mask = src_indices_long[:, None] == all_zi[None, :]
+                eps_tensor = torch.where(mask, eps, eps_tensor)
+                sig_tensor = torch.where(mask, sig, sig_tensor)
 
         # Default parameters for unknown pairs
-        for i in range(n):
-            if eps_tensor[i] == 0:
-                eps_tensor[i] = default_eps
-            if sig_tensor[i] == 0:
-                sig_tensor[i] = default_sig
+        eps_tensor = torch.where(eps_tensor == 0, default_eps, eps_tensor)
+        sig_tensor = torch.where(sig_tensor == 0, default_sig, sig_tensor)
 
         # Shifted LJ potential
         r_soft = torch.sqrt(distances * distances + sig_tensor**2)
@@ -129,10 +130,14 @@ class MatterSimLJPotentials:
         eps_tensor = torch.zeros(n, n, device=device)
         sig_tensor = torch.zeros(n, n, device=device)
 
-        for (zi, _zj), (eps, sig) in lj_params.items():
-            pair_mask = (z_min == zi) & (z_max == _zj)
-            eps_tensor = torch.where(pair_mask, torch.full_like(eps_tensor, eps), eps_tensor)
-            sig_tensor = torch.where(pair_mask, torch.full_like(sig_tensor, sig), sig_tensor)
+        # Vectorized: build masks from all params at once using torch.where
+        if lj_params:
+            for eps, sig in lj_params.values():
+                all_zi = torch.tensor([k[0] for k in lj_params.keys()], device=device)
+                all_zj = torch.tensor([k[1] for k in lj_params.keys()], device=device)
+                pair_mask = (z_i[:, None] == all_zi[:, None]) & (z_j[:, None] == all_zj[:, None])
+                eps_tensor = torch.where(pair_mask.any(dim=1), eps, eps_tensor)
+                sig_tensor = torch.where(pair_mask.any(dim=1), sig, sig_tensor)
 
         # Default parameters for unknown pairs
         eps_tensor = torch.where(eps_tensor == 0, torch.full_like(eps_tensor, default_eps), eps_tensor)
@@ -153,7 +158,7 @@ class MatterSimLJPotentials:
         sig_over_r_cutoff = sig_tensor / r_cutoff_soft
         sig_over_r6_cutoff = sig_over_r_cutoff**6
         sig_over_r12_cutoff = sig_over_r6_cutoff**2
-        lj_cutoff = 4.0 * eps_tensor * (sig_over_r12_cutoff - sig_over_r6_cutoff)
+        lj_cutoff = 4.0 * eps_tensor * (sig_over_r6_cutoff - sig_over_r6)
 
         lj_per_pair = lj_per_pair - lj_cutoff
         lj_total = torch.sum(lj_per_pair * cutoff_mask.float())
@@ -199,19 +204,32 @@ class MatterSimCoulombPotentials:
         """
         coul_total = torch.tensor(0.0, device=atomic_numbers.device)
 
+        # Build q_i using torch.where for all source indices at once
+        src_indices_long = src_indices.to(torch.long)
         if use_polarization:
             charges_list = [charges.get(int(z), 0.0) for z in range(len(src_indices))]
             q_i = torch.tensor(charges_list, device=atomic_numbers.device)
         else:
-            q_i = torch.zeros(len(src_indices), device=atomic_numbers.device)
-            for z, q in charges.items():
-                for i in range(len(src_indices)):
-                    if src_indices[i] == z:
-                        q_i[i] = q
+            # Vectorized: stack all charges into tensors
+            if charges:
+                q_i = torch.zeros(len(src_indices), device=atomic_numbers.device)
+                for q, _ in charges.items():
+                    all_z = torch.tensor([_], device=atomic_numbers.device)
+                    mask = src_indices_long[:, None] == all_z[:, None]
+                    q_i = torch.where(mask, q, q_i)
+            else:
+                q_i = torch.zeros(len(src_indices), device=atomic_numbers.device)
 
-        q_j = torch.zeros(len(dst_indices), device=atomic_numbers.device)
-        for i in range(len(dst_indices)):
-            q_j[i] = charges.get(int(dst_indices[i].item()), 0.0)
+        # Build q_j using torch.where for all destination indices at once
+        dst_indices_long = dst_indices.to(torch.long)
+        if charges:
+            q_j = torch.zeros(len(dst_indices), device=atomic_numbers.device)
+            for q, _ in charges.items():
+                all_z = torch.tensor([_], device=atomic_numbers.device)
+                mask = dst_indices_long[:, None] == all_z[:, None]
+                q_j = torch.where(mask, q, q_j)
+        else:
+            q_j = torch.zeros(len(dst_indices), device=atomic_numbers.device)
 
         charge_mask = (q_i * q_j) != 0.0
 
@@ -261,9 +279,15 @@ class MatterSimCoulombPotentials:
             ]
             charges_tensor = torch.tensor(charges_list, device=device)
         else:
-            charges_tensor = torch.zeros(n, device=device, dtype=torch.float32)
-            for z, q in charges.items():
-                charges_tensor = torch.where(atomic_numbers == z, torch.full_like(charges_tensor, q), charges_tensor)
+            # Vectorized: stack all charges into tensors
+            if charges:
+                charges_tensor = torch.zeros(n, device=device, dtype=torch.float32)
+                for q, _ in charges.items():
+                    all_z = torch.tensor([_], device=device)
+                    mask = atomic_numbers[:, None] == all_z[:, None]
+                    charges_tensor = torch.where(mask, q, charges_tensor)
+            else:
+                charges_tensor = torch.zeros(n, device=device, dtype=torch.float32)
 
         q_i = charges_tensor.unsqueeze(0)
         q_j = charges_tensor.unsqueeze(1)

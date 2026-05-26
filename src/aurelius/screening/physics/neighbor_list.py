@@ -56,7 +56,7 @@ class MatterSimNeighborList:
         # Build cell grid: assign each atom to a cell using vectorized ops
         cell_size = cutoff
         min_coords = coordinates.argmin(dim=0, keepdim=True).values
-        cell_indices = ((torch.round((coordinates - min_coords) / cell_size)).long())  # type: ignore[operator]
+        cell_indices = ((torch.round((coordinates - min_coords) / cell_size)).long())
 
         # Convert 3D cell indices to unique 1D keys using vectorized operations
         cell_key = cell_indices[:, 0] * 1_000_000 + cell_indices[:, 1] * 1_000 + cell_indices[:, 2]
@@ -66,41 +66,36 @@ class MatterSimNeighborList:
 
         # Build adjacency: for each cell, collect indices of atoms in same cell and 26 adjacent cells
         # Using torch.scatter to gather atom indices by cell key
-        atoms_by_key = torch.zeros(
-            len(unique_keys), n, dtype=torch.long, device=device,
-        ) - 1  # -1 = no atom
+        atoms_by_key = torch.scatter(
+            torch.zeros(len(unique_keys), n, dtype=torch.long, device=device) - 1,
+            0,
+            inverse_indices.unsqueeze(1),
+            inverse_indices.unsqueeze(1).to(torch.long),
+        )
 
-        for cell_idx, atom_idx in enumerate(inverse_indices):
-            atoms_by_key[cell_idx, atom_idx] = cell_idx
+        # Collect neighbor pairs using torch.cdist and boolean masking
+        # torch.cdist computes all pairwise distances in one operation
+        diff = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)  # (N, N, 3)
+        distances_full = torch.norm(diff, dim=2)  # (N, N)
 
-        # Collect neighbor pairs using vectorized operations
-        src_indices: list[int] = []
-        dst_indices: list[int] = []
-        distances: list[float] = []
+        # Upper-triangle mask: only pairs where j > i
+        upper_mask = torch.triu(
+            torch.ones(n, n, device=device, dtype=torch.bool),
+            diagonal=1,
+        )
 
-        unique_indices = inverse_indices.unique(sorted=True)
-        for local_key in unique_indices:
-            local_key_int = int(local_key.item())
-            _ = (
-                int(unique_keys[local_key_int].item()) // 1_000_000,
-                (int(unique_keys[local_key_int].item()) % 1_000_000) // 1_000,
-                int(unique_keys[local_key_int].item()) % 1_000,
-            )
+        # Combined mask: upper triangle AND within cutoff
+        active_mask = upper_mask & (distances_full < cutoff)
 
-            atoms = atoms_by_key[local_key]
-            for _i_idx, i in enumerate(atoms):
-                for j in atoms:
-                    if j <= i:
-                        continue
-                    diff = coordinates[i] - coordinates[j]
-                    dist = torch.norm(diff, dim=-1).item()
-                    if dist < cutoff:
-                        src_indices.append(i)
-                        dst_indices.append(j)
-                        distances.append(dist)
+        # Extract indices where mask is True
+        src_indices_full, dst_indices_full = torch.where(active_mask)
+
+        src_indices = src_indices_full.tolist()
+        dst_indices = dst_indices_full.tolist()
+        distances = distances_full[active_mask].tolist()
 
         src_tensor = torch.tensor(src_indices, dtype=torch.long, device=device)
         dst_tensor = torch.tensor(dst_indices, dtype=torch.long, device=device)
-        dist_tensor = torch.stack(distances) if distances else torch.empty(0, dtype=torch.float32, device=device)  # type: ignore[arg-type]
+        dist_tensor = torch.stack(distances) if distances else torch.empty(0, dtype=torch.float32, device=device)
 
         return src_tensor, dst_tensor, dist_tensor

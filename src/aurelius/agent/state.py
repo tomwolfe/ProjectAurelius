@@ -286,10 +286,11 @@ class ConvergenceChecker:
         """
         if len(self.all_scores) < batch_size:
             return []
-        rolling: list[float] = []
-        for i in range(batch_size, len(self.all_scores) + 1, batch_size):
-            window = self.all_scores[i - batch_size : i]
-            rolling.append(float(np.mean(window)))
+        n_batches = len(self.all_scores) // batch_size
+        rolling = [
+            float(np.mean(self.all_scores[i * batch_size : (i + 1) * batch_size]))
+            for i in range(n_batches)
+        ]
         return rolling
 
     def check_score_plateau(self) -> bool:

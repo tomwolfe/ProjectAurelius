@@ -25,8 +25,8 @@ import numpy as np
 from aurelius.utils.dependencies import HAS_TORCH
 
 if HAS_TORCH:
-    import torch  # type: ignore[import-not-found, unused-ignore]
-    import torch.nn as nn  # type: ignore[import-not-found, unused-ignore]
+    import torch
+    import torch.nn as nn
 
     from aurelius.screening.tier0.models import PyTorchBackend
 
@@ -63,9 +63,9 @@ def _build_molecular_graph(
         raise ValueError(f"Invalid SMILES: {smiles}")
 
     mol_with_h = Chem.AddHs(mol)
-    AllChem.EmbedMolecule(mol_with_h, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
+    AllChem.EmbedMolecule(mol_with_h, randomSeed=42)
 
-    atoms = mol_with_h.GetAtoms()  # type: ignore[no-untyped-call, unused-ignore]
+    atoms = mol_with_h.GetAtoms()
     n_atoms = mol_with_h.GetNumAtoms()
 
     node_features = torch.zeros(n_atoms, 4, dtype=torch.float32, device=device)
@@ -76,17 +76,15 @@ def _build_molecular_graph(
         node_features[i, 3] = 1.0 if atom.GetIsAromatic() else 0.0
 
     adj = Chem.rdmolops.GetAdjacencyMatrix(mol_with_h)
-    edge_list: list[tuple[int, int]] = []
-    for i in range(n_atoms):
-        for j in range(n_atoms):
-            if adj[i, j] == 1 and i < j:
-                edge_list.append((i, j))
-                edge_list.append((j, i))
 
-    if edge_list:
-        edge_index = torch.tensor(edge_list, dtype=torch.long, device=device).t().contiguous()
-    else:
-        edge_index = torch.empty((2, 0), dtype=torch.long, device=device)
+    adj_tensor = torch.from_numpy(adj).to(device=device)
+    indices = torch.arange(n_atoms, device=device)
+    mask = indices[:, None] < indices[None, :]
+    adj_masked = adj_tensor * mask
+
+    forward_edges = torch.nonzero(adj_masked, as_tuple=False).t().contiguous() if adj_masked.numel() > 0 else torch.empty((2, 0), dtype=torch.long, device=device)
+    reverse_edges = forward_edges.flip(0)
+    edge_index = torch.stack([forward_edges, reverse_edges], dim=1).reshape(2, -1) if forward_edges.numel() > 0 else torch.empty((2, 0), dtype=torch.long, device=device)
 
     return node_features, edge_index
 
@@ -105,7 +103,7 @@ def _load_tier0_seed_smiles() -> list[str]:
 
     try:
         with open(str(smiles_path)) as f:
-            return json.load(f)  # type: ignore[no-any-return]
+            return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         # Fallback to empty list if file not found
         return []
@@ -392,7 +390,7 @@ def train_tier0_model(
     print(f"[PyTorchBackend] Training on {len(train_idx)} samples, validating on {len(val_idx)} samples")
 
     for epoch in range(n_epochs):
-        model.train()  # type: ignore[attr-defined]
+        model.train()
         epoch_loss = 0.0
         n_batches = 0
 
@@ -418,7 +416,7 @@ def train_tier0_model(
         avg_train_loss = epoch_loss / max(n_batches, 1)
         epoch_losses.append(avg_train_loss)
 
-        model.eval()  # type: ignore[attr-defined]
+        model.eval()
         val_loss = 0.0
         n_val_batches = 0
         with torch.no_grad():
@@ -444,7 +442,7 @@ def train_tier0_model(
 
         if avg_val_loss < best_loss:
             best_loss = avg_val_loss
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}  # type: ignore[attr-defined]
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}
             patience_counter = 0
         else:
             patience_counter += 1
@@ -453,7 +451,7 @@ def train_tier0_model(
                 break
 
     if best_state:
-        model.load_state_dict(best_state)  # type: ignore[attr-defined]
+        model.load_state_dict(best_state)
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     model.save_weights(output_path)

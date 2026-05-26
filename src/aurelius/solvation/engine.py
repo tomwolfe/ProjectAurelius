@@ -751,7 +751,7 @@ class MWSESolvationEngine:
             barrier_height_eV=float(np.max(energies)),
             has_local_maxima=len(local_maxima) > 0,
             local_maxima_eV=float(max(local_maxima)) if local_maxima else 0.0,
-            path_integral_energy=float(np.trapezoid(energies, positions)),  # type: ignore[attr-defined]
+            path_integral_energy=float(np.trapezoid(energies, positions)),
         )
 
         rejection_threshold = _SolvationParams.get_rejection_threshold()
@@ -791,8 +791,7 @@ class MWSESolvationEngine:
     @staticmethod
     def _find_local_maxima(energies: np.ndarray[Any, Any]) -> list[float]:
         """Find local maxima in energy profile."""
-        maxima = []
-        for i in range(1, len(energies) - 1):
-            if energies[i] > energies[i - 1] and energies[i] > energies[i + 1]:
-                maxima.append(float(energies[i]))
-        return maxima
+        if len(energies) < 3:
+            return []
+        is_max = (energies[1:-1] > energies[:-2]) & (energies[1:-1] > energies[2:])
+        return energies[1:-1][is_max].tolist()

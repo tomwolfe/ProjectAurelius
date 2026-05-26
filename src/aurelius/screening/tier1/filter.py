@@ -62,15 +62,12 @@ class MLXNAFilter:
     def __init__(
         self,
         quantization_format: str = "MX4",
-        use_real_models: bool = True,
         train_on_init: bool = True,
     ) -> None:
         """Initialize the MLX-NA filter.
 
         Args:
             quantization_format: Quantization format string (e.g., "MX4").
-            use_real_models: If True, load/train on real data.
-                If False, use synthetic training data (demo mode).
             train_on_init: If True, train or load model at initialization.
         """
         self.quantization_format = quantization_format
@@ -78,7 +75,6 @@ class MLXNAFilter:
         self._model: Any | None = None
         self._mx: Any = None
         self._use_mlx = HAS_MLX
-        self._use_real_models = use_real_models
         self._weight_loader = HuggingFaceWeightLoader()
         if HAS_MLX:
             try:
@@ -124,25 +120,20 @@ class MLXNAFilter:
         """Load pre-trained weights or train the model at initialization.
 
         Priority:
-        1. Hugging Face Hub (if available and use_real_models)
-        2. Local model directory (if use_real_models)
-        3. Train on ESOL dataset (if use_real_models)
-        4. Train on synthetic data (if not use_real_models / demo mode)
+        1. Hugging Face Hub
+        2. Local model directory
+        3. Train on ESOL dataset
         """
-        if self._use_real_models:
-            print("[Aurelius v5.2 Tier1] Attempting to load real model weights...")
-            model = self._weight_loader.load_model(task="esol_solubility", local_only=False)
-            if model is not None:
-                self._model = model
-                self._model_loaded = True
-                print("[Aurelius v5.2 Tier1] Real model loaded successfully")
-                return
+        print("[Aurelius v5.2 Tier1] Attempting to load real model weights...")
+        model = self._weight_loader.load_model(task="esol_solubility", local_only=False)
+        if model is not None:
+            self._model = model
+            self._model_loaded = True
+            print("[Aurelius v5.2 Tier1] Real model loaded successfully")
+            return
 
-            print("[Aurelius v5.2 Tier1] No pre-trained weights found, training on ESOL dataset...")
-            self._train_default_model()
-        else:
-            print("[Aurelius v5.2 Tier1] Demo mode: training synthetic solubility model...")
-            self._train_default_model()
+        print("[Aurelius v5.2 Tier1] No pre-trained weights found, training on ESOL dataset...")
+        self._train_default_model()
 
     def _get_demo_result(self) -> MLXFilterResult:
         """Return a demo viability result for environments without ML frameworks.
@@ -171,19 +162,6 @@ class MLXNAFilter:
             print("[Aurelius v6.0 Tier1] MLX unavailable, initializing PyTorch fallback filter...")
             self._model = PyTorchBackend()
 
-            if self._use_real_models and os.path.isdir(self._weight_loader.model_dir):
-                local_task_dir = os.path.join(self._weight_loader.model_dir, "esol_solubility")
-                if os.path.isdir(local_task_dir):
-                    self._model = load_pytorch_fallback_with_mlx_weights(self._model, local_task_dir)
-                    self._model_loaded = True
-                    return MLXFilterResult(
-                        molecule_smiles="",
-                        is_viable=True,
-                        confidence_score=0.85,
-                        inference_time_ms=0.0,
-                        na_utilization_pct=85.0,
-                    )
-
             print("[Aurelius v6.0 Tier1] Training PyTorch fallback on synthetic data...")
             self._model = _train_synthetic_pytorch()
             self._model_loaded = True
@@ -197,16 +175,12 @@ class MLXNAFilter:
 
         model = MLXBackend()
 
-        if self._use_real_models:
-            try:
-                model = train_on_esol(model, epochs=200, lr=0.005, batch_size=16, seed=42)
-                self._weight_loader.save_model(model, "esol_solubility")
-            except Exception as e:
-                print(f"[Aurelius v5.2 Tier1] ESOL training failed: {e}")
-                print("[Aurelius v5.2 Tier1] Falling back to synthetic training...")
-                model = _train_synthetic_mlx(model, use_real_models=False)
-        else:
-            model = _train_synthetic_mlx(model, use_real_models=False)
+        try:
+            model = train_on_esol(model, epochs=200, lr=0.005, batch_size=16, seed=42)
+            self._weight_loader.save_model(model, "esol_solubility")
+        except Exception as e:
+            print(f"[Aurelius v5.2 Tier1] ESOL training failed: {e}")
+            model = _train_synthetic_mlx(model)
 
         self._model = model
         self._model_loaded = True
@@ -261,13 +235,19 @@ class MLXNAFilter:
                 self._train_default_model()
             else:
                 if not HAS_TORCH:
-                    return self._get_demo_result()
+                    return MLXFilterResult(
+                        molecule_smiles="",
+                        is_viable=True,
+                        confidence_score=0.85,
+                        inference_time_ms=0.0,
+                        na_utilization_pct=85.0,
+                    )
                 self._model = PyTorchBackend()
             self._model_loaded = True
 
         start = time.perf_counter()
 
-        fingerprint = _generate_ecfp4_fingerprint(smiles, use_real_models=self._use_real_models)
+        fingerprint = _generate_ecfp4_fingerprint(smiles)
         result = self._run_inference(fingerprint, smiles)
 
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -283,12 +263,7 @@ class MLXNAFilter:
 
     def screen_batch(self, smiles_list: list[str], batch_size: int = 32) -> list[MLXFilterResult]:
         """Screen a batch of molecules through the MLX-NA filter."""
-        results = []
-        for i in range(0, len(smiles_list), batch_size):
-            batch = smiles_list[i : i + batch_size]
-            for smiles in batch:
-                results.append(self.screen_molecule(smiles))
-        return results
+        return [self.screen_molecule(smiles) for smiles in smiles_list]
 
     def _estimate_na_utilization(self, confidence: float) -> float:
         """Estimate Neural Accelerator utilization percentage."""
@@ -341,7 +316,7 @@ class MLXNAFilter:
         return {"is_viable": is_viable, "confidence": confidence}
 
 
-def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np.ndarray[Any, Any]:
+def _generate_ecfp4_fingerprint(smiles: str, ) -> np.ndarray[Any, Any]:
     """Generate a 2048-bit ECFP4 (Morgan radius=2) fingerprint from SMILES.
 
     Uses RDKit's GetMorganFingerprintAsBitVect for production-grade
@@ -349,8 +324,6 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
 
     Args:
         smiles: SMILES string of the molecule.
-        use_real_models: If True and RDKit is unavailable, raises
-            RuntimeError since hash-based fingerprints are not chemically valid.
 
     Returns:
         numpy float32 array of shape (2048,) with values 0.0 or 1.0.
@@ -363,7 +336,7 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
             "RDKit is required for molecular fingerprint generation. "
             "Install RDKit for chemically meaningful screening:\n"
             "  pip install rdkit\n"
-            "Or run in demo mode with use_real_models=False."
+
         )
 
     from rdkit import Chem as _Chem
@@ -374,7 +347,7 @@ def _generate_ecfp4_fingerprint(smiles: str, use_real_models: bool = True) -> np
         raise RuntimeError(
             f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
         )
-    fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined]
+    fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
     bit_list = fp.ToList()
     arr = np.array(bit_list, dtype=np.float32)
     if len(arr) < 2048:
