@@ -535,15 +535,9 @@ def train_mlx(
 
             loss, grads = nn.value_and_grad(model, loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
 
-            # Update model with gradients - nested structure: {'layers': [layer0, layer1, ...]}
-            grad_layers = grads["layers"]
-            model_layers = model["layers"]
-            for layer_idx, grad_layer in enumerate(grad_layers):
-                model_layer = model_layers[layer_idx]
-                for param_name in grad_layer:
-                    grad_val = grad_layer[param_name]
-                    model_param = model_layer[param_name]
-                    model_layer[param_name] = model_param - lr * grad_val
+            # Update model with gradients using MLX optimizer
+            optimizer = mx.optimizer.SGD(lr)
+            optimizer.update(model, grads)
 
         val_loss = float(loss_fn(X_val_mx, y_val_mx.reshape(-1, 1)))
         history["val_loss"].append(val_loss)

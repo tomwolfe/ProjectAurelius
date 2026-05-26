@@ -35,7 +35,10 @@ from typing import Any, cast
 import numpy as np
 
 from aurelius.constants import COULOMB_EV_A
+from aurelius.data.params import ForceFieldParams
 
+# ---------------------------------------------------------------------------
+# Solvation parameter accessors
 # ---------------------------------------------------------------------------
 # Force field parameters
 # ---------------------------------------------------------------------------
@@ -60,6 +63,104 @@ def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
         with open(ff_path) as f:
             return cast(dict[str, Any], json.load(f))
     return {}
+
+
+# ---------------------------------------------------------------------------
+# Solvation parameter accessors (thin wrappers over ForceFieldParams)
+# ---------------------------------------------------------------------------
+
+
+class _SolvationParams:
+    """Thin wrapper over ForceFieldParams for solvation-specific access.
+
+    Provides the same interface as before to avoid breaking existing code,
+    but delegates all calls to the centralized ForceFieldParams singleton.
+    """
+
+    @classmethod
+    def _params(cls) -> dict[str, Any]:
+        return ForceFieldParams.get().get_solvation()
+
+    @classmethod
+    def get_coordination_number(cls, ion_type: str) -> int:
+        """Get coordination number for ion from force field params."""
+        return int(cls._params().get("coordination_numbers", {}).get(ion_type, 6))
+
+    @classmethod
+    def get_shell_radius(cls, ion_type: str) -> float:
+        """Get solvation shell radius for ion from force field params."""
+        return float(cls._params().get("shell_radii_angstrom", {}).get(ion_type, 3.0))
+
+    @classmethod
+    def get_desolvation_energy(cls, ion_type: str, solvent_type: str) -> float:
+        """Get desolvation energy for ion-solvent pair from force field params."""
+        base = cls._params().get("desolvation_energies_eV", {})
+        key = f"{ion_type}_{solvent_type.replace(':', '_')}"
+        return float(base.get(key, cls._params().get("default_desolvation_eV", 0.10)))
+
+    @classmethod
+    def get_surface_tension(cls) -> float:
+        """Get surface tension parameter from force field params."""
+        return float(cls._params().get("surface_tension_eV_per_A2", 0.00542))
+
+    @classmethod
+    def get_numerical_floor(cls) -> float:
+        """Get numerical stability floor from force field params."""
+        return float(cls._params().get("numerical_stability_floor", 1e-10))
+
+    @classmethod
+    def get_gb_prefactor_sign(cls) -> float:
+        """Get GBSA prefactor sign from force field params."""
+        return float(cls._params().get("gb_prefactor_sign", -0.5))
+
+    @classmethod
+    def get_labile_kex_lower_bound(cls) -> float:
+        """Get lower bound for labile k_ex from force field params."""
+        return float(cls._params().get("labile_kex_lower_bound", 0.01))
+
+    @classmethod
+    def get_rejection_threshold(cls) -> float:
+        """Get local maxima rejection threshold from force field params."""
+        return float(cls._params().get("rejection_threshold_eV", 0.5))
+
+    @classmethod
+    def get_max_trajectory_distance(cls) -> float:
+        """Get max trajectory distance from force field params."""
+        return float(cls._params().get("max_trajectory_distance_angstrom", 5.0))
+
+    @classmethod
+    def get_energy_profile_gaussians(cls) -> tuple[list[float], list[float], list[float]]:
+        """Get energy profile Gaussian parameters from force field params."""
+        params = cls._params()
+        gaussians = params.get("energy_profile_gaussians", {})
+        centers = gaussians.get("centers_angstrom", [1.5, 3.0, 4.2])
+        widths = gaussians.get("widths_angstrom", [0.4, 0.5, 0.3])
+        heights = gaussians.get("heights_eV", [0.15, 0.25, 0.10])
+        return centers, widths, heights
+
+    @classmethod
+    def get_repulsive_wall_params(cls) -> tuple[float, float]:
+        """Get repulsive wall parameters from force field params."""
+        params = cls._params()
+        wall = params.get("repulsive_wall", {})
+        amplitude = wall.get("amplitude_eV", 0.02)
+        decay = wall.get("decay_length_angstrom", 0.5)
+        return amplitude, decay
+
+    @classmethod
+    def get_attempt_frequency(cls) -> float:
+        """Get attempt frequency from force field params."""
+        return float(cls._params().get("attempt_frequency_ps", 2.0))
+
+    @classmethod
+    def get_ion_pair_separation(cls) -> float:
+        """Get ion-pair separation distance from force field params."""
+        return float(cls._params().get("ion_pair_separation_angstrom", 2.3))
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Clear the loaded params cache (useful for testing)."""
+        ForceFieldParams.clear_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -151,183 +252,7 @@ class DesolvationBarrier:
 
 
 # ---------------------------------------------------------------------------
-# Solvation parameter accessors
-# ---------------------------------------------------------------------------
-
-
-class _SolvationParams:
-    """Lazy-loaded solvation parameters with caching.
-
-    Parameters are loaded once per instance and cached, eliminating
-    repeated disk I/O on every access. Importing this module has
-    zero side effects — no I/O occurs until the first access.
-    """
-
-    _cache: dict[str, Any] | None = None
-
-    @classmethod
-    def _ensure_loaded(cls) -> dict[str, Any]:
-        """Load force field params once and cache the result."""
-        if cls._cache is None:
-            cls._cache = _load_force_field_params()
-        return cls._cache
-
-    @classmethod
-    def get_coordination_number(cls, ion_type: str) -> int:
-        """Get coordination number for ion from force field params."""
-        params = cls._ensure_loaded()
-        return int(params.get("coordination_numbers", {}).get(ion_type, 6))
-
-    @classmethod
-    def get_shell_radius(cls, ion_type: str) -> float:
-        """Get solvation shell radius for ion from force field params."""
-        params = cls._ensure_loaded()
-        return float(params.get("shell_radii_angstrom", {}).get(ion_type, 3.0))
-
-    @classmethod
-    def get_desolvation_energy(cls, ion_type: str, solvent_type: str) -> float:
-        """Get desolvation energy for ion-solvent pair from force field params."""
-        params = cls._ensure_loaded()
-        base = params.get("desolvation_energies_eV", {})
-        key = f"{ion_type}_{solvent_type.replace(':', '_')}"
-        return float(base.get(key, params.get("default_desolvation_eV", 0.10)))
-
-    @classmethod
-    def get_surface_tension(cls) -> float:
-        """Get surface tension parameter from force field params."""
-        params = cls._ensure_loaded()
-        return float(params.get("surface_tension_eV_per_A2", 0.00542))
-
-    @classmethod
-    def get_numerical_floor(cls) -> float:
-        """Get numerical stability floor from force field params."""
-        params = cls._ensure_loaded()
-        return float(params.get("numerical_stability_floor", 1e-10))
-
-    @classmethod
-    def get_gb_prefactor_sign(cls) -> float:
-        """Get GBSA prefactor sign from force field params."""
-        params = cls._ensure_loaded()
-        return float(params.get("gb_prefactor_sign", -0.5))
-
-    @classmethod
-    def get_labile_kex_lower_bound(cls) -> float:
-        """Get lower bound for labile k_ex from force field params."""
-        params = cls._ensure_loaded()
-        return float(params.get("labile_kex_lower_bound", 0.01))
-
-    @classmethod
-    def get_rejection_threshold(cls) -> float:
-        """Get local maxima rejection threshold from force field params."""
-        params = cls._ensure_loaded()
-        return float(params.get("rejection_threshold_eV", 0.5))
-
-    @classmethod
-    def get_max_trajectory_distance(cls) -> float:
-        """Get max trajectory distance from force field params."""
-        params = cls._ensure_loaded()
-        return float(params.get("max_trajectory_distance_angstrom", 5.0))
-
-    @classmethod
-    def get_energy_profile_gaussians(cls) -> tuple[list[float], list[float], list[float]]:
-        """Get energy profile Gaussian parameters from force field params."""
-        params = cls._ensure_loaded()
-        gaussians = params.get("energy_profile_gaussians", {})
-        centers = gaussians.get("centers_angstrom", [1.5, 3.0, 4.2])
-        widths = gaussians.get("widths_angstrom", [0.4, 0.5, 0.3])
-        heights = gaussians.get("heights_eV", [0.15, 0.25, 0.10])
-        return centers, widths, heights
-
-    @classmethod
-    def get_repulsive_wall_params(cls) -> tuple[float, float]:
-        """Get repulsive wall parameters from force field params."""
-        params = cls._ensure_loaded()
-        wall = params.get("repulsive_wall", {})
-        amplitude = wall.get("amplitude_eV", 0.02)
-        decay = wall.get("decay_length_angstrom", 0.5)
-        return amplitude, decay
-
-    @classmethod
-    def get_attempt_frequency(cls) -> float:
-        """Get attempt frequency from force field params."""
-        params = cls._ensure_loaded()
-        return float(params.get("attempt_frequency_ps", 2.0))
-
-    @classmethod
-    def get_ion_pair_separation(cls) -> float:
-        """Get ion-pair separation distance from force field params."""
-        params = cls._ensure_loaded()
-        return float(params.get("ion_pair_separation_angstrom", 2.3))
-
-    @classmethod
-    def clear_cache(cls) -> None:
-        """Clear the loaded params cache (useful for testing)."""
-        cls._cache = None
-
-
-class _ScoringParams:
-    """Lazy-loaded scoring parameters with caching.
-
-    Parameters are loaded once per instance and cached, eliminating
-    repeated disk I/O on every access. Importing this module has
-    zero side effects — no I/O occurs until the first access.
-    """
-
-    _cache: dict[str, Any] | None = None
-
-    @classmethod
-    def _ensure_loaded(cls) -> dict[str, Any]:
-        """Load scoring params once and cache the result."""
-        if cls._cache is None:
-            cls._cache = _load_scoring_params()
-        return cls._cache
-
-    @classmethod
-    def get_mwse_stability(cls) -> dict[str, Any]:
-        """Get MWSE stability parameters."""
-        params = cls._ensure_loaded()
-        return cast(dict[str, Any], params.get("mwse_stability", {}))
-
-    @classmethod
-    def get_default_tier_score(cls) -> float:
-        """Get default tier score."""
-        params = cls._ensure_loaded()
-        return cast(float, params.get("default_tier_score", 50.0))
-
-    @classmethod
-    def get_desolvation_normalization(cls) -> dict[str, Any]:
-        """Get desolvation normalization parameters."""
-        params = cls._ensure_loaded()
-        return cast(dict[str, Any], params.get("desolvation_normalization", {}))
-
-    @classmethod
-    def clear_cache(cls) -> None:
-        """Clear the loaded params cache (useful for testing)."""
-        cls._cache = None
-
-
-def _load_scoring_params(path: str | None = None) -> dict[str, Any]:
-    """Load scoring parameters from force field JSON for MWSE evaluation.
-
-    Args:
-        path: Optional path to force field params JSON file.
-
-    Returns:
-        Dictionary of scoring parameters, or empty dict on failure.
-    """
-    ff_path = path or _default_ff_path()
-    if os.path.isfile(ff_path):
-        try:
-            with open(ff_path) as f:
-                data = json.load(f)
-                return cast(dict[str, Any], data.get("scoring_parameters", {}))
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {}
-
-
-# ---------------------------------------------------------------------------
-# GBSA helper functions
+# Data classes
 # ---------------------------------------------------------------------------
 
 

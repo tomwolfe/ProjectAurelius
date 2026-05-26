@@ -14,13 +14,11 @@ Where:
 
 from __future__ import annotations
 
-import json
-import os
-from importlib import resources
 from typing import Any, cast
 
 import numpy as np
 
+from aurelius.data.params import ForceFieldParams
 from aurelius.types import (
     AureliusScoreResult,
     DesolvationPathResult,
@@ -32,6 +30,9 @@ from aurelius.types import (
 )
 
 
+from aurelius.data.params import ForceFieldParams
+
+
 class _ScoringParams:
     """Lazy-loaded scoring parameters with caching.
 
@@ -40,14 +41,10 @@ class _ScoringParams:
     zero side effects — no I/O occurs until the first access.
     """
 
-    _cache: dict[str, Any] | None = None
-
     @classmethod
     def _ensure_loaded(cls) -> dict[str, Any]:
         """Load scoring params once and cache the result."""
-        if cls._cache is None:
-            cls._cache = _load_scoring_params()
-        return cls._cache
+        return ForceFieldParams.get().get_scoring()
 
     @classmethod
     def get_mwse_stability(cls) -> dict[str, Any]:
@@ -88,27 +85,7 @@ class _ScoringParams:
     @classmethod
     def clear_cache(cls) -> None:
         """Clear the loaded params cache (useful for testing)."""
-        cls._cache = None
-
-
-def _load_scoring_params(path: str | None = None) -> dict[str, Any]:
-    """Load scoring parameters from force field JSON.
-
-    Args:
-        path: Optional path to force field params JSON file.
-
-    Returns:
-        Dictionary of scoring parameters, or empty dict on failure.
-    """
-    ff_path = path or str(resources.files("aurelius.data").joinpath("force_field_params.json"))
-    if os.path.isfile(ff_path):
-        try:
-            with open(ff_path) as f:
-                data = json.load(f)
-                return cast(dict[str, Any], data.get("scoring_parameters", {}))
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {}
+        ForceFieldParams.clear_cache()
 
 
 class AureliusScoringEngine:

@@ -29,7 +29,13 @@ from aurelius.cli_scripts import (
 )
 from aurelius.config import get_config
 from aurelius.pipeline import AureliusPipeline
-from aurelius.utils.dependencies import HAS_RDKIT
+from aurelius.utils.dependencies import (
+    HAS_MLX,
+    HAS_RDKIT,
+    HAS_TORCH,
+    HAS_HF_HUB,
+    report_status,
+)
 
 
 def _apply_env_thread_safe(env_vars: dict[str, str]) -> None:
@@ -80,18 +86,10 @@ def doctor(verbose: bool) -> None:
     - CI pipelines to verify the fallback-only environment
     - Quick system readiness assessment
     """
-    from aurelius.utils.dependencies import (
-        HAS_MLX,
-        HAS_TORCH,
-        DependencyManager,
-    )
-
-    click.echo("\n=== Aurelius v7.0 Doctor ===")
-    click.echo("")
+    from aurelius.utils.dependencies import report_status
 
     # Framework status
-    deps = DependencyManager()
-    status = deps.report_status()
+    status = report_status()
 
     click.echo("[Frameworks]")
     for fw, info in status.items():
@@ -146,7 +144,7 @@ def doctor(verbose: bool) -> None:
         click.echo("  RDKit:    Not installed (real model screening required)")
 
     # HuggingFace
-    if deps.is_hf_hub_available():
+    if HAS_HF_HUB:
         click.echo("  HuggingFace Hub: Available")
     else:
         click.echo("  HuggingFace Hub: Not installed (local training only)")
@@ -213,21 +211,8 @@ def screen(smiles: str, solvent: str, salt: str, ion: str, temperature: float, v
 @click.argument("file", type=click.Path(exists=True))
 @click.option("--solvent", default="ec:dmc", help="Solvent type")
 @click.option("--output", type=click.Path(), help="Output JSON file")
-@click.option(
-    "--allow-fallback",
-    is_flag=True,
-    default=False,
-    help="Allow hash-based fallback when RDKit is unavailable (demo/CI only)",
-)
-def batch(file: str, solvent: str, salt: str, output: str | None, allow_fallback: bool) -> None:
+def batch(file: str, solvent: str, salt: str, output: str | None) -> None:
     """Screen multiple molecules from a SMILES file (one per line)."""
-    # Enforce RDKit for real models (unless --allow-fallback is set)
-    # --demo flag enables demo mode for testing
-    # --demo flag enables demo mode for testing
-    # pip install rdkit or conda install -c conda-forge rdkit
-    if not allow_fallback:
-        from rdkit import Chem  # noqa: F401
-
     config = get_config()
     env_vars = config.apply_environment()
     _apply_env_thread_safe(env_vars)

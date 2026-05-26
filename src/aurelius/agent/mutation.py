@@ -3,7 +3,6 @@
 Generates candidate molecules from seed SMILES using:
 - BRICS reassembly
 - Fluorination
-- Unsaturation introduction
 - Methylation
 - Electrochemical stability filtering
 - Diversity-based rejection
@@ -46,7 +45,6 @@ class MutationEngine:
     Generates candidate molecules from seed SMILES using:
     - BRICS reassembly
     - Fluorination
-    - Unsaturation introduction
     - Methylation
     - Electrochemical stability filtering
     - Diversity-based rejection
@@ -158,11 +156,6 @@ class MutationEngine:
             logger.debug("Fluorination failed: %s", e)
         return generated
 
-    def _add_unsaturation(self, mol: Any) -> list[str]:
-        """Disable naive string-based unsaturation to prevent invalid SMILES.
-        BRICS reassembly naturally handles structural diversity."""
-        return []
-
     def _methylate(self, mol: Any) -> list[str]:
         """Add methyl groups using RDKit RWMol."""
         generated: list[str] = []
@@ -223,7 +216,7 @@ class MutationEngine:
                 candidates.add(s)
 
         # Fallback templates
-        for func in [self._fluorinate, self._add_unsaturation, self._methylate]:
+            for func in [self._fluorinate, self._methylate]:
             results = func(mol)
             for s in results:
                 m = _safe_mol_from_smiles(s)
@@ -232,7 +225,7 @@ class MutationEngine:
 
         # If BRICS yielded nothing, try fallback templates more aggressively
         if len(brics_results) == 0:
-            for func in [self._fluorinate, self._add_unsaturation, self._methylate]:
+        for func in [self._fluorinate, self._methylate]:
                 results = func(mol)
                 for s in results:
                     m = _safe_mol_from_smiles(s)

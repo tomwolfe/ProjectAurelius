@@ -82,7 +82,6 @@ class MatterSimMTSimulator:
         use_neighbor_list: bool = False,
         neighbor_list_cutoff: float = 12.0,
         use_polarization: bool = False,
-        use_pbc: bool = False,
     ) -> None:
         """Initialize MatterSim-MT simulator.
 
@@ -96,14 +95,11 @@ class MatterSimMTSimulator:
                 and only same/adjacent-cell pairs are evaluated.
                 Falls back to dense computation for small systems
                 (n_atoms < 50).
-            neighbor_list_cutoff: Cutoff radius in Angstroms for neighbor
-                list (default: 12.0). Must be >= self._cutoff.
             use_polarization: If True, enables GNN-ChargeEq dynamic
                 charge prediction for Coulombic potential computation.
         """
         self._use_polarization = use_polarization
         self._use_neighbor_list = use_neighbor_list
-        self._use_pbc = use_pbc
         self._neighbor_list_cutoff = neighbor_list_cutoff
         self._LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {}
         self._CHARGES: dict[int, float] = {}
@@ -167,14 +163,6 @@ class MatterSimMTSimulator:
         self._nl_rebuild_counter = 0
         self._nl_rebuild_interval = 100
         self._neighbor_list: tuple[Any, Any, Any] | None = None
-
-        # PBC cell vectors (must come after _cutoff is defined)
-        if self._use_pbc and HAS_TORCH:
-            import torch
-            self._cell_vectors = torch.tensor(
-                [[self._cutoff, 0.0, 0.0], [0.0, self._cutoff, 0.0], [0.0, 0.0, self._cutoff]],
-                dtype=torch.float32,
-            )
 
         # Precomputed parameter matrices for vectorized tensor lookups
         device = self._select_device()
@@ -407,10 +395,6 @@ class MatterSimMTSimulator:
         atomic_numbers = torch.tensor(atomic_numbers_list, dtype=torch.long, device=device)
         coordinates = torch.tensor(coords_list, dtype=torch.float32, device=device)
 
-        # Apply PBC minimum image convention if enabled
-        if self._use_pbc:
-            coordinates = self._apply_pbc(coordinates)
-
         # Compute pairwise distances
         diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
         distances = torch.norm(diffs, dim=-1)
@@ -588,19 +572,6 @@ class MatterSimMTSimulator:
             coul_total = torch.zeros(n_scan_points, device=device)
 
         return lj_total + coul_total
-
-    def _apply_pbc(self, coords: torch.Tensor) -> torch.Tensor:
-        """Apply minimum image convention to coordinates."""
-        if not self._use_pbc or self._cell_vectors is None:
-            return coords
-
-        cell = self._cell_vectors
-        inv_cell = torch.linalg.inv(cell)  # type: ignore[attr-defined]
-
-        frac = torch.matmul(coords, inv_cell.t())  # (N, 3)
-        frac = frac - torch.floor(frac)
-        wrapped = torch.matmul(frac, cell)  # (N, 3)
-        return wrapped
 
     def _find_local_maxima(self, energies: np.ndarray[Any, Any]) -> list[float]:
         """Find local maxima in the energy profile."""

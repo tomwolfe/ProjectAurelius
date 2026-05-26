@@ -14,10 +14,12 @@ Design principles:
       that checks `if HAS_MLX:` continues to work.
 
 Usage:
-    >>> from aurelius.utils.dependencies import DependencyManager
-    >>> deps = DependencyManager()
-    >>> deps.report_status()
-    {'mlx': {'available': True, 'fallback_active': False, 'version': '0.21.0'}, ...}
+    >>> from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
+    >>> if HAS_MLX:
+    ...     import mlx.core
+    >>>
+    >>> from aurelius.utils.dependencies import check_framework, report_status
+    >>> status = report_status()
 """
 
 from __future__ import annotations
@@ -162,162 +164,6 @@ HAS_HF_HUB: bool = _HAS_HF_HUB
 HAS_DATASETS: bool = _HAS_DATASETS
 
 # ---------------------------------------------------------------------------
-# DependencyManager class
-# ---------------------------------------------------------------------------
-
-
-class DependencyManager:
-    """Centralized dependency detection and framework routing.
-
-    Handles framework detection, validates minimum versions, provides
-    structured fallback routing, and logs when fallbacks activate.
-
-    This class is a singleton-like manager. Create one instance and
-    share it, or call the module-level functions below.
-    """
-
-    def __init__(self) -> None:
-        """Initialize the dependency manager.
-
-        Detects all frameworks and validates versions. Logs warnings
-        for missing or outdated dependencies.
-        """
-        self._status_cache: dict[str, dict[str, Any]] | None = None
-
-    def check_framework(self, name: str) -> dict[str, Any]:
-        """Check availability and version of a single framework.
-
-        Args:
-            name: Framework name (one of "mlx", "torch", "rdkit",
-                "huggingface-hub", "datasets").
-
-        Returns:
-            Dict with keys: available (bool), version (str | None),
-                meets_minimum (bool), min_version (str).
-        """
-        version_map: dict[str, str | None] = {
-            "mlx": _MLX_VERSION,
-            "torch": _TORCH_VERSION,
-            "rdkit": _RDKIT_VERSION,
-            "huggingface-hub": _HF_HUB_VERSION,
-            "datasets": _DATASETS_VERSION,
-        }
-        availability_map: dict[str, bool] = {
-            "mlx": _HAS_MLX,
-            "torch": _HAS_TORCH,
-            "rdkit": _HAS_RDKIT,
-            "huggingface-hub": _HAS_HF_HUB,
-            "datasets": _HAS_DATASETS,
-        }
-
-        available = availability_map.get(name, False)
-        version = version_map.get(name)
-        min_ver = _MIN_VERSIONS.get(name, "0.0.0")
-        meets_minimum = False
-        if available and version and version != "unknown":
-            meets_minimum = _version_gte(version, min_ver)
-            if not meets_minimum:
-                logger.warning(
-                    "Framework '%s' version %s is below minimum %s. Upgrade with: pip install --upgrade %s",
-                    name,
-                    version,
-                    min_ver,
-                    name,
-                )
-
-        return {
-            "available": available,
-            "version": version,
-            "meets_minimum": meets_minimum,
-            "min_version": min_ver,
-        }
-
-    def report_status(self) -> dict[str, dict[str, Any]]:
-        """Report the status of all frameworks.
-
-        Logs INFO for frameworks that are available and WARNING when
-        fallbacks activate (i.e., a framework is missing).
-
-        Returns:
-            Dict of {framework: {available: bool, version: str | None,
-                meets_minimum: bool, min_version: str}}.
-        """
-        if self._status_cache is not None:
-            return self._status_cache
-
-        status: dict[str, dict[str, Any]] = {}
-        for name in _MIN_VERSIONS:
-            info = self.check_framework(name)
-            status[name] = {
-                "available": info["available"],
-                "version": info["version"],
-                "meets_minimum": info["meets_minimum"],
-                "min_version": info["min_version"],
-            }
-            if info["available"]:
-                logger.info(
-                    "Framework '%s' available (version %s, meets minimum %s).",
-                    name,
-                    info["version"] or "unknown",
-                    info["min_version"],
-                )
-            else:
-                logger.warning(
-                    "Framework '%s' is NOT available. "
-                    "Install with: pip install %s (or check optional dependency group).",
-                    name,
-                    name,
-                )
-
-        self._status_cache = status
-        return status
-
-    def is_mlx_available(self) -> bool:
-        """Return True if MLX is available."""
-        return _HAS_MLX
-
-    def is_torch_available(self) -> bool:
-        """Return True if PyTorch is available."""
-        return _HAS_TORCH
-
-    def is_rdkit_available(self) -> bool:
-        """Return True if RDKit is available."""
-        return _HAS_RDKIT
-
-    def is_hf_hub_available(self) -> bool:
-        """Return True if huggingface-hub is available."""
-        return _HAS_HF_HUB
-
-    def is_datasets_available(self) -> bool:
-        """Return True if datasets is available."""
-        return _HAS_DATASETS
-
-    def routing_info(self) -> dict[str, str]:
-        """Determine optimal execution path for each framework.
-
-        Returns:
-            Dict mapping framework names to their routing strategy:
-                "native" = available and meets minimum
-                "fallback" = available but below minimum
-                "unavailable" = not installed
-        """
-        routing: dict[str, str] = {}
-        for name in _MIN_VERSIONS:
-            info = self.check_framework(name)
-            if info["available"] and info["meets_minimum"]:
-                routing[name] = "native"
-            elif info["available"]:
-                routing[name] = "fallback"
-            else:
-                routing[name] = "unavailable"
-        return routing
-
-    def clear_cache(self) -> None:
-        """Clear the status cache (useful for testing)."""
-        self._status_cache = None
-
-
-# ---------------------------------------------------------------------------
 # Module-level convenience functions (backward-compatible)
 # ---------------------------------------------------------------------------
 
@@ -331,16 +177,99 @@ def check_framework(name: str) -> dict[str, Any]:
     Returns:
         Dict with availability and version info.
     """
-    return DependencyManager().check_framework(name)
+    version_map: dict[str, str | None] = {
+        "mlx": _MLX_VERSION,
+        "torch": _TORCH_VERSION,
+        "rdkit": _RDKIT_VERSION,
+        "huggingface-hub": _HF_HUB_VERSION,
+        "datasets": _DATASETS_VERSION,
+    }
+    availability_map: dict[str, bool] = {
+        "mlx": _HAS_MLX,
+        "torch": _HAS_TORCH,
+        "rdkit": _HAS_RDKIT,
+        "huggingface-hub": _HAS_HF_HUB,
+        "datasets": _HAS_DATASETS,
+    }
+
+    available = availability_map.get(name, False)
+    version = version_map.get(name)
+    min_ver = _MIN_VERSIONS.get(name, "0.0.0")
+    meets_minimum = False
+    if available and version and version != "unknown":
+        meets_minimum = _version_gte(version, min_ver)
+        if not meets_minimum:
+            logger.warning(
+                "Framework '%s' version %s is below minimum %s. Upgrade with: pip install --upgrade %s",
+                name,
+                version,
+                min_ver,
+                name,
+            )
+
+    return {
+        "available": available,
+        "version": version,
+        "meets_minimum": meets_minimum,
+        "min_version": min_ver,
+    }
 
 
 def report_status() -> dict[str, dict[str, Any]]:
-    """Convenience function to report all framework statuses.
+    """Report the status of all frameworks.
+
+    Logs INFO for frameworks that are available and WARNING when
+    fallbacks activate (i.e., a framework is missing).
 
     Returns:
         Status dict for all frameworks.
     """
-    return DependencyManager().report_status()
+    status: dict[str, dict[str, Any]] = {}
+    for name in _MIN_VERSIONS:
+        version_map = {
+            "mlx": _MLX_VERSION,
+            "torch": _TORCH_VERSION,
+            "rdkit": _RDKIT_VERSION,
+            "huggingface-hub": _HF_HUB_VERSION,
+            "datasets": _DATASETS_VERSION,
+        }
+        availability_map = {
+            "mlx": _HAS_MLX,
+            "torch": _HAS_TORCH,
+            "rdkit": _HAS_RDKIT,
+            "huggingface-hub": _HAS_HF_HUB,
+            "datasets": _HAS_DATASETS,
+        }
+
+        available = availability_map.get(name, False)
+        version = version_map.get(name)
+        min_ver = _MIN_VERSIONS.get(name, "0.0.0")
+        meets_minimum = False
+        if available and version and version != "unknown":
+            meets_minimum = _version_gte(version, min_ver)
+
+        status[name] = {
+            "available": available,
+            "version": version,
+            "meets_minimum": meets_minimum,
+            "min_version": min_ver,
+        }
+        if info_available := available:
+            logger.info(
+                "Framework '%s' available (version %s, meets minimum %s).",
+                name,
+                version or "unknown",
+                min_ver,
+            )
+        else:
+            logger.warning(
+                "Framework '%s' is NOT available. "
+                "Install with: pip install %s (or check optional dependency group).",
+                name,
+                name,
+            )
+
+    return status
 
 
 def routing_info() -> dict[str, str]:
@@ -349,4 +278,34 @@ def routing_info() -> dict[str, str]:
     Returns:
         Dict mapping framework names to routing strategy.
     """
-    return DependencyManager().routing_info()
+    routing: dict[str, str] = {}
+    for name in _MIN_VERSIONS:
+        version_map = {
+            "mlx": _MLX_VERSION,
+            "torch": _TORCH_VERSION,
+            "rdkit": _RDKIT_VERSION,
+            "huggingface-hub": _HF_HUB_VERSION,
+            "datasets": _DATASETS_VERSION,
+        }
+        availability_map = {
+            "mlx": _HAS_MLX,
+            "torch": _HAS_TORCH,
+            "rdkit": _HAS_RDKIT,
+            "huggingface-hub": _HAS_HF_HUB,
+            "datasets": _HAS_DATASETS,
+        }
+
+        available = availability_map.get(name, False)
+        version = version_map.get(name)
+        min_ver = _MIN_VERSIONS.get(name, "0.0.0")
+        meets_minimum = False
+        if available and version and version != "unknown":
+            meets_minimum = _version_gte(version, min_ver)
+
+        if available and meets_minimum:
+            routing[name] = "native"
+        elif available:
+            routing[name] = "fallback"
+        else:
+            routing[name] = "unavailable"
+    return routing

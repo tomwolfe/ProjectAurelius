@@ -70,13 +70,33 @@ class CheckpointManager:
         """)
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_discovery_id ON discoveries(id)")
 
+        # Create agent_state table for key-value state persistence
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS agent_state (
+                key   TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+
     def _load_state(self) -> dict[str, Any]:
-        """Load checkpoint state from SQLite database.
+        """Load checkpoint state from the agent_state key-value table.
 
         Returns:
             Dict of checkpoint state.
         """
-        return self._get_state_dict()
+        state: dict[str, Any] = {}
+        cursor = self._conn.execute("SELECT key, value FROM agent_state")
+        for row in cursor:
+            key, value = row
+            if key == "started_at":
+                state[key] = value
+            elif key in ("batch", "screened_count", "viable_count", "total_generated", "invalid_discarded"):
+                state[key] = int(value)
+            elif key in ("best_score",):
+                state[key] = float(value)
+            elif key == "last_updated":
+                state[key] = value if value else None
+        return state
 
     def _get_state_dict(self) -> dict[str, Any]:
         """Return current state as a dict (for API compatibility)."""
@@ -105,15 +125,17 @@ class CheckpointManager:
         return self._load_state()
 
     def save(self) -> None:
-        """Save checkpoint state to SQLite database.
+        """Save checkpoint state to the agent_state key-value table.
 
         Updates the in-memory state and persists it to the SQLite database.
         """
         state = self._get_state_dict()
-        self._conn.execute(
-            "INSERT OR REPLACE INTO screened_molecules (smiles, score, tier_status) "
-            "VALUES (?, ?, ?)",
-            ("__checkpoint__", str(state.get("screened_count", 0)), str(state.get("batch", 0))),
+        rows = []
+        for key, value in state.items():
+            rows.append((key, str(value) if value is not None else ""))
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO agent_state (key, value) VALUES (?, ?)",
+            rows,
         )
         self._conn.commit()
 
@@ -233,9 +255,11 @@ class CheckpointManager:
         return self._get_state_dict()
 
     def clear(self) -> None:
-        """Clear all screened molecules and fingerprints."""
+        """Clear all screened molecules, fingerprints, and agent state."""
+        self._conn.execute("DELETE FROM agent_state")
         self._conn.execute("DELETE FROM screened_molecules")
         self._conn.execute("DELETE FROM fingerprints")
+        self._conn.execute("DELETE FROM discoveries")
         self._conn.commit()
 
 
