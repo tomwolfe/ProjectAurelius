@@ -23,24 +23,6 @@ from typing import Any, Protocol, runtime_checkable
 from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 
 # ---------------------------------------------------------------------------
-# Type aliases for model tensor types
-# ---------------------------------------------------------------------------
-
-MLXArray: Any  # type: ignore[misc, unused-call, unreachable]  # noqa: F821
-TTensor: Any  # type: ignore[misc, unused-call, unreachable]  # noqa: F821
-
-__all__ = [
-    "DEFAULT_MODEL_DIR",
-    "HAS_MLX",
-    "HAS_RDKIT",
-    "HAS_TORCH",
-    "HUGGINGFACE_MODELS",
-    "MLXBackend",
-    "model_factory",
-    "PyTorchBackend",
-]
-
-# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
@@ -73,11 +55,11 @@ class ModelBackend(Protocol):
     - load_weights: Load model weights from disk
     """
 
-    def __call__(self, x: MLXArray) -> MLXArray: ...  # noqa: F821
+    def __call__(self, x: Any) -> Any: ...
 
-    def parameters(self) -> list[MLXArray]: ...  # noqa: F821
+    def parameters(self) -> list[Any]: ...
 
-    def predict(self, x: MLXArray) -> MLXArray: ...  # noqa: F821
+    def predict(self, x: Any) -> Any: ...
 
     def save_weights(self, path: str) -> None: ...
 

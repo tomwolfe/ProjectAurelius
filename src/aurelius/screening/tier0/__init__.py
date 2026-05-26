@@ -16,17 +16,13 @@ from aurelius.screening.tier0.models import (
     PyTorchBackend,
     model_factory,
 )
-from aurelius.screening.tier0.predictor import (
-    Tier0ActivationPredictor,
-    _LinearFallbackPredictor,
-)
+from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
 
 __all__ = [
     "HAS_TORCH",
     "model_factory",
     "PyTorchBackend",
     "Tier0ActivationPredictor",
-    "_LinearFallbackPredictor",
     "_build_molecular_graph",
     "generate_synthetic_training_data",
     "train_tier0_model",

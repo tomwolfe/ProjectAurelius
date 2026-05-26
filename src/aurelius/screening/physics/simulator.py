@@ -176,6 +176,58 @@ class MatterSimMTSimulator:
                 dtype=torch.float32,
             )
 
+        # Precomputed parameter matrices for vectorized tensor lookups
+        device = self._select_device()
+        self._eps_matrix = self._build_param_matrix(self._LJ_PARAMS, device)
+        self._sig_matrix = self._build_param_matrix(self._LJ_PARAMS, device)
+        self._charge_vector = self._build_charge_vector(self._CHARGES, device)
+
+    @staticmethod
+    def _build_param_matrix(
+        params: dict[tuple[int, int], tuple[float, float]],
+        device: str = "cpu",
+    ) -> torch.Tensor:
+        """Build a (119, 119) parameter matrix from a dict of LJ parameters.
+
+        Args:
+            params: Lennard-Jones parameters dict mapping (zi, zj) -> (eps, sig).
+            device: Compute device for the output tensor.
+
+        Returns:
+            Precomputed parameter matrix indexed by atomic numbers.
+        """
+        size = 119  # Maximum atomic number in periodic table
+        matrix = torch.zeros(size, size, dtype=torch.float32, device=device)
+        for (zi, zj), (eps, sig) in params.items():
+            matrix[zi][zj] = eps
+        return matrix
+
+    @staticmethod
+    def _build_charge_vector(
+        charges: dict[int, float],
+        device: str = "cpu",
+    ) -> torch.Tensor:
+        """Build a charge vector indexed by atomic number.
+
+        Args:
+            charges: Partial charges dict mapping atomic number to charge value.
+            device: Compute device for the output tensor.
+
+        Returns:
+            Precomputed charge values indexed by atomic number.
+        """
+        size = 119  # Maximum atomic number in periodic table
+        vector = torch.zeros(size, dtype=torch.float32, device=device)
+        for z, q in charges.items():
+            vector[z] = q
+        return vector
+
+        # Precomputed parameter matrices for vectorized tensor lookups
+        device = self._select_device()
+        self._eps_matrix = self._build_param_matrix(self._LJ_PARAMS, device)
+        self._sig_matrix = self._build_param_matrix(self._LJ_PARAMS, device)
+        self._charge_vector = self._build_charge_vector(self._CHARGES, device)
+
     def _select_device(self) -> str:
         """Select the best available compute device.
 
@@ -368,11 +420,12 @@ class MatterSimMTSimulator:
 
         # Compute LJ + Coulomb energies (always uses dense pairwise computation)
         lj_energy = MatterSimLJPotentials.compute_lj_potential(
-            atomic_numbers, distances, self._default_eps, self._default_sig, self._LJ_PARAMS, self._cutoff
+            atomic_numbers, distances, self._eps_matrix, self._sig_matrix,
+            self._default_eps, self._default_sig, self._cutoff,
         )
         coulomb_energy = MatterSimCoulombPotentials.compute_coulomb_potential(
-            atomic_numbers, distances, self._CHARGES, self._use_polarization,
-            self._default_eps, self._default_sig, self._LJ_PARAMS, self._cutoff
+            atomic_numbers, distances, self._charge_vector,
+            self._default_eps, self._default_sig, self._cutoff,
         )
         _total_energy = lj_energy + coulomb_energy
 
@@ -409,7 +462,8 @@ class MatterSimMTSimulator:
         """Compute Lennard-Jones potential using sparse neighbor list."""
         return MatterSimLJPotentials.compute_lj_sparse(
             atomic_numbers, src_indices, dst_indices, distances,
-            self._default_eps, self._default_sig, self._LJ_PARAMS, self._cutoff,
+            self._eps_matrix, self._sig_matrix,
+            self._default_eps, self._default_sig, self._cutoff,
         )
 
     def _compute_coulomb_sparse(
@@ -422,7 +476,7 @@ class MatterSimMTSimulator:
         """Compute Coulombic potential using sparse neighbor list."""
         return MatterSimCoulombPotentials.compute_coulomb_sparse(
             atomic_numbers, src_indices, dst_indices, distances,
-            self._CHARGES, self._use_polarization,
+            self._charge_vector, self._use_polarization,
             self._CHARGES.get(int(atomic_numbers[0].item()), 0.0),
             str(atomic_numbers.device),  # type: ignore[arg-type]
         )
@@ -432,8 +486,8 @@ class MatterSimMTSimulator:
     ) -> torch.Tensor:
         """Compute Lennard-Jones potential between all atom pairs."""
         return MatterSimLJPotentials.compute_lj_potential(
-            atomic_numbers, distances, self._default_eps, self._default_sig,
-            self._LJ_PARAMS, self._cutoff,
+            atomic_numbers, distances, self._eps_matrix, self._sig_matrix,
+            self._default_eps, self._default_sig, self._cutoff,
         )
 
     def _compute_coulomb_potential(
@@ -441,29 +495,22 @@ class MatterSimMTSimulator:
     ) -> torch.Tensor:
         """Compute Coulombic potential between charged pairs."""
         return MatterSimCoulombPotentials.compute_coulomb_potential(
-            atomic_numbers, distances, self._CHARGES, self._use_polarization,
-            self._default_eps, self._default_sig, self._LJ_PARAMS, self._cutoff,
+            atomic_numbers, distances, self._charge_vector,
+            self._default_eps, self._default_sig, self._cutoff,
         )
 
     def _predict_charges_atomic(self, atomic_numbers: torch.Tensor) -> torch.Tensor:
         """Predict partial charges using the GNN-ChargeEq model."""
         if self._compiled_model is None:
-            device = atomic_numbers.device
-            charges = torch.zeros(atomic_numbers.shape[0], device=device, dtype=torch.float32)
-            for z, q in self._CHARGES.items():
-                charges = torch.where(atomic_numbers == z, torch.full_like(charges, q), charges)
-            return charges
+            # Advanced indexing: O(1) lookup instead of O(N) loop
+            return self._charge_vector[atomic_numbers]
 
         try:
             with torch.no_grad():
                 charges = self._compiled_model.predict_charges(atomic_numbers)
             return charges  # type: ignore[no-any-return]
-        except Exception:
-            device = atomic_numbers.device
-            charges = torch.zeros(atomic_numbers.shape[0], device=device, dtype=torch.float32)
-            for z, q in self._CHARGES.items():
-                charges = torch.where(atomic_numbers == z, torch.full_like(charges, q), charges)
-            return charges
+        except (AttributeError, RuntimeError):
+            return self._charge_vector[atomic_numbers]
 
     def _compute_energy_profile(
         self,
@@ -493,13 +540,9 @@ class MatterSimMTSimulator:
 
         # Build LJ parameter tensors for ion (z=11) vs solvent pairs
         solvent_z = atomic_numbers[1:]  # (n_solvent,)
-        eps_vals = torch.zeros(n_solvent, device=device)
-        sig_vals = torch.zeros(n_solvent, device=device)
-
-        for (zi, _zj), (eps, sig) in self._LJ_PARAMS.items():
-            pair_mask = ((solvent_z == zi) & (zi == 11)) | ((solvent_z == _zj) & (_zj == 11))
-            eps_vals = torch.where(pair_mask, torch.full_like(eps_vals, eps), eps_vals)
-            sig_vals = torch.where(pair_mask, torch.full_like(sig_vals, sig), sig_vals)
+        # Advanced indexing: O(1) lookup instead of O(N_params) loop
+        eps_vals = self._eps_matrix[11, solvent_z]
+        sig_vals = self._sig_matrix[11, solvent_z]
 
         # Apply defaults for unknown pairs: (n_solvent,)
         eps_vals = torch.where(eps_vals == 0, torch.full_like(eps_vals, self._default_eps), eps_vals)
@@ -533,9 +576,8 @@ class MatterSimMTSimulator:
         qi = self._CHARGES.get(int(atomic_numbers[ion_idx].item()), 0.0)
 
         if qi != 0.0:
-            q_j_vals = torch.zeros(n_solvent, device=device, dtype=torch.float32)
-            for z, q in self._CHARGES.items():
-                q_j_vals = torch.where(solvent_z == z, torch.full_like(q_j_vals, q), q_j_vals)
+            # Advanced indexing: O(1) lookup instead of O(N) loop
+            q_j_vals = self._charge_vector[solvent_z]
 
             # Broadcast charge products: (n_scan_points, n_solvent)
             qi_broadcast = qi * q_j_vals.unsqueeze(0).expand(n_scan_points, -1)
@@ -587,11 +629,12 @@ class MatterSimMTSimulator:
             lj = MatterSimLJPotentials.compute_lj_sparse(
                 atomic_numbers, src, dst,
                 dist,
-                self._default_eps, self._default_sig, self._LJ_PARAMS, self._cutoff,
+                self._eps_matrix, self._sig_matrix,
+                self._default_eps, self._default_sig, self._cutoff,
             )
             coul = MatterSimCoulombPotentials.compute_coulomb_sparse(
                 atomic_numbers, src, dst, dist,
-                self._CHARGES, self._use_polarization,
+                self._charge_vector, self._use_polarization,
                 self._CHARGES.get(int(atomic_numbers[0].item()), 0.0),
                 str(atomic_numbers.device),  # type: ignore[arg-type]
             )
@@ -599,12 +642,12 @@ class MatterSimMTSimulator:
             diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
             dist = torch.norm(diffs, dim=-1)
             lj = MatterSimLJPotentials.compute_lj_potential(
-                atomic_numbers, dist,
-                self._default_eps, self._default_sig, self._LJ_PARAMS, self._cutoff,
+                atomic_numbers, dist, self._eps_matrix, self._sig_matrix,
+                self._default_eps, self._default_sig, self._cutoff,
             )
             coul = MatterSimCoulombPotentials.compute_coulomb_potential(
-                atomic_numbers, dist, self._CHARGES, self._use_polarization,
-                self._default_eps, self._default_sig, self._LJ_PARAMS, self._cutoff,
+                atomic_numbers, dist, self._charge_vector,
+                self._default_eps, self._default_sig, self._cutoff,
             )
 
         return lj + coul

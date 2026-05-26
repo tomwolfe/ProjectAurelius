@@ -31,11 +31,11 @@ class MatterSimLJPotentials:
         src_indices: torch.Tensor,
         dst_indices: torch.Tensor,
         distances: torch.Tensor,
+        eps_matrix: torch.Tensor,
+        sig_matrix: torch.Tensor,
         default_eps: float,
         default_sig: float,
-        lj_params: dict[tuple[int, int], tuple[float, float]],
         cutoff: float,
-        device: str = "cpu",
     ) -> torch.Tensor:
         """Compute Lennard-Jones potential using sparse neighbor list.
 
@@ -47,32 +47,23 @@ class MatterSimLJPotentials:
             src_indices: Source indices for neighbour pairs.
             dst_indices: Destination indices for neighbour pairs.
             distances: Pairwise distances for neighbour pairs.
-            default_eps: Default epsilon for unknown pairs.
-            default_sig: Default sigma for unknown pairs.
-            lj_params: Lennard-Jones parameters dict.
+            eps_matrix: Precomputed epsilon values indexed by atomic numbers.
+            sig_matrix: Precomputed sigma values indexed by atomic numbers.
             cutoff: Cutoff distance.
             device: Compute device.
 
         Returns:
             Scalar LJ energy tensor.
         """
-        n = len(src_indices)
-        eps_tensor = torch.zeros(n, device=atomic_numbers.device)
-        sig_tensor = torch.zeros(n, device=atomic_numbers.device)
+        device = atomic_numbers.device
 
-        # Build eps_tensor and sig_tensor using torch.where for all pairs at once
-        src_indices_long = src_indices.to(torch.long)
-        # Vectorized: replace for loops with tensor operations
-        if lj_params:
-            for eps, sig in lj_params.values():
-                all_zi = torch.tensor([int(k[0]) for k in lj_params], device=atomic_numbers.device)
-                mask = src_indices_long[:, None] == all_zi[None, :]
-                eps_tensor = torch.where(mask, eps, eps_tensor)
-                sig_tensor = torch.where(mask, sig, sig_tensor)
+        # Advanced indexing lookup: O(1) per pair instead of O(N_params) loop
+        eps_values = eps_matrix[src_indices, atomic_numbers[dst_indices]].to(device)
+        sig_values = sig_matrix[dst_indices, atomic_numbers[src_indices]].to(device)
 
         # Default parameters for unknown pairs
-        eps_tensor = torch.where(eps_tensor == 0, default_eps, eps_tensor)
-        sig_tensor = torch.where(sig_tensor == 0, default_sig, sig_tensor)
+        eps_tensor = torch.where(eps_values == 0, default_eps, eps_values)
+        sig_tensor = torch.where(sig_values == 0, default_sig, sig_values)
 
         # Shifted LJ potential
         r_soft = torch.sqrt(distances * distances + sig_tensor**2)
@@ -96,22 +87,24 @@ class MatterSimLJPotentials:
     def compute_lj_potential(
         atomic_numbers: torch.Tensor,
         distances: torch.Tensor,
+        eps_matrix: torch.Tensor,
+        sig_matrix: torch.Tensor,
         default_eps: float,
         default_sig: float,
-        lj_params: dict[tuple[int, int], tuple[float, float]],
         cutoff: float,
     ) -> torch.Tensor:
         """Compute Lennard-Jones potential between all atom pairs.
 
         Uses OPLS-AA / GAFF parameters loaded from force field JSON.
-        Fully vectorized implementation.
+        Fully vectorized implementation using precomputed parameter matrices.
 
         Args:
             atomic_numbers: (N,) LongTensor.
             distances: (N, N) FloatTensor of pairwise distances.
+            eps_matrix: Precomputed epsilon values indexed by atomic numbers.
+            sig_matrix: Precomputed sigma values indexed by atomic numbers.
             default_eps: Default epsilon for unknown pairs.
             default_sig: Default sigma for unknown pairs.
-            lj_params: Lennard-Jones parameters dict.
             cutoff: Cutoff distance.
 
         Returns:
@@ -122,20 +115,10 @@ class MatterSimLJPotentials:
 
         mask = torch.triu(torch.ones(n, n, device=device, dtype=torch.bool), diagonal=1)
 
-        z_i = atomic_numbers.unsqueeze(0)
-        z_j = atomic_numbers.unsqueeze(1)
-
-        eps_tensor = torch.zeros(n, n, device=device)
-        sig_tensor = torch.zeros(n, n, device=device)
-
-        # Vectorized: build masks from all params at once using torch.where
-        if lj_params:
-            for eps, sig in lj_params.values():
-                all_zi = torch.tensor([k[0] for k in lj_params], device=device)
-                all_zj = torch.tensor([k[1] for k in lj_params], device=device)
-                pair_mask = (z_i[:, None] == all_zi[:, None]) & (z_j[:, None] == all_zj[:, None])
-                eps_tensor = torch.where(pair_mask.any(dim=1), eps, eps_tensor)
-                sig_tensor = torch.where(pair_mask.any(dim=1), sig, sig_tensor)
+        # Advanced indexing lookup: O(1) per pair instead of O(N_params) loop
+        indices = torch.arange(n, device=device, dtype=torch.long)
+        eps_tensor = eps_matrix[indices, atomic_numbers].to(device)
+        sig_tensor = sig_matrix[indices, atomic_numbers].to(device)
 
         # Default parameters for unknown pairs
         eps_tensor = torch.where(eps_tensor == 0, torch.full_like(eps_tensor, default_eps), eps_tensor)
@@ -176,7 +159,7 @@ class MatterSimCoulombPotentials:
         src_indices: torch.Tensor,
         dst_indices: torch.Tensor,
         distances: torch.Tensor,
-        charges: dict[int, float],
+        charge_vector: torch.Tensor,
         use_polarization: bool,
         ci: float,
         device: str,
@@ -191,7 +174,7 @@ class MatterSimCoulombPotentials:
             src_indices: Source indices for neighbor pairs.
             dst_indices: Destination indices for neighbor pairs.
             distances: Pairwise distances for neighbor pairs.
-            charges: Partial charges dict.
+            charge_vector: Precomputed charge values indexed by atomic number.
             use_polarization: Whether to use polarization.
             ci: Ion charge for ion-solvent interaction.
             device: Compute device.
@@ -201,32 +184,9 @@ class MatterSimCoulombPotentials:
         """
         coul_total = torch.tensor(0.0, device=atomic_numbers.device)
 
-        # Build q_i using torch.where for all source indices at once
-        src_indices_long = src_indices.to(torch.long)
-        if use_polarization:
-            charges_list = [charges.get(int(z), 0.0) for z in range(len(src_indices))]
-            q_i = torch.tensor(charges_list, device=atomic_numbers.device)
-        else:
-            # Vectorized: stack all charges into tensors
-            if charges:
-                q_i = torch.zeros(len(src_indices), device=atomic_numbers.device)
-                for q, _ in charges.items():
-                    all_z = torch.tensor([_], device=atomic_numbers.device)
-                    mask = src_indices_long[:, None] == all_z[:, None]
-                    q_i = torch.where(mask, q, q_i)
-            else:
-                q_i = torch.zeros(len(src_indices), device=atomic_numbers.device)
-
-        # Build q_j using torch.where for all destination indices at once
-        dst_indices_long = dst_indices.to(torch.long)
-        if charges:
-            q_j = torch.zeros(len(dst_indices), device=atomic_numbers.device)
-            for q, _ in charges.items():
-                all_z = torch.tensor([_], device=atomic_numbers.device)
-                mask = dst_indices_long[:, None] == all_z[:, None]
-                q_j = torch.where(mask, q, q_j)
-        else:
-            q_j = torch.zeros(len(dst_indices), device=atomic_numbers.device)
+        # Advanced indexing lookup: O(1) per pair instead of O(N) loop
+        q_i = charge_vector[src_indices]
+        q_j = charge_vector[dst_indices]
 
         charge_mask = (q_i * q_j) != 0.0
 
@@ -239,11 +199,9 @@ class MatterSimCoulombPotentials:
     def compute_coulomb_potential(
         atomic_numbers: torch.Tensor,
         distances: torch.Tensor,
-        charges: dict[int, float],
-        use_polarization: bool,
+        charge_vector: torch.Tensor,
         default_eps: float,
         default_sig: float,
-        lj_params: dict[tuple[int, int], tuple[float, float]],
         cutoff: float,
     ) -> torch.Tensor:
         """Compute Coulombic potential between charged pairs.
@@ -254,11 +212,9 @@ class MatterSimCoulombPotentials:
         Args:
             atomic_numbers: (N,) LongTensor.
             distances: (N, N) FloatTensor of pairwise distances.
-            charges: Partial charges dict.
-            use_polarization: Whether to use polarization.
+            charge_vector: Precomputed charge values indexed by atomic number.
             default_eps: Default epsilon for unknown pairs.
             default_sig: Default sigma for unknown pairs.
-            lj_params: Lennard-Jones parameters dict.
             cutoff: Cutoff distance.
 
         Returns:
@@ -269,22 +225,8 @@ class MatterSimCoulombPotentials:
 
         mask = torch.triu(torch.ones(n, n, device=device, dtype=torch.bool), diagonal=1)
 
-        if use_polarization:
-            charges_list = [
-                0.0 if atomic_numbers[i].item() not in charges else charges[int(atomic_numbers[i].item())]
-                for i in range(n)
-            ]
-            charges_tensor = torch.tensor(charges_list, device=device)
-        else:
-            # Vectorized: stack all charges into tensors
-            if charges:
-                charges_tensor = torch.zeros(n, device=device, dtype=torch.float32)
-                for q, _ in charges.items():
-                    all_z = torch.tensor([_], device=device)
-                    mask = atomic_numbers[:, None] == all_z[:, None]
-                    charges_tensor = torch.where(mask, q, charges_tensor)
-            else:
-                charges_tensor = torch.zeros(n, device=device, dtype=torch.float32)
+        # Advanced indexing lookup: O(1) per pair instead of O(N) loop
+        charges_tensor = charge_vector[atomic_numbers].to(device)
 
         q_i = charges_tensor.unsqueeze(0)
         q_j = charges_tensor.unsqueeze(1)

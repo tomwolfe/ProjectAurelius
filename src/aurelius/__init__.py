@@ -18,11 +18,6 @@ from aurelius.config import (
     get_config,
     initialize_environment,
 )
-from aurelius.memory.manager import (
-    MetalShaderConfig,
-    QuantizationConfig,
-    ZeroCopyMemoryManager,
-)
 from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.engine import AureliusScoringEngine

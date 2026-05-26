@@ -16,11 +16,6 @@ import time
 from typing import Any
 
 from aurelius.config import AureliusConfig, apply_global_config
-from aurelius.memory.manager import (
-    MetalShaderConfig,
-    QuantizationConfig,
-    ZeroCopyMemoryManager,
-)
 from aurelius.scoring.engine import AureliusScoringEngine
 from aurelius.screening.tier1 import MLXNAFilter
 from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
@@ -56,7 +51,6 @@ class AureliusPipeline:
 
         """
         self.config = config or apply_global_config()
-        self._memory_manager: ZeroCopyMemoryManager | None = None
         self._mlx_filter: MLXNAFilter | None = None
         self._mattersim_sim: MatterSimMTSimulator | None = None
         self._gcmtwin: GCMDigitalTwin | None = None
@@ -83,17 +77,7 @@ class AureliusPipeline:
         print("  The 2nm Fusion Edition | M5 Pro Neural Accelerators")
         print("=" * 60 + "\n")
 
-        # Phase 1: Memory manager
-        self._memory_manager = ZeroCopyMemoryManager(
-            quant_config=QuantizationConfig(
-                precision=self.config.chemvlm_quantization,
-            ),
-            shader_config=MetalShaderConfig(),
-        )
-        self._memory_manager.initialize_accelerator()
-        self._memory_manager.load_precompiled_shaders()
-
-        # Phase 2: MWSE Solvation engine
+        # Phase 1: MWSE Solvation engine
         self._solvation_engine = MWSESolvationEngine(
             kex_window_ps=self.config.kex_screening_window_ps,
         )
@@ -132,24 +116,6 @@ class AureliusPipeline:
         )
 
         print(f"\n[Aurelius v5.2] Pipeline ready. Viability threshold: {self._scoring_engine.viability_threshold}\n")
-
-    def load_models(
-        self,
-        chemvlm2_path: str = "models/chemvlm2",
-        mattersim_path: str = "models/mattersim_mt",
-        gcmtwin_path: str = "models/gcmd_dt",
-    ) -> None:
-        """Load all models into the memory manager."""
-        if self._memory_manager:
-            self._memory_manager.load_chemvlm2(chemvlm2_path)
-            self._memory_manager.load_mattersim_mt(mattersim_path)
-            self._memory_manager.load_gcmtwin(gcmtwin_path)
-
-        if self._mlx_filter:
-            self._mlx_filter.load_model(chemvlm2_path)
-
-        if self._mattersim_sim:
-            self._mattersim_sim.initialize(mattersim_path)
 
     def _generate_failed_run(self, smiles: str, reason: str, **kwargs: Any) -> dict[str, Any]:
         """Generate a failed run result dict for early-exit scenarios.
@@ -319,15 +285,6 @@ class AureliusPipeline:
         if timing_lines:
             print(f"\n[Aurelius v5.2] Performance: total={total_ms:.1f}ms | " + " | ".join(timing_lines))
 
-        # Memory budget report
-        if self._memory_manager:
-            budget = self._memory_manager.get_memory_budget()
-            print(
-                f"\n[Aurelius v5.2] Memory Budget: "
-                f"{budget['chemvlm2_footprint_gb']}GB ChemVLM-2, "
-                f"{budget['remaining_gb']}GB remaining"
-            )
-
         return results
 
     def screen_batch(self, smiles_list: list[str], n_workers: int = 1, **kwargs: Any) -> list[dict[str, Any]]:
@@ -362,9 +319,3 @@ class AureliusPipeline:
                 smiles_list,
             )
         return all_results
-
-    def get_memory_budget(self) -> dict[str, Any]:
-        """Get current memory allocation status."""
-        if self._memory_manager:
-            return self._memory_manager.get_memory_budget()
-        return {}

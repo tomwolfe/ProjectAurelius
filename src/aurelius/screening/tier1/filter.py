@@ -17,7 +17,6 @@ import json
 import logging
 import os
 import time
-from importlib import resources
 from typing import Any
 
 import numpy as np
@@ -72,8 +71,7 @@ class MLXNAFilter:
         """
         self.quantization_format = quantization_format
         self._model_loaded = False
-        self._model: Any | None = None
-        self._mx: Any = None
+        self._model: MLXBackend | PyTorchBackend | None = None
         self._use_mlx = HAS_MLX
         self._weight_loader = HuggingFaceWeightLoader()
         if HAS_MLX:
@@ -81,15 +79,15 @@ class MLXNAFilter:
                 import mlx.core as mx  # noqa: F401
 
                 self._mx = mx
-            except Exception:
+            except ImportError:
                 self._use_mlx = False
                 self._mx = None
         else:
             self._mx = None
 
         # Conditional torch/torch_nn imports
-        self._torch: Any = None
-        self._torch_nn: Any = None
+        self._torch: Any | None = None
+        self._torch_nn: Any | None = None
         if HAS_TORCH:
             try:
                 import torch  # noqa: F401
@@ -97,12 +95,12 @@ class MLXNAFilter:
 
                 self._torch = torch
                 self._torch_nn = torch_nn
-            except Exception:
+            except ImportError:
                 pass
 
         # Conditional RDKit imports
-        self._rdkit_chem: Any = None
-        self._rdkit_allchem: Any = None
+        self._rdkit_chem: Any | None = None
+        self._rdkit_allchem: Any | None = None
         if HAS_RDKIT:
             try:
                 from rdkit import Chem as _rdkit_chem  # noqa: F401, N813
@@ -110,7 +108,7 @@ class MLXNAFilter:
 
                 self._rdkit_chem = _rdkit_chem
                 self._rdkit_allchem = _rdkit_allchem
-            except Exception:
+            except ImportError:
                 pass
 
         if train_on_init:
@@ -178,7 +176,7 @@ class MLXNAFilter:
         try:
             model = train_on_esol(model, epochs=200, lr=0.005, batch_size=16, seed=42)
             self._weight_loader.save_model(model, "esol_solubility")
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError) as e:
             print(f"[Aurelius v5.2 Tier1] ESOL training failed: {e}")
             model = _train_synthetic_mlx(model)
 
@@ -347,7 +345,7 @@ def _generate_ecfp4_fingerprint(smiles: str, ) -> np.ndarray[Any, Any]:
         raise RuntimeError(
             f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
         )
-    fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined]
+    fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
     bit_list = fp.ToList()
     arr = np.array(bit_list, dtype=np.float32)
     if len(arr) < 2048:

@@ -59,16 +59,8 @@ class ModelBackend(Protocol):
 # ---------------------------------------------------------------------------
 
 if HAS_TORCH:
-    _torch: Any = None
-    _torch_nn: Any = None
-    try:
-        import torch  # type: ignore[import-not-found, unused-ignore]
-        import torch.nn as torch_nn  # type: ignore[import-not-found, unused-ignore]
-
-        _torch = torch
-        _torch_nn = torch_nn
-    except Exception:
-        pass
+    import torch  # noqa: F401
+    import torch.nn as torch_nn  # noqa: F401
 
     class PyTorchBackend:
         """PyTorch-based MPNN model for activation energy prediction.
@@ -96,15 +88,15 @@ if HAS_TORCH:
             self.edge_dim = edge_dim
             self.hidden_dim = hidden_dim
 
-            self.node_proj = _torch_nn.Linear(node_dim, hidden_dim)
+            self.node_proj = torch_nn.Linear(node_dim, hidden_dim)
 
             self.edge_input_dim = 2 * hidden_dim
-            self.edge_transform = _torch_nn.Sequential(
-                _torch_nn.Linear(self.edge_input_dim, hidden_dim),
-                _torch_nn.ReLU(),
+            self.edge_transform = torch_nn.Sequential(
+                torch_nn.Linear(self.edge_input_dim, hidden_dim),
+                torch_nn.ReLU(),
             )
 
-            self.mp_layers = _torch_nn.ModuleList([
+            self.mp_layers = torch_nn.ModuleList([
                 _MPNNEdgeBlockBackend(hidden_dim, edge_dim, hidden_dim)
                 for _ in range(2)
             ])
@@ -117,10 +109,10 @@ if HAS_TORCH:
 
         def _init_weights(self) -> None:
             for module in self.modules():  # type: ignore[attr-defined]
-                if isinstance(module, _torch_nn.Linear):
-                    _torch_nn.init.xavier_uniform_(module.weight)
+                if isinstance(module, torch_nn.Linear):
+                    torch_nn.init.xavier_uniform_(module.weight)
                     if module.bias is not None:
-                        _torch_nn.init.zeros_(module.bias)
+                        torch_nn.init.zeros_(module.bias)
 
         def __call__(self, node_features: Any, edge_index: Any) -> Any:
             """Forward pass of the MPNN.
@@ -135,7 +127,7 @@ if HAS_TORCH:
             n_nodes = node_features.shape[0]
 
             if n_nodes == 0:
-                return _torch.zeros(
+                return torch.zeros(
                     self.readout.network[-1].out_features,
                     device=node_features.device,
                 )
@@ -148,9 +140,9 @@ if HAS_TORCH:
 
             src_idx = edge_index[0]
             tgt_idx = edge_index[1]
-            src_features = _torch.index_select(h, 0, src_idx)
-            tgt_features = _torch.index_select(h, 0, tgt_idx)
-            initial_edge_features = _torch.cat(
+            src_features = torch.index_select(h, 0, src_idx)
+            tgt_features = torch.index_select(h, 0, tgt_idx)
+            initial_edge_features = torch.cat(
                 [src_features, tgt_features], dim=-1
             )
             edge_features = self.edge_transform(initial_edge_features)
@@ -162,15 +154,15 @@ if HAS_TORCH:
             return self.readout(pooled)
 
         def parameters(self) -> list[Any]:
-            return list(self.parameters())
+            return list(self.modules())
 
         def save_weights(self, path: str) -> None:
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            _torch.save(self.state_dict(), path)  # type: ignore[attr-defined]
+            torch.save(self.state_dict(), path)
 
             meta_path = path.rsplit(".", 1)[0] + "_metadata.json"
             shape_info: dict[str, list[int]] = {}
-            for name, tensor in self.state_dict().items():  # type: ignore[attr-defined]
+            for name, tensor in self.state_dict().items():
                 shape_info[name] = list(tensor.shape)
 
             meta = {
@@ -205,7 +197,7 @@ if HAS_TORCH:
                     "Consider retraining with `aurelius train --task tier0`."
                 )
 
-            state_dict = _torch.load(path, map_location="cpu", weights_only=True)
+            state_dict = torch.load(path, map_location="cpu", weights_only=True)
 
             for name, loaded_tensor in state_dict.items():
                 if hasattr(self, name) and hasattr(getattr(self, name), "shape"):
@@ -241,31 +233,31 @@ if HAS_TORCH:
             self.edge_dim = edge_dim
             self.hidden_dim = hidden_dim
 
-            self.edge_proj = _torch_nn.Linear(2 * node_dim, hidden_dim)
+            self.edge_proj = torch_nn.Linear(2 * node_dim, hidden_dim)
             self.edge_input_dim = hidden_dim
-            self.edge_mlp = _torch_nn.Sequential(
-                _torch_nn.Linear(self.edge_input_dim, hidden_dim),
-                _torch_nn.ReLU(),
-                _torch_nn.Linear(hidden_dim, hidden_dim),
+            self.edge_mlp = torch_nn.Sequential(
+                torch_nn.Linear(self.edge_input_dim, hidden_dim),
+                torch_nn.ReLU(),
+                torch_nn.Linear(hidden_dim, hidden_dim),
             )
 
             self.node_input_dim = node_dim + hidden_dim
-            self.node_mlp = _torch_nn.Sequential(
-                _torch_nn.Linear(self.node_input_dim, hidden_dim),
-                _torch_nn.ReLU(),
-                _torch_nn.Linear(hidden_dim, node_dim),
+            self.node_mlp = torch_nn.Sequential(
+                torch_nn.Linear(self.node_input_dim, hidden_dim),
+                torch_nn.ReLU(),
+                torch_nn.Linear(hidden_dim, node_dim),
             )
 
-            self.norm = _torch_nn.LayerNorm(node_dim)
+            self.norm = torch_nn.LayerNorm(node_dim)
 
             self._init_weights()
 
         def _init_weights(self) -> None:
             for module in self.modules():  # type: ignore[attr-defined]
-                if isinstance(module, _torch_nn.Linear):
-                    _torch_nn.init.xavier_uniform_(module.weight)
+                if isinstance(module, torch_nn.Linear):
+                    torch_nn.init.xavier_uniform_(module.weight)
                     if module.bias is not None:
-                        _torch_nn.init.zeros_(module.bias)
+                        torch_nn.init.zeros_(module.bias)
 
         def __call__(
             self,
@@ -282,48 +274,48 @@ if HAS_TORCH:
             src_idx = edge_index[0]
             tgt_idx = edge_index[1]
 
-            src_features = _torch.index_select(node_features, 0, src_idx)
-            tgt_features = _torch.index_select(node_features, 0, tgt_idx)
+            src_features = torch.index_select(node_features, 0, src_idx)
+            tgt_features = torch.index_select(node_features, 0, tgt_idx)
 
             if edge_features is None:
-                raw_edge = _torch.cat([src_features, tgt_features], dim=-1)
-                edge_features = _torch.relu(self.edge_proj(raw_edge))
+                raw_edge = torch.cat([src_features, tgt_features], dim=-1)
+                edge_features = torch.relu(self.edge_proj(raw_edge))
 
             messages = self.edge_mlp(edge_features)
 
-            aggregated = _torch.zeros(n_nodes, self.hidden_dim, device=node_features.device)
+            aggregated = torch.zeros(n_nodes, self.hidden_dim, device=node_features.device)
             aggregated.scatter_add_(0, src_idx.unsqueeze(1).expand(-1, self.hidden_dim), messages)
 
-            node_input = _torch.cat([node_features, aggregated], dim=-1)
+            node_input = torch.cat([node_features, aggregated], dim=-1)
             node_updates = self.node_mlp(node_input)
 
             return self.norm(node_features + node_updates)
 
         def parameters(self) -> list[Any]:
-            return list(self.parameters())
+            return list(self.modules())
 
     class _MPNNReadoutMLPBackend:
         """Readout MLP for MPNN (PyTorch backend)."""
 
         def __init__(self, input_dim: int = 64, output_dim: int = 4, hidden_dim: int = 128) -> None:
             super().__init__()
-            self.network = _torch_nn.Sequential(
-                _torch_nn.Linear(input_dim, hidden_dim),
-                _torch_nn.ReLU(),
-                _torch_nn.Dropout(0.1),
-                _torch_nn.Linear(hidden_dim, hidden_dim // 2),
-                _torch_nn.ReLU(),
-                _torch_nn.Dropout(0.1),
-                _torch_nn.Linear(hidden_dim // 2, output_dim),
+            self.network = torch_nn.Sequential(
+                torch_nn.Linear(input_dim, hidden_dim),
+                torch_nn.ReLU(),
+                torch_nn.Dropout(0.1),
+                torch_nn.Linear(hidden_dim, hidden_dim // 2),
+                torch_nn.ReLU(),
+                torch_nn.Dropout(0.1),
+                torch_nn.Linear(hidden_dim // 2, output_dim),
             )
             self._init_weights()
 
         def _init_weights(self) -> None:
             for module in self.modules():  # type: ignore[attr-defined]
-                if isinstance(module, _torch_nn.Linear):
-                    _torch_nn.init.xavier_uniform_(module.weight)
+                if isinstance(module, torch_nn.Linear):
+                    torch_nn.init.xavier_uniform_(module.weight)
                     if module.bias is not None:
-                        _torch_nn.init.zeros_(module.bias)
+                        torch_nn.init.zeros_(module.bias)
 
         def __call__(self, pooled: Any) -> Any:
             if pooled.dim() == 1:
@@ -331,7 +323,7 @@ if HAS_TORCH:
             return self.network(pooled)
 
         def parameters(self) -> list[Any]:
-            return list(self.parameters())
+            return list(self.modules())
 
 else:
     class PyTorchBackend:  # type: ignore[no-redef]
