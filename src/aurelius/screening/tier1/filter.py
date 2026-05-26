@@ -158,7 +158,10 @@ class MLXNAFilter:
         """
         if not self._use_mlx:
             if not HAS_TORCH:
-                return self._get_demo_result()
+                result = self._get_demo_result()
+                self._model = PyTorchBackend()
+                self._model_loaded = True
+                return result
 
             print("[Aurelius v6.0 Tier1] MLX unavailable, initializing PyTorch fallback filter...")
             self._model = PyTorchBackend()
@@ -175,16 +178,16 @@ class MLXNAFilter:
             )
 
         model = MLXBackend()
+        self._model = model
+        self._model_loaded = True
 
         try:
             model = train_on_esol(model, epochs=200, lr=0.005, batch_size=16, seed=42)
             self._weight_loader.save_model(model, "esol_solubility")
         except (ImportError, RuntimeError, ValueError) as e:
             print(f"[Aurelius v5.2 Tier1] ESOL training failed: {e}")
-            model = _train_synthetic_mlx(model)
+            self._model = _train_synthetic_mlx(model)
 
-        self._model = model
-        self._model_loaded = True
         return MLXFilterResult(
             molecule_smiles="",
             is_viable=True,
