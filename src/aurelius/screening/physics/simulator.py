@@ -192,7 +192,7 @@ class MatterSimMTSimulator:
             matrix = np.zeros((size, size), dtype=np.float32)
             for (zi, zj), (eps, _sig) in params.items():
                 matrix[zi][zj] = eps
-            return matrix  # type: ignore[return-value]
+            return matrix  # type: ignore[return-value, arg-type]
         size = 119  # Maximum atomic number in periodic table
         matrix = torch.zeros(size, size, dtype=torch.float32, device=device)
         for (zi, zj), (eps, _sig) in params.items():
@@ -218,7 +218,7 @@ class MatterSimMTSimulator:
             vector = np.zeros(size, dtype=np.float32)
             for z, q in charges.items():
                 vector[z] = q
-            return torch.from_numpy(vector)  # type: ignore[return-value]
+            return vector  # type: ignore[return-value]
         size = 119  # Maximum atomic number in periodic table
         vector = torch.zeros(size, dtype=torch.float32, device=device)
         for z, q in charges.items():

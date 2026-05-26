@@ -62,7 +62,7 @@ if HAS_TORCH:
     import torch  # noqa: F401
     import torch.nn as torch_nn  # noqa: F401
 
-    class PyTorchBackend(torch_nn.Module):
+    class PyTorchBackend(torch_nn.Module):  # type: ignore[misc]
         """PyTorch-based MPNN model for activation energy prediction.
 
         Architecture:
@@ -223,7 +223,7 @@ if HAS_TORCH:
     # Internal backend classes (not exported)
     # ------------------------------------------------------------------
 
-    class _MPNNEdgeBlockBackend(torch_nn.Module):
+    class _MPNNEdgeBlockBackend(torch_nn.Module):  # type: ignore[misc]
         """2-layer message passing block for molecular graphs (PyTorch backend)."""
 
         def __init__(self, node_dim: int = 4, edge_dim: int = 0, hidden_dim: int = 64) -> None:
@@ -293,7 +293,7 @@ if HAS_TORCH:
         def parameters(self) -> list[Any]:
             return list(self.modules())
 
-    class _MPNNReadoutMLPBackend(torch_nn.Module):
+    class _MPNNReadoutMLPBackend(torch_nn.Module):  # type: ignore[misc]
         """Readout MLP for MPNN (PyTorch backend)."""
 
         def __init__(self, input_dim: int = 64, output_dim: int = 4, hidden_dim: int = 128) -> None:

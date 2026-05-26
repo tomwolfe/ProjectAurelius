@@ -489,7 +489,7 @@ class MockDFTOracle:
             seed: Random seed for deterministic output.
         """
         self._cache: dict[str, float] = {}
-        self._dataset: list[dict[str, float]] = []
+        self._dataset: list[dict[str, Any]] = []
         self._rng = np.random.RandomState(seed)
 
     def query(self, smiles: str) -> float:
@@ -545,7 +545,7 @@ class MockDFTOracle:
         entries: list[dict[str, Any]] = []
         for smi, e in zip(smiles_list, energies, strict=False):
             entry = {"smiles": smi, "ec_reduction": e}
-            self._dataset.append(entry)
+            self._dataset.append(entry)  # type: ignore[arg-type]
             self._cache[smi] = e
             entries.append(entry)
         return entries
