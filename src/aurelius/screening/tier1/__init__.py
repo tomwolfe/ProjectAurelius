@@ -12,7 +12,6 @@ from aurelius.screening.tier1.filter import (
     HAS_TORCH,
     MLXNAFilter,
 )
-from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
 from aurelius.screening.tier1.loaders import (
     DEFAULT_MODEL_DIR,
     HUGGINGFACE_MODELS,
@@ -29,6 +28,7 @@ from aurelius.screening.tier1.training import (
     train_on_esol,
     train_on_qm9,
 )
+from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
 
 __all__ = [
     "DEFAULT_MODEL_DIR",

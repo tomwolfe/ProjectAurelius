@@ -966,7 +966,6 @@ class ChargeEqModel:
         if not HAS_TORCH:
             raise RuntimeError("PyTorch is required for ChargeEqModel.")
 
-        import torch
         import torch.nn as nn
 
         self.hidden_dim = hidden_dim

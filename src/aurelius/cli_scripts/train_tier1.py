@@ -31,7 +31,7 @@ from typing import Any
 import numpy as np
 
 from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
-from aurelius.utils.dependencies import HAS_DATASETS, HAS_RDKIT
+from aurelius.utils.dependencies import HAS_DATASETS
 
 
 def parse_args() -> argparse.Namespace:
