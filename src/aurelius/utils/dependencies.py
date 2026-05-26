@@ -254,7 +254,7 @@ def report_status() -> dict[str, dict[str, Any]]:
             "meets_minimum": meets_minimum,
             "min_version": min_ver,
         }
-        if info_available := available:
+        if available:
             logger.info(
                 "Framework '%s' available (version %s, meets minimum %s).",
                 name,

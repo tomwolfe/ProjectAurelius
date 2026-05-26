@@ -30,9 +30,6 @@ from aurelius.types import (
 )
 
 
-from aurelius.data.params import ForceFieldParams
-
-
 class _ScoringParams:
     """Lazy-loaded scoring parameters with caching.
 

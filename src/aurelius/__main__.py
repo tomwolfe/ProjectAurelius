@@ -30,11 +30,10 @@ from aurelius.cli_scripts import (
 from aurelius.config import get_config
 from aurelius.pipeline import AureliusPipeline
 from aurelius.utils.dependencies import (
+    HAS_HF_HUB,
     HAS_MLX,
     HAS_RDKIT,
     HAS_TORCH,
-    HAS_HF_HUB,
-    report_status,
 )
 
 

@@ -216,7 +216,7 @@ class MutationEngine:
                 candidates.add(s)
 
         # Fallback templates
-            for func in [self._fluorinate, self._methylate]:
+        for func in [self._fluorinate, self._methylate]:
             results = func(mol)
             for s in results:
                 m = _safe_mol_from_smiles(s)
@@ -225,7 +225,7 @@ class MutationEngine:
 
         # If BRICS yielded nothing, try fallback templates more aggressively
         if len(brics_results) == 0:
-        for func in [self._fluorinate, self._methylate]:
+            for func in [self._fluorinate, self._methylate]:
                 results = func(mol)
                 for s in results:
                     m = _safe_mol_from_smiles(s)

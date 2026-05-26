@@ -36,6 +36,7 @@ import numpy as np
 
 from aurelius.constants import COULOMB_EV_A
 from aurelius.data.params import ForceFieldParams
+from aurelius.scoring.engine import _ScoringParams
 
 # ---------------------------------------------------------------------------
 # Solvation parameter accessors
