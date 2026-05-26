@@ -72,6 +72,7 @@ class MLXNAFilter:
             train_on_init: If True, train or load model at initialization.
         """
         self.quantization_format = quantization_format
+        self._train_on_init = train_on_init
         self._model_loaded = False
         self._model: MLXBackend | PyTorchBackend | None = None
         self._use_mlx = HAS_MLX
@@ -201,6 +202,8 @@ class MLXNAFilter:
         Args:
             model_path: Path to model weights directory.
         """
+        if self._model_loaded:
+            return None
         if self._use_mlx:
             print(f"[Aurelius v6.0 Tier1] Loading model from {model_path}")
             self._model = MLXBackend()
@@ -230,20 +233,28 @@ class MLXNAFilter:
             MLXFilterResult with viability, confidence, and metadata.
         """
         if not self._model_loaded:
-            if self._use_mlx:
+            if self._train_on_init:
                 self._model = MLXBackend()
                 self._train_default_model()
             else:
-                if not HAS_TORCH:
-                    return MLXFilterResult(
-                        molecule_smiles="",
-                        is_viable=True,
-                        confidence_score=0.85,
-                        inference_time_ms=0.0,
-                        na_utilization_pct=85.0,
-                    )
-                self._model = PyTorchBackend()
-            self._model_loaded = True
+                # Load from local saved path only (HF is skipped when train_on_init=False)
+                self._model = self._weight_loader.load_model(task="esol_solubility", local_only=True)
+                self._model_loaded = self._model is not None
+            if not self._model_loaded:
+                if self._use_mlx:
+                    self._model = MLXBackend()
+                    self._train_default_model()
+                else:
+                    if not HAS_TORCH:
+                        return MLXFilterResult(
+                            molecule_smiles="",
+                            is_viable=True,
+                            confidence_score=0.85,
+                            inference_time_ms=0.0,
+                            na_utilization_pct=85.0,
+                        )
+                    self._model = PyTorchBackend()
+                self._model_loaded = True
 
         start = time.perf_counter()
 

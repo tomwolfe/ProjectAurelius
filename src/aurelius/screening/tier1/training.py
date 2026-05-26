@@ -152,7 +152,8 @@ def train_on_esol(
 
     def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:  # type: ignore[name-defined]
         pred = model(x)
-        pred = mx.squeeze(pred, axis=-1)
+        pred = mx.reshape(pred, (-1,))
+        target = mx.reshape(target, (-1,))
         return mx.mean((pred - target) ** 2)
 
     # Training loop with early stopping
@@ -180,7 +181,7 @@ def train_on_esol(
 
         if (epoch + 1) % 20 == 0:
             train_loss = float(_loss_fn(X_train_split, y_train_split))
-            preds = mx.squeeze(model(X_val_split), axis=-1)
+            preds = mx.reshape(model(X_val_split), (-1,))
             accuracy = float(mx.mean(preds > 0.5 == y_val_split))  # type: ignore[arg-type]
             print(
                 f"[Aurelius v5.2 Tier1] Epoch {epoch + 1}/{epochs}: "
@@ -270,11 +271,9 @@ def train_on_qm9(
     optimizer = optimizers.SGD(learning_rate=lr)
 
     def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:  # type: ignore[name-defined]
-        h = model.linear1(x)
-        h = mx.maximum(h, 0.0)
-        out = model.linear2(h)
-        pred = mx.sigmoid(out)
-        pred = mx.squeeze(pred, axis=-1)
+        pred = model(x)
+        pred = mx.reshape(pred, (-1,))
+        target = mx.reshape(target, (-1,))
         return mx.mean((pred - target) ** 2)
 
     # Training loop with early stopping
@@ -353,7 +352,8 @@ def _train_synthetic_mlx(
         h = mx.maximum(h, 0.0)
         out = model.linear2(h)
         pred = mx.sigmoid(out)
-        pred = mx.squeeze(pred, axis=-1)
+        pred = mx.reshape(pred, (-1,))
+        target = mx.reshape(target, (-1,))
         return mx.mean((pred - target) ** 2)
 
     # Training loop with early stopping
