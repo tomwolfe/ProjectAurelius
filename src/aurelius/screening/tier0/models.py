@@ -340,6 +340,40 @@ if not HAS_TORCH:
     class PyTorchBackendUnavailableError(RuntimeError):
         """Raised when PyTorch is not available."""
 
+    class PyTorchBackend:
+        """Fallback: PyTorch backend unavailable."""
+
+        def __init__(
+            self,
+            node_dim: int = 4,
+            edge_dim: int = 0,
+            hidden_dim: int = 64,
+            output_dim: int = 4,
+        ) -> None:
+            raise PyTorchBackendUnavailableError(
+                "PyTorchBackend requires torch. Install torch to use this feature."
+            )
+
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            raise PyTorchBackendUnavailableError(
+                "PyTorchBackend requires torch. Install torch to use this feature."
+            )
+
+        def parameters(self) -> list[Any]:
+            raise PyTorchBackendUnavailableError(
+                "PyTorchBackend requires torch. Install torch to use this feature."
+            )
+
+        def save_weights(self, path: str) -> None:
+            raise PyTorchBackendUnavailableError(
+                "PyTorchBackend requires torch. Install torch to use this feature."
+            )
+
+        def load_weights(self, path: str) -> None:
+            raise PyTorchBackendUnavailableError(
+                "PyTorchBackend requires torch. Install torch to use this feature."
+            )
+
     class _MPNNEdgeBlockBackend:  # type: ignore[no-redef]
         """Fallback: 2-layer message passing block for molecular graphs."""
 
