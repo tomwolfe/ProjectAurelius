@@ -363,3 +363,7 @@ __all__ = [
     "MLXNAFilter",
     "_generate_ecfp4_fingerprint",
 ]
+
+
+# Re-export dependency flags for backward compatibility
+from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH

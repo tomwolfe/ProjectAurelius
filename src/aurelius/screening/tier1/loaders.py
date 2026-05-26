@@ -16,10 +16,10 @@ import psutil
 
 from aurelius.screening.tier1.models import (
     DEFAULT_MODEL_DIR,
-    HAS_TORCH,
     HUGGINGFACE_MODELS,
     MLXBackend,
 )
+from aurelius.utils.dependencies import HAS_TORCH
 
 logger = logging.getLogger(__name__)
 
@@ -431,6 +431,7 @@ class HuggingFaceWeightLoader:
 
 __all__ = [
     "DEFAULT_MODEL_DIR",
+    "HAS_TORCH",
     "HUGGINGFACE_MODELS",
     "HuggingFaceWeightLoader",
     "convert_mlx_to_torch_weights",

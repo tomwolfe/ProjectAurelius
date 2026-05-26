@@ -62,7 +62,7 @@ if HAS_TORCH:
     import torch  # noqa: F401
     import torch.nn as torch_nn  # noqa: F401
 
-    class PyTorchBackend:
+    class PyTorchBackend(torch_nn.Module):
         """PyTorch-based MPNN model for activation energy prediction.
 
         Architecture:
@@ -154,16 +154,15 @@ if HAS_TORCH:
             return self.readout(pooled)
 
         def parameters(self) -> list[Any]:
-            return list(self.modules())
+            return list(self.modules())  # type: ignore[override]
 
         def save_weights(self, path: str) -> None:
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            torch.save(self.state_dict(), path)
+            torch.save(self.state_dict(), path)  # type: ignore[call-overload, attr-defined]
 
             meta_path = path.rsplit(".", 1)[0] + "_metadata.json"
             shape_info: dict[str, list[int]] = {}
             for name, tensor in self.state_dict().items():
-                shape_info[name] = list(tensor.shape)
+                shape_info[name] = list(tensor.shape)  # type: ignore[attr-defined]
 
             meta = {
                 "model_version": _importlib_metadata_version("aurelius"),
@@ -224,7 +223,7 @@ if HAS_TORCH:
     # Internal backend classes (not exported)
     # ------------------------------------------------------------------
 
-    class _MPNNEdgeBlockBackend:
+    class _MPNNEdgeBlockBackend(torch_nn.Module):
         """2-layer message passing block for molecular graphs (PyTorch backend)."""
 
         def __init__(self, node_dim: int = 4, edge_dim: int = 0, hidden_dim: int = 64) -> None:
@@ -294,7 +293,7 @@ if HAS_TORCH:
         def parameters(self) -> list[Any]:
             return list(self.modules())
 
-    class _MPNNReadoutMLPBackend:
+    class _MPNNReadoutMLPBackend(torch_nn.Module):
         """Readout MLP for MPNN (PyTorch backend)."""
 
         def __init__(self, input_dim: int = 64, output_dim: int = 4, hidden_dim: int = 128) -> None:
@@ -340,10 +339,23 @@ else:
                 "PyTorch is required for PyTorchBackend. Install with: pip install torch"
             )
 
-        __call__: Any
-        parameters: Any
-        save_weights: Any
-        load_weights: Any
+        def modules(self) -> Any:
+            return []  # type: ignore[return-value]
+
+        def state_dict(self) -> dict[str, Any]:
+            return {}  # type: ignore[return-value]
+
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            return None  # type: ignore[return-value]
+
+        def parameters(self) -> list[Any]:
+            return []  # type: ignore[return-value]
+
+        def save_weights(self, path: str) -> None:
+            return None  # type: ignore[return-value]
+
+        def load_weights(self, path: str) -> None:
+            return None  # type: ignore[return-value]
 
 
 def model_factory() -> PyTorchBackend:

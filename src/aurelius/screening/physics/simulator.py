@@ -187,15 +187,12 @@ class MatterSimMTSimulator:
         params: dict[tuple[int, int], tuple[float, float]],
         device: str = "cpu",
     ) -> torch.Tensor:
-        """Build a (119, 119) parameter matrix from a dict of LJ parameters.
-
-        Args:
-            params: Lennard-Jones parameters dict mapping (zi, zj) -> (eps, sig).
-            device: Compute device for the output tensor.
-
-        Returns:
-            Precomputed parameter matrix indexed by atomic numbers.
-        """
+        if not HAS_TORCH:
+            size = 119
+            matrix = np.zeros((size, size), dtype=np.float32)
+            for (zi, zj), (eps, _sig) in params.items():
+                matrix[zi][zj] = eps
+            return torch.from_numpy(matrix)  # type: ignore[return-value]
         size = 119  # Maximum atomic number in periodic table
         matrix = torch.zeros(size, size, dtype=torch.float32, device=device)
         for (zi, zj), (eps, _sig) in params.items():
@@ -216,6 +213,12 @@ class MatterSimMTSimulator:
         Returns:
             Precomputed charge values indexed by atomic number.
         """
+        if not HAS_TORCH:
+            size = 119
+            vector = np.zeros(size, dtype=np.float32)
+            for z, q in charges.items():
+                vector[z] = q
+            return torch.from_numpy(vector)  # type: ignore[return-value]
         size = 119  # Maximum atomic number in periodic table
         vector = torch.zeros(size, dtype=torch.float32, device=device)
         for z, q in charges.items():

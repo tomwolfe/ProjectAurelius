@@ -20,7 +20,22 @@ import os
 from importlib import resources
 from typing import Any, Protocol, runtime_checkable
 
+from typing_extensions import TypeAlias
+
 from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
+
+# ---------------------------------------------------------------------------
+# Exports
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "DEFAULT_MODEL_DIR",
+    "HAS_MLX",
+    "HAS_TORCH",
+    "MLXBackend",
+    "PyTorchBackend",
+    "model_factory",
+]
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -74,6 +89,11 @@ if HAS_MLX:
     import mlx.core as _mlx_core
     import mlx.nn as _mlx_nn
     import numpy as np
+
+    try:
+        from mlx.core import Array as MLXArray
+    except ImportError:
+        MLXArray = Any  # type: ignore[assignment, attr-defined]
 
     class MLXBackend(_mlx_nn.Module):  # type: ignore[name-defined, misc]
         """MLX-compatible 2-layer MLP for molecular viability scoring.
@@ -198,6 +218,7 @@ else:
 if HAS_TORCH:
     import torch as _torch  # type: ignore[import-not-found, unused-ignore]
     import torch.nn as _torch_nn  # type: ignore[import-not-found, unused-ignore]
+    from torch import Tensor as TTensor
 
     class PyTorchBackend:
         """PyTorch-based MLP replicating the ChemVLM2MLP architecture.
