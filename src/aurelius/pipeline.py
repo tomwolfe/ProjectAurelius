@@ -46,6 +46,7 @@ class AureliusPipeline:
     def __init__(
         self,
         config: AureliusConfig | None = None,
+        use_real_models: bool = True,
 
     ) -> None:
         """Initialize the Aurelius pipeline.
@@ -95,7 +96,7 @@ class AureliusPipeline:
             self._mlx_filter = MLXNAFilter(
                 quantization_format=self.config.chemvlm_quantization,
             )
-            print(f"[Aurelius v5.2] Tier 1 (MLX-NA): ENABLED [REAL]")
+            print("[Aurelius v5.2] Tier 1 (MLX-NA): ENABLED [REAL]")
 
         if self.config.tier2_mattersim_enabled:
             self._mattersim_sim = MatterSimMTSimulator(

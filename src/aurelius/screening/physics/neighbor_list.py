@@ -66,7 +66,7 @@ class MatterSimNeighborList:
 
         # Build adjacency: for each cell, collect indices of atoms in same cell and 26 adjacent cells
         # Using torch.scatter to gather atom indices by cell key
-        atoms_by_key = torch.scatter(
+        _atoms_by_key = torch.scatter(
             torch.zeros(len(unique_keys), n, dtype=torch.long, device=device) - 1,
             0,
             inverse_indices.unsqueeze(1),

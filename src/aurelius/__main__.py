@@ -82,7 +82,6 @@ def doctor(verbose: bool) -> None:
     """
     from aurelius.utils.dependencies import (
         HAS_MLX,
-        HAS_RDKIT,
         HAS_TORCH,
         DependencyManager,
     )

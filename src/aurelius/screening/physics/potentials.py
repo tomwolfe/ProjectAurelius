@@ -65,7 +65,7 @@ class MatterSimLJPotentials:
         # Vectorized: replace for loops with tensor operations
         if lj_params:
             for eps, sig in lj_params.values():
-                all_zi = torch.tensor([int(k[0]) for k in lj_params.keys()], device=atomic_numbers.device)
+                all_zi = torch.tensor([int(k[0]) for k in lj_params], device=atomic_numbers.device)
                 mask = src_indices_long[:, None] == all_zi[None, :]
                 eps_tensor = torch.where(mask, eps, eps_tensor)
                 sig_tensor = torch.where(mask, sig, sig_tensor)
@@ -124,8 +124,6 @@ class MatterSimLJPotentials:
 
         z_i = atomic_numbers.unsqueeze(0)
         z_j = atomic_numbers.unsqueeze(1)
-        z_min = torch.minimum(z_i, z_j)
-        z_max = torch.maximum(z_i, z_j)
 
         eps_tensor = torch.zeros(n, n, device=device)
         sig_tensor = torch.zeros(n, n, device=device)
@@ -133,8 +131,8 @@ class MatterSimLJPotentials:
         # Vectorized: build masks from all params at once using torch.where
         if lj_params:
             for eps, sig in lj_params.values():
-                all_zi = torch.tensor([k[0] for k in lj_params.keys()], device=device)
-                all_zj = torch.tensor([k[1] for k in lj_params.keys()], device=device)
+                all_zi = torch.tensor([k[0] for k in lj_params], device=device)
+                all_zj = torch.tensor([k[1] for k in lj_params], device=device)
                 pair_mask = (z_i[:, None] == all_zi[:, None]) & (z_j[:, None] == all_zj[:, None])
                 eps_tensor = torch.where(pair_mask.any(dim=1), eps, eps_tensor)
                 sig_tensor = torch.where(pair_mask.any(dim=1), sig, sig_tensor)
@@ -157,7 +155,6 @@ class MatterSimLJPotentials:
         r_cutoff_soft = torch.sqrt(distances * distances + sig_tensor**2)
         sig_over_r_cutoff = sig_tensor / r_cutoff_soft
         sig_over_r6_cutoff = sig_over_r_cutoff**6
-        sig_over_r12_cutoff = sig_over_r6_cutoff**2
         lj_cutoff = 4.0 * eps_tensor * (sig_over_r6_cutoff - sig_over_r6)
 
         lj_per_pair = lj_per_pair - lj_cutoff

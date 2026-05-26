@@ -332,7 +332,6 @@ def _train_synthetic_mlx(
 
     Args:
         model: The MLXBackend instance to train.
-    
 
     Returns:
         The trained MLXBackend instance.
