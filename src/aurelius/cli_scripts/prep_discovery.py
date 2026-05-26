@@ -65,7 +65,6 @@ def _prepare_tier1(
     csv_path: str | None = None,
     seed: int = 42,
     val_split: float = 0.15,
-    no_mlx: bool = False,
     save_path: str | None = None,
 ) -> dict[str, Any]:
     """Train and save Tier 1 model, then run a deterministic inference check.
@@ -78,7 +77,6 @@ def _prepare_tier1(
         csv_path: Optional path to local CSV file.
         seed: Random seed for reproducibility.
         val_split: Fraction of data held out for validation.
-        no_mlx: If True, train with numpy only.
         save_path: Optional path to save the trained model.
 
     Returns:
@@ -110,7 +108,6 @@ def _prepare_tier1(
             seed=seed,
             val_split=val_split,
             save_path=save_path,
-            no_mlx=no_mlx,
         )
     except Exception as exc:
         raise RuntimeError(f"Tier 1 training failed: {exc}") from exc
@@ -145,7 +142,6 @@ def _train_tier_main(
     seed: int,
     val_split: float,
     save_path: str | None,
-    no_mlx: bool,
 ) -> dict[str, Any]:
     """Wrapper around scripts/train_tier1.py train_main.
 
@@ -164,7 +160,6 @@ def _train_tier_main(
         seed=seed,
         val_split=val_split,
         save_path=save_path,
-        no_mlx=no_mlx,
     )
 
 
@@ -253,7 +248,6 @@ def prep_discovery(
     learning_rate: float = 0.005,
     dataset: str = "esol",
     csv_path: str | None = None,
-    no_mlx: bool = False,
 ) -> None:
     """Run the full preparation pipeline.
 
@@ -263,7 +257,6 @@ def prep_discovery(
         batch_size: Mini-batch size for both tiers.
         learning_rate: Learning rate for Tier 1 (Tier 0 uses 0.001).
         dataset: Dataset name for Tier 1 ("esol" or "qm9").
-        csv_path: Optional CSV file path for Tier 1.
         no_mlx: If True, train Tier 1 with numpy only.
     """
     # Determine base directory (project root)
@@ -309,7 +302,6 @@ def prep_discovery(
             csv_path=csv_path,
             seed=42,
             val_split=0.15,
-            no_mlx=no_mlx,
         )
         print(f"[prep_discovery] Tier 1 ready: {tier1_path}")
         print(f"  Final val_loss: {tier1_result.get('result', {}).get('history', {}).get('val_loss', [-1])[-1]:.4f}")
@@ -379,8 +371,6 @@ def main() -> None:
             batch_size=args.batch_size,
             learning_rate=args.learning_rate,
             dataset=args.dataset,
-            csv_path=args.csv_path,
-            no_mlx=args.no_mlx,
         )
     except Exception as exc:
         print(f"\n[prep_discovery] Preparation failed: {exc}", file=sys.stderr)

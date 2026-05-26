@@ -203,7 +203,8 @@ class DiscoveryLoop:
         top_seeds = (
             self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
         )
-        return self.engine.mutate_batch(top_seeds, self.batch_size * 3)
+        candidates = self.engine.mutate_batch(top_seeds, self.batch_size * 3)
+        return list(candidates)
 
     def _top_seeds_from_results(self) -> list[str]:
         """Return the top N seeds based on all_results scores."""
@@ -255,7 +256,7 @@ class DiscoveryLoop:
         except Exception as e:
             log.error("Pipeline error for %s: %s", smiles, e, exc_info=True)
             return None
-        return result
+        return result if result is not None else None
 
 
 # ------------------------------------------------------------------

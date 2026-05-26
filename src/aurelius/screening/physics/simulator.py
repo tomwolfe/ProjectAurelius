@@ -742,13 +742,14 @@ class MatterSimMTSimulator:
 
     def _predict_charges_atomic(self, atomic_numbers: torch.Tensor) -> torch.Tensor:
         """Predict partial charges using the GNN-ChargeEq model."""
-        if self._compiled_model is None:
+        compiled = getattr(self, "_compiled_model", None)
+        if compiled is None:
             # Advanced indexing: O(1) lookup instead of O(N) loop
             return self._charge_vector[atomic_numbers]
 
         try:
             with torch.no_grad():
-                charges = self._compiled_model.predict_charges(atomic_numbers)
+                charges = compiled.predict_charges(atomic_numbers)
             return charges  # type: ignore[no-any-return]
         except (AttributeError, RuntimeError):
             return self._charge_vector[atomic_numbers]

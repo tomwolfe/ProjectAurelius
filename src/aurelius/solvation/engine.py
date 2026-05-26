@@ -535,4 +535,4 @@ class MWSESolvationEngine:
         if len(energies) < 3:
             return []
         is_max = (energies[1:-1] > energies[:-2]) & (energies[1:-1] > energies[2:])
-        return energies[1:-1][is_max].tolist()
+        return list(energies[1:-1][is_max])
