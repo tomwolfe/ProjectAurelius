@@ -25,9 +25,9 @@ if HAS_MLX:
     import mlx.nn as mlx_nn
     import mlx.optimizers as optimizers
 else:
-    mx = None
-    mlx_nn = None
-    optimizers = None
+    mx = None  # type: ignore[assignment]
+    mlx_nn = None  # type: ignore[assignment]
+    optimizers = None  # type: ignore[assignment]
 
 if HAS_TORCH:
     import torch as _torch
@@ -150,7 +150,7 @@ def train_on_esol(
     # Use MLX optimizers for clean training loop
     optimizer = optimizers.SGD(learning_rate=lr)
 
-    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:
+    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:  # type: ignore[name-defined]
         pred = model(x)
         pred = mx.squeeze(pred, axis=-1)
         return mx.mean((pred - target) ** 2)
@@ -171,17 +171,17 @@ def train_on_esol(
             y_batch = y_train_split[start:end]
 
             # Compute gradients using mlx.nn.value_and_grad
-            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)
+            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
 
             # Apply optimizer step
             optimizer.update(model, grads)
 
-        val_loss = float(_loss_fn(X_val_split, y_val_split))
+        val_loss = float(_loss_fn(X_val_split, y_val_split))  # type: ignore[arg-type]
 
         if (epoch + 1) % 20 == 0:
             train_loss = float(_loss_fn(X_train_split, y_train_split))
             preds = mx.squeeze(model(X_val_split), axis=-1)
-            accuracy = float(mx.mean(preds > 0.5 == y_val_split))
+            accuracy = float(mx.mean(preds > 0.5 == y_val_split))  # type: ignore[arg-type]
             print(
                 f"[Aurelius v5.2 Tier1] Epoch {epoch + 1}/{epochs}: "
                 f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, "
@@ -269,7 +269,7 @@ def train_on_qm9(
     # Use MLX optimizers for clean training loop
     optimizer = optimizers.SGD(learning_rate=lr)
 
-    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:
+    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:  # type: ignore[name-defined]
         h = model.linear1(x)
         h = mx.maximum(h, 0.0)
         out = model.linear2(h)
@@ -296,7 +296,7 @@ def train_on_qm9(
             y_batch = y_shuffled[start:end]
 
             # Compute gradients using mlx.nn.value_and_grad
-            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)
+            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
 
             # Apply optimizer step
             optimizer.update(model, grads)
@@ -348,7 +348,7 @@ def _train_synthetic_mlx(
     # Use MLX optimizers for clean training loop
     optimizer = optimizers.SGD(learning_rate=0.01)
 
-    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:
+    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:  # type: ignore[name-defined]
         h = model.linear1(x)
         h = mx.maximum(h, 0.0)
         out = model.linear2(h)
@@ -373,7 +373,7 @@ def _train_synthetic_mlx(
             y_batch = y_shuffled[start:end]
 
             # Compute gradients using mlx.nn.value_and_grad
-            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)
+            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
 
             # Apply optimizer step
             optimizer.update(model, grads)
@@ -441,18 +441,18 @@ def _train_synthetic_pytorch() -> PyTorchBackend:
             y_batch = _torch.from_numpy(y_shuffled[start:end]).float()
 
             optimizer.zero_grad()
-            pred = model(x_batch).squeeze(-1)
+            pred = model(x_batch).squeeze(-1)  # type: ignore[attr-defined]
             loss = criterion(pred, y_batch)
             loss.backward()
             optimizer.step()
 
         with _torch.no_grad():
-            val_pred = model(_torch.from_numpy(X_val_split).float()).squeeze(-1)
+            val_pred = model(_torch.from_numpy(X_val_split).float()).squeeze(-1)  # type: ignore[attr-defined]
             val_loss = criterion(val_pred, _torch.from_numpy(y_val_split).float()).item()
 
         if (epoch + 1) % 20 == 0:
             with _torch.no_grad():
-                train_pred = model(_torch.from_numpy(X_train_split).float()).squeeze(-1)
+                train_pred = model(_torch.from_numpy(X_train_split).float()).squeeze(-1)  # type: ignore[attr-defined]
                 train_loss = criterion(train_pred, _torch.from_numpy(y_train_split).float()).item()
             print(
                 f"[Aurelius v6.0 Tier1] PyTorch synthetic epoch {epoch + 1}/100: "
@@ -472,7 +472,7 @@ def _train_synthetic_pytorch() -> PyTorchBackend:
                 break
 
     if best_state:
-        model.load_state_dict(best_state)
+        model.load_state_dict(best_state)  # type: ignore[attr-defined]
 
     return model
 

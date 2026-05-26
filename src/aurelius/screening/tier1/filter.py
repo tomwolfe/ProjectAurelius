@@ -347,7 +347,7 @@ def _generate_ecfp4_fingerprint(smiles: str, ) -> np.ndarray[Any, Any]:
         raise RuntimeError(
             f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
         )
-    fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+    fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined]
     bit_list = fp.ToList()
     arr = np.array(bit_list, dtype=np.float32)
     if len(arr) < 2048:

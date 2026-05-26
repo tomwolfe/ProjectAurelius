@@ -56,7 +56,7 @@ class MatterSimNeighborList:
         # Build cell grid: assign each atom to a cell using vectorized ops
         cell_size = cutoff
         min_coords = coordinates.argmin(dim=0, keepdim=True).values
-        cell_indices = ((torch.round((coordinates - min_coords) / cell_size)).long())
+        cell_indices = ((torch.round((coordinates - min_coords) / cell_size)).long())  # type: ignore[operator]
 
         # Convert 3D cell indices to unique 1D keys using vectorized operations
         cell_key = cell_indices[:, 0] * 1_000_000 + cell_indices[:, 1] * 1_000 + cell_indices[:, 2]

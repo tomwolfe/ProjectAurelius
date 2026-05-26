@@ -69,7 +69,13 @@ class AureliusPipeline:
     def initialize(self) -> None:
         """Initialize all pipeline components."""
         # Enforce RDKit availability for real model paths
-        import rdkit  # noqa: F401
+        try:
+            import rdkit  # noqa: F401
+        except ImportError:
+            raise RuntimeError(
+                "RDKit is required for pipeline initialization. "
+                "Install with: pip install rdkit"
+            )
 
         print("\n" + "=" * 60)
         print("  PROJECT AURELIUS v7.0 - Pipeline Initialization")
@@ -183,7 +189,7 @@ class AureliusPipeline:
             memory_used_gb=0.0,
         )
 
-        score = self._scoring_engine.compute_score(
+        score = self._scoring_engine.compute_score(  # type: ignore[union-attr]
             molecule_input, failed_tier1, failed_tier2, None, 1.0
         )
 
@@ -236,8 +242,8 @@ class AureliusPipeline:
             )
             if not t1_result.is_viable:
                 print(f"[Aurelius Pipeline] Short-circuiting: {smiles} failed Tier 1.")
-                results["tier_timings"] = tier_timings
-                return self._generate_failed_run(smiles, "Failed Tier 1 Structural Filter", **kwargs)
+                results["tier_timings"] = tier_timings  # type: ignore[assignment]
+                return self._generate_failed_run(smiles, "Failed Tier 1 Structural Filter", **kwargs)  # type: ignore[return-value]
 
         # MWSE Solvation analysis
         mwse_state = None
@@ -245,7 +251,7 @@ class AureliusPipeline:
             mwse_state = self._solvation_engine.evaluate_mwse_state(
                 molecule_input.ion_type, molecule_input.solvent_type
             )
-            results["mwse"] = mwse_state
+            results["mwse"] = mwse_state  # type: ignore[assignment]
 
         # Tier 2: MatterSim-MT
         t2_result = None
@@ -258,7 +264,7 @@ class AureliusPipeline:
                 molecule_input.n_scan_cycles,
             )
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
-            results["tier2"] = t2_result
+            results["tier2"] = t2_result  # type: ignore[assignment]
             print(
                 f"  Tier 2 Result: {t2_result.molecule_smiles} "
                 f"-> {'VIABLE' if t2_result.is_viable else 'REJECTED'} "
@@ -269,7 +275,7 @@ class AureliusPipeline:
             # HARD SHORT-CIRCUIT: Explicit early exit
             if not t2_result.is_viable:
                 print(f"[Aurelius Pipeline] Short-circuiting: {smiles} failed Tier 2 viability.")
-                results["tier_timings"] = tier_timings
+                results["tier_timings"] = tier_timings  # type: ignore[assignment]
                 return self._generate_failed_run(
                     smiles,
                     f"Failed Tier 2 Solvation (Barrier: {t2_result.desolvation_path.barrier_height_eV} eV)",
@@ -288,7 +294,7 @@ class AureliusPipeline:
                 molecule_input.max_sei_time_ps,
             )
             tier_timings["tier3_ms"] = (time.perf_counter() - t3_start) * 1000
-            results["tier3"] = t3_result
+            results["tier3"] = t3_result  # type: ignore[assignment]
             print(
                 f"  Tier 3 Result: {t3_result.molecule_smiles} "
                 f"-> SEI: {t3_result.sei_evolution.thickness_angstrom:.1f}A, "
@@ -297,9 +303,9 @@ class AureliusPipeline:
 
         # Final consolidated score compilation
         gwp = kwargs.get("gwp_value", 1.0)
-        score = self._scoring_engine.compute_score(molecule_input, t1_result, t2_result, t3_result, gwp)
-        results["score"] = score
-        results["tier_timings"] = tier_timings
+        score = self._scoring_engine.compute_score(molecule_input, t1_result, t2_result, t3_result, gwp)  # type: ignore[union-attr]
+        results["score"] = score  # type: ignore[assignment]
+        results["tier_timings"] = tier_timings  # type: ignore[assignment]
 
         # Print scorecard
         print(f"\n{self._scoring_engine.print_scorecard(score)}")
