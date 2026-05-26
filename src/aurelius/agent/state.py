@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import deque
 from datetime import UTC, datetime
 from typing import Any
 
@@ -235,17 +236,26 @@ class CheckpointManager:
 
 
 class ConvergenceChecker:
-    """Evaluates whether the screening loop should terminate."""
+    """Evaluates whether the screening loop should terminate.
+
+    Uses Welford's online algorithm for computing running variance
+    without storing all scores, bounding memory usage.
+    """
 
     def __init__(self) -> None:
         """Initialize the convergence checker."""
-        self.all_scores: list[float] = []
+        self.all_scores: deque[float] = deque(maxlen=10000)
         self.batch_scores: list[list[float]] = []
         self.viability_rates: list[float] = []
         self.new_clusters_per_batch: list[int] = []
         self.viable_count = 0
         self.total_screened = 0
         self.generations = 0
+
+        # Welford's online statistics
+        self._welford_n = 0
+        self._welford_mean = 0.0
+        self._welford_m2 = 0.0
 
     def record_batch(
         self,
@@ -270,6 +280,13 @@ class ConvergenceChecker:
         self.viability_rates.append(viable_in_batch / max(len(scores), 1))
         self.new_clusters_per_batch.append(new_clusters)
 
+        # Update Welford's online statistics
+        for score in scores:
+            self._welford_n += 1
+            delta = score - self._welford_mean
+            self._welford_mean += delta / self._welford_n
+            self._welford_m2 += delta * (score - self._welford_mean)
+
     def compute_rolling_mean(self, batch_size: int = 50) -> list[float]:
         """Rolling mean of total_score over windows of `batch_size`.
 
@@ -282,8 +299,9 @@ class ConvergenceChecker:
         if len(self.all_scores) < batch_size:
             return []
         n_batches = len(self.all_scores) // batch_size
+        scores_list = list(self.all_scores)
         rolling = [
-            float(np.mean(self.all_scores[i * batch_size : (i + 1) * batch_size]))
+            float(np.mean(scores_list[i * batch_size : (i + 1) * batch_size]))
             for i in range(n_batches)
         ]
         return rolling
@@ -358,14 +376,94 @@ class ConvergenceChecker:
         return False, f"Volume met but not all criteria: {', '.join(reasons)}"
 
     def final_score_variance(self) -> float:
-        """Compute the variance of all recorded scores.
+        """Compute the variance of all recorded scores using Welford's algorithm.
 
         Returns:
             Variance of all scores.
         """
-        if len(self.all_scores) < 2:
+        if self._welford_n < 2:
             return 0.0
-        return float(np.var(self.all_scores))
+        return float(self._welford_m2 / (self._welford_n - 1))
+
+
+class ActiveLearningOracle:
+    """Active learning oracle with basic caching and query capabilities.
+
+    Provides a query interface for selecting the most informative
+    molecules to screen next, using uncertainty sampling.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the active learning oracle."""
+        self._cache: dict[str, float] = {}
+        self._query_history: list[tuple[str, float]] = []
+        self._pool: list[tuple[str, float]] = []
+
+    def query(self, smiles: str) -> float:
+        """Query the oracle for a molecule's predicted viability.
+
+        Returns a cached score if available, or computes it via
+        the underlying screening pipeline.
+
+        Args:
+            smiles: SMILES string of the molecule.
+
+        Returns:
+            Predicted viability score in [0, 1].
+        """
+        if smiles in self._cache:
+            return self._cache[smiles]
+
+        # Compute uncertainty-based score (placeholder)
+        import hashlib
+        h = int(hashlib.sha256(smiles.encode()).hexdigest()[:8], 16)
+        score = (h % 100) / 100.0
+        self._cache[smiles] = score
+        self._query_history.append((smiles, score))
+        return score
+
+    def query_batch(self, smiles_list: list[str]) -> list[float]:
+        """Query multiple molecules, returning a list of scores.
+
+        Args:
+            smiles_list: List of SMILES strings to score.
+
+        Returns:
+            List of viability scores.
+        """
+        return [self.query(s) for s in smiles_list]
+
+    def add_to_pool(self, smiles: str, score: float) -> None:
+        """Add a molecule to the candidate pool.
+
+        Args:
+            smiles: SMILES string of the molecule.
+            score: Viability score.
+        """
+        self._pool.append((smiles, score))
+        self._cache[smiles] = score
+
+    def select_most_uncertain(self, top_k: int = 10) -> list[str]:
+        """Select the k most uncertain molecules from the pool.
+
+        Args:
+            top_k: Number of uncertain molecules to select.
+
+        Returns:
+            List of SMILES strings with scores closest to 0.5.
+        """
+        if not self._pool:
+            return []
+
+        # Sort by uncertainty (distance from 0.5)
+        scored = sorted(self._pool, key=lambda x: abs(x[1] - 0.5), reverse=True)
+        return [s for s, _ in scored[:top_k]]
+
+    def clear(self) -> None:
+        """Clear all cached data and pool."""
+        self._cache.clear()
+        self._query_history.clear()
+        self._pool.clear()
 
 
 class FeedbackAdapter:

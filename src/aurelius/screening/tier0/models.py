@@ -127,7 +127,7 @@ if HAS_TORCH:
             n_nodes = node_features.shape[0]
 
             if n_nodes == 0:
-                return torch.zeros(
+                return torch.zeros(  # type: ignore[call-overload]
                     self.readout.network[-1].out_features,
                     device=node_features.device,
                 )
@@ -153,8 +153,8 @@ if HAS_TORCH:
             pooled = h.sum(dim=0)
             return self.readout(pooled)
 
-        def parameters(self) -> list[Any]:
-            return list(self.modules())  # type: ignore[override]
+        def parameters(self) -> list[Any]:  # type: ignore[override]
+            return list(self.modules())
 
         def save_weights(self, path: str) -> None:
             torch.save(self.state_dict(), path)  # type: ignore[call-overload, attr-defined]
@@ -290,7 +290,7 @@ if HAS_TORCH:
 
             return self.norm(node_features + node_updates)
 
-        def parameters(self) -> list[Any]:
+        def parameters(self) -> list[Any]:  # type: ignore[override]
             return list(self.modules())
 
     class _MPNNReadoutMLPBackend(torch_nn.Module):  # type: ignore[misc]
@@ -321,41 +321,8 @@ if HAS_TORCH:
                 return self.network(pooled)
             return self.network(pooled)
 
-        def parameters(self) -> list[Any]:
+        def parameters(self) -> list[Any]:  # type: ignore[override]
             return list(self.modules())
-
-else:
-    class PyTorchBackend:  # type: ignore[no-redef]
-        """Stub when PyTorch is unavailable."""
-
-        def __init__(
-            self,
-            node_dim: int = 4,
-            edge_dim: int = 0,
-            hidden_dim: int = 64,
-            output_dim: int = 4,
-        ) -> None:
-            raise RuntimeError(
-                "PyTorch is required for PyTorchBackend. Install with: pip install torch"
-            )
-
-        def modules(self) -> Any:
-            return []  # type: ignore[return-value]
-
-        def state_dict(self) -> dict[str, Any]:
-            return {}  # type: ignore[return-value]
-
-        def __call__(self, *args: Any, **kwargs: Any) -> Any:
-            return None  # type: ignore[return-value]
-
-        def parameters(self) -> list[Any]:
-            return []  # type: ignore[return-value]
-
-        def save_weights(self, path: str) -> None:
-            return None  # type: ignore[return-value]
-
-        def load_weights(self, path: str) -> None:
-            return None  # type: ignore[return-value]
 
 
 def model_factory() -> PyTorchBackend:

@@ -380,7 +380,7 @@ def train_mlx(
             loss, grads = nn.value_and_grad(model, loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
 
             # Update model with gradients using MLX optimizer
-            optimizer = mx.optimizer.SGD(lr)
+            optimizer = mx.optimizer.SGD(lr)  # type: ignore[attr-defined]
             optimizer.update(model, grads)
 
         val_loss = float(loss_fn(X_val_mx, y_val_mx.reshape(-1, 1)))

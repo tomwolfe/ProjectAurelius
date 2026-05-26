@@ -84,9 +84,9 @@ class MLXNAFilter:
                 self._mx = mx
             except ImportError:
                 self._use_mlx = False
-                self._mx = None
+                self._mx = None  # type: ignore[assignment]
         else:
-            self._mx = None
+            self._mx = None  # type: ignore[assignment]
 
         # Conditional torch/torch_nn imports
         self._torch: Any | None = None
@@ -311,16 +311,16 @@ class MLXNAFilter:
             fp_array = self._mx.array(fingerprint, dtype=self._mx.float32)
             if fp_array.ndim == 1:
                 fp_array = fp_array.reshape(1, -1)
-            output = self._model.predict(fp_array)
-            confidence = float(self._mx.squeeze(output))
+            output = self._model.predict(fp_array)  # type: ignore[arg-type]
+            confidence = float(self._mx.squeeze(output))  # type: ignore[arg-type]
         elif self._torch is not None:
             fp_tensor = self._torch.from_numpy(fingerprint).float().unsqueeze(0)
             with self._torch.no_grad():
                 output = self._model.predict(fp_tensor)
             confidence = float(output.squeeze().item())
         else:
-            output = self._model.predict(fingerprint)
-            confidence = float(np.squeeze(output))
+            output = self._model.predict(fingerprint)  # type: ignore[arg-type]
+            confidence = float(np.squeeze(output))  # type: ignore[arg-type]
 
         confidence = float(np.clip(confidence, 0.0, 1.0))
         is_viable = confidence > 0.5

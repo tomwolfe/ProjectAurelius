@@ -11,8 +11,8 @@ Then computes the Aurelius Score v5.2 (S_A_v5.2).
 from __future__ import annotations
 
 import logging
-import multiprocessing
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from aurelius.config import AureliusConfig, apply_global_config
@@ -291,13 +291,9 @@ class AureliusPipeline:
         """Screen a batch of molecules through the full pipeline.
 
         When ``n_workers`` is greater than 1, molecules are screened
-        in parallel using ``ProcessPoolExecutor`` with the ``spawn``
-        multiprocessing context to avoid MPS context crashes in forked
-        processes.
-
-        RDKit objects are never passed across process boundaries; only
-        SMILES strings are pickled, and molecule reconstruction happens
-        inside each worker process.
+        in parallel using ``ThreadPoolExecutor``. Since PyTorch and MLX
+        release the GIL during C++/Metal operations, threading is safe,
+        faster, and avoids pickling entirely.
 
         Args:
             smiles_list: List of SMILES strings to screen.
@@ -312,10 +308,14 @@ class AureliusPipeline:
         if n_workers < 1 or n_workers == 1:
             return [self.screen_molecule(smiles, **kwargs) for smiles in smiles_list]
 
-        ctx = multiprocessing.get_context("spawn")
-        with ctx.Pool(processes=n_workers) as pool:
-            all_results = pool.map(
-                lambda smiles: self.screen_molecule(smiles, **kwargs),
-                smiles_list,
-            )
-        return all_results
+        results: dict[int, dict[str, Any]] = {}
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            future_to_idx = {
+                executor.submit(self.screen_molecule, smiles, **kwargs): i
+                for i, smiles in enumerate(smiles_list)
+            }
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                results[idx] = future.result()
+
+        return [results[i] for i in range(len(smiles_list))]

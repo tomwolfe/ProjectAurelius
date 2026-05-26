@@ -89,9 +89,9 @@ if HAS_MLX:
     import numpy as np
 
     try:
-        from mlx.core import Array as MLXArray
+        from mlx.core import Array as MLXArray  # type: ignore[attr-defined]
     except ImportError:
-        MLXArray = Any  # type: ignore[assignment, attr-defined]
+        MLXArray = Any
 
     class MLXBackend(_mlx_nn.Module):  # type: ignore[name-defined, misc]
         """MLX-compatible 2-layer MLP for molecular viability scoring.
@@ -123,7 +123,7 @@ if HAS_MLX:
             """Initialize all weights using Xavier uniform initialization."""
             scale1 = np.sqrt(2.0 / (self.input_dim + self.hidden_dim))
             self.linear1.weight = _mlx_core.random.uniform(
-                shape=(self.input_dim, self.hidden_dim),
+                shape=(self.hidden_dim, self.input_dim),
                 low=-scale1,
                 high=scale1,
             )
@@ -131,7 +131,7 @@ if HAS_MLX:
 
             scale2 = np.sqrt(2.0 / (self.hidden_dim + 1))
             self.linear2.weight = _mlx_core.random.uniform(
-                shape=(self.hidden_dim, 1),
+                shape=(1, self.hidden_dim),
                 low=-scale2,
                 high=scale2,
             )
@@ -195,19 +195,6 @@ if HAS_MLX:
             self.linear1.bias = _mlx_core.array(b1)
             self.linear2.weight = _mlx_core.array(W2)
             self.linear2.bias = _mlx_core.array(b2)
-
-else:
-    class MLXBackend:  # type: ignore[no-redef]
-        """Placeholder when MLX is unavailable."""
-
-        def __init__(self, *args: int, **kwargs: int) -> None:
-            raise ImportError("MLX is required for MLXBackend. Install with: pip install mlx")
-
-        __call__: Any
-        parameters: Any
-        save_weights: Any
-        load_weights: Any
-
 
 # ---------------------------------------------------------------------------
 # PyTorch Backend
@@ -310,17 +297,7 @@ if HAS_TORCH:
             )
             self.load_state_dict(state_dict)  # type: ignore[attr-defined]
 
-else:
-    class PyTorchBackend:  # type: ignore[no-redef]
-        """Placeholder when PyTorch is unavailable."""
 
-        def __init__(self, *args: int, **kwargs: int) -> None:
-            raise ImportError("PyTorch is required for PyTorchBackend. Install with: pip install torch")
-
-        __call__: Any
-        parameters: Any
-        save_weights: Any
-        load_weights: Any
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------

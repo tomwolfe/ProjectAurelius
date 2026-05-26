@@ -445,10 +445,10 @@ class MatterSimMTSimulator:
                 matrix[zi][zj] = eps
             return matrix  # type: ignore[return-value, arg-type]
         size = 119  # Maximum atomic number in periodic table
-        matrix = torch.zeros(size, size, dtype=torch.float32, device=device)
+        matrix = torch.zeros(size, size, dtype=torch.float32, device=device)  # type: ignore[assignment]
         for (zi, zj), (eps, _sig) in params.items():
             matrix[zi][zj] = eps
-        return matrix
+        return matrix  # type: ignore[return-value]
 
     @staticmethod
     def _build_charge_vector(
@@ -471,10 +471,10 @@ class MatterSimMTSimulator:
                 vector[z] = q
             return vector  # type: ignore[return-value]
         size = 119  # Maximum atomic number in periodic table
-        vector = torch.zeros(size, dtype=torch.float32, device=device)
+        vector = torch.zeros(size, dtype=torch.float32, device=device)  # type: ignore[assignment]
         for z, q in charges.items():
             vector[z] = q
-        return vector
+        return vector  # type: ignore[return-value]
 
     def _select_device(self) -> str:
         """Select the best available compute device.
@@ -990,8 +990,8 @@ class ChargeEqModel:
             raise RuntimeError("PyTorch is required for ChargeEqModel.predict_charges.")
 
         with torch.no_grad():
-            return self._model(atomic_numbers.unsqueeze(-1).float())  # type: ignore[union-attr]
+            return self._model(atomic_numbers.unsqueeze(-1).float())  # type: ignore[union-attr, no-any-return]
 
     def compile(self) -> None:
         """Compile the model for inference."""
-        self._compiled = self._model.eval()
+        self._compiled = self._model.eval()  # type: ignore[assignment]

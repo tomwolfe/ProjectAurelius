@@ -101,7 +101,7 @@ def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray[An
         raise RuntimeError(
             f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
         )
-    fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=n_bits)  # type: ignore[union-attr]
+    fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=n_bits)  # type: ignore[union-attr, attr-defined]
     bit_list = fp.ToList()
     arr = np.array(bit_list, dtype=np.float32)
     if len(arr) < n_bits:
@@ -144,12 +144,12 @@ def generate_molecular_descriptors(smiles: str) -> dict[str, float]:
 
     try:
         return {
-            "mol_weight": float(_Descriptors.ExactMolWt(mol)),
-            "num_h_donors": int(mol.GetNumHDonors()),  # type: ignore[union-attr]
-            "num_h_acceptors": int(mol.GetNumHAcceptors()),  # type: ignore[union-attr]
-            "num_rotatable_bonds": int(mol.GetNumRotatableBonds()),  # type: ignore[union-attr]
-            "logp": float(_Descriptors.MolLogP(mol)),  # type: ignore[union-attr]
-            "tpsa": float(_Descriptors.TPSA(mol)),  # type: ignore[union-attr]
+            "mol_weight": float(_Descriptors.ExactMolWt(mol)),  # type: ignore[union-attr, attr-defined]
+            "num_h_donors": int(mol.GetNumHDonors()),  # type: ignore[union-attr, attr-defined]
+            "num_h_acceptors": int(mol.GetNumHAcceptors()),  # type: ignore[union-attr, attr-defined]
+            "num_rotatable_bonds": int(mol.GetNumRotatableBonds()),  # type: ignore[union-attr, attr-defined]
+            "logp": float(_Descriptors.MolLogP(mol)),  # type: ignore[union-attr, attr-defined]
+            "tpsa": float(_Descriptors.TPSA(mol)),  # type: ignore[union-attr, attr-defined]
         }
     except Exception as e:
         raise RuntimeError(f"Descriptor generation failed: {e}") from e

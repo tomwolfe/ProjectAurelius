@@ -16,9 +16,11 @@ Usage:
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import sys
+from typing import Any
 
 import click
 
@@ -27,7 +29,7 @@ from aurelius.cli_scripts import (
     train_tier1,
     validate_physics,
 )
-from aurelius.config import get_config
+from aurelius.config import AureliusConfig, get_config
 from aurelius.pipeline import AureliusPipeline
 from aurelius.utils.dependencies import (
     HAS_HF_HUB,
@@ -48,6 +50,49 @@ def _apply_env_thread_safe(env_vars: dict[str, str]) -> None:
             os.environ[k] = v
 
 
+def _init_pipeline_from_ctx(ctx: click.Context) -> None:
+    """Initialise the pipeline stored in the Click context.
+
+    Called by ``@with_pipeline`` after the command function has been
+    matched but before the command body runs.
+    """
+    pipeline: AureliusPipeline = ctx.ensure_object(dict)["pipeline"]
+    config: AureliusConfig = ctx.ensure_object(dict)["config"]
+    env_vars = config.apply_environment()
+    _apply_env_thread_safe(env_vars)
+    pipeline.initialize()
+
+
+def with_pipeline(command: click.Command) -> click.Command:
+    """Click decorator that injects ``pipeline`` and ``config`` into the command.
+
+    The decorated command receives ``pipeline`` and ``config`` as the
+    first two positional arguments.  This eliminates the repeated
+    ``config = get_config()`` / ``pipeline = AureliusPipeline(config)``
+    boilerplate found in every CLI command.
+    """
+
+    @functools.wraps(command)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        ctx = click.get_current_context()
+        obj: dict[str, Any] = ctx.ensure_object(dict)
+        if "pipeline" not in obj:
+            config = get_config()
+            pipeline = AureliusPipeline(config)
+            obj["config"] = config
+            obj["pipeline"] = pipeline
+        else:
+            config = obj["config"]
+            pipeline = obj["pipeline"]
+
+        _init_pipeline_from_ctx(ctx)
+
+        # Inject pipeline and config as first two positional args
+        return command(pipeline, config, *args, **kwargs)  # type: ignore[return-value]
+
+    return wrapper  # type: ignore[return-value]
+
+
 @click.group()
 @click.version_option(version="6.0.0", prog_name="Aurelius")
 def cli() -> None:
@@ -60,34 +105,18 @@ def cli() -> None:
 
 
 @cli.command()
-def init() -> None:
+@with_pipeline  # type: ignore[arg-type]
+def init(pipeline: AureliusPipeline, config: AureliusConfig) -> None:
     """Initialize the Aurelius v5.2 pipeline."""
-    config = get_config()
-    # Thread-safe environment variable application
-    env_vars = config.apply_environment()
-    _apply_env_thread_safe(env_vars)
-    pipeline = AureliusPipeline(config)
-    pipeline.initialize()
     click.echo("\nPipeline initialized successfully.")
 
 
 @cli.command()
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Show detailed framework versions")
-def doctor(verbose: bool) -> None:
-    """Validate dependencies, hardware, and configuration.
-
-    Checks availability of MLX, PyTorch, RDKit, and HuggingFace Hub.
-    Validates GPU/MPS/CUDA hardware detection. Reports any configuration
-    mismatches between environment variables and runtime config.
-
-    This command is useful for:
-    - Diagnosing setup issues before running screening
-    - CI pipelines to verify the fallback-only environment
-    - Quick system readiness assessment
-    """
+def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: AureliusConfig | None = None) -> None:
+    """Validate dependencies, hardware, and configuration."""
     from aurelius.utils.dependencies import report_status
 
-    # Framework status
     status = report_status()
 
     click.echo("[Frameworks]")
@@ -102,10 +131,8 @@ def doctor(verbose: bool) -> None:
 
     click.echo("")
 
-    # Hardware detection
     click.echo("[Hardware]")
 
-    # MLX Metal
     if HAS_MLX:
         try:
             import mlx.core as _mx  # noqa: F401
@@ -116,7 +143,6 @@ def doctor(verbose: bool) -> None:
     else:
         click.echo("  MLX:      Not installed (will use PyTorch fallback)")
 
-    # PyTorch device detection
     if HAS_TORCH:
         try:
             import torch  # noqa: F401
@@ -136,13 +162,11 @@ def doctor(verbose: bool) -> None:
     else:
         click.echo("  PyTorch:  Not installed")
 
-    # RDKit
     if HAS_RDKIT:
         click.echo("  RDKit:    Available")
     else:
         click.echo("  RDKit:    Not installed (real model screening required)")
 
-    # HuggingFace
     if HAS_HF_HUB:
         click.echo("  HuggingFace Hub: Available")
     else:
@@ -150,7 +174,6 @@ def doctor(verbose: bool) -> None:
 
     click.echo("")
 
-    # Summary
     click.echo("[Summary]")
     issues = []
     if not HAS_MLX:
@@ -178,18 +201,20 @@ def doctor(verbose: bool) -> None:
 @click.option("--voltage", default=3.7, type=float, help="Voltage cutoff")
 @click.option("--cycles", default=500, type=int, help="Number of scan cycles")
 @click.option("--gwp", default=1.0, type=float, help="GWP value")
-def screen(smiles: str, solvent: str, salt: str, ion: str, temperature: float, voltage: float, cycles: int, gwp: float) -> None:
-    """Screen a single molecule through the full Aurelius pipeline.
-
-    Uses real model weights for all Tier 1 operations.
-    RDKit is required for real model screening.
-    """
-    config = get_config()
-    env_vars = config.apply_environment()
-    _apply_env_thread_safe(env_vars)
-    pipeline = AureliusPipeline(config)
-    pipeline.initialize()
-
+@with_pipeline  # type: ignore[arg-type]
+def screen(
+    smiles: str,
+    solvent: str,
+    salt: str,
+    ion: str,
+    temperature: float,
+    voltage: float,
+    cycles: int,
+    gwp: float,
+    pipeline: AureliusPipeline,
+    config: AureliusConfig,
+) -> None:
+    """Screen a single molecule through the full Aurelius pipeline."""
     results = pipeline.screen_molecule(
         smiles,
         solvent_type=solvent,
@@ -210,14 +235,16 @@ def screen(smiles: str, solvent: str, salt: str, ion: str, temperature: float, v
 @click.argument("file", type=click.Path(exists=True))
 @click.option("--solvent", default="ec:dmc", help="Solvent type")
 @click.option("--output", type=click.Path(), help="Output JSON file")
-def batch(file: str, solvent: str, salt: str, output: str | None) -> None:
+@with_pipeline  # type: ignore[arg-type]
+def batch(
+    file: str,
+    solvent: str,
+    output: str | None,
+    pipeline: AureliusPipeline,
+    config: AureliusConfig,
+) -> None:
     """Screen multiple molecules from a SMILES file (one per line)."""
-    config = get_config()
-    env_vars = config.apply_environment()
-    _apply_env_thread_safe(env_vars)
-    pipeline = AureliusPipeline(config)
-    pipeline.initialize()
-
+    salt = "NaPF6"
     smiles_list = []
     with open(file) as f:
         for line in f:
@@ -228,12 +255,10 @@ def batch(file: str, solvent: str, salt: str, output: str | None) -> None:
     click.echo(f"Screening {len(smiles_list)} molecules...")
     results = pipeline.screen_batch(smiles_list, solvent_type=solvent, salt_type=salt)
 
-    # Summary
     viable = sum(1 for r in results if r["score"].is_viable)
-    click.echo(f"\nBatch complete: {viable}/{len(smiles_list)} viable ({100 * viable / len(smiles_list):.0f}%)")
+    click.echo(f"\nBatch complete: {viable}/{len(smiles_list)} viable ({100 * viable / max(len(smiles_list), 1):.0f}%)")
 
     if output:
-        # Serialize results
         serializable = []
         for r in results:
             score = r["score"]
@@ -261,14 +286,17 @@ def batch(file: str, solvent: str, salt: str, output: str | None) -> None:
 @click.option("--salt", default="NaPF6", help="Salt type")
 @click.option("--ion", default="Na+", help="Ion type")
 @click.option("--gwp", default=1.0, help="Global Warming Potential")
-def score(smiles: str, solvent: str, salt: str, ion: str, gwp: float) -> None:
+@with_pipeline  # type: ignore[arg-type]
+def score(
+    smiles: str,
+    solvent: str,
+    salt: str,
+    ion: str,
+    gwp: float,
+    pipeline: AureliusPipeline,
+    config: AureliusConfig,
+) -> None:
     """Compute the Aurelius v5.2 score for a molecule (quick mode)."""
-    config = get_config()
-    env_vars = config.apply_environment()
-    _apply_env_thread_safe(env_vars)
-    pipeline = AureliusPipeline(config)
-    pipeline.initialize()
-
     results = pipeline.screen_molecule(
         smiles,
         solvent_type=solvent,
@@ -294,7 +322,16 @@ def score(smiles: str, solvent: str, salt: str, ion: str, gwp: float) -> None:
 @click.option("--batch-size", type=int, default=16, help="Mini-batch size")
 @click.option("--learning-rate", type=float, default=0.005, help="Learning rate")
 @click.option("--csv-path", type=str, default=None, help="Path to local CSV file")
-def train(dataset: str, task: str, epochs: int, batch_size: int, learning_rate: float, csv_path: str | None) -> None:
+def train(
+    dataset: str,
+    task: str,
+    epochs: int,
+    batch_size: int,
+    learning_rate: float,
+    csv_path: str | None,
+    pipeline: AureliusPipeline,
+    config: AureliusConfig,
+) -> None:
     """Train a model on a dataset.
 
     Use --task tier1 to train the MLX filter (esol/qm9).
@@ -340,21 +377,15 @@ def _run_tier0_train(
 
 @cli.command("validate")
 @click.option("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to validate")
-def validate(smiles: str) -> None:
-    """Run physics validation on a molecule.
-
-    Wraps validate_physics module as a native CLI subcommand.
-    """
+def validate(smiles: str, pipeline: AureliusPipeline, config: AureliusConfig) -> None:
+    """Run physics validation on a molecule."""
     sys.argv = ["validate_physics", "--smiles", smiles]
     validate_physics.main()
 
 
 @cli.command("status")
-def status() -> None:
+def status(pipeline: AureliusPipeline, config: AureliusConfig) -> None:
     """Show pipeline status and memory partition."""
-    config = get_config()
-    env_vars = config.apply_environment()
-    _apply_env_thread_safe(env_vars)
     click.echo("\nAurelius v5.2 Configuration:")
     click.echo(f"  MLX Max Memory:    {config.mlx_max_mem_gb}GB")
     click.echo(f"  Shader Cache:      {config.metal_shader_cache_gb}GB")
@@ -372,13 +403,14 @@ def status() -> None:
 )
 @click.option("--quick/--detailed", default=True, help="Quick mode with fewer repeats (default: enabled)")
 @click.option("--output", type=click.Path(), default=None, help="Save results to JSON file")
-def benchmark(tier: str | None, quick: bool, output: str | None) -> None:
-    """Run hardware benchmark and validation.
-
-    Verifies that the user's Apple Silicon hardware is properly
-    configured and provides performance baselines for Tier 1
-    (MLX inference) and Tier 2 (vectorized physics) computation.
-    """
+def benchmark(
+    tier: str | None,
+    quick: bool,
+    output: str | None,
+    pipeline: AureliusPipeline,
+    config: AureliusConfig,
+) -> None:
+    """Run hardware benchmark and validation."""
     from aurelius.benchmark import run_benchmark
 
     run_benchmark(tier=tier, quick=quick, output=output)
@@ -399,23 +431,11 @@ def hf_upload(
     task: str,
     private: bool,
     commit_message: str,
+    pipeline: AureliusPipeline,
+    config: AureliusConfig,
     dry_run: bool,
 ) -> None:
-    """Upload a locally trained model to HuggingFace Hub.
-
-    Pushes model files (weights, metadata, README) to a HuggingFace
-    Hub repository. Authentication is handled via the HF_TOKEN
-    environment variable or interactive login.
-
-    Auth Handling:
-        Uses huggingface_hub.login() with add_to_git_credential=True.
-        Tokens are never stored in CLI history.
-
-    Examples:
-        aurelius hf-upload --model-dir models/tier0 --repo-id myuser/aurelius-tier0
-        aurelius hf-upload --model-dir models/esol --repo-id myuser/esol-mlp --task esol --public
-        aurelius hf-upload --model-dir models/tier0 --repo-id myuser/tier0 --dry-run
-    """
+    """Upload a locally trained model to HuggingFace Hub."""
     import os
     import sys
 
@@ -427,14 +447,12 @@ def hf_upload(
         upload_folder,
     )
 
-    # Validate model directory
     if not os.path.isdir(model_dir):
         click.echo(f"[ERROR] Model directory not found: {model_dir}", err=True)
         sys.exit(1)
 
     api = HfApi()
 
-    # Validate repo ID format
     if "/" not in repo_id:
         click.echo(
             f"[ERROR] Invalid repo ID format: '{repo_id}'. Expected 'username/repo-name'.",
@@ -442,7 +460,6 @@ def hf_upload(
         )
         sys.exit(1)
 
-    # Dry run mode: validate everything without uploading
     if dry_run:
         click.echo(f"[DRY RUN] Validating upload for: {repo_id}")
         click.echo(f"  Model directory: {model_dir}")
@@ -450,7 +467,6 @@ def hf_upload(
         click.echo(f"  Visibility: {'private' if private else 'public'}")
         click.echo(f"  Commit message: {commit_message}")
 
-        # Check authentication
         try:
             user_info = api.whoami()
             click.echo(f"  Authenticated as: {user_info['name']} ({user_info['fullname']})")
@@ -459,13 +475,11 @@ def hf_upload(
             click.echo("Ensure HF_TOKEN is set or run 'huggingface-cli login'.", err=True)
             sys.exit(1)
 
-        # Check if repo exists
         if repo_exists(repo_id):
             click.echo(f"  Repository '{repo_id}' already exists.")
         else:
             click.echo(f"  Repository '{repo_id}' does not exist (would be created).")
 
-        # List files that would be uploaded
         files = []
         for root, _, filenames in os.walk(model_dir):
             for fname in filenames:
@@ -478,13 +492,11 @@ def hf_upload(
         click.echo("\n[DRY RUN] Validation complete. No files were uploaded.")
         return
 
-    # Real upload mode
     click.echo(f"[HF Upload] Uploading to: {repo_id}")
     click.echo(f"  Model directory: {model_dir}")
     click.echo(f"  Task: {task}")
     click.echo(f"  Visibility: {'private' if private else 'public'}")
 
-    # Authenticate
     try:
         from huggingface_hub import login as hf_login
 
@@ -494,7 +506,6 @@ def hf_upload(
         click.echo("Ensure HF_TOKEN is set in your environment or run 'huggingface-cli login'.", err=True)
         sys.exit(1)
 
-    # Create repo if it doesn't exist
     try:
         create_repo(
             repo_id=repo_id,
@@ -508,7 +519,6 @@ def hf_upload(
         click.echo(f"[ERROR] Failed to create/verify repository: {e}", err=True)
         sys.exit(1)
 
-    # Generate model card
     task_descriptions = {
         "tier0": "Tier 0 MPNN Activation Energy Predictor",
         "esol": "Tier 1 ESOL Solubility Filter",
@@ -544,13 +554,11 @@ aurelius train --task {task}
 - Gilmer, J. et al. "Neural Message Passing for Quantum Chemistry." ICML 2017.
 """
 
-    # Save README.md to model directory
     readme_path = os.path.join(model_dir, "README.md")
     with open(readme_path, "w") as readme_file:
         readme_file.write(model_card.content)
     click.echo(f"  Generated README.md at {readme_path}")
 
-    # Upload folder
     try:
         upload_folder(
             folder_path=model_dir,
@@ -565,18 +573,18 @@ aurelius train --task {task}
         sys.exit(1)
 
 
-
 @cli.command("agent")
 @click.option("--max-generations", type=int, default=50, help="Maximum generations to run")
 @click.option("--batch-size", type=int, default=50, help="Candidates per batch")
 @click.option("--profile-memory", is_flag=True, default=False, help="Enable memory profiling with CSV report output")
-def agent(max_generations: int, batch_size: int, profile_memory: bool) -> None:
-    """Run the autonomous screening agent.
-
-    Executes the full autonomous discovery loop:
-    Generation (RDKit mutation engine) -> Screening (3-tier pipeline) ->
-    Feedback-driven mutation -> Convergence check -> Report generation
-    """
+def agent(
+    max_generations: int,
+    batch_size: int,
+    profile_memory: bool,
+    pipeline: AureliusPipeline,
+    config: AureliusConfig,
+) -> None:
+    """Run the autonomous screening agent."""
     from aurelius.agent.state import CheckpointManager
 
     checkpoint = CheckpointManager()
@@ -593,6 +601,7 @@ def agent(max_generations: int, batch_size: int, profile_memory: bool) -> None:
     except Exception as e:
         click.echo(f"[ERROR] {e}", err=True)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     cli()
