@@ -337,19 +337,13 @@ def model_factory() -> PyTorchBackend:
 
 if not HAS_TORCH:
 
-    class PyTorchBackend:  # type: ignore[no-redef]
-        """Stub when PyTorch is unavailable.
+    class PyTorchBackendUnavailableError(RuntimeError):
+        """Raised when PyTorch is not available."""
 
-        Raises PyTorchBackendUnavailableError on use.
-        """
+    class _MPNNEdgeBlockBackend:  # type: ignore[no-redef]
+        """Fallback: 2-layer message passing block for molecular graphs."""
 
-        def __init__(
-            self,
-            node_dim: int = 4,
-            edge_dim: int = 0,
-            hidden_dim: int = 64,
-            output_dim: int = 4,
-        ) -> None:
+        def __init__(self, node_dim: int = 4, edge_dim: int = 0, hidden_dim: int = 64) -> None:
             raise PyTorchBackendUnavailableError(
                 "PyTorchBackend requires torch. Install torch to use this feature."
             )
@@ -364,53 +358,20 @@ if not HAS_TORCH:
                 "PyTorchBackend requires torch. Install torch to use this feature."
             )
 
-        def save_weights(self, path: str) -> None:
+    class _MPNNReadoutMLPBackend:  # type: ignore[no-redef]
+        """Fallback: Readout MLP for MPNN."""
+
+        def __init__(self, input_dim: int = 64, output_dim: int = 4, hidden_dim: int = 128) -> None:
             raise PyTorchBackendUnavailableError(
                 "PyTorchBackend requires torch. Install torch to use this feature."
             )
 
-        def load_weights(self, path: str) -> None:
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
             raise PyTorchBackendUnavailableError(
                 "PyTorchBackend requires torch. Install torch to use this feature."
             )
 
-    class PyTorchBackendUnavailableError(RuntimeError):
-        """Raised when PyTorch is not available."""
-
-
-class _MPNNEdgeBlockBackend:
-    """2-layer message passing block for molecular graphs (fallback)."""
-
-    def __init__(self, node_dim: int = 4, edge_dim: int = 0, hidden_dim: int = 64) -> None:
-        raise PyTorchBackendUnavailableError(
-            "PyTorchBackend requires torch. Install torch to use this feature."
-        )
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        raise PyTorchBackendUnavailableError(
-            "PyTorchBackend requires torch. Install torch to use this feature."
-        )
-
-    def parameters(self) -> list[Any]:
-        raise PyTorchBackendUnavailableError(
-            "PyTorchBackend requires torch. Install torch to use this feature."
-        )
-
-
-class _MPNNReadoutMLPBackend:
-    """Readout MLP for MPNN (fallback)."""
-
-    def __init__(self, input_dim: int = 64, output_dim: int = 4, hidden_dim: int = 128) -> None:
-        raise PyTorchBackendUnavailableError(
-            "PyTorchBackend requires torch. Install torch to use this feature."
-        )
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        raise PyTorchBackendUnavailableError(
-            "PyTorchBackend requires torch. Install torch to use this feature."
-        )
-
-    def parameters(self) -> list[Any]:
-        raise PyTorchBackendUnavailableError(
-            "PyTorchBackend requires torch. Install torch to use this feature."
-        )
+        def parameters(self) -> list[Any]:
+            raise PyTorchBackendUnavailableError(
+                "PyTorchBackend requires torch. Install torch to use this feature."
+            )

@@ -196,6 +196,46 @@ if HAS_MLX:
             self.linear2.weight = _mlx_core.array(W2)
             self.linear2.bias = _mlx_core.array(b2)
 
+
+# ---------------------------------------------------------------------------
+# Fallback when MLX is unavailable
+# ---------------------------------------------------------------------------
+else:
+
+    class MLXBackend:  # type: ignore[no-redef]
+        """Fallback: MLX-compatible 2-layer MLP for ECFP4 fingerprints."""
+
+        def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
+            raise ImportError(
+                "MLXBackend requires mlx. Install MLX: pip install mlx"
+            )
+
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            raise ImportError(
+                "MLXBackend requires mlx. Install MLX: pip install mlx"
+            )
+
+        def predict(self, x: Any) -> Any:
+            raise ImportError(
+                "MLXBackend requires mlx. Install MLX: pip install mlx"
+            )
+
+        def parameters(self) -> list[Any]:
+            raise ImportError(
+                "MLXBackend requires mlx. Install MLX: pip install mlx"
+            )
+
+        def save_weights(self, path: str) -> None:
+            raise ImportError(
+                "MLXBackend requires mlx. Install MLX: pip install mlx"
+            )
+
+        def load_weights(self, path: str) -> None:
+            raise ImportError(
+                "MLXBackend requires mlx. Install MLX: pip install mlx"
+            )
+
+
 # ---------------------------------------------------------------------------
 # PyTorch Backend
 # ---------------------------------------------------------------------------
