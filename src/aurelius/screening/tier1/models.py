@@ -24,29 +24,28 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 
 # ---------------------------------------------------------------------------
-# Type aliases for model tensor types (TYPE_CHECKING only)
+# Type aliases for model tensor types
 # ---------------------------------------------------------------------------
 
-if TYPE_CHECKING:
-    if HAS_MLX:
-        try:
-            import mlx.core as _mlx_core  # noqa: F401
+if HAS_MLX:
+    try:
+        import mlx.core as _mlx_core  # noqa: F401
 
-            MLXArray = _mlx_core.array
-        except Exception:
-            MLXArray: Any  # type: ignore[no-redef]
-    else:
+        MLXArray = _mlx_core.array
+    except Exception:
         MLXArray: Any  # type: ignore[no-redef]
+else:
+    MLXArray: Any  # type: ignore[no-redef]
 
-    if HAS_TORCH:
-        try:
-            import torch as _torch  # noqa: F401
+if HAS_TORCH:
+    try:
+        import torch as _torch  # noqa: F401
 
-            TTensor = _torch.Tensor
-        except Exception:
-            TTensor: Any  # type: ignore[no-redef]
-    else:
+        TTensor = _torch.Tensor
+    except Exception:
         TTensor: Any  # type: ignore[no-redef]
+else:
+    TTensor: Any  # type: ignore[no-redef]
 
 # TYPE_CHECKING imports for type hints only
 if HAS_MLX:

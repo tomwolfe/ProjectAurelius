@@ -132,7 +132,7 @@ def bridge_mlx_to_pytorch(mlx_array: _MlxArrayLike) -> _TorchTensorLike:
     # DLpack bridges MLX to PyTorch on CPU/Unified Memory.
     # Callers must explicitly call .to('mps') if Metal buffer allocation
     # is required, which will incur a deep copy.
-    return torch_tensor  # type: ignore[return-value]
+    return torch_tensor  # type: ignore[return-value, no-any-return]
 
 
 def bridge_pytorch_to_mlx(torch_tensor: _TorchTensorLike) -> _MlxArrayLike:
