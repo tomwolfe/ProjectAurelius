@@ -62,6 +62,7 @@ class AureliusPipeline:
         self._gcmtwin: GCMDigitalTwin | None = None
         self._scoring_engine: AureliusScoringEngine | None = None
         self._solvation_engine: MWSESolvationEngine | None = None
+        self._use_real_models = use_real_models
         self.has_mlx = HAS_MLX
         self.has_torch = HAS_TORCH
 
@@ -71,7 +72,7 @@ class AureliusPipeline:
         # Enforce RDKit availability for real model paths
         try:
             import rdkit  # noqa: F401
-        except ImportError as err:
+        except ImportError:
             raise RuntimeError(
                 "RDKit is required for pipeline initialization. "
                 "Install with: pip install rdkit"
@@ -98,20 +99,20 @@ class AureliusPipeline:
         )
 
         # Phase 3: Screening tiers
-        if self.config.tier1_mlxfilter_enabled:
+        if self._use_real_models and self.config.tier1_mlxfilter_enabled:
             self._mlx_filter = MLXNAFilter(
                 quantization_format=self.config.chemvlm_quantization,
             )
             print("[Aurelius v5.2] Tier 1 (MLX-NA): ENABLED [REAL]")
 
-        if self.config.tier2_mattersim_enabled:
+        if self._use_real_models and self.config.tier2_mattersim_enabled:
             self._mattersim_sim = MatterSimMTSimulator(
                 barrier_threshold_eV=self.config.desolvation_barrier_threshold_eV,
             )
             device = self._mattersim_sim._select_device() if self._mattersim_sim else "cpu"
             print(f"[Aurelius v5.2] Tier 2 (MatterSim-MT): ENABLED (device={device})")
 
-        if self.config.tier3_gcmtwin_enabled:
+        if self._use_real_models and self.config.tier3_gcmtwin_enabled:
             self._gcmtwin = GCMDigitalTwin(
                 gcmtwin_config=GCMDTConfig(
                     max_simulation_steps=self.config.turquant_max_context,
