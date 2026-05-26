@@ -56,6 +56,9 @@ jobs:
       - name: Install rdkit
         run: pip install rdkit
 
+      - name: Install PyTorch and MLX for physics validation
+        run: pip install torch torchvision mlx
+
       - name: Run physics validation
         run: python scripts/validate_physics.py
 
@@ -140,6 +143,9 @@ jobs:
 
       - name: Install rdkit
         run: pip install rdkit
+
+      - name: Install PyTorch and MLX for physics validation
+        run: pip install torch torchvision mlx
 
       - name: Run physics validation
         run: python scripts/validate_physics.py
