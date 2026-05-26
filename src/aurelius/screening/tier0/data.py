@@ -528,7 +528,7 @@ class MockDFTOracle:
             smiles_list: List of SMILES strings.
             energies: List of activation energies in eV.
         """
-        for smi, e in zip(smiles_list, energies):
+        for smi, e in zip(smiles_list, energies, strict=False):
             self._dataset.append({"smiles": smi, "energy": e})
             self._cache[smi] = e
 
@@ -543,7 +543,7 @@ class MockDFTOracle:
             List of entries added to the dataset.
         """
         entries: list[dict[str, Any]] = []
-        for smi, e in zip(smiles_list, energies):
+        for smi, e in zip(smiles_list, energies, strict=False):
             entry = {"smiles": smi, "ec_reduction": e}
             self._dataset.append(entry)
             self._cache[smi] = e

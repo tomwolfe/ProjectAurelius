@@ -366,4 +366,4 @@ __all__ = [
 
 
 # Re-export dependency flags for backward compatibility
-from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
+
