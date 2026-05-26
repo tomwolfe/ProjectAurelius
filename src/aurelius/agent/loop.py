@@ -13,6 +13,8 @@ import logging
 import time
 from typing import Any
 
+from aurelius.agent.state import ConvergenceChecker, FeedbackAdapter
+
 log = logging.getLogger(__name__)
 
 
@@ -60,8 +62,8 @@ class DiscoveryLoop:
         self.total_invalid = 0
         self.all_results: list[dict[str, Any]] = []
         self.discoveries: list[dict[str, Any]] = []
-        self.convergence = _ConvergenceTracker()
-        self.feedback = _FeedbackAdapter()
+        self.convergence = ConvergenceChecker()
+        self.feedback = FeedbackAdapter()
         self.screened_smiles: set[str] = set()
 
     # ------------------------------------------------------------------
@@ -259,136 +261,4 @@ class DiscoveryLoop:
         return result if result is not None else None
 
 
-# ------------------------------------------------------------------
-# Lightweight convergence & feedback helpers (internal to loop.py)
-# ------------------------------------------------------------------
 
-class _ConvergenceTracker:
-    """Tracks convergence metrics across generations."""
-
-    def __init__(self) -> None:
-        self.all_scores: list[float] = []
-        self.batch_scores: list[list[float]] = []
-        self.viability_rates: list[float] = []
-        self.new_clusters_per_batch: list[int] = []
-        self.viable_count = 0
-        self.total_screened = 0
-        self.generations = 0
-
-    def record_batch(
-        self,
-        scores: list[float],
-        viable_count: int,
-        new_clusters: int,
-    ) -> None:
-        self.all_scores.extend(scores)
-        self.batch_scores.append(scores)
-        self.total_screened += len(scores)
-        self.viable_count += viable_count
-        self.generations += 1
-        viable_in_batch = sum(1 for s in scores if s >= 65.0)
-        self.viability_rates.append(viable_in_batch / max(len(scores), 1))
-        self.new_clusters_per_batch.append(new_clusters)
-
-    def should_terminate(self) -> tuple[bool, str]:
-        """Determine if the loop should terminate.
-
-        Returns:
-            (should_terminate, reason) tuple.
-        """
-        if self.viable_count < 150 and self.total_screened < 300:
-            return False, "Volume threshold not met"
-        plateau = self._check_plateau()
-        pass_collapsed = self._check_pass_rate_collapsed()
-        saturation = self._check_saturation()
-        if plateau and pass_collapsed and saturation:
-            return True, "All convergence criteria met"
-        reasons = []
-        if not plateau:
-            reasons.append("score plateau")
-        if not pass_collapsed:
-            reasons.append("pass rate not collapsed")
-        if not saturation:
-            reasons.append("structural saturation")
-        return False, f"Volume met but not all criteria: {', '.join(reasons)}"
-
-    def _check_plateau(self) -> bool:
-        rolling = self._rolling_mean()
-        if len(rolling) < 3:
-            return False
-        last = rolling[-3:]
-        for i in range(1, 3):
-            ref = last[i - 1]
-            if ref == 0:
-                return False
-            change = abs(last[i] - ref) / abs(ref)
-            if change >= 0.01:
-                return False
-        return True
-
-    def _check_pass_rate_collapsed(self) -> bool:
-        if len(self.viability_rates) < 2:
-            return False
-        return (
-            self.viability_rates[-1] < 0.03
-            and self.viability_rates[-2] < 0.03
-        )
-
-    def _check_saturation(self) -> bool:
-        if len(self.new_clusters_per_batch) < 2:
-            return False
-        return (
-            self.new_clusters_per_batch[-1] < 3
-            and self.new_clusters_per_batch[-2] < 3
-        )
-
-    def _rolling_mean(self, window: int = 50) -> list[float]:
-        if len(self.all_scores) < window:
-            return []
-        n = len(self.all_scores) // window
-        return [
-            sum(self.all_scores[i * window : (i + 1) * window]) / window
-            for i in range(n)
-        ]
-
-
-class _FeedbackAdapter:
-    """Tracks rejection patterns and returns adaptation strategy."""
-
-    def __init__(self) -> None:
-        self.tier1_fails = 0
-        self.tier2_fails = 0
-        self.tier3_low_homogeneity = 0
-        self.total_screened = 0
-
-    def record(self, result: dict[str, Any]) -> None:
-        score = result.get("score")
-        if score is None:
-            return
-        self.total_screened += 1
-        if not score.tier1_viable:
-            self.tier1_fails += 1
-        if not score.tier2_viable:
-            self.tier2_fails += 1
-        if score.tier3_viable and score.sei_homogeneity_score < 50.0:
-            self.tier3_low_homogeneity += 1
-
-    def get_adaptation_strategy(self) -> dict[str, Any]:
-        t1_rate = self.tier1_fails / max(self.total_screened, 1)
-        t2_rate = self.tier2_fails / max(self.total_screened, 1)
-        t3_rate = self.tier3_low_homogeneity / max(self.total_screened, 1)
-        strategy: dict[str, Any] = {
-            "total_screened": self.total_screened,
-            "tier1_fail_rate": t1_rate,
-            "tier2_fail_rate": t2_rate,
-            "tier3_low_homogeneity_rate": t3_rate,
-        }
-        if t1_rate > 0.5:
-            strategy["recommendation"] = "Prioritize MW reduction and polar group addition"
-        elif t2_rate > 0.5:
-            strategy["recommendation"] = "Reduce steric bulk, focus on small molecules"
-        elif t3_rate > 0.5:
-            strategy["recommendation"] = "Add unsaturation and boron-containing groups"
-        else:
-            strategy["recommendation"] = "Continue current mutation strategy"
-        return strategy

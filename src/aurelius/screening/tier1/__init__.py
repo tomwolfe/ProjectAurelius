@@ -11,8 +11,8 @@ from aurelius.screening.tier1.filter import (
     HAS_RDKIT,
     HAS_TORCH,
     MLXNAFilter,
-    _generate_ecfp4_fingerprint,
 )
+from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
 from aurelius.screening.tier1.loaders import (
     DEFAULT_MODEL_DIR,
     HUGGINGFACE_MODELS,
@@ -41,6 +41,7 @@ __all__ = [
     "MLXBackend",
     "model_factory",
     "PyTorchBackend",
+    "generate_ecfp4_fingerprint",
     "_generate_ecfp4_fingerprint",
     "convert_mlx_to_torch_weights",
     "load_pytorch_fallback_with_mlx_weights",

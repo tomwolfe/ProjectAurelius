@@ -13,6 +13,8 @@ from aurelius.utils.chem_utils import (
     _safe_mol_from_smiles,
     _serialize_fp,
     _tanimoto,
+    generate_ecfp4_fingerprint,
+    generate_molecular_descriptors,
 )
 from aurelius.utils.dependencies import (
     HAS_MLX,
@@ -21,13 +23,13 @@ from aurelius.utils.dependencies import (
     report_status,
     routing_info,
 )
-from aurelius.utils.descriptors import generate_molecular_descriptors
 
 __all__ = [
     "HAS_MLX",
     "HAS_RDKIT",
     "HAS_TORCH",
     "_deserialize_fp",
+    "generate_ecfp4_fingerprint",
     "generate_molecular_descriptors",
     "_is_valid_mol",
     "_mol_to_fp",

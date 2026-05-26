@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from aurelius.screening.physics.simulator import MatterSimMTSimulator
+from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
 from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin
 from aurelius.utils.dependencies import HAS_TORCH
 

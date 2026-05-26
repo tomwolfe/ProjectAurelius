@@ -38,6 +38,7 @@ from aurelius.screening.tier1.training import (
     train_on_esol,
 )
 from aurelius.types import MLXFilterResult
+from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
 from aurelius.utils.dependencies import HAS_RDKIT
 
 logger = logging.getLogger(__name__)
@@ -315,45 +316,8 @@ class MLXNAFilter:
         return {"is_viable": is_viable, "confidence": confidence}
 
 
-def _generate_ecfp4_fingerprint(smiles: str, ) -> np.ndarray[Any, Any]:
-    """Generate a 2048-bit ECFP4 (Morgan radius=2) fingerprint from SMILES.
-
-    Uses RDKit's GetMorganFingerprintAsBitVect for production-grade
-    fingerprints. Raises RuntimeError when RDKit is unavailable.
-
-    Args:
-        smiles: SMILES string of the molecule.
-
-    Returns:
-        numpy float32 array of shape (2048,) with values 0.0 or 1.0.
-
-    Raises:
-        RuntimeError: If RDKit is unavailable.
-    """
-    if not HAS_RDKIT:
-        raise RuntimeError(
-            "RDKit is required for molecular fingerprint generation. "
-            "Install RDKit for chemically meaningful screening:\n"
-            "  pip install rdkit\n"
-
-        )
-
-    from rdkit import Chem as _Chem
-    from rdkit.Chem import AllChem as _AllChem
-
-    mol = _Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise RuntimeError(
-            f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
-        )
-    fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-    bit_list = fp.ToList()
-    arr = np.array(bit_list, dtype=np.float32)
-    if len(arr) < 2048:
-        padded = np.zeros(2048, dtype=np.float32)
-        padded[: len(arr)] = arr
-        return padded
-    return arr[:2048]
+# Re-exported from chem_utils for backward compatibility
+_generate_ecfp4_fingerprint = generate_ecfp4_fingerprint
 
 
 __all__ = [

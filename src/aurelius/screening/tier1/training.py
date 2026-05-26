@@ -36,9 +36,9 @@ if HAS_TORCH:
 
 def _get_fingerprint_fn() -> Any:
     """Lazily import fingerprint generation to avoid circular imports."""
-    from aurelius.screening.tier1.filter import _generate_ecfp4_fingerprint
+    from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
 
-    return _generate_ecfp4_fingerprint
+    return generate_ecfp4_fingerprint
 
 
 def _generate_synthetic_training_data() -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], list[str]]:

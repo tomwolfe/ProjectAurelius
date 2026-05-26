@@ -75,6 +75,84 @@ def _is_valid_mol(mol: Any) -> bool:
     return bool(mw < 450.0)  # type: ignore[no-any-return]
 
 
+def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray[Any, Any]:
+    """Generate a 2048-bit ECFP4 (Morgan radius=2) fingerprint from SMILES.
+
+    Uses RDKit's GetMorganFingerprintAsBitVect for production-grade
+    fingerprints. Raises RuntimeError when RDKit is unavailable.
+
+    Args:
+        smiles: SMILES string of the molecule.
+        n_bits: Fingerprint size (default 2048).
+
+    Returns:
+        numpy float32 array of shape (n_bits,) with values 0.0 or 1.0.
+
+    Raises:
+        RuntimeError: If RDKit is unavailable or SMILES is invalid.
+    """
+    from rdkit import Chem as _Chem
+    from rdkit.Chem import AllChem as _AllChem
+
+    mol = _Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise RuntimeError(
+            f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
+        )
+    fp = _AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=n_bits)  # type: ignore[union-attr]
+    bit_list = fp.ToList()
+    arr = np.array(bit_list, dtype=np.float32)
+    if len(arr) < n_bits:
+        padded = np.zeros(n_bits, dtype=np.float32)
+        padded[: len(arr)] = arr
+        return padded
+    return arr[:n_bits]
+
+
+def generate_molecular_descriptors(smiles: str) -> dict[str, float]:
+    """Generate simple molecular descriptors from SMILES for Tier 0 prediction.
+
+    Produces a minimal feature vector encoding structural properties
+    relevant to SEI formation activation energies. When RDKit is
+    available, uses real descriptors; raises RuntimeError when RDKit
+    is unavailable.
+
+    Args:
+        smiles: SMILES string of the molecule.
+
+    Returns:
+        Dictionary of descriptor name -> value.
+
+    Raises:
+        RuntimeError: When RDKit is unavailable.
+    """
+    from rdkit import Chem as _Chem
+    from rdkit.Chem import Descriptors as _Descriptors
+
+    mol = _Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise RuntimeError(
+            f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
+        )
+    if not HAS_RDKIT:
+        raise RuntimeError(
+            "RDKit is required for molecular descriptor generation. "
+            "Install RDKit: pip install rdkit"
+        )
+
+    try:
+        return {
+            "mol_weight": float(_Descriptors.ExactMolWt(mol)),
+            "num_h_donors": int(mol.GetNumHDonors()),  # type: ignore[union-attr]
+            "num_h_acceptors": int(mol.GetNumHAcceptors()),  # type: ignore[union-attr]
+            "num_rotatable_bonds": int(mol.GetNumRotatableBonds()),  # type: ignore[union-attr]
+            "logp": float(_Descriptors.MolLogP(mol)),  # type: ignore[union-attr]
+            "tpsa": float(_Descriptors.TPSA(mol)),  # type: ignore[union-attr]
+        }
+    except Exception as e:
+        raise RuntimeError(f"Descriptor generation failed: {e}") from e
+
+
 def _mol_to_fp(mol: Any) -> Any:
     """Compute ECFP4 (radius=2) fingerprint using Morgan generator.
 
