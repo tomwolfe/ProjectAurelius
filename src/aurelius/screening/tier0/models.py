@@ -340,7 +340,7 @@ if not HAS_TORCH:
     class PyTorchBackendUnavailableError(RuntimeError):
         """Raised when PyTorch is not available."""
 
-    class PyTorchBackend:
+    class PyTorchBackend:  # type: ignore[no-redef]
         """Fallback: PyTorch backend unavailable."""
 
         def __init__(

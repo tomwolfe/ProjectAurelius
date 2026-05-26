@@ -245,7 +245,7 @@ if HAS_TORCH:
     import torch.nn as _torch_nn  # type: ignore[import-not-found, unused-ignore]
     from torch import Tensor as TTensor
 
-    class PyTorchBackend:
+    class PyTorchBackend:  # type: ignore[no-redef]
         """PyTorch-based MLP replicating the ChemVLM2MLP architecture.
 
         Provides a 2-layer MLP (2048->128->1) using torch.nn when MLX is
@@ -336,6 +336,46 @@ if HAS_TORCH:
                 weights_only=True,
             )
             self.load_state_dict(state_dict)  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Fallback when PyTorch is unavailable
+# ---------------------------------------------------------------------------
+
+else:
+
+    class PyTorchBackend:  # type: ignore[no-redef]
+        """Fallback: PyTorch backend unavailable."""
+
+        def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
+            raise ImportError(
+                "PyTorchBackend requires torch. Install PyTorch: pip install torch"
+            )
+
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            raise ImportError(
+                "PyTorchBackend requires torch. Install PyTorch: pip install torch"
+            )
+
+        def predict(self, x: Any) -> Any:
+            raise ImportError(
+                "PyTorchBackend requires torch. Install PyTorch: pip install torch"
+            )
+
+        def parameters(self) -> list[Any]:
+            raise ImportError(
+                "PyTorchBackend requires torch. Install PyTorch: pip install torch"
+            )
+
+        def save_weights(self, path: str) -> None:
+            raise ImportError(
+                "PyTorchBackend requires torch. Install PyTorch: pip install torch"
+            )
+
+        def load_weights(self, path: str) -> None:
+            raise ImportError(
+                "PyTorchBackend requires torch. Install PyTorch: pip install torch"
+            )
 
 
 # ---------------------------------------------------------------------------
