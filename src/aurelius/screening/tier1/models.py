@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import os
 from importlib import resources
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 
@@ -26,8 +26,8 @@ from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 # Type aliases for model tensor types
 # ---------------------------------------------------------------------------
 
-MLXArray: Any  # type: ignore[misc]
-TTensor: Any  # type: ignore[misc]
+MLXArray: Any  # type: ignore[misc, unused-call, unreachable]  # noqa: F821
+TTensor: Any  # type: ignore[misc, unused-call, unreachable]  # noqa: F821
 
 __all__ = [
     "DEFAULT_MODEL_DIR",
@@ -73,11 +73,11 @@ class ModelBackend(Protocol):
     - load_weights: Load model weights from disk
     """
 
-    def __call__(self, x: MLXArray) -> MLXArray: ...
+    def __call__(self, x: MLXArray) -> MLXArray: ...  # noqa: F821
 
-    def parameters(self) -> list[MLXArray]: ...
+    def parameters(self) -> list[MLXArray]: ...  # noqa: F821
 
-    def predict(self, x: MLXArray) -> MLXArray: ...
+    def predict(self, x: MLXArray) -> MLXArray: ...  # noqa: F821
 
     def save_weights(self, path: str) -> None: ...
 
@@ -137,14 +137,14 @@ if HAS_MLX:
             )
             self.linear2.bias = _mlx_core.zeros((1,))
 
-        def __call__(self, x: MLXArray) -> MLXArray:
+        def __call__(self, x: MLXArray) -> MLXArray:  # noqa: F821
             """Forward pass through the 2-layer MLP."""
             h = self.linear1(x)
             h = self.relu(h)
             out = self.linear2(h)
             return _mlx_nn.sigmoid(out)  # type: ignore[no-any-return, attr-defined]
 
-        def predict(self, x: MLXArray) -> MLXArray:
+        def predict(self, x: MLXArray) -> MLXArray:  # noqa: F821
             """Run inference and return viability score.
 
             Args:
@@ -155,7 +155,7 @@ if HAS_MLX:
             """
             return self(x)
 
-        def parameters(self) -> list[MLXArray]:
+        def parameters(self) -> list[MLXArray]:  # noqa: F821
             return [self.linear1.weight, self.linear1.bias, self.linear2.weight, self.linear2.bias]
 
         def save_weights(self, path: str) -> None:
@@ -255,14 +255,14 @@ if HAS_TORCH:
             _torch_nn.init.xavier_uniform_(self.fc2.weight)
             _torch_nn.init.zeros_(self.fc2.bias)
 
-        def __call__(self, x: TTensor) -> TTensor:
+        def __call__(self, x: TTensor) -> TTensor:  # noqa: F821
             """Forward pass through the 2-layer MLP."""
             h = self.fc1(x)
             h = self.relu(h)
             out = self.fc2(h)
             return _torch.sigmoid(out)
 
-        def predict(self, x: TTensor) -> TTensor:
+        def predict(self, x: TTensor) -> TTensor:  # noqa: F821
             """Run inference and return viability score.
 
             Args:
@@ -273,7 +273,7 @@ if HAS_TORCH:
             """
             return self(x)
 
-        def parameters(self) -> list[TTensor]:
+        def parameters(self) -> list[TTensor]:  # noqa: F821
             return [self.fc1.weight, self.fc1.bias, self.fc2.weight, self.fc2.bias]
 
         def save_weights(self, path: str) -> None:
