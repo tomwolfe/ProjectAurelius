@@ -30,7 +30,7 @@ from typing import Any
 
 import numpy as np
 
-from aurelius.utils.dependencies import HAS_DATASETS, HAS_MLX, HAS_RDKIT, HAS_TORCH
+from aurelius.utils.dependencies import HAS_DATASETS, HAS_RDKIT
 
 
 def parse_args() -> argparse.Namespace:
@@ -379,10 +379,6 @@ def train_mlx(
     Returns:
         Dictionary with trained weights and training history.
     """
-    if not HAS_MLX:
-        print("[train_tier1] MLX not available, falling back to numpy training")
-        return train_numpy(X_train, y_train, X_val, y_val, epochs, lr, batch_size, seed)
-
     import mlx.core as mx
     import mlx.nn as nn
 
