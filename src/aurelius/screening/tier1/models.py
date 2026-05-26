@@ -26,20 +26,8 @@ from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 # Type aliases for model tensor types
 # ---------------------------------------------------------------------------
 
-if TYPE_CHECKING:
-    try:
-        import mlx.core as _mlx_core  # noqa: F401
-
-        MLXArray = _mlx_core.array
-    except Exception:
-        MLXArray: Any  # type: ignore[no-redef]
-
-    try:
-        import torch as _torch  # noqa: F401
-
-        TTensor = _torch.Tensor
-    except Exception:
-        TTensor: Any  # type: ignore[no-redef]
+MLXArray: Any  # type: ignore[misc]
+TTensor: Any  # type: ignore[misc]
 
 __all__ = [
     "DEFAULT_MODEL_DIR",
