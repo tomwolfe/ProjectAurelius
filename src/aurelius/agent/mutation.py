@@ -324,7 +324,7 @@ class GraphVAEMutator:
 
         latent_dim = 64
         n_samples = batch_size
-        latent_samples = rng.randn(n_samples, latent_dim) * 0.1
+        _latent_samples = rng.randn(n_samples, latent_dim) * 0.1
 
         candidates: list[str] = []
         for _ in range(min(n_samples, 10)):

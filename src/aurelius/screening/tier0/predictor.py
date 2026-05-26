@@ -7,7 +7,6 @@ for molecule-specific activation energies.
 from __future__ import annotations
 
 import os
-from typing import Any
 
 from aurelius.screening.tier0.data import (
     _build_molecular_graph,
