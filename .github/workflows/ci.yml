@@ -53,6 +53,9 @@ jobs:
       - name: Run pytest
         run: pytest tests/ -v
 
+      - name: Install rdkit
+        run: pip install rdkit
+
       - name: Run physics validation
         run: python scripts/validate_physics.py
 
@@ -134,6 +137,9 @@ jobs:
 
       - name: Run pytest
         run: pytest tests/ -v --tb=short
+
+      - name: Install rdkit
+        run: pip install rdkit
 
       - name: Run physics validation
         run: python scripts/validate_physics.py

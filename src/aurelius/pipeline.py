@@ -71,11 +71,11 @@ class AureliusPipeline:
         # Enforce RDKit availability for real model paths
         try:
             import rdkit  # noqa: F401
-        except ImportError:
+        except ImportError as err:
             raise RuntimeError(
                 "RDKit is required for pipeline initialization. "
                 "Install with: pip install rdkit"
-            )
+            ) from None
 
         print("\n" + "=" * 60)
         print("  PROJECT AURELIUS v7.0 - Pipeline Initialization")
