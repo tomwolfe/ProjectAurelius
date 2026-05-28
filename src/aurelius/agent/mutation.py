@@ -130,7 +130,7 @@ class MutationEngine:
             mol_h = Chem.AddHs(mol)
             c_atoms = [
                 atom.GetIdx()
-                for atom in mol_h.GetAtoms()
+                for atom in mol_h.GetAtoms()  # type: ignore[no-untyped-call]
                 if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4  # type: ignore[no-untyped-call]
             ]
             if not c_atoms:
@@ -165,7 +165,7 @@ class MutationEngine:
             mol_h = Chem.AddHs(mol)
             c_atoms = [
                 atom.GetIdx()
-                for atom in mol_h.GetAtoms()
+                for atom in mol_h.GetAtoms()  # type: ignore[no-untyped-call]
                 if atom.GetAtomicNum() == 6 and atom.GetTotalDegree() < 4  # type: ignore[no-untyped-call]
             ]
             if not c_atoms:
@@ -257,42 +257,3 @@ class MutationEngine:
             variants = self.mutate(smi, batch_size)
             all_variants.extend(variants)
         return list(set(all_variants))
-
-
-class GraphVAEMutator:
-    """Graph Variational Autoencoder mutation engine.
-
-    Uses a VAE-encoded latent space to generate chemically valid
-    molecular variants.
-
-    Raises:
-        NotImplementedError: VAE weight loading is not implemented.
-            The VAE path is not currently supported; use MutationEngine
-            for rule-based mutations instead.
-    """
-
-    def __init__(self, seed_smiles: list[str], vae_model_path: str | None = None) -> None:
-        """Initialize the GraphVAEMutator.
-
-        Args:
-            seed_smiles: List of seed SMILES strings.
-            vae_model_path: Optional path to VAE model weights.
-                Not currently supported; raises NotImplementedError.
-        """
-        raise NotImplementedError("GraphVAEMutator is not implemented. Use MutationEngine for rule-based mutations.")
-
-    def mutate(self, smiles: str, batch_size: int = 50) -> list[str]:
-        """Generate mutated variants using VAE latent space traversal.
-
-        Raises:
-            NotImplementedError: Always raised; VAE path is not supported.
-        """
-        raise NotImplementedError("GraphVAEMutator is not implemented. Use MutationEngine for rule-based mutations.")
-
-    def mutate_batch(self, batch_smiles: list[str], batch_size: int = 50) -> list[str]:
-        """Mutate a batch of seed molecules using VAE latent traversal.
-
-        Raises:
-            NotImplementedError: Always raised; VAE path is not supported.
-        """
-        raise NotImplementedError("GraphVAEMutator is not implemented. Use MutationEngine for rule-based mutations.")

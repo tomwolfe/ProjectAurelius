@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 
-from aurelius.constants import COULOMB_EV_A
+from aurelius.constants import COULOMB_EV_A, DEFAULT_LJ_CUTOFF, MAX_ATOMIC_NUMBER
 from aurelius.types import DesolvationPathResult, Tier2Result
 from aurelius.utils.dependencies import HAS_TORCH
 
@@ -413,7 +413,7 @@ class MatterSimMTSimulator:
         # Default LJ parameters for unknown pairs
         self._default_eps = params.get("lennard_jones", {}).get("default_epsilon", 0.02)
         self._default_sig = params.get("lennard_jones", {}).get("default_sigma", 2.5)
-        self._cutoff = params.get("lennard_jones", {}).get("cutoff_angstrom", 12.0)
+        self._cutoff = params.get("lennard_jones", {}).get("cutoff_angstrom", DEFAULT_LJ_CUTOFF)
         self._cutoff_mask_start = params.get("lennard_jones", {}).get("switching_start_angstrom", 10.0)
 
         # Fallback Gaussian parameters
@@ -439,12 +439,12 @@ class MatterSimMTSimulator:
         device: str = "cpu",
     ) -> torch.Tensor:
         if not HAS_TORCH:
-            size = 119
+            size = MAX_ATOMIC_NUMBER
             matrix = np.zeros((size, size), dtype=np.float32)
             for (zi, zj), (eps, _sig) in params.items():
                 matrix[zi][zj] = eps
             return matrix  # type: ignore[return-value, arg-type]
-        size = 119  # Maximum atomic number in periodic table
+        size = MAX_ATOMIC_NUMBER  # Maximum atomic number in periodic table
         matrix = torch.zeros(size, size, dtype=torch.float32, device=device)  # type: ignore[assignment]
         for (zi, zj), (eps, _sig) in params.items():
             matrix[zi][zj] = eps
@@ -465,12 +465,12 @@ class MatterSimMTSimulator:
             Precomputed charge values indexed by atomic number.
         """
         if not HAS_TORCH:
-            size = 119
+            size = MAX_ATOMIC_NUMBER
             vector = np.zeros(size, dtype=np.float32)
             for z, q in charges.items():
                 vector[z] = q
             return vector  # type: ignore[return-value]
-        size = 119  # Maximum atomic number in periodic table
+        size = MAX_ATOMIC_NUMBER  # Maximum atomic number in periodic table
         vector = torch.zeros(size, dtype=torch.float32, device=device)  # type: ignore[assignment]
         for z, q in charges.items():
             vector[z] = q

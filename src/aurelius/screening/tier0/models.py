@@ -131,7 +131,7 @@ if HAS_TORCH:
             n_nodes = node_features.shape[0]
 
             if n_nodes == 0:
-                return torch.zeros(
+                return torch.zeros(  # type: ignore[call-overload, arg-type]
                     self.readout.network[-1].out_features,
                     device=node_features.device,
                 )
@@ -154,9 +154,6 @@ if HAS_TORCH:
 
             pooled = h.sum(dim=0)
             return self.readout(pooled)
-
-        def parameters(self) -> list[Any]:
-            return list(self.modules())
 
         def save_weights(self, path: str) -> None:
             torch.save(self.state_dict(), path)
@@ -283,9 +280,6 @@ if HAS_TORCH:
 
             return self.norm(node_features + node_updates)
 
-        def parameters(self) -> list[Any]:
-            return list(self.modules())
-
     class _MPNNReadoutMLPBackend(torch_nn.Module):
         """Readout MLP for MPNN (PyTorch backend)."""
 
@@ -313,9 +307,6 @@ if HAS_TORCH:
             if pooled.dim() == 1:
                 return self.network(pooled)
             return self.network(pooled)
-
-        def parameters(self) -> list[Any]:
-            return list(self.modules())
 
 
 def model_factory() -> PyTorchBackend:

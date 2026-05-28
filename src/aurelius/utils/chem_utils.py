@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 
+from aurelius.constants import FINGERPRINT_SIZE
 from aurelius.utils.dependencies import HAS_RDKIT
 
 # ---------------------------------------------------------------------------
@@ -77,7 +78,7 @@ def _is_valid_mol(mol: Any) -> bool:
     return bool(mw < 450.0)  # type: ignore[no-any-return]
 
 
-def generate_ecfp4_fingerprint(smiles: str, n_bits: int = 2048) -> np.ndarray[Any, Any]:
+def generate_ecfp4_fingerprint(smiles: str, n_bits: int = FINGERPRINT_SIZE) -> np.ndarray[Any, Any]:
     """Generate a 2048-bit ECFP4 (Morgan radius=2) fingerprint from SMILES.
 
     Uses RDKit's GetMorganFingerprintAsBitVect for production-grade

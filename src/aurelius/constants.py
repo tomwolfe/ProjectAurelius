@@ -11,6 +11,9 @@ Constants:
         rate constant calculations for kMC simulations.
     BOLTZMANN_J_K: Boltzmann constant in J/K (SI units).
     AVOGADRO: Avogadro's number, used for molar energy conversions.
+    FINGERPRINT_SIZE: Default ECFP4 fingerprint bit size.
+    MAX_ATOMIC_NUMBER: Maximum atomic number in the periodic table.
+    DEFAULT_LJ_CUTOFF: Default Lennard-Jones cutoff distance in Angstroms.
 """
 
 from __future__ import annotations
@@ -25,3 +28,8 @@ BOLTZMANN_J_K: float = 1.380649e-23  # J/K
 
 # Avogadro's number
 AVOGADRO: float = 6.02214076e23
+
+# ML / chemistry constants
+FINGERPRINT_SIZE: int = 2048
+MAX_ATOMIC_NUMBER: int = 119
+DEFAULT_LJ_CUTOFF: float = 12.0

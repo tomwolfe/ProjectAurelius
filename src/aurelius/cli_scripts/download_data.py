@@ -260,7 +260,7 @@ def load_esol_data(csv_path: str | None = None) -> tuple[Any, Any, list[str]]:
         traceback.print_exc()
         if csv_path:
             return _load_esol_from_csv(csv_path)
-        warnings.warn(
+        warnings.warn(  # type: ignore[call-overload]
             "[download_data] FALLBACK: Using embedded 50-molecule ESOL subset due to error: "
             "%s: %s. "
             "This is a small curated subset from Delaney 2004, NOT the full 1112-molecule dataset. "

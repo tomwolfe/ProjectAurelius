@@ -224,21 +224,23 @@ class TestRDKitErrors:
 
     def test_rdkit_error_includes_install_commands(self):
         """Verify RDKit error includes pip install guidance."""
-        import pathlib
+        from aurelius.utils.dependencies import check_framework
 
-        main_file = pathlib.Path(__file__).resolve().parent.parent / "src" / "aurelius" / "__main__.py"
-        source = main_file.read_text()
+        result = check_framework("rdkit")
         # RDKit is now strictly enforced for real model screening
-        assert "RDKit" in source or "rdkit" in source.lower()
+        # The check_framework function should return info about RDKit availability
+        assert "available" in result
+        assert "min_version" in result
 
     def test_rdkit_error_is_comprehensive(self):
         """Verify RDKit error message is comprehensive with platform notes."""
-        import pathlib
+        from aurelius.utils.dependencies import check_framework
 
-        main_file = pathlib.Path(__file__).resolve().parent.parent / "src" / "aurelius" / "__main__.py"
-        source = main_file.read_text()
+        result = check_framework("rdkit")
         # RDKit is now strictly enforced - no fallback option
-        assert "RDKit" in source or "rdkit" in source.lower()
+        # The check_framework function should return comprehensive info
+        assert "available" in result
+        assert "min_version" in result
 
 
 # ============================================================
