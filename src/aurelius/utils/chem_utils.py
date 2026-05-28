@@ -143,9 +143,9 @@ def generate_molecular_descriptors(smiles: str) -> dict[str, float]:
     try:
         return {
             "mol_weight": float(_Descriptors.ExactMolWt(mol)),  # type: ignore[union-attr, attr-defined]
-            "num_h_donors": int(mol.GetNumHDonors()),  # type: ignore[union-attr, attr-defined]
-            "num_h_acceptors": int(mol.GetNumHAcceptors()),  # type: ignore[union-attr, attr-defined]
-            "num_rotatable_bonds": int(mol.GetNumRotatableBonds()),  # type: ignore[union-attr, attr-defined]
+            "num_h_donors": int(_Descriptors.NumHDonors(mol)),  # type: ignore[union-attr, attr-defined]
+            "num_h_acceptors": int(_Descriptors.NumHAcceptors(mol)),  # type: ignore[union-attr, attr-defined]
+            "num_rotatable_bonds": int(_Descriptors.NumRotatableBonds(mol)),  # type: ignore[union-attr, attr-defined]
             "logp": float(_Descriptors.MolLogP(mol)),  # type: ignore[union-attr, attr-defined]
             "tpsa": float(_Descriptors.TPSA(mol)),  # type: ignore[union-attr, attr-defined]
         }
