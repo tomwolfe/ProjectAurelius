@@ -54,37 +54,12 @@ models/
 *.npy
 
 # Local data files used for training
-esol.csv
-
-# Batch screening output
-discovery_results.json
-*_results.json
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Autonomous screening agent runtime outputs
-discovery_candidates.smi
-errors.log
-agent_state.json
-agent_state.json.tmp
-agent_discovery_manifest.json
-discovery_results_final.json
-top_discoveries.smi
-screening_statistics.md
-chemical_insights.md
-mutation_rationale.md
-candidates_batch_*.smi
-
-# Memory profiling output
-memory_profile_*.csv
-
-# Synthetic training data
 data/
 !src/aurelius/data/force_field_params.json
 !src/aurelius/data/__init__.py
 !src/aurelius/data/esol_fallback.csv
+!src/aurelius/data/synthetic_training_data.csv
+!src/aurelius/data/tier0_seed_smiles.json
 
 # Outputs and research archives
 outputs/
