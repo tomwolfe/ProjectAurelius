@@ -128,18 +128,16 @@ def generate_molecular_descriptors(smiles: str) -> dict[str, float]:
     Raises:
         RuntimeError: When RDKit is unavailable.
     """
-    from rdkit import Chem as _Chem
-    from rdkit.Chem import Descriptors as _Descriptors
-
-    mol = _Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise RuntimeError(
-            f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
-        )
     if not HAS_RDKIT:
         raise RuntimeError(
             "RDKit is required for molecular descriptor generation. "
             "Install RDKit: pip install rdkit"
+        )
+
+    mol = _safe_mol_from_smiles(smiles)
+    if mol is None:
+        raise RuntimeError(
+            f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
         )
 
     try:
