@@ -164,36 +164,38 @@ HAS_HF_HUB: bool = _HAS_HF_HUB
 HAS_DATASETS: bool = _HAS_DATASETS
 
 # ---------------------------------------------------------------------------
-# Module-level convenience functions (backward-compatible)
+# Private helper for framework availability checks
 # ---------------------------------------------------------------------------
 
+_VERSION_MAP: dict[str, str | None] = {
+    "mlx": _MLX_VERSION,
+    "torch": _TORCH_VERSION,
+    "rdkit": _RDKIT_VERSION,
+    "huggingface-hub": _HF_HUB_VERSION,
+    "datasets": _DATASETS_VERSION,
+}
 
-def check_framework(name: str) -> dict[str, Any]:
-    """Convenience function to check a single framework.
+_AVAILABILITY_MAP: dict[str, bool] = {
+    "mlx": _HAS_MLX,
+    "torch": _HAS_TORCH,
+    "rdkit": _HAS_RDKIT,
+    "huggingface-hub": _HAS_HF_HUB,
+    "datasets": _HAS_DATASETS,
+}
+
+
+def _get_framework_info(name: str) -> dict[str, Any]:
+    """Return availability, version, and minimum-version info for a framework.
 
     Args:
-        name: Framework name.
+        name: Framework name (e.g. ``"mlx"``, ``"torch"``).
 
     Returns:
-        Dict with availability and version info.
+        Dict with keys ``available``, ``version``, ``meets_minimum``,
+        and ``min_version``.
     """
-    version_map: dict[str, str | None] = {
-        "mlx": _MLX_VERSION,
-        "torch": _TORCH_VERSION,
-        "rdkit": _RDKIT_VERSION,
-        "huggingface-hub": _HF_HUB_VERSION,
-        "datasets": _DATASETS_VERSION,
-    }
-    availability_map: dict[str, bool] = {
-        "mlx": _HAS_MLX,
-        "torch": _HAS_TORCH,
-        "rdkit": _HAS_RDKIT,
-        "huggingface-hub": _HAS_HF_HUB,
-        "datasets": _HAS_DATASETS,
-    }
-
-    available = availability_map.get(name, False)
-    version = version_map.get(name)
+    available = _AVAILABILITY_MAP.get(name, False)
+    version = _VERSION_MAP.get(name)
     min_ver = _MIN_VERSIONS.get(name, "0.0.0")
     meets_minimum = False
     if available and version and version != "unknown":
@@ -215,6 +217,23 @@ def check_framework(name: str) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Module-level convenience functions (backward-compatible)
+# ---------------------------------------------------------------------------
+
+
+def check_framework(name: str) -> dict[str, Any]:
+    """Convenience function to check a single framework.
+
+    Args:
+        name: Framework name.
+
+    Returns:
+        Dict with availability and version info.
+    """
+    return _get_framework_info(name)
+
+
 def report_status() -> dict[str, dict[str, Any]]:
     """Report the status of all frameworks.
 
@@ -226,27 +245,11 @@ def report_status() -> dict[str, dict[str, Any]]:
     """
     status: dict[str, dict[str, Any]] = {}
     for name in _MIN_VERSIONS:
-        version_map = {
-            "mlx": _MLX_VERSION,
-            "torch": _TORCH_VERSION,
-            "rdkit": _RDKIT_VERSION,
-            "huggingface-hub": _HF_HUB_VERSION,
-            "datasets": _DATASETS_VERSION,
-        }
-        availability_map = {
-            "mlx": _HAS_MLX,
-            "torch": _HAS_TORCH,
-            "rdkit": _HAS_RDKIT,
-            "huggingface-hub": _HAS_HF_HUB,
-            "datasets": _HAS_DATASETS,
-        }
-
-        available = availability_map.get(name, False)
-        version = version_map.get(name)
-        min_ver = _MIN_VERSIONS.get(name, "0.0.0")
-        meets_minimum = False
-        if available and version and version != "unknown":
-            meets_minimum = _version_gte(version, min_ver)
+        info = _get_framework_info(name)
+        available = info["available"]
+        version = info["version"]
+        min_ver = info["min_version"]
+        meets_minimum = info["meets_minimum"]
 
         status[name] = {
             "available": available,
@@ -279,27 +282,9 @@ def routing_info() -> dict[str, str]:
     """
     routing: dict[str, str] = {}
     for name in _MIN_VERSIONS:
-        version_map = {
-            "mlx": _MLX_VERSION,
-            "torch": _TORCH_VERSION,
-            "rdkit": _RDKIT_VERSION,
-            "huggingface-hub": _HF_HUB_VERSION,
-            "datasets": _DATASETS_VERSION,
-        }
-        availability_map = {
-            "mlx": _HAS_MLX,
-            "torch": _HAS_TORCH,
-            "rdkit": _HAS_RDKIT,
-            "huggingface-hub": _HAS_HF_HUB,
-            "datasets": _HAS_DATASETS,
-        }
-
-        available = availability_map.get(name, False)
-        version = version_map.get(name)
-        min_ver = _MIN_VERSIONS.get(name, "0.0.0")
-        meets_minimum = False
-        if available and version and version != "unknown":
-            meets_minimum = _version_gte(version, min_ver)
+        info = _get_framework_info(name)
+        available = info["available"]
+        meets_minimum = info["meets_minimum"]
 
         if available and meets_minimum:
             routing[name] = "native"

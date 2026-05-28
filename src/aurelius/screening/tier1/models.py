@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import os
 from importlib import resources
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any
 
 from aurelius.constants import FINGERPRINT_SIZE
 from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
@@ -35,7 +35,7 @@ __all__ = [
     "HAS_TORCH",
     "MLXBackend",
     "PyTorchBackend",
-    "model_factory",
+    "HUGGINGFACE_MODELS",
 ]
 
 # ---------------------------------------------------------------------------
@@ -52,34 +52,6 @@ HUGGINGFACE_MODELS: dict[str, str] = {
     "esol_solubility": "aurelius/tier1-esol-mlp",
     "qm9_energy": "aurelius/tier1-qm9-mlp",
 }
-
-# ---------------------------------------------------------------------------
-# Protocol / Strategy Pattern
-# ---------------------------------------------------------------------------
-
-
-@runtime_checkable
-class ModelBackend(Protocol):
-    """Protocol defining the interface for all model backends.
-
-    All backends must implement:
-    - __call__: Forward pass returning a scalar or tensor
-    - parameters: Return model parameters as a list of arrays/tensors
-    - predict: Prediction method for inference
-    - save_weights: Save model weights to disk
-    - load_weights: Load model weights from disk
-    """
-
-    def __call__(self, x: Any) -> Any: ...
-
-    def parameters(self) -> list[Any]: ...
-
-    def predict(self, x: Any) -> Any: ...
-
-    def save_weights(self, path: str) -> None: ...
-
-    def load_weights(self, path: str) -> None: ...
-
 
 # ---------------------------------------------------------------------------
 # MLX Backend
@@ -315,31 +287,3 @@ if HAS_TORCH:
                 weights_only=True,
             )
             self.load_state_dict(state_dict)
-
-
-# ---------------------------------------------------------------------------
-# Factory
-# ---------------------------------------------------------------------------
-
-
-def model_factory() -> ModelBackend:
-    """Return the appropriate model backend based on framework availability.
-
-    Priority: MLX > PyTorch.
-
-    Returns:
-        An instance of the selected backend.
-
-    Raises:
-        ImportError: When neither MLX nor PyTorch is available.
-    """
-    if HAS_MLX:
-        return MLXBackend()
-    elif HAS_TORCH:
-        return PyTorchBackend()
-    else:
-        raise ImportError(
-            "At least one ML framework is required (MLX or PyTorch). "
-            "Install MLX: pip install mlx\n"
-            "Install PyTorch: pip install torch"
-        )

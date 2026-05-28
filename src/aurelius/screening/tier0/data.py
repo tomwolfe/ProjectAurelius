@@ -141,7 +141,7 @@ def load_qm9_lumo_data(
     from huggingface_hub import hf_hub_download
 
     # Download QM9 LUMO data from HuggingFace Hub
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(OSError, RuntimeError, ConnectionError):
         hf_hub_download(repo_id="qm9", filename="lumo_energies.csv", local_dir="data")
 
     # QM9 LUMO energies are stored as a CSV alongside SMILES.

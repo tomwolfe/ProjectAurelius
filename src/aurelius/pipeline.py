@@ -76,10 +76,14 @@ class AureliusPipeline:
 
         # Phase 3: Screening tiers
         if self._use_real_models and self.config.tier1_mlxfilter_enabled:
-            self._mlx_filter = MLXNAFilter(
-                quantization_format=self.config.chemvlm_quantization,
-            )
-            logger.info("Tier 1 (MLX-NA): ENABLED [REAL]")
+            try:
+                self._mlx_filter = MLXNAFilter(
+                    quantization_format=self.config.chemvlm_quantization,
+                )
+                logger.info("Tier 1 (MLX-NA): ENABLED [REAL]")
+            except Exception as exc:
+                logger.warning("Tier 1 (MLX-NA): DISABLED – %s", exc)
+                self._mlx_filter = None
 
         if self._use_real_models and self.config.tier2_mattersim_enabled:
             self._mattersim_sim = MatterSimMTSimulator(

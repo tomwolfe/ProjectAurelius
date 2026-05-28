@@ -247,7 +247,7 @@ class DiscoveryLoop:
         """
         try:
             result = self.pipeline.screen_molecule(smiles)
-        except Exception as e:
-            log.error("Pipeline error for %s: %s", smiles, e, exc_info=True)
+        except (ImportError, ValueError, RuntimeError) as e:
+            log.warning("Pipeline error for %s: %s", smiles, e)
             return None
         return result if result is not None else None

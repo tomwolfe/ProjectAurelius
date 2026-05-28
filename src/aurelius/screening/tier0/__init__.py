@@ -14,13 +14,11 @@ from aurelius.screening.tier0.data import (
 from aurelius.screening.tier0.models import (
     HAS_TORCH,
     PyTorchBackend,
-    model_factory,
 )
 from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
 
 __all__ = [
     "HAS_TORCH",
-    "model_factory",
     "PyTorchBackend",
     "Tier0ActivationPredictor",
     "_build_molecular_graph",

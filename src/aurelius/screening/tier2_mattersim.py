@@ -13,6 +13,7 @@ import ast
 import json
 import logging
 import os
+from functools import lru_cache
 from importlib import resources
 from typing import Any
 
@@ -310,6 +311,31 @@ class MatterSimCoulombPotentials:
         return coulomb_total
 
 
+@lru_cache(maxsize=128)
+def _get_molecule_coordinates(smiles: str) -> tuple[list[int], list[list[float]]] | None:
+    """Pre-compute 3D coordinates from SMILES using RDKit, cached via LRU.
+
+    Returns None when embedding fails, which causes the caller to raise
+    a RuntimeError instead of silently falling back to hardcoded coordinates.
+    """
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+
+    mol = Chem.AddHs(mol)
+    AllChem.EmbedMolecule(mol, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
+    AllChem.MMFFOptimizeMolecule(mol)  # type: ignore[attr-defined, unused-ignore]
+
+    atomic_numbers = [atom.GetAtomicNum() for atom in mol.GetAtoms()]  # type: ignore[no-untyped-call]
+    conf = mol.GetConformer()
+    coords = [[float(conf.GetAtomPosition(i).x), float(conf.GetAtomPosition(i).y), float(conf.GetAtomPosition(i).z)] for i in range(mol.GetNumAtoms())]
+
+    return atomic_numbers, coords
+
+
 def _load_force_field_params(path: str | None = None) -> dict[str, Any]:
     """Load force field parameters from JSON config.
 
@@ -572,88 +598,19 @@ class MatterSimMTSimulator:
 
         device = self._select_device()
 
-        # Build ion + solvent system from input SMILES
-        atomic_numbers_list: list[int] = [11]  # Na+
-        coords_list: list[list[float]] = [[0.0, 0.0, 0.0]]
-
-        try:
-            import torch
-            from rdkit import Chem
-            from rdkit.Chem import AllChem
-
-            mol = Chem.MolFromSmiles(smiles)
-            if mol is not None:
-                mol = Chem.AddHs(mol)
-                AllChem.EmbedMolecule(mol, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
-                AllChem.MMFFOptimizeMolecule(mol)  # type: ignore[attr-defined, unused-ignore]
-
-                for atom in mol.GetAtoms():  # type: ignore[no-untyped-call]
-                    atomic_numbers_list.append(atom.GetAtomicNum())
-                conf = mol.GetConformer()
-                for atom_idx in range(mol.GetNumAtoms()):
-                    pos = conf.GetAtomPosition(atom_idx)
-                    coords_list.append([float(pos.x), float(pos.y), float(pos.z)])
-
-                coordinates = torch.tensor(coords_list, dtype=torch.float32, device=device)
-                atomic_numbers = torch.tensor(atomic_numbers_list, dtype=torch.long, device=device)
-            else:
-                raise ValueError("SMILES parsing failed")
-        except (ImportError, ValueError, RuntimeError):
-            # Fallback: use hardcoded solvent boxes
-            if "ec" in solvent_type:
-                atomic_numbers_list.extend([6, 6, 6, 6, 1, 1, 1, 1, 8, 8, 8])
-                coords_list.extend(
-                    [
-                        [1.2, 0.0, 0.0],
-                        [0.0, 1.3, 0.5],
-                        [-1.0, 0.5, -0.3],
-                        [-0.5, -1.0, 0.2],
-                        [1.8, 0.8, 0.5],
-                        [1.5, -0.5, -0.6],
-                        [0.3, 1.8, 0.3],
-                        [-0.3, -1.5, -0.5],
-                        [0.5, 0.8, 1.0],
-                        [-0.8, 0.0, 0.8],
-                        [0.0, -0.5, -1.0],
-                    ]
-                )
-            elif "dm" in solvent_type or "dmc" in solvent_type:
-                atomic_numbers_list.extend([6, 6, 6, 1, 1, 1, 1, 1, 1, 8, 8, 8])
-                coords_list.extend(
-                    [
-                        [1.0, 0.0, 0.0],
-                        [0.0, 1.1, 0.3],
-                        [-0.8, -0.5, 0.2],
-                        [1.5, 0.5, 0.5],
-                        [1.5, -0.3, -0.5],
-                        [0.5, 1.6, 0.4],
-                        [-1.2, 0.3, 0.6],
-                        [-0.5, -1.0, -0.4],
-                        [0.3, -0.8, -0.8],
-                        [-0.3, 0.8, -0.6],
-                        [0.0, 0.0, 1.0],
-                    ]
-                )
-            else:
-                atomic_numbers_list.extend([6, 8, 1, 1, 1])
-                coords_list.extend(
-                    [
-                        [1.0, 0.0, 0.0],
-                        [0.0, 1.1, 0.3],
-                        [1.4, 0.4, 0.4],
-                        [0.6, -0.6, -0.5],
-                        [-0.5, -0.8, -0.3],
-                    ]
-                )
-
-            _n_atoms = len(atomic_numbers_list)
-            atomic_numbers = torch.tensor(atomic_numbers_list, dtype=torch.long, device=device)
-            coordinates = torch.tensor(coords_list, dtype=torch.float32, device=device)
-
-            logger.warning(
-                "RDKit 3D embedding failed or unavailable. Using generic solvent proxy. "
-                "Physics simulation may not reflect actual molecular geometry."
+        # Build ion + solvent system from SMILES using pre-computed 3D coordinates
+        mol_coords = _get_molecule_coordinates(smiles)
+        if mol_coords is None:
+            raise RuntimeError(
+                f"Failed to generate 3D coordinates for SMILES '{smiles}'. "
+                "Molecule may be invalid or RDKit embedding failed."
             )
+
+        atomic_numbers_list, coords_list = mol_coords
+
+        _n_atoms = len(atomic_numbers_list)
+        atomic_numbers = torch.tensor(atomic_numbers_list, dtype=torch.long, device=device)
+        coordinates = torch.tensor(coords_list, dtype=torch.float32, device=device)
 
         _n_atoms = len(atomic_numbers_list)
         atomic_numbers = torch.tensor(atomic_numbers_list, dtype=torch.long, device=device)

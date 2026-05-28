@@ -21,13 +21,11 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import warnings
-from importlib import resources
 from typing import Any
 
 import numpy as np
 
-from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
+from aurelius.data.loaders import load_esol_data, load_qm9_lumo_data
 
 
 def parse_args() -> argparse.Namespace:
@@ -102,7 +100,7 @@ def download_esol(output_dir: str) -> str:
         print(f"[download_data] ERROR: Network error: {e}")
         print("[download_data] Check your network connection and try again.")
         sys.exit(1)
-    except Exception as e:
+    except (ImportError, RuntimeError, OSError) as e:
         print(f"[download_data] ERROR loading ESOL: {e}")
         sys.exit(1)
 
@@ -158,7 +156,7 @@ def download_qm9(output_dir: str) -> str:
         print(f"[download_data] ERROR: Network error: {e}")
         print("[download_data] Check your network connection and try again.")
         sys.exit(1)
-    except Exception as e:
+    except (ImportError, RuntimeError, OSError) as e:
         print(f"[download_data] ERROR loading QM9: {e}")
         sys.exit(1)
 
@@ -199,168 +197,10 @@ def main() -> None:
     )
 
 
-def load_esol_data(csv_path: str | None = None) -> tuple[Any, Any, list[str]]:
-    """Load the ESOL dataset (Delaney et al. 2004).
-
-    The ESOL dataset contains 1112 molecules with experimentally
-    measured aqueous solubility (logS in mol/L).
-
-    Fallback chain:
-    1. Local CSV via --csv-path
-    2. HuggingFace Hub (verified datasets)
-    3. Curated 50-molecule subset embedded in code
-
-    Args:
-        csv_path: Optional path to local CSV file.
-
-    Returns:
-        Tuple of (fingerprints, logS_labels, smiles_list).
-
-    Reference:
-        Delaney, S. J. "ESOL: Estimating Aqueous Solubility
-        Directly from Structure." J. Chem. Inf. Model. 2004,
-        44(6), 1947-1949. DOI: 10.1021/ci034236x
-    """
-
-    import numpy as np
-
-    # Import the fingerprint generator
-    from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
-
-    if csv_path and os.path.isfile(csv_path):
-        print("[download_data] Loading ESOL from local CSV: %s", csv_path)
-        return _load_esol_from_csv(csv_path)
-
-    # Load HuggingFace datasets
-    try:
-        from datasets import load_dataset
-
-        print("[download_data] Loading ESOL from HuggingFace Hub...")
-        # Verified dataset: deepchem/esol ( maintained by DeepChem )
-        ds = load_dataset("deepchem/esol", split="train")
-        smiles_list = list(ds["smiles"])
-        log_s = np.array(ds["logS"], dtype=np.float32)
-        print("[download_data] Loaded %d molecules from ESOL", len(smiles_list))
-
-        n_bits = 2048
-        X = np.zeros((len(smiles_list), n_bits), dtype=np.float32)
-        for i, smiles in enumerate(smiles_list):
-            X[i] = generate_ecfp4_fingerprint(smiles, n_bits)
-
-        # Normalize logS to [0, 1] for sigmoid output
-        # ESOL logS ranges roughly from -6 to +1
-        log_s_min, log_s_max = -6.0, 1.0
-        y = np.clip((log_s - log_s_min) / (log_s_max - log_s_min), 0.0, 1.0)
-
-        return X, y, smiles_list
-    except Exception as e:
-        print("[download_data] Unexpected error loading ESOL (type=%s): %s", type(e).__name__, e)
-        import traceback
-
-        traceback.print_exc()
-        if csv_path:
-            return _load_esol_from_csv(csv_path)
-        warnings.warn(  # type: ignore[call-overload]
-            "[download_data] FALLBACK: Using embedded 50-molecule ESOL subset due to error: "
-            "%s: %s. "
-            "This is a small curated subset from Delaney 2004, NOT the full 1112-molecule dataset. "
-            "Model quality will be significantly reduced. "
-            "Install 'datasets' and ensure network connectivity for full training, "
-            "or use --csv-path to provide a local CSV file.",
-            type(e).__name__,
-            e,
-            stacklevel=2,
-        )
-        print(
-            "\n" + "=" * 60,
-            "[download_data] WARNING: Fallback to embedded ESOL subset",
-            "=" * 60,
-        )
-        print(
-            "[download_data] Error: %s: %s\n"
-            "[download_data] Training will proceed with only 50 embedded molecules\n"
-            "[download_data] from the original Delaney 2004 dataset.\n"
-            "[download_data] For full dataset training:\n"
-            "[download_data]   - Ensure network connectivity and install 'datasets'\n"
-            "[download_data]   - Or use --csv-path to provide a local CSV file\n",
-            type(e).__name__,
-            e,
-        )
-        return _load_esol_embedded()
-
-
-def _load_esol_from_csv(csv_path: str) -> tuple[Any, Any, list[str]]:
-    """Load ESOL from a local CSV file.
-
-    Expected CSV format: smiles,logS (with header row)
-
-    Args:
-        csv_path: Path to CSV file.
-
-    Returns:
-        Tuple of (fingerprints, logS_labels, smiles_list).
-    """
-    import csv
-
-    smiles_list = []
-    log_s_list = []
-
-    with open(csv_path) as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            smiles = row.get("smiles", row.get("SMILES", "")).strip()
-            log_s = float(row.get("logS", row.get("log_s", "nan")))
-            if smiles and not np.isnan(log_s):
-                smiles_list.append(smiles)
-                log_s_list.append(log_s)
-
-    print("[download_data] Loaded %d molecules from CSV", len(smiles_list))
-
-    n_bits = 2048
-    X = np.zeros((len(smiles_list), n_bits), dtype=np.float32)
-    for i, smiles in enumerate(smiles_list):
-        X[i] = generate_ecfp4_fingerprint(smiles, n_bits)
-
-    log_s_array = np.array(log_s_list, dtype=np.float32)
-    log_s_min, log_s_max = -6.0, 1.0
-    y = np.clip((log_s_array - log_s_min) / (log_s_max - log_s_min), 0.0, 1.0)
-
-    return X, y, smiles_list
-
-
-def _load_esol_embedded() -> tuple[Any, Any, list[str]]:
-    """Load ESOL data from packaged CSV resource.
-
-    This is a fallback when HuggingFace download or local CSV is
-    unavailable. Uses the packaged esol_fallback.csv resource.
-
-    Returns:
-        Tuple of (fingerprints, logS_labels, smiles_list).
-    """
-    import csv
-
-    training_data_path = resources.files("aurelius.data").joinpath("esol_fallback.csv")
-    print("[download_data] *** LOADED FROM PACKAGED CSV: %s ***", training_data_path)
-
-    with open(str(training_data_path)) as f:
-        reader = csv.DictReader(f)
-        training_data = [(row["smiles"], float(row["logS"])) for row in reader]
-
-    n_bits = 2048
-    X = np.zeros((len(training_data), n_bits), dtype=np.float32)
-    smiles_list = []
-    log_s_list = []
-
-    for i, (smiles, log_s) in enumerate(training_data):
-        X[i] = generate_ecfp4_fingerprint(smiles, n_bits)
-        smiles_list.append(smiles)
-        log_s_list.append(log_s)
-
-    log_s_array = np.array(log_s_list, dtype=np.float32)
-    log_s_min, log_s_max = -6.0, 1.0
-    y = np.clip((log_s_array - log_s_min) / (log_s_max - log_s_min), 0.0, 1.0)
-
-    return X, y, smiles_list
+__all__ = [
+    "load_esol_data",
+    "load_qm9_lumo_data",
+]
 
 
 def load_qm9_data() -> tuple[Any, Any, list[str]]:
@@ -382,31 +222,21 @@ def load_qm9_data() -> tuple[Any, Any, list[str]]:
         Properties of 134 Kilo Molecules." Sci. Data 2014, 1, 140035.
         DOI: 10.1038/sdata.2014.35
     """
-    from datasets import load_dataset
+    from aurelius.data.loaders import load_qm9_lumo_data as _load_qm9
 
-    ds = load_dataset("maastrichtuniversity/qm9", split="train")
-
-    u0_values = np.array(ds["U0"], dtype=np.float32)
-    smiles_list = ds["smiles"]
-
-    # Filter valid molecules
-    valid_mask = ~np.isnan(u0_values)
-    valid_smiles = [s for i, s in enumerate(smiles_list) if valid_mask[i]]
-    valid_u0 = u0_values[valid_mask]
-
-    print("[download_data] Loaded %d QM9 molecules (%d valid)", len(valid_smiles), np.sum(valid_mask))
-
-    n_bits = 2048
-    X = np.zeros((len(valid_smiles), n_bits), dtype=np.float32)
-    for i, smiles in enumerate(valid_smiles):
-        X[i] = generate_ecfp4_fingerprint(smiles, n_bits)
-
+    data = _load_qm9()
+    smiles_list = [d["smiles"] for d in data]
+    u0_values = np.array([d["U0"] for d in data], dtype=np.float32)
+    # Generate fingerprints for all molecules
+    from aurelius.data.loaders import generate_ecfp4_fingerprint
+    X = np.zeros((len(data), 2048), dtype=np.float32)
+    for i, smi in enumerate(smiles_list):
+        X[i] = generate_ecfp4_fingerprint(smi)
     # Normalize U0 to [0, 1]
-    u0_min, u0_max = float(np.min(valid_u0)), float(np.max(valid_u0))
+    u0_min, u0_max = float(np.min(u0_values)), float(np.max(u0_values))
     u0_range = u0_max - u0_min
-    y = np.clip((valid_u0 - u0_min + 1e-12) / (u0_range + 1e-12), 0.0, 1.0)
-
-    return X, y, valid_smiles
+    y = np.clip((u0_values - u0_min) / (u0_range + 1e-12), 0.0, 1.0)
+    return X, y, smiles_list
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any
 
 from aurelius.utils.dependencies import HAS_TORCH
 
@@ -28,36 +28,9 @@ if TYPE_CHECKING:
 
 __all__ = [
     "HAS_TORCH",
-    "ModelBackend",
-    "model_factory",
     "PyTorchBackend",
     "PyTorchBackendUnavailableError",
 ]
-
-# ---------------------------------------------------------------------------
-# Protocol / Strategy Pattern
-# ---------------------------------------------------------------------------
-
-
-@runtime_checkable
-class ModelBackend(Protocol):
-    """Protocol defining the interface for all model backends.
-
-    All backends must implement:
-    - __call__ or forward: Forward pass
-    - parameters: Return model parameters
-    - save_weights: Save model weights to disk
-    - load_weights: Load model weights from disk
-    """
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Any: ...
-
-    def parameters(self) -> list[Any]: ...
-
-    def save_weights(self, path: str) -> None: ...
-
-    def load_weights(self, path: str) -> None: ...
-
 
 # ---------------------------------------------------------------------------
 # PyTorch Backend
@@ -308,24 +281,33 @@ if HAS_TORCH:
                 return self.network(pooled)
             return self.network(pooled)
 
+    # ------------------------------------------------------------------
+    # Factory function
+    # ------------------------------------------------------------------
 
-def model_factory() -> PyTorchBackend:
-    """Return a PyTorch backend instance for Tier 0 MPNN.
+    class PyTorchBackendUnavailableError(RuntimeError):
+        """Raised when PyTorch is not available."""
 
-    Returns:
-        A PyTorchBackend instance.
-    """
-    return PyTorchBackend()
+    def _model_factory() -> PyTorchBackend:
+        """Return a PyTorch backend instance for Tier 0 MPNN.
 
+        Returns:
+            A PyTorchBackend instance.
+        """
+        return PyTorchBackend()
 
-class PyTorchBackendUnavailableError(RuntimeError):
-    """Raised when PyTorch is not available."""
+else:
+    class PyTorchBackend:  # type: ignore[valid-type, misc, no-redef]
+        """Stub when PyTorch is unavailable."""
 
+        def __init__(
+            self,
+            node_dim: int = 4,
+            edge_dim: int = 0,
+            hidden_dim: int = 64,
+            output_dim: int = 4,
+        ) -> None:
+            raise PyTorchBackendUnavailableError("PyTorch is required for Tier 0 MPNN")
 
-def _model_factory() -> PyTorchBackend:
-    """Return a PyTorch backend instance for Tier 0 MPNN.
-
-    Returns:
-        A PyTorchBackend instance.
-    """
-    return PyTorchBackend()
+    def _model_factory() -> PyTorchBackend:  # type: ignore[valid-type]
+        raise PyTorchBackendUnavailableError("PyTorch is required for Tier 0 MPNN")

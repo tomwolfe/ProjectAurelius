@@ -126,7 +126,12 @@ class MLXNAFilter:
         3. Train on ESOL dataset
         """
         print("[Aurelius v5.2 Tier1] Attempting to load real model weights...")
-        model = self._weight_loader.load_model(task="esol_solubility", local_only=False)
+        try:
+            model = self._weight_loader.load_model(task="esol_solubility", local_only=False)
+        except Exception as e:
+            print(f"[Aurelius v5.2 Tier1] HF weight loading failed: {e}")
+            model = None
+
         if model is not None:
             self._model = model
             self._model_loaded = True

@@ -114,7 +114,7 @@ def train_on_esol(
 
         _ds = load_dataset("deepchem/esol", split="train")
         training_data = [(sm, float(v)) for sm, v in zip(_ds["smiles"], _ds["logS"], strict=True)]
-    except Exception:
+    except (ImportError, ValueError):
         # Fallback to packaged CSV resource
         training_data_path = resources.files("aurelius.data").joinpath("esol_fallback.csv")
         print(f"[tier1] 'datasets' library not available, loading from packaged CSV: {training_data_path}")

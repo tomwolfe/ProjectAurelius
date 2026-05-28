@@ -6,7 +6,6 @@ from aurelius.screening.tier0 import (
     HAS_TORCH,
     PyTorchBackend,
     Tier0ActivationPredictor,
-    model_factory,
 )
 from aurelius.screening.tier1 import (
     HAS_MLX,
@@ -39,5 +38,4 @@ __all__ = [
     "MatterSimMTSimulator",
     "Tier0ActivationPredictor",
     "Tier2Result",
-    "model_factory",
 ]
