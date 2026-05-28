@@ -263,8 +263,7 @@ def report_status() -> dict[str, dict[str, Any]]:
             )
         else:
             logger.warning(
-                "Framework '%s' is NOT available. "
-                "Install with: pip install %s (or check optional dependency group).",
+                "Framework '%s' is NOT available. Install with: pip install %s (or check optional dependency group).",
                 name,
                 name,
             )

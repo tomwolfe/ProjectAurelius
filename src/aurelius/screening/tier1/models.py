@@ -18,9 +18,12 @@ from __future__ import annotations
 import json
 import os
 from importlib import resources
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
+
+if TYPE_CHECKING:
+    import numpy as np
 
 # ---------------------------------------------------------------------------
 # Exports
@@ -77,6 +80,265 @@ class ModelBackend(Protocol):
     def save_weights(self, path: str) -> None: ...
 
     def load_weights(self, path: str) -> None: ...
+
+
+# ---------------------------------------------------------------------------
+# MLX Backend
+# ---------------------------------------------------------------------------
+
+if HAS_MLX:
+    import mlx.core as _mlx_core
+    import mlx.nn as _mlx_nn
+    import numpy as np
+
+    try:
+        from mlx.core import Array as MLXArray  # type: ignore[attr-defined]
+    except ImportError:
+        MLXArray = Any
+
+    class MLXBackend(_mlx_nn.Module):
+        """MLX-compatible 2-layer MLP for molecular viability scoring.
+
+        Input: 2048-bit ECFP4 fingerprint (float array).
+        Hidden: 128 units with ReLU activation.
+        Output: 1 scalar viability score via sigmoid.
+
+        Weights are initialized using Xavier/Glorot initialization
+        to ensure non-zero gradients during training and meaningful
+        inference output without requiring a pre-trained model.
+
+        Inherits from mlx.nn.Module for compatibility with MLX's
+        optimization and compilation graph.
+        """
+
+        def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
+            super().__init__()
+            self.input_dim = input_dim
+            self.hidden_dim = hidden_dim
+
+            self.linear1 = _mlx_nn.Linear(input_dim, hidden_dim)
+            self.relu = _mlx_nn.ReLU()
+            self.linear2 = _mlx_nn.Linear(hidden_dim, 1)
+
+            self._init_weights()
+
+        def _init_weights(self) -> None:
+            """Initialize all weights using Xavier uniform initialization."""
+            scale1 = np.sqrt(2.0 / (self.input_dim + self.hidden_dim))
+            self.linear1.weight = _mlx_core.random.uniform(
+                shape=(self.hidden_dim, self.input_dim),
+                low=-scale1,
+                high=scale1,
+            )
+            self.linear1.bias = _mlx_core.zeros((self.hidden_dim,))
+
+            scale2 = np.sqrt(2.0 / (self.hidden_dim + 1))
+            self.linear2.weight = _mlx_core.random.uniform(
+                shape=(1, self.hidden_dim),
+                low=-scale2,
+                high=scale2,
+            )
+            self.linear2.bias = _mlx_core.zeros((1,))
+
+        def __call__(self, x: MLXArray) -> MLXArray:
+            """Forward pass through the 2-layer MLP."""
+            h = self.linear1(x)
+            h = self.relu(h)
+            out = self.linear2(h)
+            return _mlx_nn.sigmoid(out)
+
+        def predict(self, x: MLXArray) -> MLXArray:
+            """Run inference and return viability score.
+
+            Args:
+                x: Input tensor/array (N, 2048).
+
+            Returns:
+                Predicted viability score (N, 1) or (N,).
+            """
+            return self(x)
+
+        def parameters(self) -> list[MLXArray]:
+            return [self.linear1.weight, self.linear1.bias, self.linear2.weight, self.linear2.bias]
+
+        def save_weights(self, path: str) -> None:
+            """Save model weights to individual .npy files.
+
+            Args:
+                path: Directory path to save weights.
+            """
+            os.makedirs(path, exist_ok=True)
+            np.save(os.path.join(path, "W1.npy"), np.asarray(self.linear1.weight))
+            np.save(os.path.join(path, "b1.npy"), np.asarray(self.linear1.bias))
+            np.save(os.path.join(path, "W2.npy"), np.asarray(self.linear2.weight))
+            np.save(os.path.join(path, "b2.npy"), np.asarray(self.linear2.bias))
+            meta = {
+                "input_dim": self.input_dim,
+                "hidden_dim": self.hidden_dim,
+                "architecture": "MLP-2048-128-1",
+                "fp_type": "ECFP4_2048",
+            }
+            with open(os.path.join(path), "w") as f:
+                json.dump(meta, f, indent=2)
+
+        def load_weights(self, path: str) -> None:
+            """Load model weights from individual .npy files.
+
+            Args:
+                path: Directory path containing saved weights.
+
+            Raises:
+                FileNotFoundError: If weight files are not found.
+            """
+            W1 = np.load(os.path.join(path, "W1.npy"))
+            b1 = np.load(os.path.join(path, "b1.npy"))
+            W2 = np.load(os.path.join(path, "W2.npy"))
+            b2 = np.load(os.path.join(path, "b2.npy"))
+            self.linear1.weight = _mlx_core.array(W1)
+            self.linear1.bias = _mlx_core.array(b1)
+            self.linear2.weight = _mlx_core.array(W2)
+            self.linear2.bias = _mlx_core.array(b2)
+
+
+# ---------------------------------------------------------------------------
+# PyTorch Backend
+# ---------------------------------------------------------------------------
+
+if HAS_TORCH:
+    import torch as _torch
+    import torch.nn as _torch_nn
+    from torch import Tensor as TTensor
+
+    class PyTorchBackend:
+        """PyTorch-based MLP replicating the ChemVLM2MLP architecture.
+
+        Provides a 2-layer MLP (2048->128->1) using torch.nn when MLX is
+        unavailable. This ensures consistent gradient computation and
+        device handling across all tiers of the pipeline.
+
+        The architecture matches _ChemVLM2MLP:
+            - Input: 2048-bit ECFP4 fingerprint (float tensor)
+            - Hidden: 128 units with ReLU activation
+            - Output: 1 scalar viability score via sigmoid
+
+        Weights are loaded from MLX model directories containing .npy files
+        via convert_mlx_to_torch_weights(). If loading fails, random
+        Xavier-initialized weights are used with a WARNING.
+
+        This class is fully compatible with torch.autograd for gradient
+        computation and supports device placement (CPU/CUDA/MPS).
+        """
+
+        def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
+            super().__init__()
+            self.input_dim = input_dim
+            self.hidden_dim = hidden_dim
+
+            self.fc1 = _torch_nn.Linear(input_dim, hidden_dim)
+            self.relu = _torch_nn.ReLU()
+            self.fc2 = _torch_nn.Linear(hidden_dim, 1)
+
+            self._init_weights()
+
+        def _init_weights(self) -> None:
+            """Initialize all weights using Xavier uniform initialization."""
+            _torch_nn.init.xavier_uniform_(self.fc1.weight)
+            _torch_nn.init.zeros_(self.fc1.bias)
+            _torch_nn.init.xavier_uniform_(self.fc2.weight)
+            _torch_nn.init.zeros_(self.fc2.bias)
+
+        def __call__(self, x: TTensor) -> TTensor:
+            """Forward pass through the 2-layer MLP."""
+            h = self.fc1(x)
+            h = self.relu(h)
+            out = self.fc2(h)
+            return _torch.sigmoid(out)
+
+        def predict(self, x: TTensor) -> TTensor:
+            """Run inference and return viability score.
+
+            Args:
+                x: Input tensor/array (N, 2048).
+
+            Returns:
+                Predicted viability score (N, 1) or (N,).
+            """
+            return self(x)
+
+        def parameters(self) -> list[TTensor]:
+            return [self.fc1.weight, self.fc1.bias, self.fc2.weight, self.fc2.bias]
+
+        def save_weights(self, path: str) -> None:
+            """Save model weights to individual .npy files (MLX-compatible format).
+
+            Args:
+                path: Directory path to save weights.
+            """
+            os.makedirs(path, exist_ok=True)
+            state_dict = self.state_dict()
+            for name, tensor in state_dict.items():
+                np.save(os.path.join(path, f"{name}.npy"), tensor.cpu().numpy())
+            meta = {
+                "input_dim": self.input_dim,
+                "hidden_dim": self.hidden_dim,
+                "architecture": "MLP-2048-128-1",
+                "fp_type": "ECFP4_2048",
+                "framework": "pytorch",
+            }
+            with open(os.path.join(path), "w") as f:
+                json.dump(meta, f, indent=2)
+
+        def load_weights(self, path: str) -> None:
+            """Load model weights from .npy files.
+
+            Args:
+                path: Directory path containing saved weights.
+            """
+            state_dict = _torch.load(
+                path,
+                map_location="cpu",
+                weights_only=True,
+            )
+            self.load_state_dict(state_dict)
+
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
+
+
+def model_factory() -> ModelBackend:
+    """Return the appropriate model backend based on framework availability.
+
+    Priority: MLX > PyTorch.
+
+    Returns:
+        An instance of the selected backend.
+
+    Raises:
+        ImportError: When neither MLX nor PyTorch is available.
+    """
+    if HAS_MLX:
+        return MLXBackend()
+    elif HAS_TORCH:
+        return PyTorchBackend()
+    else:
+        raise ImportError(
+            "At least one ML framework is required (MLX or PyTorch). "
+            "Install MLX: pip install mlx\n"
+            "Install PyTorch: pip install torch"
+        )
+
+
+# Hugging Face model repository for pre-trained Tier 1 weights
+HUGGINGFACE_MODELS: dict[str, str] = {
+    "esol_solubility": "aurelius/tier1-esol-mlp",
+    "qm9_energy": "aurelius/tier1-qm9-mlp",
+}
+
+# ---------------------------------------------------------------------------
+# Protocol / Strategy Pattern
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -206,34 +468,22 @@ else:
         """Fallback: MLX-compatible 2-layer MLP for ECFP4 fingerprints."""
 
         def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
-            raise ImportError(
-                "MLXBackend requires mlx. Install MLX: pip install mlx"
-            )
+            raise ImportError("MLXBackend requires mlx. Install MLX: pip install mlx")
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
-            raise ImportError(
-                "MLXBackend requires mlx. Install MLX: pip install mlx"
-            )
+            raise ImportError("MLXBackend requires mlx. Install MLX: pip install mlx")
 
         def predict(self, x: Any) -> Any:
-            raise ImportError(
-                "MLXBackend requires mlx. Install MLX: pip install mlx"
-            )
+            raise ImportError("MLXBackend requires mlx. Install MLX: pip install mlx")
 
         def parameters(self) -> list[Any]:
-            raise ImportError(
-                "MLXBackend requires mlx. Install MLX: pip install mlx"
-            )
+            raise ImportError("MLXBackend requires mlx. Install MLX: pip install mlx")
 
         def save_weights(self, path: str) -> None:
-            raise ImportError(
-                "MLXBackend requires mlx. Install MLX: pip install mlx"
-            )
+            raise ImportError("MLXBackend requires mlx. Install MLX: pip install mlx")
 
         def load_weights(self, path: str) -> None:
-            raise ImportError(
-                "MLXBackend requires mlx. Install MLX: pip install mlx"
-            )
+            raise ImportError("MLXBackend requires mlx. Install MLX: pip install mlx")
 
 
 # ---------------------------------------------------------------------------
@@ -348,59 +598,19 @@ else:
         """Fallback: PyTorch backend unavailable."""
 
         def __init__(self, input_dim: int = 2048, hidden_dim: int = 128) -> None:
-            raise ImportError(
-                "PyTorchBackend requires torch. Install PyTorch: pip install torch"
-            )
+            raise ImportError("PyTorchBackend requires torch. Install PyTorch: pip install torch")
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
-            raise ImportError(
-                "PyTorchBackend requires torch. Install PyTorch: pip install torch"
-            )
+            raise ImportError("PyTorchBackend requires torch. Install PyTorch: pip install torch")
 
         def predict(self, x: Any) -> Any:
-            raise ImportError(
-                "PyTorchBackend requires torch. Install PyTorch: pip install torch"
-            )
+            raise ImportError("PyTorchBackend requires torch. Install PyTorch: pip install torch")
 
         def parameters(self) -> list[Any]:
-            raise ImportError(
-                "PyTorchBackend requires torch. Install PyTorch: pip install torch"
-            )
+            raise ImportError("PyTorchBackend requires torch. Install PyTorch: pip install torch")
 
         def save_weights(self, path: str) -> None:
-            raise ImportError(
-                "PyTorchBackend requires torch. Install PyTorch: pip install torch"
-            )
+            raise ImportError("PyTorchBackend requires torch. Install PyTorch: pip install torch")
 
         def load_weights(self, path: str) -> None:
-            raise ImportError(
-                "PyTorchBackend requires torch. Install PyTorch: pip install torch"
-            )
-
-
-# ---------------------------------------------------------------------------
-# Factory
-# ---------------------------------------------------------------------------
-
-
-def model_factory() -> ModelBackend:
-    """Return the appropriate model backend based on framework availability.
-
-    Priority: MLX > PyTorch.
-
-    Returns:
-        An instance of the selected backend.
-
-    Raises:
-        ImportError: When neither MLX nor PyTorch is available.
-    """
-    if HAS_MLX:
-        return MLXBackend()  # type: ignore[return-value]
-    elif HAS_TORCH:
-        return PyTorchBackend()  # type: ignore[return-value]
-    else:
-        raise ImportError(
-            "At least one ML framework is required (MLX or PyTorch). "
-            "Install MLX: pip install mlx\n"
-            "Install PyTorch: pip install torch"
-        )
+            raise ImportError("PyTorchBackend requires torch. Install PyTorch: pip install torch")

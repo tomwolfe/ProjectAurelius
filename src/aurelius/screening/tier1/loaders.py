@@ -237,6 +237,7 @@ class HuggingFaceWeightLoader:
     def _check_hf_dependencies(self) -> bool:
         """Check if huggingface_hub and datasets are available."""
         from aurelius.utils.dependencies import HAS_DATASETS, HAS_HF_HUB
+
         return HAS_HF_HUB and HAS_DATASETS
 
     def load_model(

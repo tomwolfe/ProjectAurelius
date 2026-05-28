@@ -168,11 +168,13 @@ def get_config(
     Returns:
         An AureliusConfig instance with dynamically computed memory allocations.
     """
-    config = AureliusConfig.model_validate({
-        "total_memory_gb": total_memory_gb,
-        "mlx_max_mem_gb": mlx_max_mem_gb,
-        "metal_shader_cache_gb": metal_shader_cache_gb,
-    })
+    config = AureliusConfig.model_validate(
+        {
+            "total_memory_gb": total_memory_gb,
+            "mlx_max_mem_gb": mlx_max_mem_gb,
+            "metal_shader_cache_gb": metal_shader_cache_gb,
+        }
+    )
     if not config.validate_memory_budget():
         raise RuntimeError(
             f"Memory budget {config.mlx_max_mem_gb + config.metal_shader_cache_gb:.1f}GB exceeds "

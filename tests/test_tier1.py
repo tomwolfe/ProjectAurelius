@@ -102,9 +102,7 @@ class TestMLXNAFilter:
         from aurelius.screening.tier1 import MLXNAFilter
 
         try:
-            filter_trained = MLXNAFilter(
-                quantization_format="MX4", train_on_init=True
-            )
+            filter_trained = MLXNAFilter(quantization_format="MX4", train_on_init=True)
         except Exception as exc:
             pytest.skip(f"Hugging Face access failed: {exc}")
 

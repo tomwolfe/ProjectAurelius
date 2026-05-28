@@ -6,9 +6,28 @@ import json
 import os
 from collections import deque
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+
+def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str:
+    """Resolve a relative output path against a base directory.
+
+    If ``output_dir`` is provided, ``path`` is joined to it.
+    Otherwise ``path`` is returned unchanged (backward-compatible).
+
+    Args:
+        path: Output file path (relative).
+        output_dir: Base directory to resolve against.
+
+    Returns:
+        Resolved absolute path.
+    """
+    if output_dir is not None:
+        return str(Path(output_dir) / path)
+    return path
 
 
 class CheckpointManager:
@@ -21,13 +40,14 @@ class CheckpointManager:
     corruption during crashes.
     """
 
-    def __init__(self, path: str = "agent_state.json") -> None:
+    def __init__(self, path: str = "agent_state.json", output_dir: str | Path | None = None) -> None:
         """Initialize the checkpoint manager.
 
         Args:
-            path: Path to the JSON state file.
+            path: Path to the JSON state file (relative to output_dir).
+            output_dir: Directory to write to. If None, uses current working directory.
         """
-        self.path = path
+        self.path = _resolve_output_path(path, output_dir)
         self._batch = 0
         self._screened_count = 0
         self._best_score = 0.0
@@ -300,10 +320,7 @@ class ConvergenceChecker:
             return []
         n_batches = len(self.all_scores) // batch_size
         scores_list = list(self.all_scores)
-        rolling = [
-            float(np.mean(scores_list[i * batch_size : (i + 1) * batch_size]))
-            for i in range(n_batches)
-        ]
+        rolling = [float(np.mean(scores_list[i * batch_size : (i + 1) * batch_size])) for i in range(n_batches)]
         return rolling
 
     def check_score_plateau(self) -> bool:
@@ -391,79 +408,71 @@ class ActiveLearningOracle:
 
     Provides a query interface for selecting the most informative
     molecules to screen next, using uncertainty sampling.
+
+    Raises:
+        NotImplementedError: The oracle is not implemented. Use the
+            screening pipeline directly for real viability scores.
     """
 
     def __init__(self) -> None:
-        """Initialize the active learning oracle."""
-        self._cache: dict[str, float] = {}
-        self._query_history: list[tuple[str, float]] = []
-        self._pool: list[tuple[str, float]] = []
+        """Initialize the active learning oracle.
+
+        Raises:
+            NotImplementedError: The oracle is not implemented.
+        """
+        raise NotImplementedError(
+            "ActiveLearningOracle is not implemented. Use the screening pipeline directly for real viability scores."
+        )
 
     def query(self, smiles: str) -> float:
         """Query the oracle for a molecule's predicted viability.
 
-        Returns a cached score if available, or computes it via
-        the underlying screening pipeline.
-
-        Args:
-            smiles: SMILES string of the molecule.
-
-        Returns:
-            Predicted viability score in [0, 1].
+        Raises:
+            NotImplementedError: Always raised.
         """
-        if smiles in self._cache:
-            return self._cache[smiles]
-
-        # Compute uncertainty-based score (placeholder)
-        import hashlib
-        h = int(hashlib.sha256(smiles.encode()).hexdigest()[:8], 16)
-        score = (h % 100) / 100.0
-        self._cache[smiles] = score
-        self._query_history.append((smiles, score))
-        return score
+        raise NotImplementedError(
+            "ActiveLearningOracle is not implemented. Use the screening pipeline directly for real viability scores."
+        )
 
     def query_batch(self, smiles_list: list[str]) -> list[float]:
         """Query multiple molecules, returning a list of scores.
 
-        Args:
-            smiles_list: List of SMILES strings to score.
-
-        Returns:
-            List of viability scores.
+        Raises:
+            NotImplementedError: Always raised.
         """
-        return [self.query(s) for s in smiles_list]
+        raise NotImplementedError(
+            "ActiveLearningOracle is not implemented. Use the screening pipeline directly for real viability scores."
+        )
 
     def add_to_pool(self, smiles: str, score: float) -> None:
         """Add a molecule to the candidate pool.
 
-        Args:
-            smiles: SMILES string of the molecule.
-            score: Viability score.
+        Raises:
+            NotImplementedError: Always raised.
         """
-        self._pool.append((smiles, score))
-        self._cache[smiles] = score
+        raise NotImplementedError(
+            "ActiveLearningOracle is not implemented. Use the screening pipeline directly for real viability scores."
+        )
 
     def select_most_uncertain(self, top_k: int = 10) -> list[str]:
         """Select the k most uncertain molecules from the pool.
 
-        Args:
-            top_k: Number of uncertain molecules to select.
-
-        Returns:
-            List of SMILES strings with scores closest to 0.5.
+        Raises:
+            NotImplementedError: Always raised.
         """
-        if not self._pool:
-            return []
-
-        # Sort by uncertainty (distance from 0.5)
-        scored = sorted(self._pool, key=lambda x: abs(x[1] - 0.5), reverse=True)
-        return [s for s, _ in scored[:top_k]]
+        raise NotImplementedError(
+            "ActiveLearningOracle is not implemented. Use the screening pipeline directly for real viability scores."
+        )
 
     def clear(self) -> None:
-        """Clear all cached data and pool."""
-        self._cache.clear()
-        self._query_history.clear()
-        self._pool.clear()
+        """Clear all cached data and pool.
+
+        Raises:
+            NotImplementedError: Always raised.
+        """
+        raise NotImplementedError(
+            "ActiveLearningOracle is not implemented. Use the screening pipeline directly for real viability scores."
+        )
 
 
 class FeedbackAdapter:
@@ -526,16 +535,19 @@ class FeedbackAdapter:
             strategy["recommendation"] = "Continue current mutation strategy"
         return strategy
 
-    def write_rationale_log(self, path: str = "mutation_rationale.md") -> None:
+    def write_rationale_log(self, path: str = "mutation_rationale.md", output_dir: str | Path | None = None) -> None:
         """Write accumulated rationale to markdown file.
 
         Args:
-            path: Path to write the rationale log.
+            path: Output file path (relative to output_dir).
+            output_dir: Directory to write to. If None, uses current working directory.
         """
         import logging
         from datetime import UTC
 
         log = logging.getLogger("aurelius_agent")
+
+        path = _resolve_output_path(path, output_dir)
 
         with open(path, "w") as f:
             f.write("# Mutation Rationale Log\n\n")

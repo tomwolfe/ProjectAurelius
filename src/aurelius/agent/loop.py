@@ -156,9 +156,7 @@ class DiscoveryLoop:
 
             # ---- Convergence / checkpoint ----
             self.convergence.record_batch(batch_scores, batch_viable, invalid_count)
-            self.checkpoint.update_stats(
-                valid_candidates, batch_scores, batch_viable, invalid_count
-            )
+            self.checkpoint.update_stats(valid_candidates, batch_scores, batch_viable, invalid_count)
             self.total_screened += len(valid_candidates)
             self.total_viable += batch_viable
             self.total_invalid += invalid_count
@@ -202,19 +200,13 @@ class DiscoveryLoop:
         First generation uses all seed molecules; later generations use
         the top-scoring seeds from previous results.
         """
-        top_seeds = (
-            self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
-        )
+        top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
         candidates = self.engine.mutate_batch(top_seeds, self.batch_size * 3)
         return list(candidates)
 
     def _top_seeds_from_results(self) -> list[str]:
         """Return the top N seeds based on all_results scores."""
-        scored = [
-            (r["score"].total_score, r["score"].molecule_smiles)
-            for r in self.all_results
-            if r.get("score")
-        ]
+        scored = [(r["score"].total_score, r["score"].molecule_smiles) for r in self.all_results if r.get("score")]
         scored.sort(key=lambda x: -x[0])
         n = max(5, len(scored) // 5)
         return [s for _, s in scored[:n]]
@@ -259,6 +251,3 @@ class DiscoveryLoop:
             log.error("Pipeline error for %s: %s", smiles, e, exc_info=True)
             return None
         return result if result is not None else None
-
-
-

@@ -82,9 +82,17 @@ def _build_molecular_graph(
     mask = indices[:, None] < indices[None, :]
     adj_masked = adj_tensor * mask
 
-    forward_edges = torch.nonzero(adj_masked, as_tuple=False).t().contiguous() if adj_masked.numel() > 0 else torch.empty((2, 0), dtype=torch.long, device=device)
+    forward_edges = (
+        torch.nonzero(adj_masked, as_tuple=False).t().contiguous()
+        if adj_masked.numel() > 0
+        else torch.empty((2, 0), dtype=torch.long, device=device)
+    )
     reverse_edges = forward_edges.flip(0)
-    edge_index = torch.stack([forward_edges, reverse_edges], dim=1).reshape(2, -1) if forward_edges.numel() > 0 else torch.empty((2, 0), dtype=torch.long, device=device)
+    edge_index = (
+        torch.stack([forward_edges, reverse_edges], dim=1).reshape(2, -1)
+        if forward_edges.numel() > 0
+        else torch.empty((2, 0), dtype=torch.long, device=device)
+    )
 
     return node_features, edge_index
 
@@ -144,6 +152,7 @@ def load_qm9_lumo_data(
     if not os.path.exists(csv_path):
         # Fallback: generate synthetic data for CI
         from rdkit import Chem
+
         rng = np.random.RandomState(42)
         training_data: list[dict[str, Any]] = []
         base_smiles = _load_tier0_seed_smiles()
@@ -152,10 +161,12 @@ def load_qm9_lumo_data(
             if mol is None:
                 continue
             lumo = float(rng.uniform(-0.5, 0.5))  # proxy for LUMO
-            training_data.append({
-                "smiles": smi,
-                "ec_reduction": round(lumo, 6),
-            })
+            training_data.append(
+                {
+                    "smiles": smi,
+                    "ec_reduction": round(lumo, 6),
+                }
+            )
         with open(csv_path, "w") as f:
             writer = csv.DictWriter(f, fieldnames=["smiles", "ec_reduction"])
             writer.writeheader()
@@ -166,13 +177,14 @@ def load_qm9_lumo_data(
     with open(csv_path) as f:
         reader = csv.DictReader(f)
         for row in reader:
-            data.append({
-                "smiles": row["smiles"],
-                "ec_reduction": float(row["ec_reduction"]),
-            })
+            data.append(
+                {
+                    "smiles": row["smiles"],
+                    "ec_reduction": float(row["ec_reduction"]),
+                }
+            )
 
     return data[:n_samples]
-
 
 
 def generate_synthetic_training_data(
@@ -226,13 +238,15 @@ def generate_synthetic_training_data(
         pf6 = float(np.clip(pf6, 0.90, 1.50))
         poly = float(np.clip(poly, 0.30, 0.70))
 
-        training_data.append({
-            "smiles": smi,
-            "ec_reduction": round(ec, 6),
-            "dm_reduction": round(dm, 6),
-            "pf6_decomposition": round(pf6, 6),
-            "polymerization": round(poly, 6),
-        })
+        training_data.append(
+            {
+                "smiles": smi,
+                "ec_reduction": round(ec, 6),
+                "dm_reduction": round(dm, 6),
+                "pf6_decomposition": round(pf6, 6),
+                "polymerization": round(poly, 6),
+            }
+        )
 
     if output_path:
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -473,6 +487,3 @@ def train_tier0_model(
         "n_val": len(val_idx),
         "weights_path": output_path,
     }
-
-
-

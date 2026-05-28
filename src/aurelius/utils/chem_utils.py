@@ -129,10 +129,7 @@ def generate_molecular_descriptors(smiles: str) -> dict[str, float]:
         RuntimeError: When RDKit is unavailable.
     """
     if not HAS_RDKIT:
-        raise RuntimeError(
-            "RDKit is required for molecular descriptor generation. "
-            "Install RDKit: pip install rdkit"
-        )
+        raise RuntimeError("RDKit is required for molecular descriptor generation. Install RDKit: pip install rdkit")
 
     mol = _safe_mol_from_smiles(smiles)
     if mol is None:

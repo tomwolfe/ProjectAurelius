@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -252,7 +253,8 @@ def main() -> None:
     parser.add_argument("--profile-memory", action="store_true", help="Enable memory profiling with CSV report output")
     args = parser.parse_args()
 
-    checkpoint = CheckpointManager()
+    output_dir = os.environ.get("AURELIUS_OUTPUT_DIR")
+    checkpoint = CheckpointManager(output_dir=output_dir)
     try:
         run_screening(args, checkpoint)
     except KeyboardInterrupt:

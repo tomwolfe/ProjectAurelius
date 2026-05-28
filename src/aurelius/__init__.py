@@ -62,6 +62,6 @@ __all__ = [
     "Tier2Result",
     "ZeroCopyMemoryManager",
     "apply_global_config",
-        "get_config",
+    "get_config",
     "AureliusScoringEngine",
 ]

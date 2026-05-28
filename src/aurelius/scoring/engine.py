@@ -48,13 +48,21 @@ class AureliusScoringEngine:
         self._config = config or ForceFieldConfig.get()
         self.weights = {
             "sigma": weight_sigma if weight_sigma is not None else self._config.get_scoring().get("sigma", 0.3),
-            "desolvation": weight_desolvation if weight_desolvation is not None else self._config.get_scoring().get("desolvation", 0.2),
-            "sei_homogeneity": weight_sei_homogeneity if weight_sei_homogeneity is not None else self._config.get_scoring().get("sei_homogeneity", 0.2),
-            "mx_synthesis": weight_mx_synthesis if weight_mx_synthesis is not None else self._config.get_scoring().get("mx_synthesis", 0.2),
+            "desolvation": weight_desolvation
+            if weight_desolvation is not None
+            else self._config.get_scoring().get("desolvation", 0.2),
+            "sei_homogeneity": weight_sei_homogeneity
+            if weight_sei_homogeneity is not None
+            else self._config.get_scoring().get("sei_homogeneity", 0.2),
+            "mx_synthesis": weight_mx_synthesis
+            if weight_mx_synthesis is not None
+            else self._config.get_scoring().get("mx_synthesis", 0.2),
             "gwp": weight_gwp if weight_gwp is not None else self._config.get_scoring().get("gwp", 0.1),
         }
         self.viability_threshold = (
-            viability_threshold if viability_threshold is not None else self._config.get_scoring().get("viability_threshold", 65.0)
+            viability_threshold
+            if viability_threshold is not None
+            else self._config.get_scoring().get("viability_threshold", 65.0)
         )
 
     def compute_score(

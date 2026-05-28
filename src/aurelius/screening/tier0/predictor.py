@@ -49,9 +49,7 @@ class Tier0ActivationPredictor:
                     self._gnn_model.eval()  # type: ignore[attr-defined]
                     self._use_gnn = True
                 except (FileNotFoundError, RuntimeError) as e:
-                    raise RuntimeError(
-                        "Tier 0 MPNN weights not found. Run: aurelius train --task tier0"
-                    ) from e
+                    raise RuntimeError("Tier 0 MPNN weights not found. Run: aurelius train --task tier0") from e
         else:
             # Fall back to linear model when GNN weights unavailable
             self._use_gnn = False
@@ -89,9 +87,7 @@ class Tier0ActivationPredictor:
                     "polymerization": float(preds[3].item()),
                 }
             except (ImportError, ValueError, RuntimeError):
-                raise RuntimeError(
-                    "MPNN prediction failed. Run: aurelius train --task tier0"
-                ) from None
+                raise RuntimeError("MPNN prediction failed. Run: aurelius train --task tier0") from None
 
         # Linear fallback: use molecular descriptors to predict Ea
         return self._linear_predict(smiles, descriptors)

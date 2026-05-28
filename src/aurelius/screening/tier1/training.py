@@ -325,7 +325,6 @@ def train_on_qm9(
 
 def _train_synthetic_mlx(
     model: MLXBackend,
-
 ) -> MLXBackend:
     """Train on synthetic solubility dataset (demo/fallback mode).
 

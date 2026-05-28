@@ -587,7 +587,8 @@ def agent(
     """Run the autonomous screening agent."""
     from aurelius.agent.state import CheckpointManager
 
-    checkpoint = CheckpointManager()
+    output_dir = os.environ.get("AURELIUS_OUTPUT_DIR")
+    checkpoint = CheckpointManager(output_dir=output_dir)
     try:
         import argparse
 
@@ -597,6 +598,7 @@ def agent(
             profile_memory=profile_memory,
         )
         from aurelius.cli_scripts.agent import run_screening
+
         run_screening(args, checkpoint)
     except Exception as e:
         click.echo(f"[ERROR] {e}", err=True)

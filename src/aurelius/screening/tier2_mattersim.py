@@ -484,6 +484,7 @@ class MatterSimMTSimulator:
         """
         if HAS_TORCH:
             import torch
+
             if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built() and torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
                 return "cuda"
 
@@ -498,10 +499,10 @@ class MatterSimMTSimulator:
             raise RuntimeError("PyTorch is required for MatterSim-MT.")
 
         device = self._select_device()
-        print(
-            f"[Aurelius v5.2 Tier2] Initializing MatterSim-MT "
-            f"(barrier threshold: {self.barrier_threshold_eV} eV, "
-            f"device={device})"
+        logger.info(
+            "Initializing MatterSim-MT (barrier threshold: %s eV, device=%s)",
+            self.barrier_threshold_eV,
+            device,
         )
 
     def simulate_desolvation(
@@ -664,12 +665,21 @@ class MatterSimMTSimulator:
 
         # Compute LJ + Coulomb energies (always uses dense pairwise computation)
         lj_energy = MatterSimLJPotentials.compute_lj_potential(
-            atomic_numbers, distances, self._eps_matrix, self._sig_matrix,
-            self._default_eps, self._default_sig, self._cutoff,
+            atomic_numbers,
+            distances,
+            self._eps_matrix,
+            self._sig_matrix,
+            self._default_eps,
+            self._default_sig,
+            self._cutoff,
         )
         coulomb_energy = MatterSimCoulombPotentials.compute_coulomb_potential(
-            atomic_numbers, distances, self._charge_vector,
-            self._default_eps, self._default_sig, self._cutoff,
+            atomic_numbers,
+            distances,
+            self._charge_vector,
+            self._default_eps,
+            self._default_sig,
+            self._cutoff,
         )
         _total_energy = lj_energy + coulomb_energy
 
@@ -705,9 +715,15 @@ class MatterSimMTSimulator:
     ) -> torch.Tensor:
         """Compute Lennard-Jones potential using sparse neighbor list."""
         return MatterSimLJPotentials.compute_lj_sparse(
-            atomic_numbers, src_indices, dst_indices, distances,
-            self._eps_matrix, self._sig_matrix,
-            self._default_eps, self._default_sig, self._cutoff,
+            atomic_numbers,
+            src_indices,
+            dst_indices,
+            distances,
+            self._eps_matrix,
+            self._sig_matrix,
+            self._default_eps,
+            self._default_sig,
+            self._cutoff,
         )
 
     def _compute_coulomb_sparse(
@@ -719,43 +735,45 @@ class MatterSimMTSimulator:
     ) -> torch.Tensor:
         """Compute Coulombic potential using sparse neighbor list."""
         return MatterSimCoulombPotentials.compute_coulomb_sparse(
-            atomic_numbers, src_indices, dst_indices, distances,
-            self._charge_vector, self._use_polarization,
+            atomic_numbers,
+            src_indices,
+            dst_indices,
+            distances,
+            self._charge_vector,
+            self._use_polarization,
             self._CHARGES.get(int(atomic_numbers[0].item()), 0.0),
             str(atomic_numbers.device),  # type: ignore[arg-type]
         )
 
-    def _compute_lj_potential(
-        self, atomic_numbers: torch.Tensor, distances: torch.Tensor
-    ) -> torch.Tensor:
+    def _compute_lj_potential(self, atomic_numbers: torch.Tensor, distances: torch.Tensor) -> torch.Tensor:
         """Compute Lennard-Jones potential between all atom pairs."""
         return MatterSimLJPotentials.compute_lj_potential(
-            atomic_numbers, distances, self._eps_matrix, self._sig_matrix,
-            self._default_eps, self._default_sig, self._cutoff,
+            atomic_numbers,
+            distances,
+            self._eps_matrix,
+            self._sig_matrix,
+            self._default_eps,
+            self._default_sig,
+            self._cutoff,
         )
 
-    def _compute_coulomb_potential(
-        self, atomic_numbers: torch.Tensor, distances: torch.Tensor
-    ) -> torch.Tensor:
+    def _compute_coulomb_potential(self, atomic_numbers: torch.Tensor, distances: torch.Tensor) -> torch.Tensor:
         """Compute Coulombic potential between charged pairs."""
         return MatterSimCoulombPotentials.compute_coulomb_potential(
-            atomic_numbers, distances, self._charge_vector,
-            self._default_eps, self._default_sig, self._cutoff,
+            atomic_numbers,
+            distances,
+            self._charge_vector,
+            self._default_eps,
+            self._default_sig,
+            self._cutoff,
         )
 
     def _predict_charges_atomic(self, atomic_numbers: torch.Tensor) -> torch.Tensor:
-        """Predict partial charges using the GNN-ChargeEq model."""
-        compiled = getattr(self, "_compiled_model", None)
-        if compiled is None:
-            # Advanced indexing: O(1) lookup instead of O(N) loop
-            return self._charge_vector[atomic_numbers]
+        """Predict partial charges using precomputed charge vector.
 
-        try:
-            with torch.no_grad():
-                charges = compiled.predict_charges(atomic_numbers)
-            return charges  # type: ignore[no-any-return]
-        except (AttributeError, RuntimeError):
-            return self._charge_vector[atomic_numbers]
+        Advanced indexing: O(1) lookup instead of O(N) loop.
+        """
+        return self._charge_vector[atomic_numbers]
 
     def _compute_energy_profile(
         self,
@@ -861,12 +879,21 @@ class MatterSimMTSimulator:
         diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
         dist = torch.norm(diffs, dim=-1)
         lj = MatterSimLJPotentials.compute_lj_potential(
-            atomic_numbers, dist, self._eps_matrix, self._sig_matrix,
-            self._default_eps, self._default_sig, self._cutoff,
+            atomic_numbers,
+            dist,
+            self._eps_matrix,
+            self._sig_matrix,
+            self._default_eps,
+            self._default_sig,
+            self._cutoff,
         )
         coul = MatterSimCoulombPotentials.compute_coulomb_potential(
-            atomic_numbers, dist, self._charge_vector,
-            self._default_eps, self._default_sig, self._cutoff,
+            atomic_numbers,
+            dist,
+            self._charge_vector,
+            self._default_eps,
+            self._default_sig,
+            self._cutoff,
         )
 
         return lj + coul
@@ -945,53 +972,4 @@ __all__ = [
     "MatterSimLJPotentials",
     "MatterSimCoulombPotentials",
     "MatterSimNeighborList",
-    "ChargeEqModel",
 ]
-
-
-class ChargeEqModel:
-    """GNN-ChargeEq model for polarization-aware charge prediction.
-
-    A simple GNN-based model that predicts partial charges from
-    atomic numbers, enabling dynamic charge prediction for
-    Coulombic potential computation.
-    """
-
-    def __init__(self, hidden_dim: int = 64) -> None:
-        """Initialize ChargeEqModel.
-
-        Args:
-            hidden_dim: Hidden dimension for the GNN layers.
-        """
-        if not HAS_TORCH:
-            raise RuntimeError("PyTorch is required for ChargeEqModel.")
-
-        import torch.nn as nn
-
-        self.hidden_dim = hidden_dim
-        self.device = "cpu"
-        self._model = nn.Sequential(  # type: ignore[attr-defined]
-            nn.Linear(1, hidden_dim),  # type: ignore[attr-defined]
-            nn.ReLU(),  # type: ignore[attr-defined]
-            nn.Linear(hidden_dim, 1),  # type: ignore[attr-defined]
-        )
-        self._compiled = None
-
-    def predict_charges(self, atomic_numbers: torch.Tensor) -> torch.Tensor:
-        """Predict partial charges from atomic numbers.
-
-        Args:
-            atomic_numbers: (N,) LongTensor of atomic numbers.
-
-        Returns:
-            Predicted charges (N, 1) FloatTensor.
-        """
-        if not HAS_TORCH:
-            raise RuntimeError("PyTorch is required for ChargeEqModel.predict_charges.")
-
-        with torch.no_grad():
-            return self._model(atomic_numbers.unsqueeze(-1).float())  # type: ignore[union-attr, no-any-return]
-
-    def compile(self) -> None:
-        """Compile the model for inference."""
-        self._compiled = self._model.eval()  # type: ignore[assignment]

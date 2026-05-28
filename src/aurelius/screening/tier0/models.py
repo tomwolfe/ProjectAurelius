@@ -18,9 +18,13 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from aurelius.utils.dependencies import HAS_TORCH
+
+if TYPE_CHECKING:
+    import torch
+    import torch.nn as torch_nn
 
 __all__ = [
     "HAS_TORCH",
@@ -60,10 +64,12 @@ class ModelBackend(Protocol):
 # ---------------------------------------------------------------------------
 
 if HAS_TORCH:
+    import importlib.metadata as _importlib_metadata
+
     import torch  # noqa: F401
     import torch.nn as torch_nn  # noqa: F401
 
-    class PyTorchBackend(torch_nn.Module):  # type: ignore[misc]
+    class PyTorchBackend(torch_nn.Module):
         """PyTorch-based MPNN model for activation energy prediction.
 
         Architecture:
@@ -97,19 +103,16 @@ if HAS_TORCH:
                 torch_nn.ReLU(),
             )
 
-            self.mp_layers = torch_nn.ModuleList([
-                _MPNNEdgeBlockBackend(hidden_dim, edge_dim, hidden_dim)
-                for _ in range(2)
-            ])
-
-            self.readout = _MPNNReadoutMLPBackend(
-                input_dim=hidden_dim, output_dim=output_dim, hidden_dim=128
+            self.mp_layers = torch_nn.ModuleList(
+                [_MPNNEdgeBlockBackend(hidden_dim, edge_dim, hidden_dim) for _ in range(2)]
             )
+
+            self.readout = _MPNNReadoutMLPBackend(input_dim=hidden_dim, output_dim=output_dim, hidden_dim=128)
 
             self._init_weights()
 
         def _init_weights(self) -> None:
-            for module in self.modules():  # type: ignore[attr-defined]
+            for module in self.modules():
                 if isinstance(module, torch_nn.Linear):
                     torch_nn.init.xavier_uniform_(module.weight)
                     if module.bias is not None:
@@ -128,7 +131,7 @@ if HAS_TORCH:
             n_nodes = node_features.shape[0]
 
             if n_nodes == 0:
-                return torch.zeros(  # type: ignore[call-overload]
+                return torch.zeros(
                     self.readout.network[-1].out_features,
                     device=node_features.device,
                 )
@@ -143,9 +146,7 @@ if HAS_TORCH:
             tgt_idx = edge_index[1]
             src_features = torch.index_select(h, 0, src_idx)
             tgt_features = torch.index_select(h, 0, tgt_idx)
-            initial_edge_features = torch.cat(
-                [src_features, tgt_features], dim=-1
-            )
+            initial_edge_features = torch.cat([src_features, tgt_features], dim=-1)
             edge_features = self.edge_transform(initial_edge_features)
 
             for mp_layer in self.mp_layers:
@@ -154,19 +155,19 @@ if HAS_TORCH:
             pooled = h.sum(dim=0)
             return self.readout(pooled)
 
-        def parameters(self) -> list[Any]:  # type: ignore[override]
+        def parameters(self) -> list[Any]:
             return list(self.modules())
 
         def save_weights(self, path: str) -> None:
-            torch.save(self.state_dict(), path)  # type: ignore[call-overload, attr-defined]
+            torch.save(self.state_dict(), path)
 
             meta_path = path.rsplit(".", 1)[0] + "_metadata.json"
             shape_info: dict[str, list[int]] = {}
             for name, tensor in self.state_dict().items():
-                shape_info[name] = list(tensor.shape)  # type: ignore[attr-defined]
+                shape_info[name] = list(tensor.shape)
 
             meta = {
-                "model_version": _importlib_metadata_version("aurelius"),
+                "model_version": _importlib_metadata.version("aurelius"),
                 "architecture": "Tier0MPNN",
                 "node_dim": self.node_dim,
                 "edge_dim": self.edge_dim,
@@ -179,7 +180,7 @@ if HAS_TORCH:
 
         def load_weights(self, path: str) -> None:
             try:
-                current_version = _importlib_metadata_version("aurelius")
+                current_version = _importlib_metadata.version("aurelius")
             except Exception:
                 current_version = "unknown"
 
@@ -209,22 +210,13 @@ if HAS_TORCH:
                             "The model may not function correctly."
                         )
 
-            self.load_state_dict(state_dict)  # type: ignore[attr-defined]
-
-    # Import helper for metadata
-    import importlib.metadata as _importlib_metadata
-
-    def _importlib_metadata_version(name: str) -> str:
-        try:
-            return _importlib_metadata.version(name)
-        except Exception:
-            return "unknown"
+            self.load_state_dict(state_dict)
 
     # ------------------------------------------------------------------
     # Internal backend classes (not exported)
     # ------------------------------------------------------------------
 
-    class _MPNNEdgeBlockBackend(torch_nn.Module):  # type: ignore[misc]
+    class _MPNNEdgeBlockBackend(torch_nn.Module):
         """2-layer message passing block for molecular graphs (PyTorch backend)."""
 
         def __init__(self, node_dim: int = 4, edge_dim: int = 0, hidden_dim: int = 64) -> None:
@@ -253,7 +245,7 @@ if HAS_TORCH:
             self._init_weights()
 
         def _init_weights(self) -> None:
-            for module in self.modules():  # type: ignore[attr-defined]
+            for module in self.modules():
                 if isinstance(module, torch_nn.Linear):
                     torch_nn.init.xavier_uniform_(module.weight)
                     if module.bias is not None:
@@ -291,10 +283,10 @@ if HAS_TORCH:
 
             return self.norm(node_features + node_updates)
 
-        def parameters(self) -> list[Any]:  # type: ignore[override]
+        def parameters(self) -> list[Any]:
             return list(self.modules())
 
-    class _MPNNReadoutMLPBackend(torch_nn.Module):  # type: ignore[misc]
+    class _MPNNReadoutMLPBackend(torch_nn.Module):
         """Readout MLP for MPNN (PyTorch backend)."""
 
         def __init__(self, input_dim: int = 64, output_dim: int = 4, hidden_dim: int = 128) -> None:
@@ -311,7 +303,7 @@ if HAS_TORCH:
             self._init_weights()
 
         def _init_weights(self) -> None:
-            for module in self.modules():  # type: ignore[attr-defined]
+            for module in self.modules():
                 if isinstance(module, torch_nn.Linear):
                     torch_nn.init.xavier_uniform_(module.weight)
                     if module.bias is not None:
@@ -322,7 +314,7 @@ if HAS_TORCH:
                 return self.network(pooled)
             return self.network(pooled)
 
-        def parameters(self) -> list[Any]:  # type: ignore[override]
+        def parameters(self) -> list[Any]:
             return list(self.modules())
 
 
@@ -335,77 +327,14 @@ def model_factory() -> PyTorchBackend:
     return PyTorchBackend()
 
 
-if not HAS_TORCH:
+class PyTorchBackendUnavailableError(RuntimeError):
+    """Raised when PyTorch is not available."""
 
-    class PyTorchBackendUnavailableError(RuntimeError):
-        """Raised when PyTorch is not available."""
 
-    class PyTorchBackend:  # type: ignore[no-redef]
-        """Fallback: PyTorch backend unavailable."""
+def _model_factory() -> PyTorchBackend:
+    """Return a PyTorch backend instance for Tier 0 MPNN.
 
-        def __init__(
-            self,
-            node_dim: int = 4,
-            edge_dim: int = 0,
-            hidden_dim: int = 64,
-            output_dim: int = 4,
-        ) -> None:
-            raise PyTorchBackendUnavailableError(
-                "PyTorchBackend requires torch. Install torch to use this feature."
-            )
-
-        def __call__(self, *args: Any, **kwargs: Any) -> Any:
-            raise PyTorchBackendUnavailableError(
-                "PyTorchBackend requires torch. Install torch to use this feature."
-            )
-
-        def parameters(self) -> list[Any]:
-            raise PyTorchBackendUnavailableError(
-                "PyTorchBackend requires torch. Install torch to use this feature."
-            )
-
-        def save_weights(self, path: str) -> None:
-            raise PyTorchBackendUnavailableError(
-                "PyTorchBackend requires torch. Install torch to use this feature."
-            )
-
-        def load_weights(self, path: str) -> None:
-            raise PyTorchBackendUnavailableError(
-                "PyTorchBackend requires torch. Install torch to use this feature."
-            )
-
-    class _MPNNEdgeBlockBackend:  # type: ignore[no-redef]
-        """Fallback: 2-layer message passing block for molecular graphs."""
-
-        def __init__(self, node_dim: int = 4, edge_dim: int = 0, hidden_dim: int = 64) -> None:
-            raise PyTorchBackendUnavailableError(
-                "PyTorchBackend requires torch. Install torch to use this feature."
-            )
-
-        def __call__(self, *args: Any, **kwargs: Any) -> Any:
-            raise PyTorchBackendUnavailableError(
-                "PyTorchBackend requires torch. Install torch to use this feature."
-            )
-
-        def parameters(self) -> list[Any]:
-            raise PyTorchBackendUnavailableError(
-                "PyTorchBackend requires torch. Install torch to use this feature."
-            )
-
-    class _MPNNReadoutMLPBackend:  # type: ignore[no-redef]
-        """Fallback: Readout MLP for MPNN."""
-
-        def __init__(self, input_dim: int = 64, output_dim: int = 4, hidden_dim: int = 128) -> None:
-            raise PyTorchBackendUnavailableError(
-                "PyTorchBackend requires torch. Install torch to use this feature."
-            )
-
-        def __call__(self, *args: Any, **kwargs: Any) -> Any:
-            raise PyTorchBackendUnavailableError(
-                "PyTorchBackend requires torch. Install torch to use this feature."
-            )
-
-        def parameters(self) -> list[Any]:
-            raise PyTorchBackendUnavailableError(
-                "PyTorchBackend requires torch. Install torch to use this feature."
-            )
+    Returns:
+        A PyTorchBackend instance.
+    """
+    return PyTorchBackend()

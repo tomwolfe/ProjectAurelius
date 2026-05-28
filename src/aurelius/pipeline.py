@@ -42,7 +42,6 @@ class AureliusPipeline:
         self,
         config: AureliusConfig | None = None,
         use_real_models: bool = True,
-
     ) -> None:
         """Initialize the Aurelius pipeline.
 
@@ -60,7 +59,6 @@ class AureliusPipeline:
         self.has_mlx = HAS_MLX
         self.has_torch = HAS_TORCH
 
-
     def initialize(self) -> None:
         """Initialize all pipeline components."""
         # Enforce RDKit availability for real model paths
@@ -68,16 +66,10 @@ class AureliusPipeline:
             import rdkit  # noqa: F401
         except ImportError:
             raise RuntimeError(
-                "RDKit is required for pipeline initialization. "
-                "Install with: pip install rdkit"
+                "RDKit is required for pipeline initialization. Install with: pip install rdkit"
             ) from None
 
-        print("\n" + "=" * 60)
-        print("  PROJECT AURELIUS v7.0 - Pipeline Initialization")
-        print("  The 2nm Fusion Edition | M5 Pro Neural Accelerators")
-        print("=" * 60 + "\n")
-
-        # Phase 1: MWSE Solvation engine
+        logger.info("Pipeline initialization: MWSE Solvation engine")
         self._solvation_engine = MWSESolvationEngine(
             kex_window_ps=self.config.kex_screening_window_ps,
         )
@@ -87,14 +79,14 @@ class AureliusPipeline:
             self._mlx_filter = MLXNAFilter(
                 quantization_format=self.config.chemvlm_quantization,
             )
-            print("[Aurelius v5.2] Tier 1 (MLX-NA): ENABLED [REAL]")
+            logger.info("Tier 1 (MLX-NA): ENABLED [REAL]")
 
         if self._use_real_models and self.config.tier2_mattersim_enabled:
             self._mattersim_sim = MatterSimMTSimulator(
                 barrier_threshold_eV=self.config.desolvation_barrier_threshold_eV,
             )
             device = self._mattersim_sim._select_device() if self._mattersim_sim else "cpu"
-            print(f"[Aurelius v5.2] Tier 2 (MatterSim-MT): ENABLED (device={device})")
+            logger.info("Tier 2 (MatterSim-MT): ENABLED (device=%s)", device)
 
         if self._use_real_models and self.config.tier3_gcmtwin_enabled:
             self._gcmtwin = GCMDigitalTwin(
@@ -104,7 +96,7 @@ class AureliusPipeline:
                 use_tier0_prediction=True,
                 tier0_model_path="models/tier0/mpnn_weights.pth",
             )
-            print("[Aurelius v5.2] Tier 3 (GCMD Digital Twin): ENABLED")
+            logger.info("Tier 3 (GCMD Digital Twin): ENABLED")
 
         # Phase 4: Scoring engine
         self._scoring_engine = AureliusScoringEngine(
@@ -115,7 +107,7 @@ class AureliusPipeline:
             weight_gwp=self.config.weight_gwp,
         )
 
-        print(f"\n[Aurelius v5.2] Pipeline ready. Viability threshold: {self._scoring_engine.viability_threshold}\n")
+        logger.info("Pipeline ready. Viability threshold: %s", self._scoring_engine.viability_threshold)
 
     def _generate_failed_run(self, smiles: str, reason: str, **kwargs: Any) -> dict[str, Any]:
         """Generate a failed run result dict for early-exit scenarios.
@@ -176,7 +168,7 @@ class AureliusPipeline:
         if not self._scoring_engine:
             raise RuntimeError("Pipeline not initialized. Call initialize() first.")
 
-        print(f"[Aurelius Pipeline] Processing: {smiles}")
+        logger.info("Processing: %s", smiles)
         pipeline_start = time.perf_counter()
 
         # Build molecule input
@@ -201,14 +193,15 @@ class AureliusPipeline:
             t1_result = self._mlx_filter.screen_molecule(smiles)
             tier_timings["tier1_ms"] = (time.perf_counter() - t1_start) * 1000
             results["tier1"] = t1_result
-            print(
-                f"\n  Tier 1 Result: {t1_result.molecule_smiles} "
-                f"-> {'VIABLE' if t1_result.is_viable else 'REJECTED'} "
-                f"(confidence={t1_result.confidence_score:.3f}, "
-                f"time={t1_result.inference_time_ms:.1f}ms)"
+            logger.info(
+                "Tier 1 Result: %s -> %s (confidence=%.3f, time=%.1fms)",
+                t1_result.molecule_smiles,
+                "VIABLE" if t1_result.is_viable else "REJECTED",
+                t1_result.confidence_score,
+                t1_result.inference_time_ms,
             )
             if not t1_result.is_viable:
-                print(f"[Aurelius Pipeline] Short-circuiting: {smiles} failed Tier 1.")
+                logger.warning("Short-circuiting: %s failed Tier 1.", smiles)
                 results["tier_timings"] = tier_timings  # type: ignore[assignment]
                 return self._generate_failed_run(smiles, "Failed Tier 1 Structural Filter", **kwargs)  # type: ignore[return-value]
 
@@ -232,16 +225,17 @@ class AureliusPipeline:
             )
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
             results["tier2"] = t2_result  # type: ignore[assignment]
-            print(
-                f"  Tier 2 Result: {t2_result.molecule_smiles} "
-                f"-> {'VIABLE' if t2_result.is_viable else 'REJECTED'} "
-                f"(barrier={t2_result.desolvation_path.barrier_height_eV:.3f} eV, "
-                f"time={t2_result.simulation_time_ms:.1f}ms)"
+            logger.info(
+                "Tier 2 Result: %s -> %s (barrier=%.3f eV, time=%.1fms)",
+                t2_result.molecule_smiles,
+                "VIABLE" if t2_result.is_viable else "REJECTED",
+                t2_result.desolvation_path.barrier_height_eV,
+                t2_result.simulation_time_ms,
             )
 
             # HARD SHORT-CIRCUIT: Explicit early exit
             if not t2_result.is_viable:
-                print(f"[Aurelius Pipeline] Short-circuiting: {smiles} failed Tier 2 viability.")
+                logger.warning("Short-circuiting: %s failed Tier 2 viability.", smiles)
                 results["tier_timings"] = tier_timings  # type: ignore[assignment]
                 return self._generate_failed_run(
                     smiles,
@@ -262,10 +256,11 @@ class AureliusPipeline:
             )
             tier_timings["tier3_ms"] = (time.perf_counter() - t3_start) * 1000
             results["tier3"] = t3_result  # type: ignore[assignment]
-            print(
-                f"  Tier 3 Result: {t3_result.molecule_smiles} "
-                f"-> SEI: {t3_result.sei_evolution.thickness_angstrom:.1f}A, "
-                f"Homogeneity={t3_result.sei_evolution.homogeneity_score:.3f}"
+            logger.info(
+                "Tier 3 Result: %s -> SEI: %.1fA, Homogeneity=%.3f",
+                t3_result.molecule_smiles,
+                t3_result.sei_evolution.thickness_angstrom,
+                t3_result.sei_evolution.homogeneity_score,
             )
 
         # Final consolidated score compilation
@@ -275,7 +270,7 @@ class AureliusPipeline:
         results["tier_timings"] = tier_timings  # type: ignore[assignment]
 
         # Print scorecard
-        print(f"\n{self._scoring_engine.print_scorecard(score)}")
+        logger.debug("Scorecard:\n%s", self._scoring_engine.print_scorecard(score))
 
         # Performance report
         total_ms = (time.perf_counter() - pipeline_start) * 1000
@@ -283,7 +278,7 @@ class AureliusPipeline:
         for tier, t_ms in tier_timings.items():
             timing_lines.append(f"    {tier}: {t_ms:.1f}ms")
         if timing_lines:
-            print(f"\n[Aurelius v5.2] Performance: total={total_ms:.1f}ms | " + " | ".join(timing_lines))
+            logger.info("Performance: total=%.1fms | %s", total_ms, " | ".join(timing_lines))
 
         return results
 
@@ -311,8 +306,7 @@ class AureliusPipeline:
         results: dict[int, dict[str, Any]] = {}
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
             future_to_idx = {
-                executor.submit(self.screen_molecule, smiles, **kwargs): i
-                for i, smiles in enumerate(smiles_list)
+                executor.submit(self.screen_molecule, smiles, **kwargs): i for i, smiles in enumerate(smiles_list)
             }
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]

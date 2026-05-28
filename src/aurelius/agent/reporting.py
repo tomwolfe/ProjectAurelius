@@ -7,21 +7,49 @@ insights, and agent discovery manifests.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 
+def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str:
+    """Resolve a relative output path against a base directory.
+
+    If ``output_dir`` is provided, ``path`` is joined to it.
+    Otherwise ``path`` is returned unchanged (backward-compatible).
+
+    Args:
+        path: Output file path (relative).
+        output_dir: Base directory to resolve against.
+
+    Returns:
+        Resolved absolute path.
+    """
+    if output_dir is not None:
+        return str(Path(output_dir) / path)
+    return path
+
+
 def generate_discovery_results(
     all_results: list[dict[str, Any]],
     path: str = "discovery_results_final.json",
+    output_dir: str | Path | None = None,
 ) -> None:
     """Write full structured logs of all screened molecules to JSON.
 
     Args:
         all_results: List of screening result dicts.
-        path: Output file path.
+        path: Output file path (relative to output_dir if provided).
+        output_dir: Directory to write to. If None, uses current working directory.
     """
+    import json
+    import logging
+
+    log = logging.getLogger("aurelius_agent")
+
+    path = _resolve_output_path(path, output_dir)
+
     serializable: list[dict[str, Any]] = []
     for r in all_results:
         entry: dict[str, Any] = {
@@ -57,26 +85,26 @@ def generate_discovery_results(
         entry["tier_timings"] = r.get("tier_timings", {})
         serializable.append(entry)
 
-    import json
-    import logging
-
-    log = logging.getLogger("aurelius_agent")
-
     with open(path, "w") as f:
         json.dump(serializable, f, indent=2)
     log.info("Discovery results written to %s (%d entries)", path, len(serializable))
 
 
-def write_top_discoveries(discoveries: list[dict[str, Any]], path: str = "top_discoveries.smi") -> None:
+def write_top_discoveries(
+    discoveries: list[dict[str, Any]], path: str = "top_discoveries.smi", output_dir: str | Path | None = None
+) -> None:
     """Write SMILES of all legitimate discoveries to file.
 
     Args:
         discoveries: List of discovery dicts.
-        path: Output file path.
+        path: Output file path (relative to output_dir).
+        output_dir: Directory to write to. If None, uses current working directory.
     """
     import logging
 
     log = logging.getLogger("aurelius_agent")
+
+    path = _resolve_output_path(path, output_dir)
 
     with open(path, "w") as f:
         f.write("# Project Aurelius v7.0 — Top Discoveries (Score >= 65.0)\n")
@@ -89,17 +117,21 @@ def generate_screening_statistics(
     convergence: Any,
     all_results: list[dict[str, Any]],
     path: str = "screening_statistics.md",
+    output_dir: str | Path | None = None,
 ) -> None:
     """Generate convergence statistics as markdown.
 
     Args:
         convergence: ConvergenceChecker instance.
         all_results: List of screening results.
-        path: Output file path.
+        path: Output file path (relative to output_dir).
+        output_dir: Directory to write to. If None, uses current working directory.
     """
     import logging
 
     log = logging.getLogger("aurelius_agent")
+
+    path = _resolve_output_path(path, output_dir)
 
     scores = [r["score"].total_score for r in all_results if r.get("score")]
 
@@ -173,17 +205,21 @@ def generate_chemical_insights(
     all_results: list[dict[str, Any]],
     discoveries: list[dict[str, Any]],
     path: str = "chemical_insights.md",
+    output_dir: str | Path | None = None,
 ) -> None:
     """Generate structural correlations and failure analysis.
 
     Args:
         all_results: List of screening results.
         discoveries: List of discovery dicts.
-        path: Output file path.
+        path: Output file path (relative to output_dir).
+        output_dir: Directory to write to. If None, uses current working directory.
     """
     import logging
 
     log = logging.getLogger("aurelius_agent")
+
+    path = _resolve_output_path(path, output_dir)
 
     from rdkit import Chem
 
@@ -261,6 +297,7 @@ def generate_manifest(
     discoveries: list[dict[str, Any]],
     all_results: list[dict[str, Any]],
     path: str = "agent_discovery_manifest.json",
+    output_dir: str | Path | None = None,
 ) -> None:
     """Generate the agent_discovery_manifest.json.
 
@@ -268,12 +305,15 @@ def generate_manifest(
         convergence: ConvergenceChecker instance.
         discoveries: List of discovery dicts.
         all_results: List of screening results.
-        path: Output file path.
+        path: Output file path (relative to output_dir).
+        output_dir: Directory to write to. If None, uses current working directory.
     """
     import json
     import logging
 
     log = logging.getLogger("aurelius_agent")
+
+    path = _resolve_output_path(path, output_dir)
 
     rolling = convergence.compute_rolling_mean(batch_size=50)
     rolling_mean = float(np.mean(rolling[-3:])) if len(rolling) >= 3 else 0.0

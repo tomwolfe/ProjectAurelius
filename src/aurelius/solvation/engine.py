@@ -268,15 +268,9 @@ class MWSESolvationEngine:
             self._PARTIAL_CHARGES[int(z_str)] = val["charge"]
 
         born_charges_data = ff_params.get("born_effective_charges", {})
-        self._BORN_CHARGES_LI = np.array(
-            born_charges_data.get("Li+", np.eye(3) * 1.32)
-        )
-        self._BORN_CHARGES_NA = np.array(
-            born_charges_data.get("Na+", np.eye(3) * 1.12)
-        )
-        self._BORN_CHARGES_K = np.array(
-            born_charges_data.get("K+", np.eye(3) * 0.92)
-        )
+        self._BORN_CHARGES_LI = np.array(born_charges_data.get("Li+", np.eye(3) * 1.32))
+        self._BORN_CHARGES_NA = np.array(born_charges_data.get("Na+", np.eye(3) * 1.12))
+        self._BORN_CHARGES_K = np.array(born_charges_data.get("K+", np.eye(3) * 0.92))
 
         arrhenius_params = ff_params.get("arrhenius_parameters", {})
         self._ARRHENIUS_BARRIERS = arrhenius_params.get("barriers_eV", {})
@@ -334,13 +328,25 @@ class MWSESolvationEngine:
             e_des_eV=0.10,
         )
 
+        import logging
+
+        log = logging.getLogger(__name__)
+
         if is_labile:
-            print(
-                f"[Aurelius v5.2 MWSE] Labile shell: {ion_type} in {solvent_type} "
-                f"(k_ex={k_ex:.3f} ps^-1, nu_coord={shell.coordination_number})"
+            log.info(
+                "Labile shell: %s in %s (k_ex=%.3f ps^-1, nu_coord=%d)",
+                ion_type,
+                solvent_type,
+                k_ex,
+                shell.coordination_number,
             )
         else:
-            print(f"[Aurelius v5.2 MWSE] Non-labile shell: {ion_type} in {solvent_type} (k_ex={k_ex:.3f} ps^-1)")
+            log.warning(
+                "Non-labile shell: %s in %s (k_ex=%.3f ps^-1)",
+                ion_type,
+                solvent_type,
+                k_ex,
+            )
 
         return shell
 
@@ -374,9 +380,7 @@ class MWSESolvationEngine:
 
         return BornEffectiveCharges(ion_type=ion_type, z_star=z_star)
 
-    def _interpolate_born_for_solvent(
-        self, z_star: Any, solvent_type: str, ion_type: str
-    ) -> Any:
+    def _interpolate_born_for_solvent(self, z_star: Any, solvent_type: str, ion_type: str) -> Any:
         """Interpolate Born effective charges for mixed solvents.
 
         Uses linear interpolation based on the dielectric constant
@@ -435,8 +439,12 @@ class MWSESolvationEngine:
         Returns dipole moment in Debye.
         High dipole moments (>3.5 D) correlate with 500-cycle stability.
         """
+        import logging
+
+        log = logging.getLogger(__name__)
+
         mu = born_charges.dipole_moment_debye
-        print(f"[Aurelius v5.2 MWSE] Born Z* norm: {born_charges.z_star_scalar:.3f}, Predicted dipole: {mu:.2f} D")
+        log.info("Born Z* norm: %.3f, Predicted dipole: %.2f D", born_charges.z_star_scalar, mu)
         return mu
 
     def evaluate_mwse_state(
@@ -497,23 +505,29 @@ class MWSESolvationEngine:
             path_integral_energy=float(np.trapezoid(energies, positions)),
         )
 
+        import logging
+
+        log = logging.getLogger(__name__)
+
         rejection_threshold = 0.5
         if barrier.local_maxima_eV > rejection_threshold:
-            print(
-                f"[Aurelius v5.2 MWSE] REJECTED: Local maxima {barrier.local_maxima_eV:.3f} eV > {rejection_threshold} eV"
+            log.warning(
+                "REJECTED: Local maxima %.3f eV > %s eV",
+                barrier.local_maxima_eV,
+                rejection_threshold,
             )
         else:
-            print(
-                f"[Aurelius v5.2 MWSE] PASS: Barrier {barrier.barrier_height_eV:.3f} eV, "
-                f"Maxima={barrier.local_maxima_eV:.3f} eV, Path integral={barrier.path_integral_energy:.3f} eV*A"
+            log.info(
+                "PASS: Barrier %.3f eV, Maxima=%.3f eV, Path integral=%.3f eV*A",
+                barrier.barrier_height_eV,
+                barrier.local_maxima_eV,
+                barrier.path_integral_energy,
             )
 
         return barrier
 
     @staticmethod
-    def _simulate_energy_profile(
-        positions: Any, ion_type: str, solvent_type: str
-    ) -> Any:
+    def _simulate_energy_profile(positions: Any, ion_type: str, solvent_type: str) -> Any:
         """Simulate energy profile of ion moving through solvent layer."""
         energies = np.zeros_like(positions)
         centers = [1.5, 3.0, 4.2]
