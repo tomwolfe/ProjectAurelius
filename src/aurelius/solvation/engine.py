@@ -161,9 +161,6 @@ def compute_gbsa_solvation_energy(
     floor = 1e-10
     prefactor_sign = -0.5
 
-    if surface_tension_val is None:
-        surface_tension_val = 0.00542
-
     charge_products = np.multiply.outer(charges, charges)
     radii_sum = np.add.outer(radii, radii)
     i_upper, j_upper = np.triu_indices(n, k=1)

@@ -31,7 +31,7 @@ class QuantizationConfig:
 
     precision: str = "MX4"
 
-    def __post_init(self) -> None:
+    def __post_init__(self) -> None:
         if self.precision not in ("MX4", "MX6", "MX8"):
             raise ValueError(
                 f"Invalid precision '{self.precision}'. "

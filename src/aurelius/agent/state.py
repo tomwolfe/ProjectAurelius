@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections import deque
 from datetime import UTC, datetime
@@ -470,9 +471,6 @@ class FeedbackAdapter:
             path: Output file path (relative to output_dir).
             output_dir: Directory to write to. If None, uses current working directory.
         """
-        import logging
-        from datetime import UTC
-
         log = logging.getLogger("aurelius_agent")
 
         path = _resolve_output_path(path, output_dir)

@@ -612,10 +612,6 @@ class MatterSimMTSimulator:
         atomic_numbers = torch.tensor(atomic_numbers_list, dtype=torch.long, device=device)
         coordinates = torch.tensor(coords_list, dtype=torch.float32, device=device)
 
-        _n_atoms = len(atomic_numbers_list)
-        atomic_numbers = torch.tensor(atomic_numbers_list, dtype=torch.long, device=device)
-        coordinates = torch.tensor(coords_list, dtype=torch.float32, device=device)
-
         # Compute pairwise distances
         diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
         distances = torch.norm(diffs, dim=-1)

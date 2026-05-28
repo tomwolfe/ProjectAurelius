@@ -6,6 +6,8 @@ insights, and agent discovery manifests.
 
 from __future__ import annotations
 
+import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -43,9 +45,6 @@ def generate_discovery_results(
         path: Output file path (relative to output_dir if provided).
         output_dir: Directory to write to. If None, uses current working directory.
     """
-    import json
-    import logging
-
     log = logging.getLogger("aurelius_agent")
 
     path = _resolve_output_path(path, output_dir)
@@ -100,11 +99,9 @@ def write_top_discoveries(
         path: Output file path (relative to output_dir).
         output_dir: Directory to write to. If None, uses current working directory.
     """
-    import logging
+    path = _resolve_output_path(path, output_dir)
 
     log = logging.getLogger("aurelius_agent")
-
-    path = _resolve_output_path(path, output_dir)
 
     with open(path, "w") as f:
         f.write("# Project Aurelius v7.0 — Top Discoveries (Score >= 65.0)\n")
@@ -127,8 +124,6 @@ def generate_screening_statistics(
         path: Output file path (relative to output_dir).
         output_dir: Directory to write to. If None, uses current working directory.
     """
-    import logging
-
     log = logging.getLogger("aurelius_agent")
 
     path = _resolve_output_path(path, output_dir)
@@ -308,9 +303,6 @@ def generate_manifest(
         path: Output file path (relative to output_dir).
         output_dir: Directory to write to. If None, uses current working directory.
     """
-    import json
-    import logging
-
     log = logging.getLogger("aurelius_agent")
 
     path = _resolve_output_path(path, output_dir)
