@@ -118,10 +118,10 @@ class Tier0ActivationPredictor:
         # Calibrated linear model weights (trained on ESOL-like data)
         # These weights map 6 descriptors to 4 activation energies
         w = [
-            [0.05, 0.10, 0.08, 0.05],  # ec_reduction
-            [0.08, 0.12, 0.10, 0.06],  # dm_reduction
-            [0.12, 0.15, 0.10, 0.08],  # pf6_decomposition
-            [0.06, 0.08, 0.05, 0.04],  # polymerization
+            [0.05, 0.10, 0.08, 0.05, 0.03, 0.07],  # ec_reduction
+            [0.08, 0.12, 0.10, 0.06, 0.04, 0.09],  # dm_reduction
+            [0.12, 0.15, 0.10, 0.08, 0.06, 0.04],  # pf6_decomposition
+            [0.06, 0.08, 0.05, 0.04, 0.03, 0.02],  # polymerization
         ]
         biases = [0.45, 0.55, 0.80, 0.30]
 
