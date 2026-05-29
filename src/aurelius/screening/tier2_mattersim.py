@@ -92,11 +92,12 @@ def compute_lj_sparse(
     lj_per_pair = 4.0 * eps_tensor * (sig_over_r12 - sig_over_r6)
 
     # Shift to zero at cutoff
-    r_cutoff_soft = torch.sqrt(distances * distances + sig_tensor**2)
+    cutoff_sq = torch.tensor(cutoff**2, device=distances.device, dtype=distances.dtype)
+    r_cutoff_soft = torch.sqrt(cutoff_sq + sig_tensor**2)
     sig_over_r_cutoff = sig_tensor / r_cutoff_soft
     sig_over_r6_cutoff = sig_over_r_cutoff**6
-    lj_cutoff = 4.0 * eps_tensor * (sig_over_r6_cutoff - sig_over_r6)
-
+    sig_over_r12_cutoff = sig_over_r6_cutoff**2
+    lj_cutoff = 4.0 * eps_tensor * (sig_over_r12_cutoff - sig_over_r6_cutoff)
     lj_per_pair = lj_per_pair - lj_cutoff
 
     return lj_per_pair.sum()
@@ -159,11 +160,12 @@ def compute_lj_potential(
     lj_per_pair = 4.0 * eps_tensor * (sig_over_r12 - sig_over_r6)
 
     # Shift to zero at cutoff
-    r_cutoff_soft = torch.sqrt(distances * distances + sig_tensor**2)
+    cutoff_sq = torch.tensor(cutoff**2, device=distances.device, dtype=distances.dtype)
+    r_cutoff_soft = torch.sqrt(cutoff_sq + sig_tensor**2)
     sig_over_r_cutoff = sig_tensor / r_cutoff_soft
     sig_over_r6_cutoff = sig_over_r_cutoff**6
-    lj_cutoff = 4.0 * eps_tensor * (sig_over_r6_cutoff - sig_over_r6)
-
+    sig_over_r12_cutoff = sig_over_r6_cutoff**2
+    lj_cutoff = 4.0 * eps_tensor * (sig_over_r12_cutoff - sig_over_r6_cutoff)
     lj_per_pair = lj_per_pair - lj_cutoff
     lj_total = torch.sum(lj_per_pair * cutoff_mask.float())
 
@@ -255,10 +257,10 @@ def compute_coulomb_potential(
     q_product = q_i * q_j
 
     charge_mask = q_product != 0.0
+    cutoff_mask = (distances < cutoff) & mask
     r_soft = torch.sqrt(distances * distances + 1.0)
-
     coulomb_per_pair = COULOMB_EV_A * q_product / r_soft
-    coulomb_total = torch.sum(coulomb_per_pair * mask.float() * charge_mask.float())
+    coulomb_total = torch.sum(coulomb_per_pair * cutoff_mask.float() * charge_mask.float())
 
     return coulomb_total
 
@@ -815,9 +817,10 @@ class MatterSimMTSimulator:
             # Broadcast charge products: (n_scan_points, n_solvent)
             qi_broadcast = qi * q_j_vals.unsqueeze(0).expand(n_scan_points, -1)
             charge_mask = (q_j_vals != 0.0).unsqueeze(0).expand(n_scan_points, -1)
+            cutoff_mask_c = (ion_solvent_distances < self._cutoff) & charge_mask
             r_soft_c = torch.sqrt(ion_solvent_distances**2 + 1.0)
             coul_per_atom = COULOMB_EV_A * qi_broadcast / r_soft_c
-            coul_total = torch.sum(coul_per_atom * charge_mask.float(), dim=1)  # (n_scan_points,)
+            coul_total = torch.sum(coul_per_atom * cutoff_mask_c.float(), dim=1)  # (n_scan_points,)
         else:
             coul_total = torch.zeros(n_scan_points, device=device)
 
