@@ -13,7 +13,7 @@ import threading
 from importlib import resources
 from typing import Any, ClassVar, cast
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def _default_ff_path() -> str:
@@ -41,9 +41,7 @@ class ForceFieldConfig(BaseModel):
         >>> solvation = config.get_solvation()
     """
 
-    class Config:
-        """Pydantic model configuration."""
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
     _instance: ClassVar[ForceFieldConfig | None] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()

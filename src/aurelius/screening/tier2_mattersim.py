@@ -66,14 +66,22 @@ def compute_lj_sparse(
         Scalar LJ energy tensor.
     """
     device = atomic_numbers.device
-
+    
+    # Lookup atomic numbers for source and destination atoms
+    src_z = atomic_numbers[src_indices]
+    dst_z = atomic_numbers[dst_indices]
+    
     # Advanced indexing lookup: O(1) per pair instead of O(N_params) loop
-    eps_values = eps_matrix[src_indices, atomic_numbers[dst_indices]].to(device)
-    sig_values = sig_matrix[dst_indices, atomic_numbers[src_indices]].to(device)
+    # Check both (src, dst) and (dst, src) to handle asymmetric parameter matrices
+    eps_values = eps_matrix[src_z, dst_z]
+    eps_values = torch.where(eps_values == 0, eps_matrix[dst_z, src_z], eps_values)
+    
+    sig_values = sig_matrix[src_z, dst_z]
+    sig_values = torch.where(sig_values == 0, sig_matrix[dst_z, src_z], sig_values)
 
     # Default parameters for unknown pairs
-    eps_tensor = torch.where(eps_values == 0, default_eps, eps_values)
-    sig_tensor = torch.where(sig_values == 0, default_sig, sig_values)
+    eps_tensor = torch.where(eps_values == 0, torch.full_like(eps_values, default_eps), eps_values)
+    sig_tensor = torch.where(sig_values == 0, torch.full_like(sig_values, default_sig), sig_values)
 
     # Shifted LJ potential
     r_soft = torch.sqrt(distances * distances + sig_tensor**2)
@@ -125,10 +133,16 @@ def compute_lj_potential(
 
     mask = torch.triu(torch.ones(n, n, device=device, dtype=torch.bool), diagonal=1)
 
-    # Advanced indexing lookup: O(1) per pair instead of O(N_params) loop
-    indices = torch.arange(n, device=device, dtype=torch.long)
-    eps_tensor = eps_matrix[indices, atomic_numbers].to(device)
-    sig_tensor = sig_matrix[indices, atomic_numbers].to(device)
+    # Pairwise parameter lookup using atomic numbers
+    z_i = atomic_numbers.unsqueeze(1)  # (N, 1)
+    z_j = atomic_numbers.unsqueeze(0)  # (1, N)
+    
+    # Check both (z_i, z_j) and (z_j, z_i) to handle asymmetric parameter matrices
+    eps_tensor = eps_matrix[z_i, z_j]
+    eps_tensor = torch.where(eps_tensor == 0, eps_matrix[z_j, z_i], eps_tensor)
+    
+    sig_tensor = sig_matrix[z_i, z_j]
+    sig_tensor = torch.where(sig_tensor == 0, sig_matrix[z_j, z_i], sig_tensor)
 
     # Default parameters for unknown pairs
     eps_tensor = torch.where(eps_tensor == 0, torch.full_like(eps_tensor, default_eps), eps_tensor)
@@ -190,10 +204,11 @@ def compute_coulomb_sparse(
         Scalar Coulomb energy tensor.
     """
     coul_total = torch.tensor(0.0, device=atomic_numbers.device)
-
+    
     # Advanced indexing lookup: O(1) per pair instead of O(N) loop
-    q_i = charge_vector[src_indices]
-    q_j = charge_vector[dst_indices]
+    # charge_vector is indexed by atomic number, not atom index
+    q_i = charge_vector[atomic_numbers[src_indices]]
+    q_j = charge_vector[atomic_numbers[dst_indices]]
 
     charge_mask = (q_i * q_j) != 0.0
 
@@ -755,9 +770,13 @@ class MatterSimMTSimulator:
         # Build LJ parameter tensors for ion (z=11) vs solvent pairs
         solvent_z = atomic_numbers[1:]  # (n_solvent,)
         # Advanced indexing: O(1) lookup instead of O(N_params) loop
+        # Check both (11, z) and (z, 11) to handle asymmetric parameter matrices
         eps_vals = self._eps_matrix[11, solvent_z]
+        eps_vals = torch.where(eps_vals == 0, self._eps_matrix[solvent_z, 11], eps_vals)
+        
         sig_vals = self._sig_matrix[11, solvent_z]
-
+        sig_vals = torch.where(sig_vals == 0, self._sig_matrix[solvent_z, 11], sig_vals)
+        
         # Apply defaults for unknown pairs: (n_solvent,)
         eps_vals = torch.where(eps_vals == 0, torch.full_like(eps_vals, self._default_eps), eps_vals)
         sig_vals = torch.where(sig_vals == 0, torch.full_like(sig_vals, self._default_sig), sig_vals)
