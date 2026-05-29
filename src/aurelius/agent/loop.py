@@ -149,10 +149,8 @@ class DiscoveryLoop:
 
                 is_discovery = (
                     total_score >= 65.0
-                    and score.tier1_viable
-                    and score.tier2_viable
-                    and score.tier3_viable
-                    and len(score.rejection_reasons) == 0
+                    and score.get("is_viable", False)
+                    and len(score.get("rejection_reasons", [])) == 0
                 )
 
                 # Convert dict result to typed ScreeningResult
@@ -162,14 +160,14 @@ class DiscoveryLoop:
 
                 screening_result = ScreeningResult(
                     smiles=smi,
-                    total_score=score_data.total_score,
-                    sigma_score=score_data.sigma_score,
-                    desolvation_score=score_data.desolvation_score,
-                    sei_homogeneity_score=score_data.sei_homogeneity_score,
-                    mx_synthesis_score=score_data.mx_synthesis_score,
-                    gwp_penalty=score_data.gwp_penalty,
-                    is_viable=score_data.is_viable,
-                    rejection_reasons=score_data.rejection_reasons,
+                    total_score=score_data.get("total_score", 0.0),
+                    sigma_score=score_data.get("sigma_score", 0.0),
+                    desolvation_score=score_data.get("desolvation_score", 0.0),
+                    sei_homogeneity_score=score_data.get("sei_homogeneity_score", 0.0),
+                    mx_synthesis_score=score_data.get("mx_synthesis_score", 0.0),
+                    gwp_penalty=score_data.get("gwp_penalty", 0.0),
+                    is_viable=score_data.get("is_viable", False),
+                    rejection_reasons=score_data.get("rejection_reasons", []),
                 )
 
                 if is_discovery:
@@ -177,13 +175,13 @@ class DiscoveryLoop:
                     discovery_entry = ScreeningResult(
                         smiles=smi,
                         total_score=total_score,
-                        sigma_score=score_data.sigma_score,
-                        desolvation_score=score_data.desolvation_score,
-                        sei_homogeneity_score=score_data.sei_homogeneity_score,
-                        mx_synthesis_score=score_data.mx_synthesis_score,
-                        gwp_penalty=score_data.gwp_penalty,
+                        sigma_score=score_data.get("sigma_score", 0.0),
+                        desolvation_score=score_data.get("desolvation_score", 0.0),
+                        sei_homogeneity_score=score_data.get("sei_homogeneity_score", 0.0),
+                        mx_synthesis_score=score_data.get("mx_synthesis_score", 0.0),
+                        gwp_penalty=score_data.get("gwp_penalty", 0.0),
                         is_viable=True,
-                        rejection_reasons=score_data.rejection_reasons,
+                        rejection_reasons=score_data.get("rejection_reasons", []),
                     )
                     batch_discoveries.append(discovery_entry)
                     self.discoveries.append(discovery_entry)

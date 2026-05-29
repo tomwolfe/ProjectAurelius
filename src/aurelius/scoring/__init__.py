@@ -1,7 +1,13 @@
-"""Phase 4: Aurelius Scoring package."""
+"""Scoring and oracle package.
 
-from aurelius.scoring.engine import AureliusScoringEngine
+Provides:
+- Oracle abstract base class
+- PretrainedGNNOracle for real ML-based property evaluation
+"""
+
+from aurelius.scoring.oracle import Oracle, PretrainedGNNOracle
 
 __all__ = [
-    "AureliusScoringEngine",
+    "Oracle",
+    "PretrainedGNNOracle",
 ]

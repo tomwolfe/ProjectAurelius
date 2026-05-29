@@ -1,8 +1,8 @@
-"""Project Aurelius v7.0 - The GNN-Enhanced Release.
+"""Project Aurelius v8.0 - The GNN-Enhanced Release.
 
-Accelerated computational chemistry screening pipeline with MPNN
-activation energy prediction, cutoff-aware neighbor lists, and
-HuggingFace integration, optimized for Apple M-series Neural Accelerators.
+Accelerated computational chemistry screening pipeline with real ML-based
+property oracles, SELFIES-based mutation engine, and Gaussian Process
+surrogate-driven active learning, optimized for Apple M-series Neural Accelerators.
 """
 
 from __future__ import annotations
@@ -19,20 +19,15 @@ from aurelius.config import (
 )
 from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
-from aurelius.scoring.engine import AureliusScoringEngine
+from aurelius.scoring.oracle import Oracle, PretrainedGNNOracle
 from aurelius.screening.tier0 import PyTorchBackend
 from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
 from aurelius.screening.tier1 import MLXNAFilter
-from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
-from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin
 from aurelius.types import (
     AureliusScoreResult,
     DesolvationPathResult,
-    GCMDTConfig,
-    GCMDTwinResult,
     MLXFilterResult,
     MoleculeInput,
-    SEIEvolution,
     Tier2Result,
 )
 
@@ -40,25 +35,18 @@ initialize_environment()
 
 __all__ = [
     "__version__",
+    "AureliusConfig",
     "AureliusPipeline",
     "AureliusScoreResult",
     "DesolvationPathResult",
-    "GCMDTConfig",
-    "GCMDTwinResult",
-    "GCMDigitalTwin",
     "MLXFilterResult",
-    "AureliusConfig",
+    "MLXNAFilter",
     "MemoryProfiler",
     "MoleculeInput",
-    "MLXNAFilter",
-    "MatterSimMTSimulator",
-    "MetalShaderConfig",
-    "QuantizationConfig",
-    "SEIEvolution",
+    "Oracle",
+    "PretrainedGNNOracle",
     "Tier0ActivationPredictor",
     "PyTorchBackend",
-    "Tier2Result",
     "apply_global_config",
     "get_config",
-    "AureliusScoringEngine",
 ]

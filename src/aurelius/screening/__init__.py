@@ -1,4 +1,4 @@
-"""Phase 3: Accelerated Screening Pipeline package."""
+"""Screening pipeline — Tier 0 (MPNN activation energy predictor) and Tier 1 (MLX-NA structural filter)."""
 
 from __future__ import annotations
 
@@ -15,19 +15,11 @@ from aurelius.screening.tier1 import (
 from aurelius.screening.tier1 import (
     HAS_TORCH as HAS_TORCH_TIER1,
 )
-from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
-from aurelius.screening.tier3_gcmtwin import GCMDigitalTwin
 from aurelius.types import (
-    GCMDTConfig,
-    GCMDTwinResult,
     MLXFilterResult,
-    Tier2Result,
 )
 
 __all__ = [
-    "GCMDTConfig",
-    "GCMDTwinResult",
-    "GCMDigitalTwin",
     "HAS_MLX",
     "HAS_RDKIT",
     "HAS_TORCH",
@@ -35,7 +27,5 @@ __all__ = [
     "MLXFilterResult",
     "MLXNAFilter",
     "PyTorchBackend",
-    "MatterSimMTSimulator",
     "Tier0ActivationPredictor",
-    "Tier2Result",
 ]

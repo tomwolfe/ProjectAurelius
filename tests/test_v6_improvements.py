@@ -298,8 +298,6 @@ class TestBackwardCompatibility:
         assert f is not None
 
     def test_mattersim_simulator_backward_compat(self):
-        """Verify MatterSimMTSimulator constructor is backward compatible."""
-        from aurelius.screening.tier2_mattersim import MatterSimMTSimulator
-
-        sim = MatterSimMTSimulator()
-        assert sim is not None
+        """MatterSim removed in v8.0; use PretrainedGNNOracle instead."""
+        import pytest
+        pytest.skip("MatterSim removed in v8.0; use PretrainedGNNOracle instead", allow_module_level=True)

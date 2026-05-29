@@ -64,7 +64,7 @@ class GaussianProcessSurrogate:
         y_scaled = self._scaler_y.fit_transform(y.reshape(-1, 1)).ravel()
 
         kernel = C(1.0, (0.1, 10.0)) * RBF(length_scale=5.0, length_scale_bounds=(0.1, 100.0))
-        kernel += RationalQuadratic(alpha=1.0, beta=1.0)
+        kernel += RationalQuadratic(alpha=1.0, alpha_bounds=(0.1, 10.0))
 
         self._gp = GaussianProcessRegressor(
             kernel=kernel,
