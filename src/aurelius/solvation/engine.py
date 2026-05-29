@@ -201,10 +201,6 @@ class MWSESolvationEngine:
         **approximations** and may not accurately capture ion-solvent
         coordination energies for battery electrolytes.
 
-        For production-grade accuracy, set ``use_explicit_solvation_correction=True``
-        to enable explicit solvent-shell corrections that account for
-        coordination-number-dependent energy shifts.
-
     Born effective charges are derived from DFT literature values
     for common ions. Mixed solvent interpolation is performed via
     linear interpolation based on dielectric constants.
@@ -220,18 +216,15 @@ class MWSESolvationEngine:
         self,
         config: ForceFieldConfig | None = None,
         kex_window_ps: float = 10.0,
-        use_explicit_solvation_correction: bool = False,
     ) -> None:
         """Initialize the MWSE solvation engine.
 
         Args:
             config: Force field configuration. If None, uses the singleton.
             kex_window_ps: Upper bound for labile solvent exchange rate.
-            use_explicit_solvation_correction: Enable explicit solvent corrections.
         """
         self._config = config or ForceFieldConfig.get()
         self.kex_window_ps = kex_window_ps
-        self.use_explicit_solvation_correction = use_explicit_solvation_correction
 
         # Load force field params
         ff_params = self._config.get_solvation()

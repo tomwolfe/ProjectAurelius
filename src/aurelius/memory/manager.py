@@ -33,10 +33,7 @@ class QuantizationConfig:
 
     def __post_init__(self) -> None:
         if self.precision not in ("MX4", "MX6", "MX8"):
-            raise ValueError(
-                f"Invalid precision '{self.precision}'. "
-                "Must be one of: MX4, MX6, MX8."
-            )
+            raise ValueError(f"Invalid precision '{self.precision}'. Must be one of: MX4, MX6, MX8.")
 
     @property
     def bits(self) -> int:
@@ -80,9 +77,7 @@ class ZeroCopyMemoryManager:
         self._mlx_max_mem_gb = mlx_max_mem_gb
         self._metal_shader_cache_gb = metal_shader_cache_gb
         self._total_ram_gb = total_ram_gb or self._get_total_ram()
-        self._remaining_gb = (
-            self._total_ram_gb - self._mlx_max_mem_gb - self._metal_shader_cache_gb
-        )
+        self._remaining_gb = self._total_ram_gb - self._mlx_max_mem_gb - self._metal_shader_cache_gb
 
     @classmethod
     def _get_total_ram(cls) -> float:

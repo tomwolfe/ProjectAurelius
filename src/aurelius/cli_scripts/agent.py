@@ -12,14 +12,13 @@ Usage:
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import logging
 import os
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
@@ -62,6 +61,19 @@ log.addHandler(_error_handler)
 np.random.seed(42)
 
 
+@dataclass(frozen=True)
+class AgentConfig:
+    """Parameters for the autonomous screening agent.
+
+    Replaces the previous pattern of constructing an ``argparse.Namespace``
+    and passing it around, which made the API opaque and harder to type.
+    """
+
+    max_generations: int = 50
+    batch_size: int = 50
+    profile_memory: bool = False
+
+
 def _check_apple_silicon() -> bool:
     """Detect if running on Apple Silicon.
 
@@ -98,17 +110,17 @@ def _load_smiles_file(path: str) -> list[str]:
     return smiles_list
 
 
-def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
+def run_screening(agent_cfg: AgentConfig, checkpoint: CheckpointManager) -> None:
     """Main autonomous screening loop.
 
     Args:
-        args: Parsed argparse arguments containing screening parameters.
+        agent_cfg: Agent configuration with screening parameters.
         checkpoint: CheckpointManager instance for saving progress.
     """
 
     # Initialize memory profiler if requested
     profiler: MemoryProfiler | None = None
-    if getattr(args, "profile_memory", False):
+    if agent_cfg.profile_memory:
         profiler = MemoryProfiler()
         profiler.start()
         print("[AGENT] Memory profiling enabled. CSV reports will be generated.")
@@ -183,8 +195,8 @@ def run_screening(args: Any, checkpoint: CheckpointManager) -> None:
         pipeline=pipeline,
         engine=engine,
         checkpoint=checkpoint,
-        max_generations=args.max_generations or 50,
-        batch_size=args.batch_size or 50,
+        max_generations=agent_cfg.max_generations,
+        batch_size=agent_cfg.batch_size,
     )
     results = loop.execute()
 
@@ -246,6 +258,8 @@ def _save_checkpoint_safe(checkpoint: CheckpointManager) -> None:
 
 def main() -> None:
     """CLI entry point for the autonomous screening agent."""
+    import argparse
+
     parser = argparse.ArgumentParser(description="Aurelius v7.0 Autonomous Screening Agent")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     parser.add_argument("--max-generations", type=int, default=50, help="Maximum generations to run")
@@ -256,7 +270,12 @@ def main() -> None:
     output_dir = os.environ.get("AURELIUS_OUTPUT_DIR")
     checkpoint = CheckpointManager(output_dir=output_dir)
     try:
-        run_screening(args, checkpoint)
+        agent_cfg = AgentConfig(
+            max_generations=args.max_generations,
+            batch_size=args.batch_size,
+            profile_memory=args.profile_memory,
+        )
+        run_screening(agent_cfg, checkpoint)
     except KeyboardInterrupt:
         print("\n[AGENT] Interrupted by user. Saving state and exiting.")
         if checkpoint is not None:

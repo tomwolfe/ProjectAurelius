@@ -76,6 +76,5 @@ def ModelFactory() -> MLXBackend | PyTorchBackend:  # noqa: N802
     if HAS_TORCH:
         return _torch_model_factory()
     raise PyTorchBackendUnavailableError(
-        "Neither MLX nor PyTorch is available. "
-        "Install mlx or torch to use model backends."
+        "Neither MLX nor PyTorch is available. Install mlx or torch to use model backends."
     )

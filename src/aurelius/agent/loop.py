@@ -11,11 +11,33 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any
 
 from aurelius.agent.state import ConvergenceChecker, FeedbackAdapter
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ScreeningResult:
+    """Typed result from a single molecule screening.
+
+    This replaces the previous ``dict[str, Any]`` pattern for internal
+    tracking within the discovery loop, providing static type checking
+    while still allowing the pipeline's ``dict[str, Any]`` return type
+    to remain unchanged at the public API boundary.
+    """
+
+    smiles: str
+    total_score: float
+    sigma_score: float
+    desolvation_score: float
+    sei_homogeneity_score: float
+    mx_synthesis_score: float
+    gwp_penalty: float
+    is_viable: bool
+    rejection_reasons: list[str]
 
 
 class DiscoveryLoop:
@@ -60,8 +82,8 @@ class DiscoveryLoop:
         self.total_screened = 0
         self.total_viable = 0
         self.total_invalid = 0
-        self.all_results: list[dict[str, Any]] = []
-        self.discoveries: list[dict[str, Any]] = []
+        self.all_results: list[ScreeningResult] = []
+        self.discoveries: list[ScreeningResult] = []
         self.convergence = ConvergenceChecker()
         self.feedback = FeedbackAdapter()
         self.screened_smiles: set[str] = set()
@@ -107,7 +129,7 @@ class DiscoveryLoop:
             # ---- Screening ----
             batch_scores: list[float] = []
             batch_viable = 0
-            batch_discoveries: list[dict[str, Any]] = []
+            batch_discoveries: list[ScreeningResult] = []
 
             for smi in valid_candidates:
                 result = self._screen_molecule(smi)
@@ -132,27 +154,43 @@ class DiscoveryLoop:
                     and len(score.rejection_reasons) == 0
                 )
 
+                # Convert dict result to typed ScreeningResult
+                score_data = result.get("score")
+                if score_data is None:
+                    continue
+
+                screening_result = ScreeningResult(
+                    smiles=smi,
+                    total_score=score_data.total_score,
+                    sigma_score=score_data.sigma_score,
+                    desolvation_score=score_data.desolvation_score,
+                    sei_homogeneity_score=score_data.sei_homogeneity_score,
+                    mx_synthesis_score=score_data.mx_synthesis_score,
+                    gwp_penalty=score_data.gwp_penalty,
+                    is_viable=score_data.is_viable,
+                    rejection_reasons=score_data.rejection_reasons,
+                )
+
                 if is_discovery:
                     batch_viable += 1
-                    discovery_entry = {
-                        "smiles": smi,
-                        "total_score": total_score,
-                        "sigma": score.sigma_score,
-                        "desolvation": score.desolvation_score,
-                        "sei_homogeneity": score.sei_homogeneity_score,
-                        "mx_synthesis": score.mx_synthesis_score,
-                        "gwp_penalty": score.gwp_penalty,
-                        "is_viable": True,
-                        "rejection_reasons": score.rejection_reasons,
-                        "components": score.rejection_reasons,
-                    }
+                    discovery_entry = ScreeningResult(
+                        smiles=smi,
+                        total_score=total_score,
+                        sigma_score=score_data.sigma_score,
+                        desolvation_score=score_data.desolvation_score,
+                        sei_homogeneity_score=score_data.sei_homogeneity_score,
+                        mx_synthesis_score=score_data.mx_synthesis_score,
+                        gwp_penalty=score_data.gwp_penalty,
+                        is_viable=True,
+                        rejection_reasons=score_data.rejection_reasons,
+                    )
                     batch_discoveries.append(discovery_entry)
                     self.discoveries.append(discovery_entry)
                     self.checkpoint.add_discovery(discovery_entry)
                     log.info("  ** DISCOVERY ** %s (score=%.1f)", smi, total_score)
 
-                self.all_results.append(result)
-                self.feedback.record(result)
+                self.all_results.append(screening_result)
+                self.feedback.record(screening_result)
 
             # ---- Convergence / checkpoint ----
             self.convergence.record_batch(batch_scores, batch_viable, invalid_count)
@@ -206,7 +244,7 @@ class DiscoveryLoop:
 
     def _top_seeds_from_results(self) -> list[str]:
         """Return the top N seeds based on all_results scores."""
-        scored = [(r["score"].total_score, r["score"].molecule_smiles) for r in self.all_results if r.get("score")]
+        scored = [(r.total_score, r.smiles) for r in self.all_results if r.total_score > 0]
         scored.sort(key=lambda x: -x[0])
         n = max(5, len(scored) // 5)
         return [s for _, s in scored[:n]]

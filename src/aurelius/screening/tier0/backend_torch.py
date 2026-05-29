@@ -170,6 +170,7 @@ class PyTorchBackend(torch_nn.Module):  # type: ignore[valid-type, misc, name-de
 # Internal backend classes (not exported)
 # ---------------------------------------------------------------------------
 
+
 class _MPNNEdgeBlockBackend(torch_nn.Module):  # type: ignore[valid-type, misc, name-defined]
     """2-layer message passing block for molecular graphs (PyTorch backend)."""
 

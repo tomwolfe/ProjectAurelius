@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from aurelius.agent.loop import ScreeningResult
 
 
 def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str:
@@ -260,12 +261,13 @@ class ConvergenceChecker:
     """Evaluates whether the screening loop should terminate.
 
     Uses Welford's online algorithm for computing running variance
-    without storing all scores, bounding memory usage.
+    without storing all scores, bounding memory usage.  ``batch_scores``
+    stores only per-batch aggregates (not individual scores), so memory
+    usage is bounded by the number of generations.
     """
 
     def __init__(self) -> None:
         """Initialize the convergence checker."""
-        self.all_scores: deque[float] = deque(maxlen=10000)
         self.batch_scores: list[list[float]] = []
         self.viability_rates: list[float] = []
         self.new_clusters_per_batch: list[int] = []
@@ -291,7 +293,6 @@ class ConvergenceChecker:
             viable_count: Number of viable molecules in the batch.
             new_clusters: Number of new clusters discovered.
         """
-        self.all_scores.extend(scores)
         self.batch_scores.append(scores)
         self.total_screened += len(scores)
         self.viable_count += viable_count
@@ -311,17 +312,24 @@ class ConvergenceChecker:
     def compute_rolling_mean(self, batch_size: int = 50) -> list[float]:
         """Rolling mean of total_score over windows of `batch_size`.
 
+        Uses ``batch_scores`` (a list of per-batch score lists) to
+        compute rolling means, keeping memory bounded by the number
+        of generations rather than total individual scores.
+
         Args:
-            batch_size: Window size for the rolling mean.
+            batch_size: Number of consecutive batches to average.
 
         Returns:
             List of rolling mean values.
         """
-        if len(self.all_scores) < batch_size:
+        if len(self.batch_scores) < batch_size:
             return []
-        n_batches = len(self.all_scores) // batch_size
-        scores_list = list(self.all_scores)
-        rolling = [float(np.mean(scores_list[i * batch_size : (i + 1) * batch_size])) for i in range(n_batches)]
+        rolling: list[float] = []
+        for i in range(batch_size, len(self.batch_scores) + 1, batch_size):
+            window_scores: list[float] = []
+            for j in range(i - batch_size, i):
+                window_scores.extend(self.batch_scores[j])
+            rolling.append(float(np.mean(window_scores)))
         return rolling
 
     def check_score_plateau(self) -> bool:
@@ -415,31 +423,26 @@ class FeedbackAdapter:
         self.total_screened = 0
         self.rationale_log: list[str] = []
 
-    def record(self, result: dict[str, Any]) -> None:
+    def record(self, result: ScreeningResult) -> None:
         """Record screening result for feedback analysis.
 
         Args:
-            result: Dict with score and viability information.
+            result: Typed ScreeningResult with score and viability information.
         """
-        score = result.get("score")
-        if score is None:
-            return
         self.total_screened += 1
-        if not score.tier1_viable:
+        if not result.is_viable:
             self.tier1_fails += 1
-            self.rationale_log.append(
-                f"Tier 1 fail for {score.molecule_smiles}: Lower MW, add polar groups, reduce F-density"
-            )
-        if not score.tier2_viable:
+            self.rationale_log.append(f"Tier 1 fail for {result.smiles}: Lower MW, add polar groups, reduce F-density")
+        if result.total_score < 65.0:
             self.tier2_fails += 1
             self.rationale_log.append(
-                f"Tier 2 fail for {score.molecule_smiles}: "
+                f"Tier 2 fail for {result.smiles}: "
                 "Reduce steric bulk near coordination sites, lower desolvation barrier"
             )
-        if score.tier3_viable and score.sei_homogeneity_score < 50.0:
+        if result.is_viable and result.sei_homogeneity_score < 50.0:
             self.tier3_low_homogeneity += 1
             self.rationale_log.append(
-                f"Low SEI homogeneity for {score.molecule_smiles}: Add unsaturation/boron, increase F/C ratio"
+                f"Low SEI homogeneity for {result.smiles}: Add unsaturation/boron, increase F/C ratio"
             )
 
     def get_adaptation_strategy(self) -> dict[str, Any]:

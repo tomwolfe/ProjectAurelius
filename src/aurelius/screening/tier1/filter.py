@@ -27,8 +27,6 @@ from aurelius.screening.tier1.loaders import (
     load_pytorch_fallback_with_mlx_weights,
 )
 from aurelius.screening.tier1.models import (
-    HAS_MLX,
-    HAS_TORCH,
     MLXBackend,
     PyTorchBackend,
 )
@@ -39,7 +37,7 @@ from aurelius.screening.tier1.training import (
 )
 from aurelius.types import MLXFilterResult
 from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
-from aurelius.utils.dependencies import HAS_RDKIT
+from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 
 logger = logging.getLogger(__name__)
 
@@ -78,13 +76,9 @@ class MLXNAFilter:
         self._use_mlx = HAS_MLX
         self._weight_loader = HuggingFaceWeightLoader()
         if HAS_MLX:
-            try:
-                import mlx.core as mx  # noqa: F401
+            import mlx.core as mx  # noqa: F401
 
-                self._mx = mx
-            except ImportError:
-                self._use_mlx = False
-                self._mx = None  # type: ignore[assignment]
+            self._mx = mx
         else:
             self._mx = None  # type: ignore[assignment]
 
@@ -92,27 +86,21 @@ class MLXNAFilter:
         self._torch: Any | None = None
         self._torch_nn: Any | None = None
         if HAS_TORCH:
-            try:
-                import torch  # noqa: F401
-                import torch.nn as torch_nn  # noqa: F401
+            import torch  # noqa: F401
+            import torch.nn as torch_nn  # noqa: F401
 
-                self._torch = torch
-                self._torch_nn = torch_nn
-            except ImportError:
-                pass
+            self._torch = torch
+            self._torch_nn = torch_nn
 
         # Conditional RDKit imports
         self._rdkit_chem: Any | None = None
         self._rdkit_allchem: Any | None = None
         if HAS_RDKIT:
-            try:
-                from rdkit import Chem as _rdkit_chem  # noqa: F401, N813
-                from rdkit.Chem import AllChem as _rdkit_allchem  # noqa: F401, N813
+            from rdkit import Chem as _rdkit_chem  # noqa: F401, N813
+            from rdkit.Chem import AllChem as _rdkit_allchem  # noqa: F401, N813
 
-                self._rdkit_chem = _rdkit_chem
-                self._rdkit_allchem = _rdkit_allchem
-            except ImportError:
-                pass
+            self._rdkit_chem = _rdkit_chem
+            self._rdkit_allchem = _rdkit_allchem
 
         if train_on_init:
             self._load_or_train_model()

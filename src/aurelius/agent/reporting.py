@@ -14,6 +14,9 @@ from typing import Any
 
 import numpy as np
 
+from aurelius.agent.loop import ScreeningResult
+from aurelius.agent.state import ConvergenceChecker
+
 
 def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str:
     """Resolve a relative output path against a base directory.
@@ -34,7 +37,7 @@ def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str
 
 
 def generate_discovery_results(
-    all_results: list[dict[str, Any]],
+    all_results: list[ScreeningResult],
     path: str = "discovery_results_final.json",
     output_dir: str | Path | None = None,
 ) -> None:
@@ -52,36 +55,17 @@ def generate_discovery_results(
     serializable: list[dict[str, Any]] = []
     for r in all_results:
         entry: dict[str, Any] = {
-            "smiles": r.get("score", {}).molecule_smiles if hasattr(r.get("score"), "molecule_smiles") else "unknown",
+            "smiles": r.smiles,
         }
-        score = r.get("score")
-        if score:
-            entry["total_score"] = score.total_score
-            entry["sigma"] = score.sigma_score
-            entry["desolvation"] = score.desolvation_score
-            entry["sei_homogeneity"] = score.sei_homogeneity_score
-            entry["mx_synthesis"] = score.mx_synthesis_score
-            entry["gwp_penalty"] = score.gwp_penalty
-            entry["is_viable"] = score.is_viable
-            entry["rejection_reasons"] = score.rejection_reasons
-            entry["tier1_viable"] = score.tier1_viable
-            entry["tier2_viable"] = score.tier2_viable
-            entry["tier3_viable"] = score.tier3_viable
-            entry["components"] = score.rejection_reasons
-        tier1 = r.get("tier1")
-        if tier1:
-            entry["tier1_confidence"] = tier1.confidence_score
-            entry["tier1_is_viable"] = tier1.is_viable
-        tier2 = r.get("tier2")
-        if tier2:
-            entry["tier2_barrier_eV"] = tier2.desolvation_path.barrier_height_eV
-            entry["tier2_is_viable"] = tier2.is_viable
-        tier3 = r.get("tier3")
-        if tier3:
-            entry["tier3_homogeneity"] = tier3.sei_evolution.homogeneity_score
-            entry["tier3_thickness"] = tier3.sei_evolution.thickness_angstrom
-            entry["tier3_components"] = tier3.sei_evolution.components
-        entry["tier_timings"] = r.get("tier_timings", {})
+        entry["total_score"] = r.total_score
+        entry["sigma"] = r.sigma_score
+        entry["desolvation"] = r.desolvation_score
+        entry["sei_homogeneity"] = r.sei_homogeneity_score
+        entry["mx_synthesis"] = r.mx_synthesis_score
+        entry["gwp_penalty"] = r.gwp_penalty
+        entry["is_viable"] = r.is_viable
+        entry["rejection_reasons"] = r.rejection_reasons
+        entry["components"] = r.rejection_reasons
         serializable.append(entry)
 
     with open(path, "w") as f:
@@ -90,7 +74,7 @@ def generate_discovery_results(
 
 
 def write_top_discoveries(
-    discoveries: list[dict[str, Any]], path: str = "top_discoveries.smi", output_dir: str | Path | None = None
+    discoveries: list[ScreeningResult], path: str = "top_discoveries.smi", output_dir: str | Path | None = None
 ) -> None:
     """Write SMILES of all legitimate discoveries to file.
 
@@ -105,14 +89,14 @@ def write_top_discoveries(
 
     with open(path, "w") as f:
         f.write("# Project Aurelius v7.0 — Top Discoveries (Score >= 65.0)\n")
-        for d in discoveries:
-            f.write(f"{d['smiles']}  # score={d['total_score']:.1f}\n")
+    for d in discoveries:
+        f.write(f"{d.smiles}  # score={d.total_score:.1f}\n")
     log.info("Top discoveries written to %s (%d molecules)", path, len(discoveries))
 
 
 def generate_screening_statistics(
-    convergence: Any,
-    all_results: list[dict[str, Any]],
+    convergence: ConvergenceChecker,
+    all_results: list[ScreeningResult],
     path: str = "screening_statistics.md",
     output_dir: str | Path | None = None,
 ) -> None:
@@ -128,7 +112,7 @@ def generate_screening_statistics(
 
     path = _resolve_output_path(path, output_dir)
 
-    scores = [r["score"].total_score for r in all_results if r.get("score")]
+    scores = [r.total_score for r in all_results]
 
     with open(path, "w") as f:
         f.write("# Screening Statistics — Project Aurelius v7.0\n\n")
@@ -197,8 +181,8 @@ def generate_screening_statistics(
 
 
 def generate_chemical_insights(
-    all_results: list[dict[str, Any]],
-    discoveries: list[dict[str, Any]],
+    all_results: list[ScreeningResult],
+    discoveries: list[ScreeningResult],
     path: str = "chemical_insights.md",
     output_dir: str | Path | None = None,
 ) -> None:
@@ -227,10 +211,7 @@ def generate_chemical_insights(
 
         scaffold_scores: dict[str, list[float]] = {}
         for r in all_results:
-            score = r.get("score")
-            if not score:
-                continue
-            mol = Chem.MolFromSmiles(score.molecule_smiles)
+            mol = Chem.MolFromSmiles(r.smiles)
             if mol is not None:
                 scaffold = Chem.MolFragmentToSmiles(
                     mol, atomsToUse=list(range(mol.GetNumAtoms())), isomericSmiles=False
@@ -238,7 +219,7 @@ def generate_chemical_insights(
                 scaffold = scaffold[:30]
                 if scaffold not in scaffold_scores:
                     scaffold_scores[scaffold] = []
-                scaffold_scores[scaffold].append(score.total_score)
+                scaffold_scores[scaffold].append(r.total_score)
 
         f.write("| Scaffold (truncated) | Mean Score | Count |\n")
         f.write("|---------------------|-----------|-------|\n")
@@ -249,9 +230,8 @@ def generate_chemical_insights(
         f.write("## Failure Analysis\n\n")
         failure_reasons: dict[str, int] = {}
         for r in all_results:
-            score = r.get("score")
-            if score and score.rejection_reasons:
-                for reason in score.rejection_reasons:
+            if r.rejection_reasons:
+                for reason in r.rejection_reasons:
                     failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
         if failure_reasons:
             f.write("Top rejection reasons:\n\n")
@@ -267,7 +247,7 @@ def generate_chemical_insights(
         if discoveries:
             f.write("### Recommended Experimental Validation\n\n")
             for i, d in enumerate(discoveries[:10], 1):
-                f.write(f"{i}. **{d['smiles']}** (Score: {d['total_score']:.1f})\n")
+                f.write(f"{i}. **{d.smiles}** (Score: {d.total_score:.1f})\n")
             f.write("\n")
         else:
             f.write("No legitimate discoveries found in this screening round.\n")
@@ -288,9 +268,9 @@ def generate_chemical_insights(
 
 
 def generate_manifest(
-    convergence: Any,
-    discoveries: list[dict[str, Any]],
-    all_results: list[dict[str, Any]],
+    convergence: ConvergenceChecker,
+    discoveries: list[ScreeningResult],
+    all_results: list[ScreeningResult],
     path: str = "agent_discovery_manifest.json",
     output_dir: str | Path | None = None,
 ) -> None:
@@ -331,16 +311,16 @@ def generate_manifest(
     for d in discoveries:
         manifest["discoveries"].append(
             {
-                "smiles": d["smiles"],
-                "total_score": d["total_score"],
-                "sigma": d["sigma"],
-                "desolvation": d["desolvation"],
-                "sei_homogeneity": d["sei_homogeneity"],
-                "mx_synthesis": d["mx_synthesis"],
-                "gwp_penalty": d["gwp_penalty"],
-                "is_viable": d["is_viable"],
-                "rejection_reasons": d["rejection_reasons"],
-                "components": d.get("components", []),
+                "smiles": d.smiles,
+                "total_score": d.total_score,
+                "sigma": d.sigma_score,
+                "desolvation": d.desolvation_score,
+                "sei_homogeneity": d.sei_homogeneity_score,
+                "mx_synthesis": d.mx_synthesis_score,
+                "gwp_penalty": d.gwp_penalty,
+                "is_viable": d.is_viable,
+                "rejection_reasons": d.rejection_reasons,
+                "components": d.rejection_reasons,
             }
         )
 

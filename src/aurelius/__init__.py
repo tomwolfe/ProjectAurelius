@@ -57,7 +57,6 @@ __all__ = [
     "SEIEvolution",
     "Tier0ActivationPredictor",
     "PyTorchBackend",
-    "Tier0ActivationPredictor",
     "Tier2Result",
     "apply_global_config",
     "get_config",

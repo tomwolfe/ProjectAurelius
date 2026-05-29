@@ -30,6 +30,7 @@ from aurelius.cli_scripts import (
     validate_physics,
 )
 from aurelius.config import AureliusConfig, get_config
+from aurelius.hub.uploader import upload_model_to_hub
 from aurelius.pipeline import AureliusPipeline
 from aurelius.utils.dependencies import (
     HAS_HF_HUB,
@@ -436,141 +437,14 @@ def hf_upload(
     dry_run: bool,
 ) -> None:
     """Upload a locally trained model to HuggingFace Hub."""
-    import os
-    import sys
-
-    from huggingface_hub import (
-        HfApi,
-        ModelCard,
-        create_repo,
-        repo_exists,
-        upload_folder,
+    upload_model_to_hub(
+        model_dir=model_dir,
+        repo_id=repo_id,
+        task=task,
+        private=private,
+        commit_message=commit_message,
+        dry_run=dry_run,
     )
-
-    if not os.path.isdir(model_dir):
-        click.echo(f"[ERROR] Model directory not found: {model_dir}", err=True)
-        sys.exit(1)
-
-    api = HfApi()
-
-    if "/" not in repo_id:
-        click.echo(
-            f"[ERROR] Invalid repo ID format: '{repo_id}'. Expected 'username/repo-name'.",
-            err=True,
-        )
-        sys.exit(1)
-
-    if dry_run:
-        click.echo(f"[DRY RUN] Validating upload for: {repo_id}")
-        click.echo(f"  Model directory: {model_dir}")
-        click.echo(f"  Task: {task}")
-        click.echo(f"  Visibility: {'private' if private else 'public'}")
-        click.echo(f"  Commit message: {commit_message}")
-
-        try:
-            user_info = api.whoami()
-            click.echo(f"  Authenticated as: {user_info['name']} ({user_info['fullname']})")
-        except Exception as e:
-            click.echo(f"[ERROR] HuggingFace authentication failed: {e}", err=True)
-            click.echo("Ensure HF_TOKEN is set or run 'huggingface-cli login'.", err=True)
-            sys.exit(1)
-
-        if repo_exists(repo_id):
-            click.echo(f"  Repository '{repo_id}' already exists.")
-        else:
-            click.echo(f"  Repository '{repo_id}' does not exist (would be created).")
-
-        files = []
-        for root, _, filenames in os.walk(model_dir):
-            for fname in filenames:
-                rel_path = os.path.relpath(os.path.join(root, fname), model_dir)
-                files.append(rel_path)
-        click.echo(f"  Files to upload ({len(files)}):")
-        for f in sorted(files):
-            click.echo(f"    - {f}")
-
-        click.echo("\n[DRY RUN] Validation complete. No files were uploaded.")
-        return
-
-    click.echo(f"[HF Upload] Uploading to: {repo_id}")
-    click.echo(f"  Model directory: {model_dir}")
-    click.echo(f"  Task: {task}")
-    click.echo(f"  Visibility: {'private' if private else 'public'}")
-
-    try:
-        from huggingface_hub import login as hf_login
-
-        hf_login(add_to_git_credential=True)
-    except Exception as e:
-        click.echo(f"[ERROR] HuggingFace authentication failed: {e}", err=True)
-        click.echo("Ensure HF_TOKEN is set in your environment or run 'huggingface-cli login'.", err=True)
-        sys.exit(1)
-
-    try:
-        create_repo(
-            repo_id=repo_id,
-            repo_type="model",
-            exist_ok=True,
-            private=private,
-            token=api.token,
-        )
-        click.echo(f"  Repository '{repo_id}' ready.")
-    except Exception as e:
-        click.echo(f"[ERROR] Failed to create/verify repository: {e}", err=True)
-        sys.exit(1)
-
-    task_descriptions = {
-        "tier0": "Tier 0 MPNN Activation Energy Predictor",
-        "esol": "Tier 1 ESOL Solubility Filter",
-        "qm9": "Tier 1 QM9 Energy Filter",
-    }
-    model_card = ModelCard("# Aurelius Model")
-    model_card.content = f"""# Aurelius Model: {task_descriptions.get(task, task)}
-
-## Model Description
-
-This model was trained as part of Project Aurelius v7.0, a computational chemistry
-screening pipeline optimized for Apple M-series Neural Accelerators.
-
-- **Task:** {task_descriptions.get(task, task)}
-- **Framework:** PyTorch / MLX
-- **Hardware:** Apple Silicon (M1-M5)
-
-## Training Details
-
-- **Framework:** PyTorch (GPU/MPS) or MLX (Apple Silicon)
-- **Dataset:** {task if task != "tier0" else "Synthetic (RDKit + Arrhenius shifts)"}
-- **License:** MIT
-
-## Usage
-
-```bash
-aurelius train --task {task}
-```
-
-## References
-
-- Butler, K. T. et al. "Machine Learning Molecular Embeddings for Battery Materials." Nature 2023.
-- Gilmer, J. et al. "Neural Message Passing for Quantum Chemistry." ICML 2017.
-"""
-
-    readme_path = os.path.join(model_dir, "README.md")
-    with open(readme_path, "w") as readme_file:
-        readme_file.write(model_card.content)
-    click.echo(f"  Generated README.md at {readme_path}")
-
-    try:
-        upload_folder(
-            folder_path=model_dir,
-            repo_id=repo_id,
-            repo_type="model",
-            commit_message=commit_message,
-            ignore_patterns=["*.pyc", "__pycache__", "*.pyc", ".DS_Store"],
-        )
-        click.echo(f"\n[SUCCESS] Model uploaded to: https://huggingface.co/{repo_id}")
-    except Exception as e:
-        click.echo(f"[ERROR] Upload failed: {e}", err=True)
-        sys.exit(1)
 
 
 @cli.command("agent")
@@ -586,20 +460,17 @@ def agent(
 ) -> None:
     """Run the autonomous screening agent."""
     from aurelius.agent.state import CheckpointManager
+    from aurelius.cli_scripts.agent import AgentConfig, run_screening
 
     output_dir = os.environ.get("AURELIUS_OUTPUT_DIR")
     checkpoint = CheckpointManager(output_dir=output_dir)
     try:
-        import argparse
-
-        args = argparse.Namespace(
+        agent_cfg = AgentConfig(
             max_generations=max_generations,
             batch_size=batch_size,
             profile_memory=profile_memory,
         )
-        from aurelius.cli_scripts.agent import run_screening
-
-        run_screening(args, checkpoint)
+        run_screening(agent_cfg, checkpoint)
     except Exception as e:
         click.echo(f"[ERROR] {e}", err=True)
         sys.exit(1)

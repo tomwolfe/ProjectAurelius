@@ -32,283 +32,275 @@ else:
     torch = None  # type: ignore[assignment, unused-ignore]
 
 
-class MatterSimNeighborList:
-    """Upper-triangle neighbor list using dense on-device masking.
+# ---------------------------------------------------------------------------
+# Lennard-Jones potential functions (module-level)
+# ---------------------------------------------------------------------------
 
-    For systems with < 100 atoms (typical for battery electrolyte
-    screening), a purely vectorized O(N²) upper-triangle computation
-    on the target device (MPS/CUDA) is significantly faster than
-    building and querying a cell-list, while preserving the compute
-    graph so no CPU sync occurs.
+
+def compute_lj_sparse(
+    atomic_numbers: torch.Tensor,
+    src_indices: torch.Tensor,
+    dst_indices: torch.Tensor,
+    distances: torch.Tensor,
+    eps_matrix: torch.Tensor,
+    sig_matrix: torch.Tensor,
+    default_eps: float,
+    default_sig: float,
+    cutoff: float,
+) -> torch.Tensor:
+    """Compute Lennard-Jones potential using sparse neighbor list.
+
+    Uses OPLS-AA / GAFF parameters from force field JSON.
+    Only evaluates pairs in the neighbor list.
+
+    Args:
+        atomic_numbers: (N,) LongTensor.
+        src_indices: Source indices for neighbour pairs.
+        dst_indices: Destination indices for neighbour pairs.
+        distances: Pairwise distances for neighbour pairs.
+        eps_matrix: Precomputed epsilon values indexed by atomic numbers.
+        sig_matrix: Precomputed sigma values indexed by atomic numbers.
+        cutoff: Cutoff distance.
+
+    Returns:
+        Scalar LJ energy tensor.
     """
+    device = atomic_numbers.device
 
-    @staticmethod
-    def build_neighbor_list(
-        coordinates: torch.Tensor,
-        cutoff: float,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Build an upper-triangle neighbor list using a single on-device mask.
+    # Advanced indexing lookup: O(1) per pair instead of O(N_params) loop
+    eps_values = eps_matrix[src_indices, atomic_numbers[dst_indices]].to(device)
+    sig_values = sig_matrix[dst_indices, atomic_numbers[src_indices]].to(device)
 
-        Returns src_indices, dst_indices, and distances as pure PyTorch
-        tensors — no .tolist(), .cpu(), or Python loops are used.
+    # Default parameters for unknown pairs
+    eps_tensor = torch.where(eps_values == 0, default_eps, eps_values)
+    sig_tensor = torch.where(sig_values == 0, default_sig, sig_values)
 
-        Args:
-            coordinates: (N_atoms, 3) FloatTensor.
-            cutoff: Cutoff distance for neighbor pairs.
+    # Shifted LJ potential
+    r_soft = torch.sqrt(distances * distances + sig_tensor**2)
+    sig_over_r = sig_tensor / r_soft
+    sig_over_r6 = sig_over_r**6
+    sig_over_r12 = sig_over_r6**2
 
-        Returns:
-            Tuple of (src_indices, dst_indices, distances) as tensors.
-        """
-        n = coordinates.shape[0]
-        device = coordinates.device
+    lj_per_pair = 4.0 * eps_tensor * (sig_over_r12 - sig_over_r6)
 
-        if n <= 2:
-            src = torch.arange(0, n, device=device, dtype=torch.long)
-            dst = torch.arange(1, n + 1, device=device, dtype=torch.long)
-            dists = torch.norm(coordinates[1:] - coordinates[: n - 1], dim=-1)
-            return src, dst, dists
+    # Shift to zero at cutoff
+    r_cutoff_soft = torch.sqrt(distances * distances + sig_tensor**2)
+    sig_over_r_cutoff = sig_tensor / r_cutoff_soft
+    sig_over_r6_cutoff = sig_over_r_cutoff**6
+    lj_cutoff = 4.0 * eps_tensor * (sig_over_r6_cutoff - sig_over_r6)
 
-        # Upper-triangle mask: only pairs where dst > src
-        upper_mask = torch.triu(
-            torch.ones(n, n, device=device, dtype=torch.bool),
-            diagonal=1,
-        )
+    lj_per_pair = lj_per_pair - lj_cutoff
 
-        # Pairwise distances (N, N) — fully on-device
-        diff = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
-        distances_full = torch.norm(diff, dim=2)
-
-        # Combined mask: upper triangle AND within cutoff
-        active_mask = upper_mask & (distances_full < cutoff)
-
-        # Extract indices where mask is True — all remain as tensors
-        src_indices, dst_indices = torch.where(active_mask)
-        distances = distances_full[active_mask]
-
-        return src_indices, dst_indices, distances
+    return lj_per_pair.sum()
 
 
-class MatterSimLJPotentials:
-    """Lennard-Jones potential calculations.
+def compute_lj_potential(
+    atomic_numbers: torch.Tensor,
+    distances: torch.Tensor,
+    eps_matrix: torch.Tensor,
+    sig_matrix: torch.Tensor,
+    default_eps: float,
+    default_sig: float,
+    cutoff: float,
+) -> torch.Tensor:
+    """Compute Lennard-Jones potential between all atom pairs.
 
-    Implements OPLS-AA / GAFF force field parameters with fully
-    vectorized tensor operations for maximum throughput.
+    Uses OPLS-AA / GAFF parameters loaded from force field JSON.
+    Fully vectorized implementation using precomputed parameter matrices.
+
+    Args:
+        atomic_numbers: (N,) LongTensor.
+        distances: (N, N) FloatTensor of pairwise distances.
+        eps_matrix: Precomputed epsilon values indexed by atomic numbers.
+        sig_matrix: Precomputed sigma values indexed by atomic numbers.
+        default_eps: Default epsilon for unknown pairs.
+        default_sig: Default sigma for unknown pairs.
+        cutoff: Cutoff distance.
+
+    Returns:
+        Scalar LJ energy tensor.
     """
+    n = atomic_numbers.shape[0]
+    device = atomic_numbers.device
 
-    @staticmethod
-    def compute_lj_sparse(
-        atomic_numbers: torch.Tensor,
-        src_indices: torch.Tensor,
-        dst_indices: torch.Tensor,
-        distances: torch.Tensor,
-        eps_matrix: torch.Tensor,
-        sig_matrix: torch.Tensor,
-        default_eps: float,
-        default_sig: float,
-        cutoff: float,
-    ) -> torch.Tensor:
-        """Compute Lennard-Jones potential using sparse neighbor list.
+    mask = torch.triu(torch.ones(n, n, device=device, dtype=torch.bool), diagonal=1)
 
-        Uses OPLS-AA / GAFF parameters from force field JSON.
-        Only evaluates pairs in the neighbor list.
+    # Advanced indexing lookup: O(1) per pair instead of O(N_params) loop
+    indices = torch.arange(n, device=device, dtype=torch.long)
+    eps_tensor = eps_matrix[indices, atomic_numbers].to(device)
+    sig_tensor = sig_matrix[indices, atomic_numbers].to(device)
 
-        Args:
-            atomic_numbers: (N,) LongTensor.
-            src_indices: Source indices for neighbour pairs.
-            dst_indices: Destination indices for neighbour pairs.
-            distances: Pairwise distances for neighbour pairs.
-            eps_matrix: Precomputed epsilon values indexed by atomic numbers.
-            sig_matrix: Precomputed sigma values indexed by atomic numbers.
-            cutoff: Cutoff distance.
-            device: Compute device.
+    # Default parameters for unknown pairs
+    eps_tensor = torch.where(eps_tensor == 0, torch.full_like(eps_tensor, default_eps), eps_tensor)
+    sig_tensor = torch.where(sig_tensor == 0, torch.full_like(sig_tensor, default_sig), sig_tensor)
 
-        Returns:
-            Scalar LJ energy tensor.
-        """
-        device = atomic_numbers.device
+    cutoff_mask = (distances < cutoff) & mask  # OPLS-AA cutoff
 
-        # Advanced indexing lookup: O(1) per pair instead of O(N_params) loop
-        eps_values = eps_matrix[src_indices, atomic_numbers[dst_indices]].to(device)
-        sig_values = sig_matrix[dst_indices, atomic_numbers[src_indices]].to(device)
+    # Shifted LJ potential
+    r_soft = torch.sqrt(distances * distances + sig_tensor**2)
+    sig_over_r = sig_tensor / r_soft
+    sig_over_r6 = sig_over_r**6
+    sig_over_r12 = sig_over_r6**2
 
-        # Default parameters for unknown pairs
-        eps_tensor = torch.where(eps_values == 0, default_eps, eps_values)
-        sig_tensor = torch.where(sig_values == 0, default_sig, sig_values)
+    lj_per_pair = 4.0 * eps_tensor * (sig_over_r12 - sig_over_r6)
 
-        # Shifted LJ potential
-        r_soft = torch.sqrt(distances * distances + sig_tensor**2)
-        sig_over_r = sig_tensor / r_soft
-        sig_over_r6 = sig_over_r**6
-        sig_over_r12 = sig_over_r6**2
+    # Shift to zero at cutoff
+    r_cutoff_soft = torch.sqrt(distances * distances + sig_tensor**2)
+    sig_over_r_cutoff = sig_tensor / r_cutoff_soft
+    sig_over_r6_cutoff = sig_over_r_cutoff**6
+    lj_cutoff = 4.0 * eps_tensor * (sig_over_r6_cutoff - sig_over_r6)
 
-        lj_per_pair = 4.0 * eps_tensor * (sig_over_r12 - sig_over_r6)
+    lj_per_pair = lj_per_pair - lj_cutoff
+    lj_total = torch.sum(lj_per_pair * cutoff_mask.float())
 
-        # Shift to zero at cutoff
-        r_cutoff_soft = torch.sqrt(distances * distances + sig_tensor**2)
-        sig_over_r_cutoff = sig_tensor / r_cutoff_soft
-        sig_over_r6_cutoff = sig_over_r_cutoff**6
-        lj_cutoff = 4.0 * eps_tensor * (sig_over_r6_cutoff - sig_over_r6)
-
-        lj_per_pair = lj_per_pair - lj_cutoff
-
-        return lj_per_pair.sum()
-
-    @staticmethod
-    def compute_lj_potential(
-        atomic_numbers: torch.Tensor,
-        distances: torch.Tensor,
-        eps_matrix: torch.Tensor,
-        sig_matrix: torch.Tensor,
-        default_eps: float,
-        default_sig: float,
-        cutoff: float,
-    ) -> torch.Tensor:
-        """Compute Lennard-Jones potential between all atom pairs.
-
-        Uses OPLS-AA / GAFF parameters loaded from force field JSON.
-        Fully vectorized implementation using precomputed parameter matrices.
-
-        Args:
-            atomic_numbers: (N,) LongTensor.
-            distances: (N, N) FloatTensor of pairwise distances.
-            eps_matrix: Precomputed epsilon values indexed by atomic numbers.
-            sig_matrix: Precomputed sigma values indexed by atomic numbers.
-            default_eps: Default epsilon for unknown pairs.
-            default_sig: Default sigma for unknown pairs.
-            cutoff: Cutoff distance.
-
-        Returns:
-            Scalar LJ energy tensor.
-        """
-        n = atomic_numbers.shape[0]
-        device = atomic_numbers.device
-
-        mask = torch.triu(torch.ones(n, n, device=device, dtype=torch.bool), diagonal=1)
-
-        # Advanced indexing lookup: O(1) per pair instead of O(N_params) loop
-        indices = torch.arange(n, device=device, dtype=torch.long)
-        eps_tensor = eps_matrix[indices, atomic_numbers].to(device)
-        sig_tensor = sig_matrix[indices, atomic_numbers].to(device)
-
-        # Default parameters for unknown pairs
-        eps_tensor = torch.where(eps_tensor == 0, torch.full_like(eps_tensor, default_eps), eps_tensor)
-        sig_tensor = torch.where(sig_tensor == 0, torch.full_like(sig_tensor, default_sig), sig_tensor)
-
-        cutoff_mask = (distances < cutoff) & mask  # OPLS-AA cutoff
-
-        # Shifted LJ potential
-        r_soft = torch.sqrt(distances * distances + sig_tensor**2)
-        sig_over_r = sig_tensor / r_soft
-        sig_over_r6 = sig_over_r**6
-        sig_over_r12 = sig_over_r6**2
-
-        lj_per_pair = 4.0 * eps_tensor * (sig_over_r12 - sig_over_r6)
-
-        # Shift to zero at cutoff
-        r_cutoff_soft = torch.sqrt(distances * distances + sig_tensor**2)
-        sig_over_r_cutoff = sig_tensor / r_cutoff_soft
-        sig_over_r6_cutoff = sig_over_r_cutoff**6
-        lj_cutoff = 4.0 * eps_tensor * (sig_over_r6_cutoff - sig_over_r6)
-
-        lj_per_pair = lj_per_pair - lj_cutoff
-        lj_total = torch.sum(lj_per_pair * cutoff_mask.float())
-
-        return lj_total
+    return lj_total
 
 
-class MatterSimCoulombPotentials:
-    """Coulombic potential calculations.
+# ---------------------------------------------------------------------------
+# Coulombic potential functions (module-level)
+# ---------------------------------------------------------------------------
+
+
+def compute_coulomb_sparse(
+    atomic_numbers: torch.Tensor,
+    src_indices: torch.Tensor,
+    dst_indices: torch.Tensor,
+    distances: torch.Tensor,
+    charge_vector: torch.Tensor,
+    use_polarization: bool,
+    ci: float,
+    device: str,
+) -> torch.Tensor:
+    """Compute Coulombic potential using sparse neighbor list.
 
     Uses OPLS-AA / GAFF partial charges, or dynamically predicted
     charges when polarization is enabled (GNN-ChargeEq model).
+
+    Args:
+        atomic_numbers: (N,) LongTensor.
+        src_indices: Source indices for neighbor pairs.
+        dst_indices: Destination indices for neighbor pairs.
+        distances: Pairwise distances for neighbor pairs.
+        charge_vector: Precomputed charge values indexed by atomic number.
+        use_polarization: Whether to use polarization.
+        ci: Ion charge for ion-solvent interaction.
+        device: Compute device.
+
+    Returns:
+        Scalar Coulomb energy tensor.
     """
+    coul_total = torch.tensor(0.0, device=atomic_numbers.device)
 
-    @staticmethod
-    def compute_coulomb_sparse(
-        atomic_numbers: torch.Tensor,
-        src_indices: torch.Tensor,
-        dst_indices: torch.Tensor,
-        distances: torch.Tensor,
-        charge_vector: torch.Tensor,
-        use_polarization: bool,
-        ci: float,
-        device: str,
-    ) -> torch.Tensor:
-        """Compute Coulombic potential using sparse neighbor list.
+    # Advanced indexing lookup: O(1) per pair instead of O(N) loop
+    q_i = charge_vector[src_indices]
+    q_j = charge_vector[dst_indices]
 
-        Uses OPLS-AA / GAFF partial charges, or dynamically predicted
-        charges when polarization is enabled (GNN-ChargeEq model).
+    charge_mask = (q_i * q_j) != 0.0
 
-        Args:
-            atomic_numbers: (N,) LongTensor.
-            src_indices: Source indices for neighbor pairs.
-            dst_indices: Destination indices for neighbor pairs.
-            distances: Pairwise distances for neighbor pairs.
-            charge_vector: Precomputed charge values indexed by atomic number.
-            use_polarization: Whether to use polarization.
-            ci: Ion charge for ion-solvent interaction.
-            device: Compute device.
+    coulomb_per_pair = COULOMB_EV_A * (q_i * q_j) / torch.sqrt(distances * distances + 1.0)
+    coul_total += torch.sum(coulomb_per_pair * charge_mask.float())
 
-        Returns:
-            Scalar Coulomb energy tensor.
-        """
-        coul_total = torch.tensor(0.0, device=atomic_numbers.device)
+    return coul_total
 
-        # Advanced indexing lookup: O(1) per pair instead of O(N) loop
-        q_i = charge_vector[src_indices]
-        q_j = charge_vector[dst_indices]
 
-        charge_mask = (q_i * q_j) != 0.0
+def compute_coulomb_potential(
+    atomic_numbers: torch.Tensor,
+    distances: torch.Tensor,
+    charge_vector: torch.Tensor,
+    default_eps: float,
+    default_sig: float,
+    cutoff: float,
+) -> torch.Tensor:
+    """Compute Coulombic potential between charged pairs.
 
-        coulomb_per_pair = COULOMB_EV_A * (q_i * q_j) / torch.sqrt(distances * distances + 1.0)
-        coul_total += torch.sum(coulomb_per_pair * charge_mask.float())
+    Uses OPLS-AA / GAFF partial charges, or dynamically predicted
+    charges when polarization is enabled (GNN-ChargeEq model).
 
-        return coul_total
+    Args:
+        atomic_numbers: (N,) LongTensor.
+        distances: (N, N) FloatTensor of pairwise distances.
+        charge_vector: Precomputed charge values indexed by atomic number.
+        default_eps: Default epsilon for unknown pairs.
+        default_sig: Default sigma for unknown pairs.
+        cutoff: Cutoff distance.
 
-    @staticmethod
-    def compute_coulomb_potential(
-        atomic_numbers: torch.Tensor,
-        distances: torch.Tensor,
-        charge_vector: torch.Tensor,
-        default_eps: float,
-        default_sig: float,
-        cutoff: float,
-    ) -> torch.Tensor:
-        """Compute Coulombic potential between charged pairs.
+    Returns:
+        Scalar Coulomb energy tensor.
+    """
+    n = atomic_numbers.shape[0]
+    device = atomic_numbers.device
 
-        Uses OPLS-AA / GAFF partial charges, or dynamically predicted
-        charges when polarization is enabled (GNN-ChargeEq model).
+    mask = torch.triu(torch.ones(n, n, device=device, dtype=torch.bool), diagonal=1)
 
-        Args:
-            atomic_numbers: (N,) LongTensor.
-            distances: (N, N) FloatTensor of pairwise distances.
-            charge_vector: Precomputed charge values indexed by atomic number.
-            default_eps: Default epsilon for unknown pairs.
-            default_sig: Default sigma for unknown pairs.
-            cutoff: Cutoff distance.
+    # Advanced indexing lookup: O(1) per pair instead of O(N) loop
+    charges_tensor = charge_vector[atomic_numbers].to(device)
 
-        Returns:
-            Scalar Coulomb energy tensor.
-        """
-        n = atomic_numbers.shape[0]
-        device = atomic_numbers.device
+    q_i = charges_tensor.unsqueeze(0)
+    q_j = charges_tensor.unsqueeze(1)
+    q_product = q_i * q_j
 
-        mask = torch.triu(torch.ones(n, n, device=device, dtype=torch.bool), diagonal=1)
+    charge_mask = q_product != 0.0
+    r_soft = torch.sqrt(distances * distances + 1.0)
 
-        # Advanced indexing lookup: O(1) per pair instead of O(N) loop
-        charges_tensor = charge_vector[atomic_numbers].to(device)
+    coulomb_per_pair = COULOMB_EV_A * q_product / r_soft
+    coulomb_total = torch.sum(coulomb_per_pair * mask.float() * charge_mask.float())
 
-        q_i = charges_tensor.unsqueeze(0)
-        q_j = charges_tensor.unsqueeze(1)
-        q_product = q_i * q_j
+    return coulomb_total
 
-        charge_mask = q_product != 0.0
-        r_soft = torch.sqrt(distances * distances + 1.0)
 
-        coulomb_per_pair = COULOMB_EV_A * q_product / r_soft
-        coulomb_total = torch.sum(coulomb_per_pair * mask.float() * charge_mask.float())
+# ---------------------------------------------------------------------------
+# Neighbor list functions (module-level)
+# ---------------------------------------------------------------------------
 
-        return coulomb_total
+
+def build_neighbor_list(
+    coordinates: torch.Tensor,
+    cutoff: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Build an upper-triangle neighbor list using a single on-device mask.
+
+    Returns src_indices, dst_indices, and distances as pure PyTorch
+    tensors — no .tolist(), .cpu(), or Python loops are used.
+
+    Args:
+        coordinates: (N_atoms, 3) FloatTensor.
+        cutoff: Cutoff distance for neighbor pairs.
+
+    Returns:
+        Tuple of (src_indices, dst_indices, distances) as tensors.
+    """
+    n = coordinates.shape[0]
+    device = coordinates.device
+
+    if n <= 2:
+        src = torch.arange(0, n, device=device, dtype=torch.long)
+        dst = torch.arange(1, n + 1, device=device, dtype=torch.long)
+        dists = torch.norm(coordinates[1:] - coordinates[: n - 1], dim=-1)
+        return src, dst, dists
+
+    # Upper-triangle mask: only pairs where dst > src
+    upper_mask = torch.triu(
+        torch.ones(n, n, device=device, dtype=torch.bool),
+        diagonal=1,
+    )
+
+    # Pairwise distances (N, N) — fully on-device
+    diff = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
+    distances_full = torch.norm(diff, dim=2)
+
+    # Combined mask: upper triangle AND within cutoff
+    active_mask = upper_mask & (distances_full < cutoff)
+
+    # Extract indices where mask is True — all remain as tensors
+    src_indices, dst_indices = torch.where(active_mask)
+    distances = distances_full[active_mask]
+
+    return src_indices, dst_indices, distances
+
+
+# ---------------------------------------------------------------------------
+# Remaining module-level utilities
+# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=128)
@@ -331,7 +323,10 @@ def _get_molecule_coordinates(smiles: str) -> tuple[list[int], list[list[float]]
 
     atomic_numbers = [atom.GetAtomicNum() for atom in mol.GetAtoms()]  # type: ignore[no-untyped-call]
     conf = mol.GetConformer()
-    coords = [[float(conf.GetAtomPosition(i).x), float(conf.GetAtomPosition(i).y), float(conf.GetAtomPosition(i).z)] for i in range(mol.GetNumAtoms())]
+    coords = [
+        [float(conf.GetAtomPosition(i).x), float(conf.GetAtomPosition(i).y), float(conf.GetAtomPosition(i).z)]
+        for i in range(mol.GetNumAtoms())
+    ]
 
     return atomic_numbers, coords
 
@@ -617,7 +612,7 @@ class MatterSimMTSimulator:
         distances = torch.norm(diffs, dim=-1)
 
         # Compute LJ + Coulomb energies (always uses dense pairwise computation)
-        lj_energy = MatterSimLJPotentials.compute_lj_potential(
+        lj_energy = compute_lj_potential(
             atomic_numbers,
             distances,
             self._eps_matrix,
@@ -626,7 +621,7 @@ class MatterSimMTSimulator:
             self._default_sig,
             self._cutoff,
         )
-        coulomb_energy = MatterSimCoulombPotentials.compute_coulomb_potential(
+        coulomb_energy = compute_coulomb_potential(
             atomic_numbers,
             distances,
             self._charge_vector,
@@ -667,7 +662,7 @@ class MatterSimMTSimulator:
         distances: torch.Tensor,
     ) -> torch.Tensor:
         """Compute Lennard-Jones potential using sparse neighbor list."""
-        return MatterSimLJPotentials.compute_lj_sparse(
+        return compute_lj_sparse(
             atomic_numbers,
             src_indices,
             dst_indices,
@@ -687,7 +682,7 @@ class MatterSimMTSimulator:
         distances: torch.Tensor,
     ) -> torch.Tensor:
         """Compute Coulombic potential using sparse neighbor list."""
-        return MatterSimCoulombPotentials.compute_coulomb_sparse(
+        return compute_coulomb_sparse(
             atomic_numbers,
             src_indices,
             dst_indices,
@@ -700,7 +695,7 @@ class MatterSimMTSimulator:
 
     def _compute_lj_potential(self, atomic_numbers: torch.Tensor, distances: torch.Tensor) -> torch.Tensor:
         """Compute Lennard-Jones potential between all atom pairs."""
-        return MatterSimLJPotentials.compute_lj_potential(
+        return compute_lj_potential(
             atomic_numbers,
             distances,
             self._eps_matrix,
@@ -712,7 +707,7 @@ class MatterSimMTSimulator:
 
     def _compute_coulomb_potential(self, atomic_numbers: torch.Tensor, distances: torch.Tensor) -> torch.Tensor:
         """Compute Coulombic potential between charged pairs."""
-        return MatterSimCoulombPotentials.compute_coulomb_potential(
+        return compute_coulomb_potential(
             atomic_numbers,
             distances,
             self._charge_vector,
@@ -831,7 +826,7 @@ class MatterSimMTSimulator:
         """
         diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
         dist = torch.norm(diffs, dim=-1)
-        lj = MatterSimLJPotentials.compute_lj_potential(
+        lj = compute_lj_potential(
             atomic_numbers,
             dist,
             self._eps_matrix,
@@ -840,7 +835,7 @@ class MatterSimMTSimulator:
             self._default_sig,
             self._cutoff,
         )
-        coul = MatterSimCoulombPotentials.compute_coulomb_potential(
+        coul = compute_coulomb_potential(
             atomic_numbers,
             dist,
             self._charge_vector,
@@ -903,7 +898,7 @@ class MatterSimMTSimulator:
         Returns:
             Tuple of (src_indices, dst_indices, distances) as tensors.
         """
-        return MatterSimNeighborList.build_neighbor_list(coordinates, self._cutoff)
+        return build_neighbor_list(coordinates, self._cutoff)
 
     @staticmethod
     def _estimate_memory_usage(n_scan_points: int, device: str = "cpu") -> float:
@@ -922,7 +917,9 @@ class MatterSimMTSimulator:
 
 __all__ = [
     "MatterSimMTSimulator",
-    "MatterSimLJPotentials",
-    "MatterSimCoulombPotentials",
-    "MatterSimNeighborList",
+    "build_neighbor_list",
+    "compute_lj_potential",
+    "compute_lj_sparse",
+    "compute_coulomb_potential",
+    "compute_coulomb_sparse",
 ]

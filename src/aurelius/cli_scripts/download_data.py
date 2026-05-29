@@ -234,6 +234,7 @@ def load_qm9_data() -> tuple[Any, Any, list[str]]:
     u0_values = np.array([d["U0"] for d in data], dtype=np.float32)
     # Generate fingerprints for all molecules
     from aurelius.data.loaders import generate_ecfp4_fingerprint
+
     X = np.zeros((len(data), 2048), dtype=np.float32)
     for i, smi in enumerate(smiles_list):
         X[i] = generate_ecfp4_fingerprint(smi)
