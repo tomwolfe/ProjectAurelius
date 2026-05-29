@@ -136,6 +136,6 @@ class TestMatterSimMTSimulator:
         # neighbor-list indices while the dense path uses full pairwise
         # computation — both compute the same underlying physics but may
         # differ due to floating-point accumulation across ~5000 pairs.
-        assert abs(total_dense - total_sparse) < 50.0, (
+        assert abs(total_dense - total_sparse) < 1e-3, (
             f"Sparse ({total_sparse:.6f}) vs dense ({total_dense:.6f}) energy mismatch"
         )

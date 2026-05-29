@@ -10,7 +10,7 @@
 
 - **🥈 Task 2: Dense Physics Engine** -- Tier 2 now uses fully vectorized PyTorch tensor operations for pairwise interactions. For battery electrolyte molecules (<100 atoms), dense O(N^2) tensor computations on MPS/CUDA are faster than CPU-bound grid loops.
 
-- **🏅 Task 3: RDKit Enforcement** -- RDKit is now strictly required for `--use-real-models`. Hash fallbacks are blocked in production paths. Added `--allow-fallback` CLI flag for demo/CI environments. Clear error messages point to `pip install rdkit`.
+- **🏅 Task 3: RDKit Enforcement** -- RDKit is strictly required for `--use-real-models`. Hash fallbacks are blocked in production paths. Clear error messages point to `pip install rdkit`.
 
 - **📊 Task 4: HuggingFace Hub Upload** -- Added `aurelius hf-upload` CLI subcommand for pushing locally trained models to HF Hub. Supports `--model-dir`, `--repo-id`, `--task`, `--private/--public`, `--commit-message`, and `--dry-run`. Auto-generates model cards with architecture, dataset, and hyperparameters.
 
@@ -26,7 +26,7 @@
 
 - **⚡ Task 9: GNN-ChargeEq Model** -- New `ChargeEqModel` class with `hidden_dim` parameter for predicting partial charges from atomic numbers via `predict_charges(atomic_numbers)`.
 
-- **🧠 Task 10: ActiveLearningOracle** -- New class for active learning with caching, batch querying (`query_batch`), dataset appending (`append_to_dataset`), and cache clearing (`clear_cache`).
+- **🧠 Task 10: RDKit BRICS MutationEngine** -- RDKit-based molecule mutation engine using BRICS reassembly, fluorination, and methylation with diversity-based rejection. The `MutationEngine(seed_smiles, known_fps_hex)` generates candidate molecules from seed SMILES.
 
 - **🔧 Task 12: Dead Code Removal** -- Removed `_hash_descriptors`, `_ChemVLM2MLP`, `_FallbackMLP` and eliminated CLI duplicate `[Summary]` block.
 
@@ -34,17 +34,7 @@
 
 - **Version Bump**: Updated to 7.0.0 with all backward-compatible changes.
 
-- **CLI Flags**: Added `--task tier1|tier0` to `aurelius train`, `--allow-fallback` to `screen` and `batch`, and `--profile-memory` to the agent.
-- **CI Updates**: Updated `.github/workflows/ci.yml` for new test markers and optional dependency installs.
-- **Dead Code Removal**: Removed `_hash_descriptors`, `_ChemVLM2MLP`, `_FallbackMLP` and eliminated CLI duplicate `[Summary]` block.
-
-- **🔄 Task 11: GraphVAEMutator** -- Structural diversity generation via latent interpolation. `GraphVAEMutator(latent_dim=64)` with `mutate(smiles, batch_size=N)` returns N candidates.
-
-### Bug Fixes & Improvements
-
-- **Version Bump**: Updated to 7.0.0 with all backward-compatible changes.
-
-- **CLI Flags**: Added `--task tier1|tier0` to `aurelius train`, `--allow-fallback` to `screen` and `batch`, and `--profile-memory` to the agent.
+- **CLI Flags**: Added `--task tier1|tier0` to `aurelius train`, and `--profile-memory` to the agent.
 - **CI Updates**: Updated `.github/workflows/ci.yml` for new test markers and optional dependency installs.
 
 ## Overview
@@ -392,17 +382,15 @@ aurelius screen <smiles>         Screen a single molecule
   --salt TYPE                    Salt type (default: NaPF6)
   --ion TYPE                     Ion type (default: Na+)
   --temperature K                Temperature in Kelvin
-  --voltage CUTOFF               Voltage cutoff
-  --cycles N                     MD simulation cycles
-  --gwp VALUE                    Global Warming Potential
-  --use-real-models              Use real models (default: enabled)
-  --demo                         Use synthetic data (demo mode)
-  --allow-fallback               Allow hash fallback without RDKit (demo/CI)
+   --voltage CUTOFF               Voltage cutoff
+   --cycles N                     MD simulation cycles
+   --gwp VALUE                    Global Warming Potential
+   --use-real-models              Use real models (default: enabled)
+   --demo                         Use synthetic data (demo mode)
 aurelius batch <file>            Screen molecules from SMILES file
   --solvent TYPE                 Solvent type
   --salt TYPE                    Salt type
   --output PATH                  Output JSON file
-  --allow-fallback               Allow hash fallback without RDKit (demo/CI)
 aurelius score <smiles>          Compute Aurelius score only
 aurelius train                   Train model
   --task tier1|tier0             Task: tier1 (MLX filter) or tier0 (MPNN)

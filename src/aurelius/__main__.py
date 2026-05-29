@@ -378,7 +378,7 @@ def _run_tier0_train(
 
 @cli.command("validate")
 @click.option("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to validate")
-def validate(smiles: str, pipeline: AureliusPipeline, config: AureliusConfig) -> None:
+def validate(smiles: str = "CC(=O)OC1=CC(=O)O1", pipeline: Any = None, config: Any = None) -> None:
     """Run physics validation on a molecule."""
     sys.argv = ["validate_physics", "--smiles", smiles]
     validate_physics.main()

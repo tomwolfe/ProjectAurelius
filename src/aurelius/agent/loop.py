@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from aurelius.agent.state import ConvergenceChecker, FeedbackAdapter
+from aurelius.utils.chem_utils import _is_valid_mol, _safe_mol_from_smiles
 
 log = logging.getLogger(__name__)
 
@@ -193,7 +194,8 @@ class DiscoveryLoop:
                 self.feedback.record(screening_result)
 
             # ---- Convergence / checkpoint ----
-            self.convergence.record_batch(batch_scores, batch_viable, invalid_count)
+            new_clusters = self._count_new_clusters(valid_candidates)
+            self.convergence.record_batch(batch_scores, batch_viable, new_clusters)
             self.checkpoint.update_stats(valid_candidates, batch_scores, batch_viable, invalid_count)
             self.total_screened += len(valid_candidates)
             self.total_viable += batch_viable
@@ -258,7 +260,7 @@ class DiscoveryLoop:
         valid: list[str] = []
         invalid_count = 0
 
-        from aurelius.utils.chem_utils import _is_valid_mol, _safe_mol_from_smiles
+        from aurelius.utils.chem_utils import _safe_mol_from_smiles
 
         for smi in candidates:
             if smi in self.screened_smiles:
@@ -289,3 +291,39 @@ class DiscoveryLoop:
             log.warning("Pipeline error for %s: %s", smiles, e)
             return None
         return result if result is not None else None
+
+    def _count_new_clusters(self, candidates: list[str]) -> int:
+        """Count how many candidates represent new structural clusters.
+
+        Uses Tanimoto similarity thresholds to count unique scaffolds.
+        """
+        from rdkit import Chem
+        from rdkit.Chem import AllChem
+
+        unique_scaffolds: set[str] = set()
+        for smi in candidates:
+            mol = _safe_mol_from_smiles(smi)
+            if mol is None:
+                continue
+            try:
+                fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, bitIdToSize=2048)  # type: ignore[attr-defined, unused-ignore]
+            except (AttributeError, RuntimeError):
+                continue
+            scaffold = Chem.MolFragmentToSmiles(mol, atomsToUse=list(range(mol.GetNumAtoms())), isomericSmiles=False)
+            has_new = False
+            for existing in self.screened_smiles:
+                existing_mol = _safe_mol_from_smiles(existing)
+                if existing_mol is None:
+                    continue
+                try:
+                    existing_fp = AllChem.GetMorganFingerprintAsBitVec(existing_mol, 2, bitIdToSize=2048)  # type: ignore[attr-defined, unused-ignore]
+                    from rdkit.DataStructs import TanimotoSimilarity
+
+                    if TanimotoSimilarity(fp, existing_fp) > 0.75:
+                        has_new = True
+                        break
+                except (AttributeError, RuntimeError):
+                    continue
+            if not has_new:
+                unique_scaffolds.add(scaffold)
+        return len(unique_scaffolds)

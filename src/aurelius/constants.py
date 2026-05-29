@@ -32,4 +32,4 @@ AVOGADRO: float = 6.02214076e23
 # ML / chemistry constants
 FINGERPRINT_SIZE: int = 2048
 MAX_ATOMIC_NUMBER: int = 119
-DEFAULT_LJ_CUTOFF: float = 12.0
+DEFAULT_LJ_CUTOFF: float = 10.0

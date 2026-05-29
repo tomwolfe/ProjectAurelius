@@ -318,7 +318,9 @@ def _get_molecule_coordinates(smiles: str) -> tuple[list[int], list[list[float]]
         return None
 
     mol = Chem.AddHs(mol)
-    AllChem.EmbedMolecule(mol, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
+    embed_result = AllChem.EmbedMolecule(mol, randomSeed=42)  # type: ignore[attr-defined, unused-ignore]
+    if embed_result == -1:
+        return None
     AllChem.MMFFOptimizeMolecule(mol)  # type: ignore[attr-defined, unused-ignore]
 
     atomic_numbers = [atom.GetAtomicNum() for atom in mol.GetAtoms()]  # type: ignore[no-untyped-call]
@@ -397,6 +399,8 @@ class MatterSimMTSimulator:
                 charge prediction for Coulombic potential computation.
         """
         self._use_polarization = use_polarization
+        self._use_neighbor_list = use_neighbor_list
+        self._neighbor_list_cutoff = neighbor_list_cutoff
         self._LJ_PARAMS: dict[tuple[int, int], tuple[float, float]] = {}
         self._CHARGES: dict[int, float] = {}
         self._ATOMIC_RADII: dict[int, float] = {}
@@ -436,16 +440,6 @@ class MatterSimMTSimulator:
         self._default_sig = params.get("lennard_jones", {}).get("default_sigma", 2.5)
         self._cutoff = params.get("lennard_jones", {}).get("cutoff_angstrom", DEFAULT_LJ_CUTOFF)
         self._cutoff_mask_start = params.get("lennard_jones", {}).get("switching_start_angstrom", 10.0)
-
-        # Fallback Gaussian parameters
-        fallback = params.get("fallback_gaussians", {})
-        _heights = fallback.get("heights", [0.2, 0.15, 0.1, 0.03])
-        _centers = fallback.get("centers", [2.0, 4.5, 6.5, 8.0])
-        _widths = fallback.get("widths", [0.8, 1.0, 0.6, 0.3])
-        _n = min(len(_heights), len(_centers), len(_widths))
-        self._fallback_heights = _heights[:_n]
-        self._fallback_centers = _centers[:_n]
-        self._fallback_widths = _widths[:_n]
 
         # Barrier threshold
         self.barrier_threshold_eV = (
@@ -589,7 +583,9 @@ class MatterSimMTSimulator:
             DesolvationPathResult with energy profile data.
         """
         if not HAS_TORCH:
-            return self._fallback_path_integral(smiles, n_scan_points)
+            raise RuntimeError(
+                "PyTorch is required for MatterSim-MT. Install PyTorch to run physics simulations: pip install torch"
+            )
 
         device = self._select_device()
 
@@ -611,24 +607,29 @@ class MatterSimMTSimulator:
         diffs = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
         distances = torch.norm(diffs, dim=-1)
 
-        # Compute LJ + Coulomb energies (always uses dense pairwise computation)
-        lj_energy = compute_lj_potential(
-            atomic_numbers,
-            distances,
-            self._eps_matrix,
-            self._sig_matrix,
-            self._default_eps,
-            self._default_sig,
-            self._cutoff,
-        )
-        coulomb_energy = compute_coulomb_potential(
-            atomic_numbers,
-            distances,
-            self._charge_vector,
-            self._default_eps,
-            self._default_sig,
-            self._cutoff,
-        )
+        # Compute LJ + Coulomb energies
+        if self._use_neighbor_list:
+            src_idx, dst_idx, dists = self._get_neighbor_list(coordinates)
+            lj_energy = self._compute_lj_sparse(atomic_numbers, src_idx, dst_idx, dists)
+            coulomb_energy = self._compute_coulomb_sparse(atomic_numbers, src_idx, dst_idx, dists)
+        else:
+            lj_energy = compute_lj_potential(
+                atomic_numbers,
+                distances,
+                self._eps_matrix,
+                self._sig_matrix,
+                self._default_eps,
+                self._default_sig,
+                self._cutoff,
+            )
+            coulomb_energy = compute_coulomb_potential(
+                atomic_numbers,
+                distances,
+                self._charge_vector,
+                self._default_eps,
+                self._default_sig,
+                self._cutoff,
+            )
         _total_energy = lj_energy + coulomb_energy
 
         # Build energy profile
@@ -846,48 +847,12 @@ class MatterSimMTSimulator:
 
         return lj + coul
 
-    def _fallback_path_integral(self, smiles: str, n_scan_points: int) -> DesolvationPathResult:
-        """Fallback path integral when PyTorch is unavailable."""
-        seed = hash(smiles) % 10000
-        rng = np.random.RandomState(seed)
-        positions = np.linspace(0, 8.0, n_scan_points)
-        energies = np.zeros(n_scan_points)
-
-        heights = self._fallback_heights
-        centers = self._fallback_centers
-        widths = self._fallback_widths
-
-        for _h, (h, c, w) in enumerate(zip(heights, centers, widths, strict=True)):
-            energies += h * np.exp(-0.5 * ((positions - c) / w) ** 2)
-
-        if len(heights) >= 4:
-            energies += heights[3] * np.exp(-positions / widths[3])
-        else:
-            energies += 0.03 * np.exp(-positions / 0.3)
-        energies += rng.normal(0, 0.01, n_scan_points)
-
-        local_maxima = self._find_local_maxima(energies)
-        max_barrier = float(np.max(energies))
-        max_local = float(max(local_maxima)) if local_maxima else 0.0
-        path_integral = float(np.trapezoid(energies, positions))  # type: ignore[attr-defined]
-
-        rejected = max_local > self.barrier_threshold_eV
-        reason = None
-        if rejected:
-            reason = f"Local maxima {max_local:.3f} eV > {self.barrier_threshold_eV} eV threshold"
-
-        return DesolvationPathResult(
-            molecule_smiles=smiles,
-            barrier_height_eV=max_barrier,
-            local_maxima_eV=max_local,
-            path_integral_eV_A=path_integral,
-            rejected=rejected,
-            rejection_reason=reason,
-            n_scan_points=n_scan_points,
-        )
-
     def _get_neighbor_list(self, coordinates: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Build an upper-triangle neighbor list using a single on-device mask.
+        """Build an upper-triangle neighbor list from coordinates.
+
+        Only returns pairs where dst > src (upper triangle), matching
+        the behavior of compute_lj_potential and compute_coulomb_potential
+        which use torch.triu(diagonal=1).
 
         Returns src_indices, dst_indices, and distances as pure PyTorch
         tensors — no .tolist(), .cpu(), or Python loops are used.
@@ -898,7 +863,27 @@ class MatterSimMTSimulator:
         Returns:
             Tuple of (src_indices, dst_indices, distances) as tensors.
         """
-        return build_neighbor_list(coordinates, self._cutoff)
+        n = coordinates.shape[0]
+        device = coordinates.device
+
+        # Upper-triangle mask: only pairs where dst > src
+        upper_mask = torch.triu(
+            torch.ones(n, n, device=device, dtype=torch.bool),
+            diagonal=1,
+        )
+
+        # Pairwise distances (N, N) — fully on-device
+        diff = coordinates.unsqueeze(1) - coordinates.unsqueeze(0)
+        distances = torch.norm(diff, dim=2)
+
+        # Combined mask: upper triangle AND within cutoff
+        active_mask = upper_mask & (distances < self._neighbor_list_cutoff)
+
+        # Extract indices where mask is True
+        src_indices, dst_indices = torch.where(active_mask)
+        distances = distances[active_mask]
+
+        return src_indices, dst_indices, distances
 
     @staticmethod
     def _estimate_memory_usage(n_scan_points: int, device: str = "cpu") -> float:

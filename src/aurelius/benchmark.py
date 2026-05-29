@@ -108,11 +108,11 @@ def _detect_hardware() -> HardwareInfo:
 
 def _benchmark_tier1_quick(repeats: int = 5, n_molecules: int = 100) -> BenchmarkResult:
     """Quick Tier 1 inference benchmark."""
-    rng = np.random.RandomState(42)
+    rng = np.random.default_rng(42)
     X = np.zeros((n_molecules, 2048), dtype=np.float32)
     for i in range(n_molecules):
-        n_bits_set = rng.randint(80, 200)
-        indices = rng.randint(0, 2048, size=n_bits_set)
+        n_bits_set = rng.integers(80, 200)
+        indices = rng.integers(0, 2048, size=n_bits_set)
         X[i, indices] = 1.0
 
     # Try MLX first
@@ -184,9 +184,9 @@ def _benchmark_tier1_quick(repeats: int = 5, n_molecules: int = 100) -> Benchmar
 
 def _benchmark_tier2_quick(repeats: int = 3, n_atoms: int = 30) -> BenchmarkResult:
     """Quick Tier 2 vectorized physics benchmark."""
-    rng = np.random.RandomState(42)
+    rng = np.random.default_rng(42)
     elements = [1, 6, 7, 8, 11]
-    atomic_numbers = np.array([elements[rng.randint(0, len(elements))] for _ in range(n_atoms)])
+    atomic_numbers = np.array([elements[rng.integers(0, len(elements))] for _ in range(n_atoms)])
 
     radius = 5.0
     coords = np.zeros((n_atoms, 3), dtype=np.float32)

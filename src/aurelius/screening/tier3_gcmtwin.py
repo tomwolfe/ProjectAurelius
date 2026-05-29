@@ -197,7 +197,7 @@ class GCMDigitalTwin:
         start = time.perf_counter()
 
         seed = self._hash_inputs(smiles, solvent_type, salt_type)
-        rng = np.random.RandomState(seed)
+        rng = np.random.default_rng(seed)
 
         # Resolve activation energies: overrides take priority
         if self._tier0_predictor is not None:
@@ -307,7 +307,7 @@ class GCMDigitalTwin:
 
     def _run_kmc_simulation(
         self,
-        rng: np.random.RandomState,
+        rng: np.random.Generator,
         voltage: float,
         max_time: float,
         temperature_k: float = 298.15,

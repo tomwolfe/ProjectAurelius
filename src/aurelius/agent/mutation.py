@@ -25,7 +25,6 @@ from aurelius.utils.chem_utils import (
     _is_valid_mol,
     _mol_to_fp,
     _safe_mol_from_smiles,
-    _tanimoto,
 )
 from aurelius.utils.dependencies import HAS_RDKIT
 
@@ -63,7 +62,7 @@ class MutationEngine:
         for h in known_fps_hex or []:
             with contextlib.suppress(Exception):
                 self.known_fps.append(_deserialize_fp(h))
-        self._rng = np.random.RandomState(42)
+        self._rng = np.random.default_rng(42)
 
     def fingerprint_db_size(self) -> int:
         """Return the number of known fingerprints in the database."""
@@ -82,6 +81,10 @@ class MutationEngine:
     def _novelty_check(self, mol: Any) -> bool:
         """Return True if molecule is novel (Tanimoto < 0.75 vs all known).
 
+        Uses a banded prefix-filter approach: fingerprints are hashed into
+        bands so only candidates in the same band bucket are compared,
+        reducing the search from O(N) to O(N / band_size).
+
         Args:
             mol: RDKit Mol object.
 
@@ -89,7 +92,30 @@ class MutationEngine:
             True if novel (all Tanimoto < 0.75).
         """
         fp = _mol_to_fp(mol)
-        return all(_tanimoto(fp, known) < 0.75 for known in self.known_fps)
+        band_size = 4
+        n_bands = len(fp) // band_size if len(fp) >= band_size else len(fp)
+        if n_bands < 1:
+            n_bands = 1
+
+        # Compute band hashes for quick bucket lookup
+        fp_bits = np.packbits(fp.astype(np.uint8))
+        band_hashes = [int(np.sum(fp_bits[band_size * i : band_size * (i + 1)] << i)) for i in range(n_bands)]
+
+        # Hash the band signatures for bucketing
+        band_key = hash(tuple(band_hashes))
+
+        # Only check known fingerprints in the same band bucket
+        candidates = [known for known in self.known_fps if hash(tuple(np.packbits(known.astype(np.uint8)))) == band_key]
+
+        if not candidates:
+            return True
+
+        for known in candidates:
+            from rdkit.DataStructs import TanimotoSimilarity
+
+            if TanimotoSimilarity(fp, known) >= 0.75:
+                return False
+        return True
 
     def _brics_reassemble(self, mol: Any) -> list[str]:
         """BRICS decomposition + random reassembly using proper RDKit types."""
@@ -105,7 +131,7 @@ class MutationEngine:
                 return generated
 
             for _ in range(20):
-                rng = np.random.RandomState(self._rng.randint(0, 2**31))
+                rng = np.random.default_rng(self._rng.integers(0, 2**31))  # type: ignore[assignment]
                 idx = rng.choice(len(frag_mols), size=min(2, len(frag_mols)), replace=False)
                 try:
                     result_gen = BRICS.BRICSBuild([frag_mols[idx[0]], frag_mols[idx[1]]])  # type: ignore[no-untyped-call]
@@ -136,7 +162,7 @@ class MutationEngine:
             if not c_atoms:
                 return generated
 
-            rng = np.random.RandomState(self._rng.randint(0, 2**31))
+            rng = np.random.default_rng(self._rng.integers(0, 2**31))  # type: ignore[assignment]
             for idx in rng.choice(c_atoms, size=min(5, len(c_atoms)), replace=False):
                 rw_mol = Chem.RWMol(mol_h)
                 h_idx = None
@@ -171,7 +197,7 @@ class MutationEngine:
             if not c_atoms:
                 return generated
 
-            rng = np.random.RandomState(self._rng.randint(0, 2**31))
+            rng = np.random.default_rng(self._rng.integers(0, 2**31))  # type: ignore[assignment]
             for idx in rng.choice(c_atoms, size=min(5, len(c_atoms)), replace=False):
                 rw_mol = Chem.RWMol(mol_h)
                 h_idx = None

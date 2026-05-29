@@ -11,7 +11,7 @@
         },
         "default_epsilon": 0.02,
         "default_sigma": 2.5,
-        "cutoff_angstrom": 12.0,
+        "cutoff_angstrom": 10.0,
         "switching_start_angstrom": 10.0,
         "default_barrier_eV": 0.5
     },

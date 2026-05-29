@@ -13,10 +13,10 @@
 - **Solution**: `apply_environment()` now returns a `dict[str, str]` of environment variables. The CLI entry point (`__main__.py`) applies them via `_apply_env_thread_safe()` which only sets variables not already present in `os.environ`.
 - **Backward compatibility**: `apply_global_config()` still calls `apply_environment()` and applies env vars for backward-compatible code paths.
 
-### 3. Frozen Dataclass Fix (Phase 1)
-- **Problem**: `object.__setattr__` in `__post_init__` on a frozen dataclass is fragile and silently ignored by the dataclass `__init__`.
-- **Solution**: `AureliusConfig` now uses `@dataclass(init=False)` with a keyword-only `__new__` that sets all fields before `__init__` runs. This eliminates the need for `__setattr__` workarounds entirely.
-- **Pattern**: `__new__` detects system RAM, computes allocations, and sets all fields via `object.__setattr__` once at construction time.
+### 3. Pydantic BaseSettings (Phase 1)
+- **Problem**: The original code used a frozen dataclass with `object.__setattr__` in `__post_init__`, which was fragile and silently ignored by the dataclass `__init__`.
+- **Solution**: `AureliusConfig` now uses `pydantic.BaseSettings` with `model_post_init`, providing validation, environment variable loading, and type safety out of the box.
+- **Pattern**: `model_post_init` is called automatically by Pydantic after model initialisation, ensuring all fields are properly initialised.
 
 ### 4. Framework Hardening (Phase 2)
 - **Problem**: Private PyTorch APIs (`torch._C._mps_loadMetalLib`, `torch.accelerator`) caused crashes on older PyTorch versions.
@@ -79,9 +79,9 @@ Created `.github/workflows/ci.yml` with:
 
 ## v5.2 Review Response (Post-Release Hardening)
 
-### 10. Frozen Dataclass Pattern Migration (Review Item #1)
+### 10. Pydantic BaseSettings Migration (Review Item #1)
 - **Problem**: `M5ProConfig` used `object.__setattr__` inside `__post_init__` on a frozen dataclass. While functional, this pattern is fragile because `__setattr__` calls in `__post_init__` are silently ignored by the dataclass `__init__` if the class is frozen.
-- **Solution**: Migrated to `@dataclass(init=False)` with a keyword-only `__new__` constructor. The `__new__` method detects system RAM, computes allocations, and sets all fields via `object.__setattr__` once at construction time. This eliminates `__post_init__` entirely and follows the pattern documented in the Python dataclass best practices.
+- **Solution**: Migrated to `pydantic.BaseSettings` with `model_post_init`. Pydantic handles initialisation, validation, and environment variable loading natively.
 - **Files affected**: `config.py`
 - **Backward compatibility**: Constructor signature unchanged (all parameters are keyword-only with defaults).
 

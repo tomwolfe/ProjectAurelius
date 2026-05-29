@@ -112,9 +112,11 @@ def _load_tier0_seed_smiles() -> list[str]:
     try:
         with open(str(smiles_path)) as f:
             return json.load(f)  # type: ignore[no-any-return]
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        # Fallback to empty list if file not found
-        return []
+    except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
+        raise FileNotFoundError(
+            f"Seed SMILES file not found: {smiles_path}. "
+            "Ensure the data directory exists and contains tier0_seed_smiles.json."
+        ) from e
 
 
 def load_qm9_lumo_data(
@@ -145,32 +147,17 @@ def load_qm9_lumo_data(
         hf_hub_download(repo_id="qm9", filename="lumo_energies.csv", local_dir="data")
 
     # QM9 LUMO energies are stored as a CSV alongside SMILES.
-    # Try to load from local cache or download
     csv_path = output_path or os.path.join("data", "qm9_lumo.csv")
     os.makedirs(os.path.dirname(csv_path) or ".", exist_ok=True)
 
     if not os.path.exists(csv_path):
-        # Fallback: generate synthetic data for CI
-        from rdkit import Chem
-
-        rng = np.random.RandomState(42)
-        training_data: list[dict[str, Any]] = []
-        base_smiles = _load_tier0_seed_smiles()
-        for smi in base_smiles[:n_samples]:
-            mol = Chem.MolFromSmiles(smi)
-            if mol is None:
-                continue
-            lumo = float(rng.uniform(-0.5, 0.5))  # proxy for LUMO
-            training_data.append(
-                {
-                    "smiles": smi,
-                    "ec_reduction": round(lumo, 6),
-                }
-            )
-        with open(csv_path, "w") as f:
-            writer = csv.DictWriter(f, fieldnames=["smiles", "ec_reduction"])
-            writer.writeheader()
-            writer.writerows(training_data)
+        raise FileNotFoundError(
+            f"QM9 LUMO data not found at '{csv_path}'. "
+            "Download the dataset using:\n"
+            "  python -m aurelius.cli_scripts.download_data --dataset qm9 --output ./data/\n"
+            "Or install the full dataset via pip:\n"
+            "  pip install 'aurelius[chem]' --download-qm9"
+        )
 
     # Read CSV
     data: list[dict[str, Any]] = []
@@ -211,7 +198,7 @@ def generate_synthetic_training_data(
     Returns:
         List of dictionaries with SMILES and activation energy targets.
     """
-    rng = np.random.RandomState(42)
+    rng = np.random.default_rng(42)
 
     # Load seed SMILES from external file
     base_smiles = _load_tier0_seed_smiles()
@@ -397,7 +384,7 @@ def train_tier0_model(
     epoch_losses: list[float] = []
     val_losses: list[float] = []
 
-    rng = np.random.RandomState(42)
+    rng = np.random.default_rng(42)
     indices = list(range(n_train))
     rng.shuffle(indices)
     split = int(0.8 * n_train)
