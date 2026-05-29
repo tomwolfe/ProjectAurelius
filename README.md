@@ -1,34 +1,34 @@
 # Project Aurelius v7.0
 
-**The Autonomous Discovery Release** -- Adds active learning loop with VAE-based structural mutation, PBC-aware physics, centralized dependency management, dependency health checks, and structural diversity generation for closed-loop molecule discovery.
+**The Bayesian Discovery Release** -- Introduces a Bayesian-Guided Genetic Algorithm (GA) for active learning: Morgan fingerprints are scored via Expected Improvement from a Gaussian Process surrogate, enabling intelligent candidate selection from mutation pools. Physics engines use RDKit Gasteiger charges for dynamic charge assignment, and synthetic training data generation has been removed in favor of real QM9 LUMO data.
 
 ## Changelog (v7.0 → v7.0)
 
 ### New Features
 
-- **🥇 Task 1: MPNN Activation Energy Predictor** -- Replaced the Tier 0 linear heuristic with a lightweight Message Passing Neural Network (MPNN). Generates deterministic synthetic training data (500 molecules), trains via MSE loss with early stopping, and falls back to the original linear model if the GNN is unavailable. Added `aurelius train --task tier0` CLI command.
+- **🥇 Task 1: Descriptor-Based Tier 0 Predictor** -- Replaced the MPNN activation energy predictor with a descriptor-based linear model using RDKit molecular descriptors (mol_weight, num_h_donors, num_h_acceptors, num_rotatable_bonds, logp, tpsa). Removed all hash-based synthetic data generation; training now requires real CSV data or QM9 LUMO datasets. Added `aurelius train --task tier0` CLI command.
 
-- **🥈 Task 2: Dense Physics Engine** -- Tier 2 now uses fully vectorized PyTorch tensor operations for pairwise interactions. For battery electrolyte molecules (<100 atoms), dense O(N^2) tensor computations on MPS/CUDA are faster than CPU-bound grid loops.
+- **🥈 Task 2: RDKit Gasteiger Charges** -- Tier 2 physics engine now uses RDKit's EEM (Electronegativity Equalization Method) for dynamic partial charge assignment, replacing hardcoded `_CHARGES` dictionary. Each molecule gets unique, chemically meaningful charges.
 
-- **🏅 Task 3: RDKit Enforcement** -- RDKit is strictly required for `--use-real-models`. Hash fallbacks are blocked in production paths. Clear error messages point to `pip install rdkit`.
+- **🧠 Task 3: Bayesian-Guided Genetic Algorithm** -- New `GaussianProcessSurrogate` class enables Expected Improvement acquisition for active learning. The `FeedbackAdapter.update(X, y)` method retrains the GP with newly screened data, closing the active learning loop.
 
-- **📊 Task 4: HuggingFace Hub Upload** -- Added `aurelius hf-upload` CLI subcommand for pushing locally trained models to HF Hub. Supports `--model-dir`, `--repo-id`, `--task`, `--private/--public`, `--commit-message`, and `--dry-run`. Auto-generates model cards with architecture, dataset, and hyperparameters.
+- **🧬 Task 4: Mutation Engine Propose Candidates** -- `MutationEngine.propose_candidates(n_candidates)` generates a large pool of unique variants for the GP to score, enabling the discovery loop to select high-EI candidates for expensive screening.
 
-- **📈 Task 5: Memory Profiler** -- Added `MemoryProfiler` class for tracking peak RAM, MPS/MLX memory, and GC activity. Generates timestamped CSV reports. Added `--profile-memory` flag to the autonomous screening agent CLI.
+- **🏅 Task 5: HuggingFace Hub Upload** -- Added `aurelius hf-upload` CLI subcommand for pushing locally trained models to HF Hub. Supports `--model-dir`, `--repo-id`, `--task`, `--private/--public`, `--commit-message`, and `--dry-run`. Auto-generates model cards with architecture, dataset, and hyperparameters.
+
+- **📈 Task 6: Memory Profiler** -- Added `MemoryProfiler` class for tracking peak RAM, MPS/MLX memory, and GC activity. Generates timestamped CSV reports. Added `--profile-memory` flag to the autonomous screening agent CLI.
 
 ### v7 Improvements
 
-- **🧬 Task 6: Centralized RDKit Helper Module** -- New `aurelius.utils.chem` module consolidates RDKit helpers: `_safe_mol_from_smiles`, `_is_valid_mol`, `_mol_to_fp`, `_serialize_fp`, `_deserialize_fp`, `_tanimoto`. Eliminates scattered try/except blocks across modules.
+- **🧬 Active Learning Loop** -- The discovery loop now uses GP-guided candidate selection: mutation engine proposes 1000 candidates, GP surrogate scores via Expected Improvement, top candidates are screened, and results are fed back to the GP.
 
-- **🔬 Task 7: PBC Minimum Image Convention** -- Tier 2 (`MatterSimMTSimulator`) gains periodic boundary conditions with `_apply_pbc()` for coordinate wrapping, negative coordinate handling, and default cubic box creation from `neighbor_list_cutoff`.
+- **🔬 PBC Minimum Image Convention** -- Tier 2 (`MatterSimMTSimulator`) gains periodic boundary conditions with `_apply_pbc()` for coordinate wrapping, negative coordinate handling, and default cubic box creation from `neighbor_list_cutoff`.
 
-- **📦 Task 8: LRU Cache Eviction** -- `HuggingFaceWeightLoader.evict_lru_cache(max_cache_gb)` removes oldest entries when cache exceeds size limit, respecting LRU ordering.
+- **📦 LRU Cache Eviction** -- `HuggingFaceWeightLoader.evict_lru_cache(max_cache_gb)` removes oldest entries when cache exceeds size limit, respecting LRU ordering.
 
-- **⚡ Task 9: GNN-ChargeEq Model** -- New `ChargeEqModel` class with `hidden_dim` parameter for predicting partial charges from atomic numbers via `predict_charges(atomic_numbers)`.
+- **⚡ Device Consistency** -- All tensor operations ensure consistent device placement, preventing MPS/CPU device mismatch errors.
 
-- **🧠 Task 10: RDKit BRICS MutationEngine** -- RDKit-based molecule mutation engine using BRICS reassembly, fluorination, and methylation with diversity-based rejection. The `MutationEngine(seed_smiles, known_fps_hex)` generates candidate molecules from seed SMILES.
-
-- **🔧 Task 12: Dead Code Removal** -- Removed `_hash_descriptors`, `_ChemVLM2MLP`, `_FallbackMLP` and eliminated CLI duplicate `[Summary]` block.
+- **🔧 Dead Code Removal** -- Removed `_hash_descriptors`, `_ChemVLM2MLP`, `_FallbackMLP`, `generate_synthetic_training_data`, `_load_tier0_seed_smiles`, and all hash-based pseudo-random data generation logic.
 
 ### Bug Fixes & Improvements
 

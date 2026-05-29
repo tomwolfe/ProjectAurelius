@@ -283,3 +283,35 @@ class MutationEngine:
             variants = self.mutate(smi, batch_size)
             all_variants.extend(variants)
         return list(set(all_variants))
+
+    def propose_candidates(
+        self,
+        n_candidates: int = 1000,
+        batch_size: int = 50,
+    ) -> list[str]:
+        """Generate a large pool of candidate molecules from the seed pool.
+
+        This method is the bridge between the mutation engine and the
+        Gaussian Process surrogate: it produces ``n_candidates`` unique
+        molecules that the Bayesian optimiser will later score via
+        Expected Improvement.
+
+        Args:
+            n_candidates: Total number of unique candidates to propose.
+            batch_size: Maximum variants per seed molecule.
+
+        Returns:
+            Deduplicated list of candidate SMILES strings.
+        """
+        all_variants: list[str] = []
+        for smi in self.seed_pool:
+            variants = self.mutate(smi, batch_size)
+            all_variants.extend(variants)
+
+        # Deduplicate and truncate to requested size
+        unique = list(dict.fromkeys(all_variants))  # preserves insertion order
+        if len(unique) > n_candidates:
+            indices = self._rng.choice(len(unique), size=n_candidates, replace=False)
+            unique = [unique[i] for i in indices]
+
+        return unique

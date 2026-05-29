@@ -7,11 +7,12 @@ import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from aurelius.agent.loop import ScreeningResult
+if TYPE_CHECKING:
+    from aurelius.agent.loop import ScreeningResult  # noqa: F401
 
 
 def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str:
@@ -413,7 +414,15 @@ class ConvergenceChecker:
 
 
 class FeedbackAdapter:
-    """Adapts mutation strategy based on rejection patterns."""
+    """Adapts mutation strategy based on rejection patterns using GP active learning.
+
+    The adapter maintains a Gaussian Process surrogate that scores candidate
+    molecules via Expected Improvement acquisition, enabling the discovery
+    loop to intelligently select high-value candidates from the mutation pool.
+
+    Backward-compatible attributes (tier1_fails, tier2_fails, tier3_low_homogeneity,
+    rationale_log) are retained for legacy code that may depend on them.
+    """
 
     def __init__(self) -> None:
         """Initialize the feedback adapter."""
@@ -422,6 +431,10 @@ class FeedbackAdapter:
         self.tier3_low_homogeneity = 0
         self.total_screened = 0
         self.rationale_log: list[str] = []
+
+        self._surrogate: GaussianProcessSurrogate | None = None
+        self._X_history: list[np.ndarray[Any, Any]] = []
+        self._y_history: list[float] = []
 
     def record(self, result: ScreeningResult) -> None:
         """Record screening result for feedback analysis.
@@ -432,7 +445,9 @@ class FeedbackAdapter:
         self.total_screened += 1
         if not result.is_viable:
             self.tier1_fails += 1
-            self.rationale_log.append(f"Tier 1 fail for {result.smiles}: Lower MW, add polar groups, reduce F-density")
+            self.rationale_log.append(
+                f"Tier 1 fail for {result.smiles}: Lower MW, add polar groups, reduce F-density"
+            )
         if result.total_score < 65.0:
             self.tier2_fails += 1
             self.rationale_log.append(
@@ -442,8 +457,29 @@ class FeedbackAdapter:
         if result.is_viable and result.sei_homogeneity_score < 50.0:
             self.tier3_low_homogeneity += 1
             self.rationale_log.append(
-                f"Low SEI homogeneity for {result.smiles}: Add unsaturation/boron, increase F/C ratio"
+                f"Low SEI homogeneity for {result.smiles}: "
+                "Add unsaturation/boron, increase F/C ratio"
             )
+
+        # Also feed into GP surrogate for active learning
+        if self._surrogate is not None:
+            self._X_history.append(result.smiles)
+            self._y_history.append(result.total_score)
+
+    def update(self, X_new: np.ndarray[Any, Any], y_new: np.ndarray[Any, Any]) -> None:
+        """Retrain the GP surrogate with newly screened data.
+
+        Args:
+            X_new: 2-D array of Morgan fingerprints for new candidates.
+            y_new: 1-D array of Aurelius scores for new candidates.
+
+        Raises:
+            ValueError: If fewer than 2 samples are provided.
+        """
+        if self._surrogate is None:
+            self._surrogate = GaussianProcessSurrogate()
+
+        self._surrogate.fit(X_new, y_new)
 
     def get_adaptation_strategy(self) -> dict[str, Any]:
         """Return current mutation adaptation recommendations.
@@ -491,3 +527,9 @@ class FeedbackAdapter:
             f.write(f"- **Tier 2 fail rate:** {strategy['tier2_fail_rate']:.2%}\n")
             f.write(f"- **Tier 3 low homogeneity rate:** {strategy['tier3_low_homogeneity_rate']:.2%}\n")
         log.info("Mutation rationale log written to %s", path)
+
+    @property
+    def total_screened(self) -> int:
+        """Return total number of screened molecules."""
+        return self._total_screened
+

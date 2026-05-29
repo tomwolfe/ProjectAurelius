@@ -1,11 +1,11 @@
-"""Tier 0: Data generation and training functions.
+"""Tier 0: Data loading and training functions.
 
-Handles synthetic training data generation and MPNN model training
+Handles real training data loading and PyTorch model training
 for activation energy prediction.
 
 Training Data:
-    - Deterministic synthetic dataset generated via RDKit + Arrhenius shifts + Gaussian noise
-    - 500 rows, sigma=0.05 eV noise on literature-calibrated values
+    - Real QM9 LUMO data loaded from HuggingFace Hub
+    - User-provided CSV files with real experimental targets
 
 Apple Silicon Optimization:
     - Pure PyTorch (no torch_scatter) for MPS compatibility
@@ -15,7 +15,6 @@ Apple Silicon Optimization:
 
 from __future__ import annotations
 
-import contextlib
 import csv
 import os
 from typing import Any
@@ -97,28 +96,6 @@ def _build_molecular_graph(
     return node_features, edge_index
 
 
-def _load_tier0_seed_smiles() -> list[str]:
-    """Load seed SMILES for Tier 0 synthetic data generation.
-
-    Returns:
-        List of SMILES strings for synthetic training data.
-    """
-    import json
-    from importlib import resources
-
-    data_path = resources.files("aurelius.data")
-    smiles_path = data_path.joinpath("tier0_seed_smiles.json")
-
-    try:
-        with open(str(smiles_path)) as f:
-            return json.load(f)  # type: ignore[no-any-return]
-    except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
-        raise FileNotFoundError(
-            f"Seed SMILES file not found: {smiles_path}. "
-            "Ensure the data directory exists and contains tier0_seed_smiles.json."
-        ) from e
-
-
 def load_qm9_lumo_data(
     n_samples: int = 500,
     output_path: str | None = None,
@@ -138,11 +115,13 @@ def load_qm9_lumo_data(
         List of dicts with ``smiles`` and ``ec_reduction`` (LUMO energy in eV).
 
     Raises:
-        ImportError: If ``huggingface-hub`` is not available.
+        ImportError: If ``huggingface_hub`` is not available.
     """
     from huggingface_hub import hf_hub_download
 
     # Download QM9 LUMO data from HuggingFace Hub
+    import contextlib
+
     with contextlib.suppress(OSError, RuntimeError, ConnectionError):
         hf_hub_download(repo_id="qm9", filename="lumo_energies.csv", local_dir="data")
 
@@ -153,9 +132,9 @@ def load_qm9_lumo_data(
     if not os.path.exists(csv_path):
         raise FileNotFoundError(
             f"QM9 LUMO data not found at '{csv_path}'. "
-            "Download the dataset using:\n"
-            "  python -m aurelius.cli_scripts.download_data --dataset qm9 --output ./data/\n"
-            "Or install the full dataset via pip:\n"
+            "Download the dataset using:\\n"
+            "  python -m aurelius.cli_scripts.download_data --dataset qm9 --output ./data/\\n"
+            "Or install the full dataset via pip:\\n"
             "  pip install 'aurelius[chem]' --download-qm9"
         )
 
@@ -174,79 +153,6 @@ def load_qm9_lumo_data(
     return data[:n_samples]
 
 
-def generate_synthetic_training_data(
-    n_samples: int = 500,
-    noise_sigma: float = 0.05,
-    output_path: str | None = None,
-) -> list[dict[str, Any]]:
-    """Generate a deterministic synthetic training dataset.
-
-    Uses trivial deterministic math (hash-based pseudo-random values)
-    to produce fake training targets.  No chemistry libraries are used
-    because the data is synthetic — real descriptors are not needed.
-
-    .. warning::
-        This is a synthetic placeholder dataset.  Production use
-        should prioritize real QM9 LUMO data via :func:`load_qm9_lumo_data`
-        or provide a --csv-path with real DFT/experimental targets.
-
-    Args:
-        n_samples: Number of samples to generate (default: 500).
-        noise_sigma: Standard deviation of Gaussian noise in eV (default: 0.05).
-        output_path: Optional path to save CSV. If None, returns data only.
-
-    Returns:
-        List of dictionaries with SMILES and activation energy targets.
-    """
-    rng = np.random.default_rng(42)
-
-    # Load seed SMILES from external file
-    base_smiles = _load_tier0_seed_smiles()
-
-    valid_smiles: list[str] = []
-    for smi in base_smiles:
-        valid_smiles.append(smi)
-
-    while len(valid_smiles) < n_samples:
-        valid_smiles.extend(valid_smiles[: n_samples - len(valid_smiles)])
-    valid_smiles = valid_smiles[:n_samples]
-
-    training_data: list[dict[str, Any]] = []
-    for _idx, smi in enumerate(valid_smiles):
-        # Trivial deterministic pseudo-targets — no real chemistry involved
-        seed = hash(smi) % 10000
-        ec = 0.5 + (seed % 500) / 1000.0 + rng.normal(0, noise_sigma)
-        dm = ec * 1.15 + rng.normal(0, noise_sigma)
-        pf6 = 0.8 + (seed % 300) / 1000.0 + rng.normal(0, noise_sigma)
-        poly = 0.35 + (seed % 200) / 1000.0 + rng.normal(0, noise_sigma)
-
-        ec = float(np.clip(ec, 0.45, 0.95))
-        dm = float(np.clip(dm, 0.45, 1.10))
-        pf6 = float(np.clip(pf6, 0.90, 1.50))
-        poly = float(np.clip(poly, 0.30, 0.70))
-
-        training_data.append(
-            {
-                "smiles": smi,
-                "ec_reduction": round(ec, 6),
-                "dm_reduction": round(dm, 6),
-                "pf6_decomposition": round(pf6, 6),
-                "polymerization": round(poly, 6),
-            }
-        )
-
-    if output_path:
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        with open(output_path, "w", newline="") as f:
-            writer = csv.DictWriter(
-                f, fieldnames=["smiles", "ec_reduction", "dm_reduction", "pf6_decomposition", "polymerization"]
-            )
-            writer.writeheader()
-            writer.writerows(training_data)
-
-    return training_data
-
-
 def train_tier0_model(
     n_epochs: int = 200,
     batch_size: int = 16,
@@ -256,17 +162,24 @@ def train_tier0_model(
     output_path: str = "models/tier0/mpnn_weights.pth",
     data_dir: str = "data",
 ) -> dict[str, Any]:
-    """Train the Tier 0 MPNN model on synthetic data.
+    """Train the Tier 0 MPNN model on real training data.
 
-    Uses MSE loss with early stopping. Generates synthetic training
-    data if no CSV is provided.
+    Uses MSE loss with early stopping. Requires a CSV file with real
+    activation energy targets (e.g., DFT-computed or experimental values).
+
+    .. warning::
+        Synthetic training data generation has been removed.
+        Provide a real CSV via ``train_csv_path`` or rely on the
+        QM9 LUMO dataset download path.
 
     Args:
         n_epochs: Maximum number of training epochs (default: 200).
         batch_size: Mini-batch size (default: 16).
         learning_rate: Learning rate (default: 0.001).
         early_stop_patience: Early stopping patience in epochs (default: 30).
-        train_csv_path: Optional path to pre-generated CSV.
+        train_csv_path: Path to a CSV with columns:
+            ``smiles``, ``ec_reduction``, ``dm_reduction``,
+            ``pf6_decomposition``, ``polymerization``.
         output_path: Path to save trained weights.
         data_dir: Directory for synthetic data CSV.
 
@@ -282,24 +195,32 @@ def train_tier0_model(
 
     import rdkit  # noqa: F401
 
-    if train_csv_path:
-        required_columns = {"smiles", "ec_reduction", "dm_reduction", "pf6_decomposition", "polymerization"}
-        training_data: list[dict[str, Any]] = []
+    required_columns = {
+        "smiles",
+        "ec_reduction",
+        "dm_reduction",
+        "pf6_decomposition",
+        "polymerization",
+    }
+    training_data: list[dict[str, Any]] = []
 
+    if train_csv_path:
         with open(train_csv_path) as f:
             reader = csv.DictReader(f)
             if reader.fieldnames is None:
-                raise ValueError(f"CSV file '{train_csv_path}' appears to be empty or has no headers.")
+                raise ValueError(
+                    f"CSV file '{train_csv_path}' appears to be empty or has no headers."
+                )
 
             actual_columns = set(reader.fieldnames)
             missing_columns = required_columns - actual_columns
             if missing_columns:
                 raise ValueError(
-                    f"CSV file '{train_csv_path}' is missing required columns: {sorted(missing_columns)}. "
+                    f"CSV file '{train_csv_path}' is missing required columns: "
+                    f"{sorted(missing_columns)}. "
                     f"Required columns: {sorted(required_columns)}."
                 )
 
-        try:
             for row in reader:
                 training_data.append(
                     {
@@ -310,16 +231,14 @@ def train_tier0_model(
                         "polymerization": float(row["polymerization"]),
                     }
                 )
-        except (FileNotFoundError, ValueError) as e:
-            raise ValueError(f"Failed to read training CSV: {e}") from None
     else:
-        # Prefer real QM9 LUMO data over synthetic generation
         training_data = load_qm9_lumo_data(n_samples=500)
-        csv_path = os.path.join(data_dir, "train_tier0_synthetic.csv")
-        training_data = generate_synthetic_training_data(n_samples=500, output_path=csv_path)
 
     if not training_data:
-        raise ValueError("No training data available. Provide --csv-path or generate synthetic data.")
+        raise ValueError(
+            "No training data available. Provide --csv-path or ensure the "
+            "QM9 LUMO dataset is present in the data directory."
+        )
 
     node_features_list: list[torch.Tensor] = []
     edge_index_list: list[torch.Tensor] = []
@@ -345,7 +264,9 @@ def train_tier0_model(
 
     n_train = len(training_data)
 
-    def _collate_fn(batch_indices: list[int]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
+    def _collate_fn(
+        batch_indices: list[int],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
         """Collate variable-length graphs into padded batch."""
         batch_nf: list[torch.Tensor] = []
         batch_ei: list[torch.Tensor] = []
@@ -369,7 +290,9 @@ def train_tier0_model(
             offsets.append(offsets[-1] + nf.shape[0])
 
         padded_nf = torch.cat(batch_nf, dim=0)
-        padded_ei = torch.cat(batch_ei, dim=1) if batch_ei else torch.empty((2, 0), dtype=torch.long)
+        padded_ei = (
+            torch.cat(batch_ei, dim=1) if batch_ei else torch.empty((2, 0), dtype=torch.long)
+        )
         batch_tgt = torch.stack(batch_targets)
 
         return padded_nf, padded_ei, batch_tgt, offsets
@@ -391,7 +314,10 @@ def train_tier0_model(
     train_idx = indices[:split]
     val_idx = indices[split:]
 
-    print(f"[PyTorchBackend] Training on {len(train_idx)} samples, validating on {len(val_idx)} samples")
+    print(
+        f"[PyTorchBackend] Training on {len(train_idx)} samples, "
+        f"validating on {len(val_idx)} samples"
+    )
 
     for epoch in range(n_epochs):
         model.train()  # type: ignore[attr-defined]
@@ -446,12 +372,17 @@ def train_tier0_model(
 
         if avg_val_loss < best_loss:
             best_loss = avg_val_loss
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}  # type: ignore[attr-defined]
+            best_state = {
+                k: v.clone() for k, v in model.state_dict().items()
+            }  # type: ignore[attr-defined]
             patience_counter = 0
         else:
             patience_counter += 1
             if patience_counter >= early_stop_patience:
-                print(f"[PyTorchBackend] Early stopping at epoch {epoch + 1}. Best val loss: {best_loss:.6f}")
+                print(
+                    f"[PyTorchBackend] Early stopping at epoch {epoch + 1}. "
+                    f"Best val loss: {best_loss:.6f}"
+                )
                 break
 
     if best_state:
@@ -459,10 +390,6 @@ def train_tier0_model(
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     model.save_weights(output_path)
-
-    csv_path = os.path.join(data_dir, "train_tier0_synthetic.csv")
-    if not os.path.exists(csv_path):
-        generate_synthetic_training_data(n_samples=500, output_path=csv_path)
 
     print(f"[PyTorchBackend] Training complete. Best val loss: {best_loss:.6f}. Weights saved to {output_path}")
 

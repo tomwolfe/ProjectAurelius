@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from aurelius.screening.tier0.data import (
     _build_molecular_graph,
-    generate_synthetic_training_data,
     train_tier0_model,
 )
 from aurelius.screening.tier0.models import (
@@ -22,6 +21,5 @@ __all__ = [
     "PyTorchBackend",
     "Tier0ActivationPredictor",
     "_build_molecular_graph",
-    "generate_synthetic_training_data",
     "train_tier0_model",
 ]
