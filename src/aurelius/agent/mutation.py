@@ -28,7 +28,6 @@ import numpy as np
 from aurelius.utils.chem_utils import (
     _deserialize_fp,
     _is_valid_mol,
-    _mol_to_fp,
     _safe_mol_from_smiles,
 )
 from aurelius.utils.dependencies import HAS_RDKIT
@@ -193,8 +192,10 @@ def _insert_token(selfies_str: str, rng: np.random.Generator) -> str | None:
     """Insert a new atom token into the SELFIES string."""
     import selfies as sf
 
-    atoms = sf.atom_encoder.get_valid_tokens()
-    new_atom = rng.choice(atoms)
+    atoms = sorted(sf.get_semantic_robust_alphabet())
+    if not atoms:
+        return None
+    new_atom = atoms[rng.integers(0, len(atoms))]
 
     # Insert at a random position
     pos = rng.integers(0, len(selfies_str) + 1)
@@ -319,7 +320,11 @@ class MutationEngine:
         """
         mol = _safe_mol_from_smiles(smiles)
         if mol is not None:
-            self.known_fps.append(_mol_to_fp(mol))
+            from rdkit.Chem import AllChem
+
+            self.known_fps.append(
+                AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+            )
 
     def _novelty_check(self, mol: Any) -> bool:
         """Return True if molecule is novel (Tanimoto < 0.75 vs all known).
@@ -330,34 +335,15 @@ class MutationEngine:
         Returns:
             True if novel (all Tanimoto < 0.75).
         """
-        fp = _mol_to_fp(mol)
-        band_size = 4
-        n_bands = len(fp) // band_size if len(fp) >= band_size else len(fp)
-        if n_bands < 1:
-            n_bands = 1
+        from rdkit.Chem import AllChem
 
-        fp_bits = np.packbits(fp.astype(np.uint8))
-        band_hashes = [
-            int(np.sum(fp_bits[band_size * i : band_size * (i + 1)] << i))
-            for i in range(n_bands)
-        ]
-
-        band_key = hash(tuple(band_hashes))
-
-        candidates = [
-            known for known in self.known_fps
-            if hash(tuple(np.packbits(known.astype(np.uint8)))) == band_key
-        ]
-
-        if not candidates:
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+        if not self.known_fps:
             return True
 
-        for known in candidates:
-            from rdkit.DataStructs import TanimotoSimilarity
+        from rdkit.DataStructs import TanimotoSimilarity
 
-            if TanimotoSimilarity(fp, known) >= 0.75:
-                return False
-        return True
+        return all(TanimotoSimilarity(fp, known) < 0.75 for known in self.known_fps)
 
     def _brics_reassemble(self, mol: Any) -> list[str]:
         """BRICS decomposition + random reassembly using proper RDKit types."""

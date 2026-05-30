@@ -82,6 +82,9 @@ ignore = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=src/aurelius --cov-report=term-missing -v"
+markers = [
+    "slow: marks tests as slow (skipped in fast CI runs)",
+]
 
 [tool.mypy]
 python_version = "3.11"

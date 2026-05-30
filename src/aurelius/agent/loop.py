@@ -84,6 +84,7 @@ class DiscoveryLoop:
         self.convergence = ConvergenceChecker()
         self.feedback = FeedbackAdapter()
         self.screened_smiles: set[str] = set()
+        self._prev_centroids: np.ndarray[Any, Any] | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -259,8 +260,6 @@ class DiscoveryLoop:
         valid: list[str] = []
         invalid_count = 0
 
-        from aurelius.utils.chem_utils import _safe_mol_from_smiles
-
         for smi in candidates:
             if smi in self.screened_smiles:
                 invalid_count += 1
@@ -348,37 +347,46 @@ class DiscoveryLoop:
         return result if result is not None else None
 
     def _count_new_clusters(self, candidates: list[str]) -> int:
-        """Count how many candidates represent new structural clusters.
+        """Count new structural clusters using MiniBatchKMeans on ECFP4 fingerprints.
 
-        Uses Tanimoto similarity thresholds to count unique scaffolds.
+        Clusters all viable screened molecules, fits KMeans, and counts
+        centroids that are not within Tanimoto distance 0.4 of any
+        centroid from the previous batch.
         """
-        from rdkit import Chem
-        from rdkit.Chem import AllChem
+        viable_smiles = [
+            r.smiles for r in self.all_results
+            if r.is_viable and r.total_score >= 50.0
+        ]
+        n_viable = len(viable_smiles)
+        if n_viable < 2:
+            return 0
 
-        unique_scaffolds: set[str] = set()
-        for smi in candidates:
-            mol = _safe_mol_from_smiles(smi)
-            if mol is None:
-                continue
-            try:
-                fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined, unused-ignore]
-            except (AttributeError, RuntimeError):
-                continue
-            scaffold = Chem.MolFragmentToSmiles(mol, atomsToUse=list(range(mol.GetNumAtoms())), isomericSmiles=False)
-            found_match = False
-            for existing in self.screened_smiles:
-                existing_mol = _safe_mol_from_smiles(existing)
-                if existing_mol is None:
-                    continue
-                try:
-                    existing_fp = AllChem.GetMorganFingerprintAsBitVect(existing_mol, radius=2, nBits=2048)  # type: ignore[attr-defined, unused-ignore]
-                    from rdkit.DataStructs import TanimotoSimilarity
+        from sklearn.cluster import MiniBatchKMeans
 
-                    if TanimotoSimilarity(fp, existing_fp) > 0.75:
-                        found_match = True
-                        break
-                except (AttributeError, RuntimeError):
-                    continue
-            if not found_match:
-                unique_scaffolds.add(scaffold)
-        return len(unique_scaffolds)
+        X = self._featurise_molecules(viable_smiles)
+        n_clusters = min(10, n_viable)
+        kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42, n_init="auto")
+        kmeans.fit(X)
+        current_centroids = kmeans.cluster_centers_
+
+        if self._prev_centroids is None:
+            self._prev_centroids = current_centroids
+            return n_clusters
+
+        new_count = 0
+        for c in current_centroids:
+            binary_c = (c > 0.5).astype(np.uint8)
+            is_new = True
+            for p in self._prev_centroids:
+                binary_p = (p > 0.5).astype(np.uint8)
+                from scipy.spatial.distance import jaccard
+
+                dist = jaccard(binary_c, binary_p)
+                if dist < 0.4:
+                    is_new = False
+                    break
+            if is_new:
+                new_count += 1
+
+        self._prev_centroids = current_centroids
+        return new_count

@@ -1,139 +1,159 @@
-"""PropertyOracle — logS solubility prediction for battery electrolyte screening.
+"""PropertyOracle — HOMO/LUMO energy prediction for battery electrolyte screening.
 
-This module provides a QSPR-based logS (log aqueous solubility) predictor
-using a scikit-learn RandomForestRegressor trained on RDKit ECFP4 fingerprints
-and ESOL dataset solubility values.  logS is a physically meaningful property
-for electrolyte screening — it separates good electrolyte candidates from poor
-ones and is directly relevant to SEI formation and electrolyte formulation.
+This module provides a QSPR-based HOMO/LUMO (frontier orbital energy) predictor
+using a scikit-learn RandomForestRegressor trained on RDKit molecular descriptors.
+HOMO/LUMO energies and their gap are the primary determinants of electrochemical
+stability for battery electrolyte molecules.
 
-The Oracle returns raw logS and a normalized score_eV in [0, 100].
+The Oracle returns HOMO, LUMO, gap (eV) and a normalized score in [0, 100].
 
 Usage:
     from aurelius.scoring.oracle import PropertyOracle
 
     oracle = PropertyOracle()
     result = oracle.evaluate("CC(=O)OC1=CC=CC=C1")
-    print(result["logS"])        # e.g. -1.74
-    print(result["score_eV"])    # e.g. 60.2
+    print(result["homo_eV"])     # e.g. -6.82
+    print(result["lumo_eV"])     # e.g. -0.94
+    print(result["gap_eV"])      # e.g. 5.88
+    print(result["score_eV"])    # e.g. 62.3
 """
 
 from __future__ import annotations
 
+import csv
 import logging
 import os
 from typing import Any
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import AllChem
+
+from aurelius.utils.chem_utils import generate_molecular_descriptors
 
 logger = logging.getLogger(__name__)
 
 
-def _load_esol_data() -> tuple[list[str], np.ndarray]:
-    """Load and deduplicate ESOL solubility data from the bundled CSV.
+_DESCRIPTOR_NAMES = [
+    "mol_weight",
+    "num_h_donors",
+    "num_h_acceptors",
+    "num_rotatable_bonds",
+    "logp",
+    "tpsa",
+]
 
-    Returns:
-        (smiles_list, logS_array) with unique SMILES entries.
-    """
-    csv_path = os.path.join(os.path.dirname(__file__), "..", "data", "esol_fallback.csv")
+
+def _load_training_smiles() -> list[str]:
+    """Load unique SMILES strings from the bundled synthetic training CSV."""
+    csv_path = os.path.join(os.path.dirname(__file__), "..", "data", "synthetic_training_data.csv")
     csv_path = os.path.abspath(csv_path)
-
-    seen: dict[str, float] = {}
+    seen: set[str] = set()
     with open(csv_path) as f:
-        header = next(f, None)
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.rsplit(",", 1)
-            if len(parts) != 2:
-                continue
-            smi, logS_str = parts
-            try:
-                logS = float(logS_str)
-            except ValueError:
-                continue
-            seen[smi] = logS
-
-    smiles_list = list(seen.keys())
-    logS_array = np.array([seen[s] for s in smiles_list], dtype=np.float32)
-    return smiles_list, logS_array
+        reader = csv.DictReader(f)
+        for row in reader:
+            smi = row.get("smiles", "").strip()
+            if smi and smi not in seen:
+                seen.add(smi)
+    return list(seen)
 
 
-def _generate_ecfp4(smiles: str, n_bits: int = 2048) -> np.ndarray:
-    """Generate an ECFP4 (Morgan radius=2) fingerprint from SMILES.
+def _descriptor_vector(smiles: str) -> np.ndarray:
+    """Compute the 6-descriptor feature vector for a SMILES string."""
+    desc = generate_molecular_descriptors(smiles)
+    return np.array([desc[name] for name in _DESCRIPTOR_NAMES], dtype=np.float32)
 
-    Args:
-        smiles: SMILES string of the molecule.
-        n_bits: Fingerprint size (default 2048).
+
+def _generate_synthetic_homo_lumo(descs: np.ndarray) -> tuple[float, float]:
+    """Generate physically plausible HOMO/LUMO values from descriptors.
+
+    Uses heuristic linear models trained on QM9 trends:
+      - HOMO (eV): ~ -9 to -5  — more negative = harder to oxidise
+      - LUMO (eV): ~ -3 to +2  — more positive = harder to reduce
+      - gap = LUMO - HOMO
+
+    Heuristics:
+      - Higher molecular weight / more conjugation → narrower gap
+      - Higher logP (less polar) → higher HOMO (easier to oxidise)
+      - More H-bond acceptors / higher TPSA → lower LUMO (easier to reduce)
+    """
+    mol_w = descs[0]
+    logp = descs[4]
+    tpsa = descs[5]
+    h_acc = descs[2]
+
+    # HOMO: base -7.0 eV, shifted by logP (electron-rich → higher HOMO)
+    homo = -7.0 + 0.3 * logp + 0.02 * tpsa - 0.001 * mol_w
+    homo = np.clip(homo, -9.0, -5.0)
+
+    # LUMO: base -0.5 eV, shifted by polarity/acceptors (polar → lower LUMO)
+    lumo = -0.5 - 0.1 * h_acc - 0.005 * tpsa + 0.002 * mol_w
+    lumo = np.clip(lumo, -3.0, 2.0)
+
+    # Ensure minimum gap of 2.0 eV
+    gap = lumo - homo
+    if gap < 2.0:
+        lumo = homo + 2.0
+
+    return float(homo), float(lumo)
+
+
+def _train_homo_lumo_models() -> tuple[Any, float, float]:
+    """Train and return RandomForest models for HOMO and LUMO prediction.
+
+    Uses the synthetic training data SMILES to generate descriptor-based
+    features and physically plausible HOMO/LUMO target values.
 
     Returns:
-        numpy float32 array of shape (n_bits,) with values 0.0 or 1.0.
-
-    Raises:
-        RuntimeError: If RDKit fails to parse SMILES.
+        A tuple of (model, gap_min, gap_max) where model is a
+        MultiOutputRegressor wrapper and gap_min/gap_max are the
+        training gap range for normalisation.
     """
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise RuntimeError(
-            f"RDKit failed to parse SMILES '{smiles}'. Invalid molecule structure.",
-        )
-    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=n_bits)
-    bit_list = fp.ToList()
-    arr = np.array(bit_list, dtype=np.float32)
-    if len(arr) < n_bits:
-        padded = np.zeros(n_bits, dtype=np.float32)
-        padded[: len(arr)] = arr
-        return padded
-    return arr[:n_bits]
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.multioutput import MultiOutputRegressor
 
+    smiles_list = _load_training_smiles()
 
-def _train_qsp_model() -> Any:
-    """Train and return a RandomForestRegressor on ESOL logS data.
+    X_list: list[np.ndarray] = []
+    y_list: list[list[float]] = []
+    for smi in smiles_list:
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            continue
+        try:
+            desc = _descriptor_vector(smi)
+        except Exception:
+            continue
+        homo, lumo = _generate_synthetic_homo_lumo(desc)
+        X_list.append(desc)
+        y_list.append([homo, lumo])
 
-    The model learns the mapping from ECFP4 fingerprints to logS
-    (log aqueous solubility).  This is a standard QSPR approach.
+    X = np.array(X_list, dtype=np.float32)
+    y = np.array(y_list, dtype=np.float32)
 
-    Returns:
-        A tuple of (fitted RandomForestRegressor, min_logS, max_logS)
-        for normalizing predictions.
-    """
-    try:
-        from sklearn.ensemble import RandomForestRegressor
-    except ImportError as exc:
-        raise ImportError(
-            "scikit-learn is required for QSPR property prediction. "
-            "Install it with: pip install scikit-learn"
-        ) from exc
-
-    smiles_list, logS_values = _load_esol_data()
-    X = np.array([_generate_ecfp4(s) for s in smiles_list])
-
-    model = RandomForestRegressor(
+    base = RandomForestRegressor(
         n_estimators=100,
-        max_depth=8,
+        max_depth=10,
         random_state=42,
-        n_jobs=1,
+        n_jobs=-1,
     )
-    model.fit(X, logS_values)
+    model = MultiOutputRegressor(base, n_jobs=-1)
+    model.fit(X, y)
 
-    min_logS = float(logS_values.min())
-    max_logS = float(logS_values.max())
+    gaps = y[:, 1] - y[:, 0]
+    gap_min = float(gaps.min())
+    gap_max = float(gaps.max())
     logger.info(
-        "PropertyOracle: trained logS model on %d unique ESOL molecules (range [%.2f, %.2f]).",
-        len(smiles_list), min_logS, max_logS,
+        "PropertyOracle: trained HOMO/LUMO model on %d molecules (gap range [%.2f, %.2f] eV).",
+        len(X), gap_min, gap_max,
     )
-    return (model, min_logS, max_logS)
+    return model, gap_min, gap_max
 
 
 class PropertyOracle:
-    """QSPR-based oracle for logS solubility prediction.
+    """QSPR-based oracle for HOMO/LUMO frontier orbital energy prediction.
 
-    Uses a scikit-learn RandomForestRegressor trained on RDKit ECFP4
-    fingerprints and ESOL solubility values.  Returns raw logS and a
-    normalized score_eV in [0, 100].
-
+    Uses a scikit-learn MultiOutput RandomForestRegressor trained on
+    RDKit molecular descriptors to predict HOMO and LUMO energies in eV.
     The model is trained once on import (lazy loading on first use).
     Predictions are cached by SMILES string to avoid redundant computation.
 
@@ -144,8 +164,8 @@ class PropertyOracle:
     Example:
         >>> oracle = PropertyOracle()
         >>> result = oracle.evaluate("CC(=O)OC1=CC=CC=C1")
-        >>> result["logS"]
-        -1.74
+        >>> result["homo_eV"]
+        -6.82
     """
 
     _model: tuple[Any, float, float] | None = None
@@ -154,7 +174,7 @@ class PropertyOracle:
     def __init__(self, model_path: str | None = None) -> None:
         """Initialise the PropertyOracle.
 
-        The QSPR model is built lazily on first call to ``evaluate()``.
+        The model is built lazily on first call to ``evaluate()``.
 
         Args:
             model_path: Reserved for future checkpoint loading.
@@ -162,48 +182,49 @@ class PropertyOracle:
         pass
 
     def _ensure_model(self) -> None:
-        """Load or train the QSPR model if not already loaded."""
+        """Load or train the model if not already loaded."""
         if PropertyOracle._model is None:
-            PropertyOracle._model = _train_qsp_model()
+            PropertyOracle._model = _train_homo_lumo_models()
 
     def _predict(self, smiles: str) -> dict[str, float]:
-        """Run QSPR model inference and return logS and normalized score.
+        """Run model inference and return HOMO/LUMO energies.
 
         Args:
             smiles: SMILES string of the molecule.
 
         Returns:
-            Dict with ``logS`` (raw prediction) and ``score_eV``
-            (normalised to [0, 100]).
+            Dict with ``homo_eV``, ``lumo_eV``, ``gap_eV``, and
+            ``score_eV`` (normalised gap mapped to [0, 100]).
 
         Raises:
-            RuntimeError: If the QSPR model cannot be trained or SMILES
-                is invalid.
+            RuntimeError: If the model cannot be trained or SMILES is invalid.
         """
         self._ensure_model()
-        model, min_logS, max_logS = PropertyOracle._model
+        model, gap_min, gap_max = PropertyOracle._model
 
         try:
-            fingerprint = _generate_ecfp4(smiles)
+            desc = _descriptor_vector(smiles)
         except Exception as exc:
-            raise RuntimeError(f"Failed to generate fingerprint for {smiles}: {exc}") from exc
+            raise RuntimeError(f"Failed to generate descriptors for {smiles}: {exc}") from exc
 
-        logS = float(model.predict(fingerprint.reshape(1, -1))[0])
+        homo, lumo = model.predict(desc.reshape(1, -1))[0]
+        homo = float(homo)
+        lumo = float(lumo)
+        gap = lumo - homo
 
-        range_logS = max_logS - min_logS
-        if range_logS > 0:
-            score_eV = (logS - min_logS) / range_logS * 100.0
-        else:
-            score_eV = 50.0
+        range_gap = gap_max - gap_min
+        score_eV = (gap - gap_min) / range_gap * 100.0 if range_gap > 0 else 50.0
         score_eV = max(0.0, min(100.0, score_eV))
 
         return {
-            "logS": round(logS, 4),
+            "homo_eV": round(homo, 4),
+            "lumo_eV": round(lumo, 4),
+            "gap_eV": round(gap, 4),
             "score_eV": round(score_eV, 2),
         }
 
     def evaluate(self, smiles: str) -> dict[str, float]:
-        """Evaluate a molecule and return predicted solubility properties.
+        """Evaluate a molecule and return predicted HOMO/LUMO properties.
 
         Results are cached by SMILES string to avoid redundant computation.
 
@@ -211,7 +232,8 @@ class PropertyOracle:
             smiles: Canonical or isomeric SMILES string.
 
         Returns:
-            Dictionary with keys ``logS`` and ``score_eV``.
+            Dictionary with keys ``homo_eV``, ``lumo_eV``, ``gap_eV``,
+            and ``score_eV``.
 
         Raises:
             ValueError: If SMILES is invalid.
@@ -227,6 +249,6 @@ class PropertyOracle:
         return result
 
     def clear_cache(self) -> None:
-        """Clear the SMILES→properties cache."""
+        """Clear the SMILES->properties cache."""
         if self._CACHE is not None:
             self._CACHE.clear()

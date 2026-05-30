@@ -2,7 +2,7 @@
 
 Coordinates a streamlined two-step discovery pipeline:
   1. **Filter** — Quick structural validity (Tier 1) check.
-  2. **Oracle** — Evaluate logS solubility via the PropertyOracle.
+  2. **Oracle** — Evaluate HOMO/LUMO frontier orbital energies via the PropertyOracle.
 
 The results are then fed back to the RF surrogate for Bayesian optimisation.
 """
@@ -130,14 +130,18 @@ class AureliusPipeline:
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
 
             t2_result = {
-                "logS": oracle_result.get("logS", -99.0),
+                "homo_eV": oracle_result.get("homo_eV", -99.0),
+                "lumo_eV": oracle_result.get("lumo_eV", -99.0),
+                "gap_eV": oracle_result.get("gap_eV", 0.0),
                 "score_eV": oracle_result.get("score_eV", 0.0),
             }
             results["tier2"] = t2_result
             logger.info(
-                "Property Oracle Result: %s -> logS=%.3f score_eV=%.1f",
+                "Property Oracle Result: %s -> HOMO=%.3f LUMO=%.3f gap=%.3f score_eV=%.1f",
                 smiles,
-                t2_result["logS"],
+                t2_result["homo_eV"],
+                t2_result["lumo_eV"],
+                t2_result["gap_eV"],
                 t2_result["score_eV"],
             )
 
@@ -175,7 +179,7 @@ class AureliusPipeline:
 
         Where:
           - σ (0 or 1): Tier 1 structural viability
-          - oracle_score_normalized: oracle logS score scaled to [0, 1]
+          - oracle_score_normalized: oracle gap score scaled to [0, 1]
 
         Args:
             oracle_result: Dictionary with keys ``logS``, ``score_eV``.

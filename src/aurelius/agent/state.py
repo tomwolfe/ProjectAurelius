@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from aurelius.agent.surrogate import RandomForestSurrogate
+from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
 
 if TYPE_CHECKING:
     from aurelius.agent.loop import ScreeningResult  # noqa: F401
@@ -437,17 +438,41 @@ class FeedbackAdapter:
         """
         self._total_screened += 1
 
-        # Feed into RF surrogate for active learning
+        fp = result.fingerprint
+        if fp is None:
+            try:
+                fp = generate_ecfp4_fingerprint(result.smiles)
+            except Exception:
+                fp = np.zeros(2048, dtype=np.float32)
+        self._X_history.append(fp)
+        self._y_history.append(result.total_score)
+
+        self.maybe_fit_from_history()
+
+    def maybe_fit_from_history(self, min_samples: int = 10) -> None:
+        """Fit the surrogate from accumulated history if enough samples exist.
+
+        Args:
+            min_samples: Minimum number of samples required to fit.
+        """
         if self._surrogate is not None:
-            self._X_history.append(result.fingerprint)
-            self._y_history.append(result.total_score)
+            return
+        if len(self._X_history) < min_samples:
+            return
+        X = np.array(self._X_history, dtype=np.float32)
+        y = np.array(self._y_history, dtype=np.float32)
+        self._surrogate = RandomForestSurrogate()
+        self._surrogate.fit(X, y)
 
     def update(self, X_new: np.ndarray[Any, Any], y_new: np.ndarray[Any, Any]) -> None:
         """Retrain the GP surrogate with newly screened data.
 
+        Incorporates any previously accumulated history from individual
+        ``record()`` calls.
+
         Args:
             X_new: 2-D array of Morgan fingerprints for new candidates.
-            y_new: 1-D array of Aurelius scores for new candidates.
+            y_new: 1-D or 2-D array of Aurelius scores for new candidates.
 
         Raises:
             ValueError: If fewer than 2 samples are provided.
@@ -455,7 +480,16 @@ class FeedbackAdapter:
         if self._surrogate is None:
             self._surrogate = RandomForestSurrogate()
 
-        self._surrogate.fit(X_new, y_new)
+        X_full = np.array(self._X_history, dtype=np.float32) if self._X_history else X_new
+        y_full = np.array(self._y_history, dtype=np.float32) if self._y_history else np.asarray(y_new).ravel()
+
+        if self._X_history:
+            X_full = np.vstack([np.array(self._X_history, dtype=np.float32), X_new])
+            y_full = np.concatenate([np.array(self._y_history, dtype=np.float32), np.asarray(y_new).ravel()])
+
+        self._surrogate.fit(X_full, y_full)
+        self._X_history.clear()
+        self._y_history.clear()
 
     def get_adaptation_strategy(self) -> dict[str, Any]:
         """Return current mutation adaptation recommendations.
@@ -480,7 +514,7 @@ class FeedbackAdapter:
         return strategy
 
     def write_rationale_log(self, path: str = "mutation_rationale.md", output_dir: str | Path | None = None) -> None:
-        """Write accumulated rationale to markdown file.
+        """Write current adaptation strategy to markdown file.
 
         Args:
             path: Output file path (relative to output_dir).
@@ -489,15 +523,12 @@ class FeedbackAdapter:
         log = logging.getLogger("aurelius_agent")
 
         path = _resolve_output_path(path, output_dir)
+        strategy = self.get_adaptation_strategy()
 
         with open(path, "w") as f:
             f.write("# Mutation Rationale Log\n\n")
             f.write(f"**Generated:** {datetime.now(UTC).isoformat()}\n\n")
-            f.write("## Adaptation Decisions\n\n")
-            for entry in self.rationale_log:
-                f.write(f"- {entry}\n")
-            f.write("\n## Strategy Summary\n\n")
-            strategy = self.get_adaptation_strategy()
+            f.write("## Strategy Summary\n\n")
             f.write(f"- **Recommendation:** {strategy['recommendation']}\n")
             if "average_score" in strategy:
                 f.write(f"- **Average Score:** {strategy['average_score']:.2f}\n")

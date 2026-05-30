@@ -94,29 +94,18 @@ class RandomForestSurrogate:
 
         best = self._y.max() if len(self._y) > 0 else 0.0
 
-        # Compute mean and variance from individual trees
-        means = np.zeros(len(X_candidates))
-        variances = np.zeros(len(X_candidates))
+        # Vectorized: get predictions from all trees at once
+        # tree_preds shape: (n_trees, n_candidates)
+        tree_preds = np.array([tree.predict(X_candidates) for tree in self._rf.estimators_])
+        means = tree_preds.mean(axis=0)
+        variances = tree_preds.var(axis=0)
 
-        for i, candidate in enumerate(X_candidates):
-            pred = self._rf.predict(candidate.reshape(1, -1))[0]
-            means[i] = pred
-
-            # Tree-based variance as uncertainty estimate
-            predictions = np.array([tree.predict(candidate.reshape(1, -1))[0] for tree in self._rf.estimators_])
-            variances[i] = np.var(predictions)
-
-        # Compute Expected Improvement using mean and variance
-        ei = np.zeros(len(X_candidates))
-        for i in range(len(X_candidates)):
-            mu = means[i]
-            v = variances[i]
-            s = np.sqrt(max(v, 1e-8))
-            if s < 1e-8:
-                ei[i] = 0.0
-            else:
-                z = (mu - best) / s
-                ei[i] = (mu - best) * self._norm_cdf(z) + s * self._norm_pdf(z)
+        # Vectorized Expected Improvement
+        s = np.sqrt(np.maximum(variances, 1e-8))
+        ei = np.zeros_like(means)
+        mask = s >= 1e-8
+        z = (means[mask] - best) / s[mask]
+        ei[mask] = (means[mask] - best) * self._norm_cdf(z) + s[mask] * self._norm_pdf(z)
 
         return ei
 

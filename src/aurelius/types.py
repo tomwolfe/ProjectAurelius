@@ -29,8 +29,8 @@ class OracleResult:
 
     homo_eV: float
     lumo_eV: float
-    lumo_gap_eV: float
-    dipole_debye: float
+    gap_eV: float
+    score_eV: float
 
 
 __all__ = [
