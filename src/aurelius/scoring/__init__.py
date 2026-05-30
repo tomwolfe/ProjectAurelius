@@ -1,13 +1,10 @@
 """Scoring and oracle package.
 
-Provides:
-- Oracle abstract base class
-- PropertyOracle for real ML-based property evaluation
+Provides the ``PropertyOracle`` class for QSPR-based HOMO/LUMO prediction.
 """
 
-from aurelius.scoring.oracle import Oracle, PropertyOracle
+from aurelius.scoring.oracle import PropertyOracle
 
 __all__ = [
-    "Oracle",
     "PropertyOracle",
 ]

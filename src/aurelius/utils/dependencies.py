@@ -1,22 +1,18 @@
-"""Centralized dependency detection and framework routing for Project Aurelius.
+"""Centralized dependency detection for Project Aurelius.
 
-This module provides a single source of truth for framework availability
-checks (MLX, PyTorch, RDKit, HuggingFace), version validation, and
-structured fallback routing. All modules should import from this manager
-rather than maintaining their own try/except ImportError blocks.
+Provides a single source of truth for framework availability
+checks (PyTorch, RDKit, HuggingFace), version validation, and
+structured fallback routing.
 
 Design principles:
-    - Single point of truth: HAS_MLX, HAS_TORCH, HAS_RDKIT are defined once.
+    - Single point of truth: HAS_TORCH, HAS_RDKIT are defined once.
     - Version-aware: validates minimum versions via importlib.metadata.
-    - Logging-first: logs INFO/WARNING when fallbacks activate using
-      logging.getLogger(__name__).
-    - Backward-compatible: re-exports HAS_* booleans so existing code
-      that checks `if HAS_MLX:` continues to work.
+    - Logging-first: logs INFO/WARNING when fallbacks activate.
 
 Usage:
-    >>> from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
-    >>> if HAS_MLX:
-    ...     import mlx.core
+    >>> from aurelius.utils.dependencies import HAS_TORCH
+    >>> if HAS_TORCH:
+    ...     import torch
     >>>
     >>> from aurelius.utils.dependencies import check_framework, report_status
     >>> status = report_status()
@@ -30,25 +26,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Centralized framework detection (single source of truth)
+# Centralized framework detection
 # ---------------------------------------------------------------------------
-
-# MLX detection
-try:
-    import mlx.core as _mx  # noqa: F401
-
-    _HAS_MLX = True
-    _MLX_VERSION: str | None = None
-    try:
-        from importlib.metadata import version as _pkg_version
-
-        _MLX_VERSION = _pkg_version("mlx")
-    except Exception:
-        _MLX_VERSION = "unknown"
-except ImportError:
-    _HAS_MLX = False
-    _MLX_VERSION = None
-    _mx = None  # type: ignore[assignment, unused-ignore]
 
 # PyTorch detection
 try:
@@ -116,7 +95,6 @@ except ImportError:
 
 # Minimum version requirements
 _MIN_VERSIONS: dict[str, str] = {
-    "mlx": "0.15.0",
     "torch": "2.3.0",
     "rdkit": "2023.9.0",
     "huggingface-hub": "0.20.0",
@@ -137,7 +115,6 @@ def _parse_version(version_str: str) -> tuple[int, ...]:
     """
     parts: list[int] = []
     for part in version_str.split("."):
-        # Extract leading digits
         num_str = ""
         for ch in part:
             if ch.isdigit():
@@ -154,10 +131,9 @@ def _version_gte(version: str, minimum: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Public boolean exports (backward-compatible)
+# Public boolean exports
 # ---------------------------------------------------------------------------
 
-HAS_MLX: bool = _HAS_MLX
 HAS_TORCH: bool = _HAS_TORCH
 HAS_RDKIT: bool = _HAS_RDKIT
 HAS_HF_HUB: bool = _HAS_HF_HUB
@@ -168,7 +144,6 @@ HAS_DATASETS: bool = _HAS_DATASETS
 # ---------------------------------------------------------------------------
 
 _VERSION_MAP: dict[str, str | None] = {
-    "mlx": _MLX_VERSION,
     "torch": _TORCH_VERSION,
     "rdkit": _RDKIT_VERSION,
     "huggingface-hub": _HF_HUB_VERSION,
@@ -176,7 +151,6 @@ _VERSION_MAP: dict[str, str | None] = {
 }
 
 _AVAILABILITY_MAP: dict[str, bool] = {
-    "mlx": _HAS_MLX,
     "torch": _HAS_TORCH,
     "rdkit": _HAS_RDKIT,
     "huggingface-hub": _HAS_HF_HUB,
@@ -188,7 +162,7 @@ def _get_framework_info(name: str) -> dict[str, Any]:
     """Return availability, version, and minimum-version info for a framework.
 
     Args:
-        name: Framework name (e.g. ``"mlx"``, ``"torch"``).
+        name: Framework name (e.g. ``"torch"``, ``"rdkit"``).
 
     Returns:
         Dict with keys ``available``, ``version``, ``meets_minimum``,
@@ -217,11 +191,6 @@ def _get_framework_info(name: str) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Module-level convenience functions (backward-compatible)
-# ---------------------------------------------------------------------------
-
-
 def check_framework(name: str) -> dict[str, Any]:
     """Convenience function to check a single framework.
 
@@ -238,7 +207,7 @@ def report_status() -> dict[str, dict[str, Any]]:
     """Report the status of all frameworks.
 
     Logs INFO for frameworks that are available and WARNING when
-    fallbacks activate (i.e., a framework is missing).
+    fallbacks activate.
 
     Returns:
         Status dict for all frameworks.

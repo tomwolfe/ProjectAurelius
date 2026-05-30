@@ -162,16 +162,16 @@ def _perform_upload(model_dir: str, repo_id: str, task: str, commit_message: str
 
 ## Model Description
 
-This model was trained as part of Project Aurelius v7.0, a computational chemistry
-screening pipeline optimized for Apple M-series Neural Accelerators.
+This model was trained as part of Project Aurelius v9.0, a computational chemistry
+screening pipeline for battery electrolyte discovery.
 
 - **Task:** {task_descriptions.get(task, task)}
-- **Framework:** PyTorch / MLX
-- **Hardware:** Apple Silicon (M1-M5)
+- **Framework:** PyTorch
+- **Hardware:** Apple Silicon / CUDA / CPU
 
 ## Training Details
 
-- **Framework:** PyTorch (GPU/MPS) or MLX (Apple Silicon)
+- **Framework:** PyTorch
 - **Dataset:** {task if task != "tier0" else "Synthetic (RDKit + Arrhenius shifts)"}
 - **License:** MIT
 

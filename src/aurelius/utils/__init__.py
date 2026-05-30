@@ -17,7 +17,6 @@ from aurelius.utils.chem_utils import (
     generate_molecular_descriptors,
 )
 from aurelius.utils.dependencies import (
-    HAS_MLX,
     HAS_TORCH,
     check_framework,
     report_status,
@@ -25,7 +24,6 @@ from aurelius.utils.dependencies import (
 )
 
 __all__ = [
-    "HAS_MLX",
     "HAS_RDKIT",
     "HAS_TORCH",
     "_deserialize_fp",

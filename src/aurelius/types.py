@@ -1,8 +1,7 @@
 """Central type definitions for Project Aurelius.
 
-All @dataclass definitions used across the pipeline are centralized here
-to eliminate circular imports between pipeline.py, scoring/engine.py,
-and the screening tier modules.
+All dataclass definitions used across the pipeline are centralized here
+to eliminate circular imports between modules.
 """
 
 from __future__ import annotations
@@ -25,24 +24,8 @@ class MoleculeInput:
 
 
 @dataclass
-class MLXFilterResult:
-    """Result from the MLX-NA tier 1 screening filter."""
-
-    molecule_smiles: str
-    is_viable: bool
-    confidence_score: float
-    inference_time_ms: float
-    na_utilization_pct: float
-    quantization_format: str = "MX4"
-
-
-@dataclass
 class OracleResult:
-    """Result from the PropertyOracle — predicted HOMO/LUMO properties.
-
-    This is the clean, single source of truth for oracle evaluation
-    in the active learning loop.
-    """
+    """Result from the PropertyOracle — predicted HOMO/LUMO properties."""
 
     homo_eV: float
     lumo_eV: float
@@ -51,7 +34,6 @@ class OracleResult:
 
 
 __all__ = [
-    "MLXFilterResult",
     "MoleculeInput",
     "OracleResult",
 ]

@@ -1,17 +1,7 @@
-"""Dynamic environment configuration for Apple M-series memory management.
+"""Pipeline configuration for Project Aurelius.
 
-Detects system RAM dynamically using psutil and allocates memory
-across MLX, Metal Shader Cache, and PyTorch MPS without hardcoding
-for a specific chip generation.
-
-Memory allocation strategy:
-    - MLX:          50% of available RAM (capped at 12GB)
-    - Metal Shader: 10% of available RAM (capped at 2GB)
-    - PyTorch MPS:  Remaining RAM
-
-Thread-safety: Environment variable setup is delegated to the CLI
-entry point (__main__.py) to avoid race conditions during
-concurrent pipeline initialization.
+Provides default configuration values for the screening pipeline.
+Memory management is delegated to PyTorch's native memory management.
 """
 
 from __future__ import annotations
@@ -31,15 +21,8 @@ class AureliusConfig(BaseSettings):
     delegated to PyTorch's native memory management.
     """
 
-    # Quantization presets
     weight_sigma: float = 0.4
     weight_desolvation_barrier: float = 0.2
-
-    # Quantization presets
-    chemvlm_quantization: str = "MX4"
-
-    # Screening pipeline tiers
-    tier1_mlxfilter_enabled: bool = True
 
 
 def get_config(

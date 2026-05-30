@@ -2,8 +2,8 @@
 
 Coordinates a streamlined two-step discovery pipeline:
   1. **Filter** — Quick structural validity and synthetic accessibility (SA) check.
-      2. **Oracle** — Evaluate target property (e.g. HOMO/LUMO gap) using the
-      PropertyOracle (MPNN-based).
+  2. **Oracle** — Evaluate target property (e.g. HOMO/LUMO gap) using the
+     PropertyOracle (QSPR-based).
 
 The results are then fed back to the RF surrogate for Bayesian optimisation.
 """
@@ -19,9 +19,7 @@ from scipy.stats import norm as norm_dist
 
 from aurelius.config import AureliusConfig, apply_global_config
 from aurelius.scoring.oracle import PropertyOracle
-from aurelius.screening.tier1 import MLXNAFilter
-from aurelius.types import MLXFilterResult
-from aurelius.utils.dependencies import HAS_MLX
+from aurelius.screening.tier1 import Filter
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +27,7 @@ logger = logging.getLogger(__name__)
 class AureliusPipeline:
     """Full Aurelius screening pipeline orchestrator.
 
-    Coordinates the streamlined Filter → Oracle pipeline and computes
+    Coordinates the Filter -> Oracle pipeline and computes
     the final Aurelius Score.
     """
 
@@ -44,11 +42,9 @@ class AureliusPipeline:
             config: Pipeline configuration. If None, loads default.
         """
         self.config = config or apply_global_config()
-        self._mlx_filter: MLXNAFilter | None = None
+        self._filter: Filter | None = None
         self._use_real_models = use_real_models
         self._oracle: PropertyOracle | None = None
-        self.has_mlx = HAS_MLX
-        self.has_torch = True
 
     def initialize(self) -> None:
         """Initialise all pipeline components."""
@@ -60,30 +56,26 @@ class AureliusPipeline:
                 "Install with: pip install rdkit"
             ) from None
 
-        # Phase 1: MLX-NA structural filter
-        if self._use_real_models and self.config.tier1_mlxfilter_enabled:
+        # Phase 1: Structural filter
+        if self._use_real_models:
             try:
-                self._mlx_filter = MLXNAFilter(
-                    quantization_format=self.config.chemvlm_quantization,
-                )
-                logger.info("Tier 1 (MLX-NA): ENABLED [REAL]")
+                self._filter = Filter()
+                logger.info("Tier 1 (Filter): ENABLED")
             except Exception as exc:
-                logger.warning("Tier 1 (MLX-NA): DISABLED – %s", exc)
-                self._mlx_filter = None
+                logger.warning("Tier 1 (Filter): DISABLED - %s", exc)
+                self._filter = None
 
-        # Phase 2: Oracle for real ML-based property evaluation
+        # Phase 2: Oracle for property evaluation
         self._oracle = PropertyOracle()
         logger.info("Oracle (PropertyOracle): ENABLED")
 
     def _generate_failed_run(self, smiles: str, reason: str, **kwargs: Any) -> dict[str, Any]:
         """Generate a failed run result dict for early-exit scenarios."""
-        failed_tier1 = MLXFilterResult(
-            molecule_smiles=smiles,
-            is_viable=False,
-            confidence_score=0.0,
-            inference_time_ms=0.0,
-            na_utilization_pct=0.0,
-        )
+        t1_result = {
+            "molecule_smiles": smiles,
+            "is_viable": False,
+            "inference_time_ms": 0.0,
+        }
 
         oracle_result = self._oracle.evaluate(smiles) if self._oracle else {}
         lumo_gap = oracle_result.get("lumo_gap_eV", 999.0)
@@ -92,7 +84,7 @@ class AureliusPipeline:
         is_viable = lumo_gap < 6.0
 
         return {
-            "tier1": failed_tier1,
+            "tier1": t1_result,
             "tier2": None,
             "score": {
                 "total_score": total_score,
@@ -102,7 +94,7 @@ class AureliusPipeline:
         }
 
     def screen_molecule(self, smiles: str, **kwargs: Any) -> dict[str, Any]:
-        """Run a single molecule through the Filter → Oracle pipeline.
+        """Run a single molecule through the Filter -> Oracle pipeline.
 
         Returns a dict with tier results and the final Aurelius score.
         Includes per-tier timing metrics for performance monitoring.
@@ -113,36 +105,34 @@ class AureliusPipeline:
         logger.info("Processing: %s", smiles)
         pipeline_start = time.perf_counter()
 
-        # ── Step 1: Filter (structural validity + SA score) ──
+        # Step 1: Filter (structural validity + SA score)
         t1_result = None
-        if self._mlx_filter:
+        if self._filter:
             t1_start = time.perf_counter()
-            t1_result = self._mlx_filter.screen_molecule(smiles)
+            t1_result = self._filter.screen_molecule(smiles)
             tier_timings: dict[str, float] = {}
             tier_timings["tier1_ms"] = (time.perf_counter() - t1_start) * 1000
             results: dict[str, Any] = {"tier1": t1_result}
             logger.info(
-                "Tier 1 Result: %s -> %s (confidence=%.3f, time=%.1fms)",
-                t1_result.molecule_smiles,
-                "VIABLE" if t1_result.is_viable else "REJECTED",
-                t1_result.confidence_score,
-                t1_result.inference_time_ms,
+                "Tier 1 Result: %s -> %s (time=%.1fms)",
+                smiles,
+                "VIABLE" if t1_result.get("is_viable", False) else "REJECTED",
+                t1_result.get("inference_time_ms", 0.0),
             )
-            if not t1_result.is_viable:
+            if not t1_result.get("is_viable", True):
                 logger.warning("Short-circuiting: %s failed Tier 1.", smiles)
                 return self._generate_failed_run(smiles, "Failed Tier 1 Structural Filter", **kwargs)
         else:
             results = {}
             tier_timings = {}
 
-        # ── Step 2: Oracle (real ML-based property evaluation) ──
+        # Step 2: Oracle (property evaluation)
         t2_result = None
         if self._oracle:
             t2_start = time.perf_counter()
             oracle_result = self._oracle.evaluate(smiles)
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
 
-            # Convert oracle result to a clean dict for compatibility
             t2_result = {
                 "homo_eV": oracle_result.get("homo_eV", 999.0),
                 "lumo_eV": oracle_result.get("lumo_eV", 999.0),
@@ -156,7 +146,6 @@ class AureliusPipeline:
                 t2_result["lumo_gap_eV"],
             )
 
-            # HARD SHORT-CIRCUIT: Reject if LUMO gap too large
             if t2_result["lumo_gap_eV"] > 10.0:
                 logger.warning(
                     "Short-circuiting: %s failed Oracle (LUMO gap=%.3f eV)",
@@ -169,14 +158,11 @@ class AureliusPipeline:
                     **kwargs,
                 )
 
-        # Final consolidated score compilation
         score = self._compute_score(oracle_result)
         results["score"] = score
 
-        # Print scorecard
         logger.debug("Scorecard:\n%s", self._format_score(score))
 
-        # Performance report
         total_ms = (time.perf_counter() - pipeline_start) * 1000
         timing_lines = []
         for tier, t_ms in tier_timings.items():
@@ -202,15 +188,12 @@ class AureliusPipeline:
         lumo_gap = oracle_result.get("lumo_gap_eV", 999.0)
         homo = oracle_result.get("homo_eV", 999.0)
 
-        # Gaussian rewards for target ranges
         lumo_mean, lumo_std = -1.0, 0.35
         homo_mean, homo_std = -6.0, 1.0
 
-        # Reward: Gaussian PDF at target values (higher near centre)
         lumo_score = norm_dist.pdf(lumo_gap, loc=lumo_mean, scale=lumo_std) * 100.0
         homo_score = norm_dist.pdf(homo, loc=homo_mean, scale=homo_std) * 100.0
 
-        # Penalty for out-of-range values
         if lumo_gap < -1.5 or lumo_gap > -0.5:
             lumo_score *= 0.1
         if homo > -6.0:

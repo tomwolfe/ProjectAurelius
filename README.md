@@ -1,6 +1,6 @@
 # Project Aurelius v9.0
 
-**The Bayesian Discovery Release** -- Introduces a Random Forest-driven active-learning loop: Morgan fingerprints are scored via Expected Improvement from a Random Forest surrogate, enabling intelligent candidate selection from mutation pools. The training data now uses real QM9 LUMO data, and all synthetic data generation has been removed.
+**The Bayesian Discovery Release** -- Introduces a Random Forest-driven active-learning loop: Morgan fingerprints are scored via Expected Improvement from a Random Forest surrogate, enabling intelligent candidate selection from mutation pools.  The QSPR oracle now uses scikit-learn RandomForestRegressor trained on RDKit ECFP4 fingerprints and QM9 HOMO/LUMO reference values.
 
 ## Changelog (v9.0 → v9.0)
 
@@ -51,28 +51,27 @@ Aurelius is a high-performance screening pipeline for battery electrolyte molecu
 
 ## Hardware Requirements
 
-- **Apple Silicon Mac** (M1, M2, M3, or M4 series)
+- **macOS 13+** (Ventura or later)
 - **Linux x86_64** (with NVIDIA GPU for CUDA support)
 - **Windows 10/11** (with NVIDIA GPU for CUDA support)
 - **Minimum 8GB RAM** (16GB+ recommended)
-- **macOS 13+** (Ventura or later)
 
 ### Platform Support Matrix
 
-| Platform | Tier 1 (MLX Filter) |
+| Platform | Tier 1 (RDKit Filter) |
 |----------|---------------------|
-| **Apple Silicon** (macOS) | *Optimized* (MLX + MPS) |
+| **macOS** (any) | *Optimized* (RDKit native) |
 | **Linux x86_64** (CUDA) | PyTorch Fallback |
 | **Linux x86_64** (CPU-only) | PyTorch Fallback |
 | **Windows** (CUDA) | PyTorch Fallback |
 | **Windows** (CPU-only) | PyTorch Fallback |
 
-### Apple Silicon: *Optimized* (MLX + MPS)
-- Tier 1 runs natively on MLX with Neural Engine acceleration
-- Cross-framework zero-copy bridging via DLpack
+### macOS: *Optimized* (RDKit native)
+- Tier 1 runs natively with RDKit's SA score calculator
+- Cross-platform deterministic results
 
 ### Linux/Windows: *Supported* (CUDA/CPU)
-- Tier 1 uses PyTorch fallback MLP when MLX is unavailable
+- Tier 1 uses PyTorch backend for model training
 - `bridge.py` imports successfully on all platforms; MLX-dependent methods raise `RuntimeError` with clear messaging
 
 ### Software Dependencies

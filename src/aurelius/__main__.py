@@ -6,7 +6,6 @@ Usage:
     aurelius screen <smiles>         Screen a single molecule
     aurelius batch <file>            Screen molecules from SMILES file
     aurelius score <smiles>          Compute Aurelius score only
-    aurelius train                   Train model (tier1)
     aurelius validate <smiles>       Run physics validation
     aurelius benchmark               Run hardware benchmark
     aurelius status                  Show pipeline status and memory
@@ -32,7 +31,6 @@ from aurelius.hub.uploader import upload_model_to_hub
 from aurelius.pipeline import AureliusPipeline
 from aurelius.utils.dependencies import (
     HAS_HF_HUB,
-    HAS_MLX,
     HAS_RDKIT,
     HAS_TORCH,
 )
@@ -86,7 +84,6 @@ def with_pipeline(command: click.Command) -> click.Command:
 
         _init_pipeline_from_ctx(ctx)
 
-        # Inject pipeline and config as first two positional args
         return command(pipeline, config, *args, **kwargs)  # type: ignore[return-value]
 
     return wrapper  # type: ignore[return-value]
@@ -97,8 +94,7 @@ def with_pipeline(command: click.Command) -> click.Command:
 def cli() -> None:
     """Project Aurelius v9.0 - The Bayesian Discovery Release.
 
-    Accelerated computational chemistry screening pipeline optimized
-    for Apple M-series Neural Accelerators.
+    Computational chemistry screening pipeline for battery electrolyte discovery.
     """
     pass
 
@@ -131,16 +127,6 @@ def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: Aure
     click.echo("")
 
     click.echo("[Hardware]")
-
-    if HAS_MLX:
-        try:
-            import mlx.core as _mx  # noqa: F401
-
-            click.echo("  MLX:      Metal backend available")
-        except Exception:
-            click.echo("  MLX:      Metal backend unavailable")
-    else:
-        click.echo("  MLX:      Not installed (will use PyTorch fallback)")
 
     if HAS_TORCH:
         try:
@@ -175,8 +161,6 @@ def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: Aure
 
     click.echo("[Summary]")
     issues = []
-    if not HAS_MLX:
-        issues.append("MLX (Apple Silicon optimization)")
     if not HAS_TORCH:
         issues.append("PyTorch (ML models)")
     if not HAS_RDKIT:
@@ -222,8 +206,8 @@ def screen(
         n_scan_cycles=cycles,
     )
 
-    score = results.get("score")
-    if score and not score.is_viable:
+    score = results.get("score", {})
+    if score and not score.get("is_viable", True):
         sys.exit(1)
 
 
@@ -251,19 +235,19 @@ def batch(
     click.echo(f"Screening {len(smiles_list)} molecules...")
     results = pipeline.screen_batch(smiles_list, solvent_type=solvent, salt_type=salt)
 
-    viable = sum(1 for r in results if r["score"].is_viable)
+    viable = sum(1 for r in results if r["score"].get("is_viable", False) if r.get("score"))
     click.echo(f"\nBatch complete: {viable}/{len(smiles_list)} viable ({100 * viable / max(len(smiles_list), 1):.0f}%)")
 
     if output:
         serializable = []
         for r in results:
-            score = r["score"]
+            score = r.get("score", {})
             serializable.append(
                 {
-                    "smiles": score.molecule_smiles,
-                    "total_score": score.total_score,
-                    "is_viable": score.is_viable,
-                    "rejection_reasons": score.rejection_reasons,
+                    "smiles": r.get("tier1", {}).get("molecule_smiles", ""),
+                    "total_score": score.get("total_score", 0.0),
+                    "is_viable": score.get("is_viable", False),
+                    "rejection_reasons": score.get("rejection_reasons", []),
                 }
             )
         with open(output, "w") as f:
@@ -293,9 +277,9 @@ def score(
         ion_type=ion,
     )
 
-    score = results.get("score")
+    score = results.get("score", {})
     if score:
-        click.echo(f"\nAurelius Score v9.0: {score.total_score:.1f}/100 {'VIABLE' if score.is_viable else 'REJECTED'}")
+        click.echo(f"\nAurelius Score v9.0: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
 
 
 @cli.command("train")
@@ -350,8 +334,6 @@ def validate(smiles: str = "CC(=O)OC1=CC(=O)O1", pipeline: Any = None, config: A
 def status(pipeline: AureliusPipeline, config: AureliusConfig) -> None:
     """Show pipeline status and memory partition."""
     click.echo("\nAurelius v9.0 Configuration:")
-    click.echo(f"  MLX Max Memory:    {config.mlx_max_mem_gb}GB")
-    click.echo(f"  Shader Cache:      {config.metal_shader_cache_gb}GB")
     click.echo(f"  Desolvation Cutoff: {config.desolvation_barrier_threshold_eV} eV")
     click.echo(f"  Memory Valid:      {config.validate_memory_budget()}")
 

@@ -1,8 +1,8 @@
 """Project Aurelius v9.0 - Bayesian Active Learning for Novel Molecule Discovery.
 
 A streamlined pipeline that combines:
-- PyTorch-based structural filtering
-- MPNN-based property oracles
+- RDKit-based structural filtering (SA score + Lipinski)
+- QSPR property oracles (Random Forest on ECFP4 fingerprints)
 - SELFIES-based mutation engine
 - Random Forest surrogate-driven active learning
 """
@@ -32,7 +32,7 @@ from aurelius.config import (
     get_config,
 )
 from aurelius.pipeline import AureliusPipeline
-from aurelius.scoring.oracle import Oracle, PropertyOracle
+from aurelius.scoring.oracle import PropertyOracle
 from aurelius.types import MoleculeInput
 
 __all__ = [
@@ -45,7 +45,6 @@ __all__ = [
     "FeedbackAdapter",
     "MoleculeInput",
     "MutationEngine",
-    "Oracle",
     "PropertyOracle",
     "ScreeningResult",
     "generate_chemical_insights",

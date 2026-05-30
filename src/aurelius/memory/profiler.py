@@ -1,6 +1,6 @@
 """Memory Profiler for Autonomous Screening Agent.
 
-Provides peak RAM tracking, MPS/MLX memory monitoring, and CSV report
+Provides peak RAM tracking, MPS memory monitoring, and CSV report
 generation for the autonomous screening loop.
 
 Sampling Strategy:
@@ -11,11 +11,10 @@ Sampling Strategy:
 Framework APIs Used:
     - psutil: Process-level RSS memory
     - torch.mps.current_allocated_memory(): PyTorch MPS memory
-    - mx.metal.get_active_memory(): MLX Metal memory (Apple Silicon)
 
 Output:
     CSV file with columns: generation, screened_count, peak_ram_gb,
-    mps_cached_gb, mlx_cached_gb, gc_collected
+    mps_cached_gb, gc_collected
 
 References:
     tracemalloc: Python's built-in memory allocation tracer.
@@ -70,35 +69,10 @@ def _get_mps_memory_gb() -> float:
     return 0.0
 
 
-def _get_mlx_memory_gb() -> float:
-    """Get current MLX Metal memory in GB.
-
-    Uses mx.metal.get_active_memory() (or mx.get_active_memory for
-    older versions) when available. Falls back to 0.0 if MLX is
-    unavailable.
-
-    Returns:
-        MLX Metal memory in GB.
-    """
-    try:
-        import mlx.core as mx
-
-        # Try newer API first (MLX >= 0.15/0.20)
-        if hasattr(mx.metal, "get_active_memory"):
-            return float(mx.metal.get_active_memory()) / (1024**3)
-        # Fallback to legacy API
-        elif hasattr(mx, "get_active_memory"):
-            return float(mx.get_active_memory()) / (1024**3)
-        else:
-            return 0.0
-    except Exception:
-        return 0.0
-
-
 class MemoryProfiler:
     """Memory profiler for the autonomous screening agent.
 
-    Tracks peak RAM usage, MPS/MLX memory, and GC activity across
+    Tracks peak RAM usage, MPS memory, and GC activity across
     screening generations. Generates CSV reports at generation
     boundaries.
 
@@ -120,7 +94,6 @@ class MemoryProfiler:
         self._output_dir = output_dir
         self._peak_ram_gb = 0.0
         self._peak_mps_gb = 0.0
-        self._peak_mlx_gb = 0.0
         self._tracemalloc_snapshot: Any = None
         self._start_time: float = 0.0
         self._samples: list[dict[str, Any]] = []
@@ -137,7 +110,6 @@ class MemoryProfiler:
         self._active = True
         self._peak_ram_gb = _get_process_rss_gb()
         self._peak_mps_gb = _get_mps_memory_gb()
-        self._peak_mlx_gb = _get_mlx_memory_gb()
 
     def stop(self) -> None:
         """Stop memory profiling.
@@ -157,7 +129,7 @@ class MemoryProfiler:
     ) -> None:
         """Record a memory snapshot at a generation boundary.
 
-        Samples current RSS, MPS/MLX memory, and GC count.
+        Samples current RSS and MPS memory, and GC count.
         Updates peak tracking values.
 
         Args:
@@ -168,14 +140,10 @@ class MemoryProfiler:
         """
         current_ram = _get_process_rss_gb()
         mps_mem = _get_mps_memory_gb()
-        mlx_mem = _get_mlx_memory_gb()
 
-        # Update peak tracking
         self._peak_ram_gb = max(self._peak_ram_gb, current_ram)
         self._peak_mps_gb = max(self._peak_mps_gb, mps_mem)
-        self._peak_mlx_gb = max(self._peak_mlx_gb, mlx_mem)
 
-        # Get tracemalloc top allocations if snapshot is available
         if self._tracemalloc_snapshot:
             _ = self._tracemalloc_snapshot.statistics("lineno")[:5]
 
@@ -186,8 +154,6 @@ class MemoryProfiler:
             "peak_ram_gb": round(self._peak_ram_gb, 4),
             "mps_cached_gb": round(mps_mem, 4),
             "peak_mps_gb": round(self._peak_mps_gb, 4),
-            "mlx_cached_gb": round(mlx_mem, 4),
-            "peak_mlx_gb": round(self._peak_mlx_gb, 4),
             "gc_collected": gc_collected,
             "elapsed_s": round(time.time() - self._start_time, 1),
         }
@@ -211,7 +177,6 @@ class MemoryProfiler:
         csv_path = os.path.join(out_dir, f"memory_profile_{timestamp}.csv")
 
         if not self._samples:
-            # Write empty CSV with headers
             with open(csv_path, "w", newline="") as f:
                 csv.writer(f).writerow(
                     [
@@ -221,8 +186,6 @@ class MemoryProfiler:
                         "peak_ram_gb",
                         "mps_cached_gb",
                         "peak_mps_gb",
-                        "mlx_cached_gb",
-                        "peak_mlx_gb",
                         "gc_collected",
                         "elapsed_s",
                     ]
@@ -245,11 +208,6 @@ class MemoryProfiler:
     def peak_mps_gb(self) -> float:
         """Return peak MPS memory in GB."""
         return self._peak_mps_gb
-
-    @property
-    def peak_mlx_gb(self) -> float:
-        """Return peak MLX memory in GB."""
-        return self._peak_mlx_gb
 
     @property
     def n_samples(self) -> int:

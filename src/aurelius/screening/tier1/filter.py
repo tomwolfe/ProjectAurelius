@@ -1,340 +1,162 @@
-"""Tier 1: MLX Neural Accelerator filter and fingerprint utilities.
+"""Tier 1: Deterministic structural-viability filter.
 
-Contains the main MLXNAFilter class and ECFP4 fingerprint generation
-functions. The filter coordinates model inference across MLX, PyTorch,
-and NumPy backends depending on available hardware.
+This module replaces the former MLX-NA neural-filter with a fast,
+deterministic screening step based on well-established cheminformatics
+criteria:
 
-References:
-    Delaney, S. J. "ESOL: Estimating Aqueous Solubility
-    Directly from Structure." J. Chem. Inf. Model. 2004.
-    Ramakrishnan, R. et al. "QM9: 134 Kilo Molecules."
-    Sci. Data 2014.
+1. **Lipinski Rule-of-5** (Lipinski et al., 2001) — a simple heuristic
+   that flags molecules with reasonable MW, logP, H-bond donors/acceptors.
+
+2. **Synthetic complexity proxy** — number of rings, rotatable bonds,
+   and stereocenters are used as a fast proxy for synthetic accessibility.
+   Molecules with too many (>5) rings or (>10) rotatable bonds are
+   flagged as hard-to-synthesise.
+
+Together these provide a fast, interpretable gate that eliminates
+structurally implausible or overly exotic candidates before the
+expensive Oracle evaluation step.
+
+Battery electrolytes are small, polar molecules that solvate Li+/Na+ ions
+and form a stable SEI layer.  The Lipinski rules, while originally
+designed for oral drugs, serve as a useful first-pass filter: electrolyte
+candidates are generally of low molecular weight and moderate polarity.
+
+Usage:
+    from aurelius.screening.tier1 import Filter
+
+    filt = Filter()
+    result = filt.screen_molecule("CC(=O)OC1=CC=CC=C1")
+    print(result["is_viable"])  # True
 """
 
 from __future__ import annotations
 
-import json
-import logging
-import os
 import time
-from importlib import resources
 from typing import Any
 
-import numpy as np
-
-from aurelius.screening.tier1.loaders import (
-    HuggingFaceWeightLoader,
-    load_pytorch_fallback,
-)
-from aurelius.screening.tier1.models import (
-    HAS_MLX,
-    HAS_RDKIT,
-    HAS_TORCH,
-    MLXBackend,
-    PyTorchBackend,
-)
-from aurelius.screening.tier1.training import (
-    _train_synthetic_pytorch,
-    train_on_esol,
-)
-from aurelius.types import MLXFilterResult
-from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
-
-logger = logging.getLogger(__name__)
+from rdkit import Chem
+from rdkit.Chem import Crippen, rdMolDescriptors
 
 
-class MLXNAFilter:
-    """Tier 1: MLX Neural Accelerator filter for rapid molecular screening.
+class Filter:
+    """Deterministic structural-viability filter for battery electrolytes.
 
-    Uses a 2-layer MLP trained on ECFP4 (Morgan radius=2) fingerprints
-        to predict molecular viability. When MLX is available, inference
-        runs entirely on the MLX backend; otherwise a numpy fallback
-        provides deterministic pseudo-results for pipeline validation.
+    No model training or weight loading occurs — all criteria are
+    computed directly from the molecular graph using RDKit.
 
-    With --use-real-models (default), the filter:
-    1. Attempts to load pre-trained weights from Hugging Face Hub
-    2. Falls back to locally trained weights in models/
-    3. Falls back to training on ESOL/QM9 if no weights exist
+    Screening criteria:
+        - Lipinski Rule-of-5:
+            * MW <= 500
+            * logP <= 5.0
+            * H-bond donors <= 5
+            * H-bond acceptors <= 10
+        - Ring count <= 5 (synthetic complexity proxy)
+        - Rotatable bonds <= 10 (conformational flexibility proxy)
 
-    With --demo, uses synthetic training data for demonstration.
+    A molecule passes only if **all** criteria are met.
+
+    Example:
+        >>> filt = Filter()
+        >>> result = filt.screen_molecule("CCOC(=O)C")
+        >>> result["is_viable"]
+        True
     """
 
-    def __init__(
-        self,
-        quantization_format: str = "MX4",
-        train_on_init: bool = True,
-    ) -> None:
-        """Initialize the MLX-NA filter.
+    __slots__ = ()
+
+    def __init__(self) -> None:
+        pass
+
+    def screen_molecule(self, smiles: str) -> dict[str, Any]:
+        """Screen a single molecule for structural viability.
 
         Args:
-            quantization_format: Quantization format string (e.g., "MX4").
-            train_on_init: If True, train or load model at initialization.
-        """
-        self.quantization_format = quantization_format
-        self._train_on_init = train_on_init
-        self._model_loaded = False
-        self._model: MLXBackend | PyTorchBackend | None = None
-        self._use_mlx = HAS_MLX
-        self._weight_loader = HuggingFaceWeightLoader()
-        if HAS_MLX:
-            import mlx.core as mx  # noqa: F401
-
-            self._mx = mx
-        else:
-            self._mx = None  # type: ignore[assignment]
-
-        # Conditional torch/torch_nn imports
-        self._torch: Any | None = None
-        self._torch_nn: Any | None = None
-        if HAS_TORCH:
-            import torch  # noqa: F401
-            import torch.nn as torch_nn  # noqa: F401
-
-            self._torch = torch
-            self._torch_nn = torch_nn
-
-        # Conditional RDKit imports
-        self._rdkit_chem: Any | None = None
-        self._rdkit_allchem: Any | None = None
-        if HAS_RDKIT:
-            from rdkit import Chem as _rdkit_chem  # noqa: F401, N813
-            from rdkit.Chem import AllChem as _rdkit_allchem  # noqa: F401, N813
-
-            self._rdkit_chem = _rdkit_chem
-            self._rdkit_allchem = _rdkit_allchem
-
-        if train_on_init:
-            self._load_or_train_model()
-
-    def _load_or_train_model(self) -> None:
-        """Load pre-trained weights or train the model at initialization.
-
-        Priority:
-        1. Hugging Face Hub
-        2. Local model directory
-        3. Train on ESOL dataset
-        """
-        print("[Aurelius v9.0 Tier1] Attempting to load real model weights...")
-        try:
-            model = self._weight_loader.load_model(task="esol_solubility", local_only=False)
-        except Exception as e:
-            print(f"[Aurelius v9.0 Tier1] HF weight loading failed: {e}")
-            model = None
-
-        if model is not None:
-            self._model = model
-            self._model_loaded = True
-            print("[Aurelius v9.0 Tier1] Real model loaded successfully")
-            return
-
-        print("[Aurelius v9.0 Tier1] No pre-trained weights found, training on ESOL dataset...")
-        self._train_default_model()
-
-    def _get_demo_result(self) -> MLXFilterResult:
-        """Return a demo viability result for environments without ML frameworks.
+            smiles: SMILES string of the molecule.
 
         Returns:
-            MLXFilterResult with deterministic demo values.
+            Dict with keys:
+                - ``is_viable`` (bool): True if molecule passes all gates.
+                - ``lipinski_violations`` (list[str]): Reason strings for
+                  any Lipinski rule violations.
+                - ``complexity_flags`` (list[str]): Structural complexity
+                  warnings.
+                - ``inference_time_ms`` (float): Wall-clock time in ms.
+
+        Raises:
+            ValueError: If SMILES is invalid or cannot be parsed.
         """
-        return MLXFilterResult(
-            molecule_smiles="",
-            is_viable=True,
-            confidence_score=0.85,
-            inference_time_ms=0.0,
-            na_utilization_pct=85.0,
-        )
-
-    def _train_default_model(self) -> MLXFilterResult:
-        """Train the model on real solubility or synthetic data.
-
-        Returns:
-            MLXFilterResult with viability data.
-        """
-        if not self._use_mlx:
-            if not HAS_TORCH:
-                result = self._get_demo_result()
-                self._model = PyTorchBackend()
-                self._model_loaded = True
-                return result
-
-            print("[Aurelius v6.0 Tier1] MLX unavailable, initializing PyTorch fallback filter...")
-            self._model = PyTorchBackend()
-
-            print("[Aurelius v6.0 Tier1] Training PyTorch fallback on synthetic data...")
-            self._model = _train_synthetic_pytorch()
-            self._model_loaded = True
-            return MLXFilterResult(
-                molecule_smiles="",
-                is_viable=True,
-                confidence_score=0.85,
-                inference_time_ms=0.0,
-                na_utilization_pct=85.0,
-            )
-
-        model = MLXBackend()
-        self._model = model
-        self._model_loaded = True
-
-        try:
-            model = train_on_esol(model, epochs=200, lr=0.005, batch_size=16, seed=42)
-            self._weight_loader.save_model(model, "esol_solubility")
-        except (ImportError, RuntimeError, ValueError) as e:
-            print(f"[Aurelius v9.0 Tier1] ESOL training failed: {e}")
-            self._model = _train_synthetic_pytorch()
-
-        return MLXFilterResult(
-            molecule_smiles="",
-            is_viable=True,
-            confidence_score=0.85,
-            inference_time_ms=0.0,
-            na_utilization_pct=85.0,
-        )
-
-    def load_model(self, model_path: str) -> MLXFilterResult | None:
-        """Load ChemVLM-2 model from a saved path.
-
-        In production, model_path points to a saved MLX model.
-        For now, trains the MLP on real or synthetic data.
-
-        Args:
-            model_path: Path to model weights directory.
-        """
-        if self._model_loaded:
-            return None
-        if self._use_mlx:
-            print(f"[Aurelius v6.0 Tier1] Loading model from {model_path}")
-            self._model = MLXBackend()
-            self._train_default_model()
-            return None
-        else:
-            if not HAS_TORCH:
-                return self._get_demo_result()
-            self._model = PyTorchBackend()
-            if os.path.isdir(model_path):
-                self._model = load_pytorch_fallback(self._model, model_path)
-            self._model_loaded = True
-            print("[Aurelius v6.0 Tier1] Model ready")
-            return None
-
-    def screen_molecule(self, smiles: str) -> MLXFilterResult:
-        """Screen a single molecule through the MLX-NA filter.
-
-        Generates an ECFP4 (Morgan radius=2) fingerprint from the
-        SMILES string, runs it through the MLP, and returns a
-        viability result with confidence score.
-
-        Args:
-            smiles: SMILES string of the molecule to screen.
-
-        Returns:
-            MLXFilterResult with viability, confidence, and metadata.
-        """
-        if not self._model_loaded:
-            if self._train_on_init:
-                self._model = MLXBackend()
-                self._train_default_model()
-            else:
-                # Load from local saved path only (HF is skipped when train_on_init=False)
-                self._model = self._weight_loader.load_model(task="esol_solubility", local_only=True)
-                self._model_loaded = self._model is not None
-            if not self._model_loaded:
-                if self._use_mlx:
-                    self._model = MLXBackend()
-                    self._train_default_model()
-                else:
-                    if not HAS_TORCH:
-                        return MLXFilterResult(
-                            molecule_smiles="",
-                            is_viable=True,
-                            confidence_score=0.85,
-                            inference_time_ms=0.0,
-                            na_utilization_pct=85.0,
-                        )
-                    self._model = PyTorchBackend()
-                self._model_loaded = True
-
         start = time.perf_counter()
 
-        fingerprint = _generate_ecfp4_fingerprint(smiles)
-        result = self._run_inference(fingerprint, smiles)
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            raise ValueError(f"Invalid SMILES: {smiles}")
+
+        try:
+            Chem.SanitizeMol(mol)
+        except Exception as exc:
+            raise ValueError(f"Cannot sanitise molecule from SMILES: {smiles}") from exc
+
+        violations: list[str] = []
+        complexity_flags: list[str] = []
+
+        mw = rdMolDescriptors.CalcExactMolWt(mol)
+        logp = Crippen.MolLogP(mol)
+        h_donors = rdMolDescriptors.CalcNumHBD(mol)
+        h_acceptors = rdMolDescriptors.CalcNumHBA(mol)
+        n_rings = rdMolDescriptors.CalcNumRings(mol)
+        n_rotatable = rdMolDescriptors.CalcNumRotatableBonds(mol)
+
+        if mw > 500:
+            violations.append(f"MW too high ({mw:.1f} > 500)")
+        if logp > 5.0:
+            violations.append(f"logP too high ({logp:.1f} > 5.0)")
+        if h_donors > 5:
+            violations.append(f"H-bond donors too high ({h_donors} > 5)")
+        if h_acceptors > 10:
+            violations.append(f"H-bond acceptors too high ({h_acceptors} > 10)")
+        if n_rings > 5:
+            complexity_flags.append(f"Too many rings ({n_rings} > 5)")
+        if n_rotatable > 10:
+            complexity_flags.append(f"Too many rotatable bonds ({n_rotatable} > 10)")
+
+        is_viable = len(violations) == 0 and len(complexity_flags) == 0
 
         elapsed_ms = (time.perf_counter() - start) * 1000
-        na_util = self._estimate_na_utilization(result["confidence"])
 
-        return MLXFilterResult(
-            molecule_smiles=smiles,
-            is_viable=result["is_viable"],
-            confidence_score=result["confidence"],
-            inference_time_ms=elapsed_ms,
-            na_utilization_pct=na_util,
-        )
+        return {
+            "is_viable": is_viable,
+            "lipinski_violations": violations,
+            "complexity_flags": complexity_flags,
+            "inference_time_ms": round(elapsed_ms, 3),
+        }
 
-    def screen_batch(self, smiles_list: list[str], batch_size: int = 32) -> list[MLXFilterResult]:
-        """Screen a batch of molecules through the MLX-NA filter."""
+    def screen_batch(self, smiles_list: list[str], batch_size: int = 32) -> list[dict[str, Any]]:
+        """Screen a batch of molecules through the filter.
+
+        Args:
+            smiles_list: List of SMILES strings.
+            batch_size: Ignored (batching is not necessary for this
+                deterministic filter).
+
+        Returns:
+            List of result dicts (same structure as ``screen_molecule``).
+        """
         return [self.screen_molecule(smiles) for smiles in smiles_list]
 
-    def _estimate_na_utilization(self, confidence: float) -> float:
-        """Estimate Neural Accelerator utilization percentage."""
-        tier1_params: dict[str, Any] = {}
+    @staticmethod
+    def is_viable_smiles(smiles: str) -> bool:
+        """Quick check whether a SMILES is structurally viable.
+
+        Convenience wrapper that returns only the viability boolean.
+
+        Args:
+            smiles: SMILES string.
+
+        Returns:
+            True if the molecule passes all screening gates.
+        """
         try:
-            ff_path = str(resources.files("aurelius.data").joinpath("force_field_params.json"))
-            if os.path.isfile(ff_path):
-                with open(ff_path) as f:
-                    data = json.load(f)
-                    tier1_params = data.get("tier1_parameters", {}).get("na_utilization", {})
-        except (json.JSONDecodeError, OSError):
-            pass
-
-        base_util = tier1_params.get("base_utilization_pct", 75.0) + confidence * tier1_params.get(
-            "confidence_boost", 20.0
-        )
-        return float(min(base_util, tier1_params.get("max_utilization_pct", 98.0)))
-
-    def _bits_from_format(self) -> int:
-        """Extract bit depth from quantization format string."""
-        if "MX4" in self.quantization_format:
-            return 4
-        elif "MX6" in self.quantization_format:
-            return 6
-        return 4
-
-    def _run_inference(self, fingerprint: np.ndarray[Any, Any], smiles: str) -> dict[str, Any]:
-        """Run molecular viability inference via MLX, PyTorch, or numpy fallback."""
-        if self._model is None:
-            raise RuntimeError("Model not loaded. Call _load_or_train_model() first.")
-
-        # Use unified predict() method across all backends
-        if self._use_mlx and self._mx is not None:
-            fp_array = self._mx.array(fingerprint, dtype=self._mx.float32)
-            if fp_array.ndim == 1:
-                fp_array = fp_array.reshape(1, -1)
-            output = self._model.predict(fp_array)  # type: ignore[arg-type]
-            confidence = float(self._mx.squeeze(output))  # type: ignore[arg-type]
-        elif self._torch is not None:
-            fp_tensor = self._torch.from_numpy(fingerprint).float().unsqueeze(0)
-            with self._torch.no_grad():
-                output = self._model.predict(fp_tensor)
-            confidence = float(output.squeeze().item())
-        else:
-            output = self._model.predict(fingerprint)  # type: ignore[arg-type]
-            confidence = float(np.squeeze(output))  # type: ignore[arg-type]
-
-        confidence = float(np.clip(confidence, 0.0, 1.0))
-        is_viable = confidence > 0.5
-        return {"is_viable": is_viable, "confidence": confidence}
-
-
-# Re-exported from chem_utils for backward compatibility
-_generate_ecfp4_fingerprint = generate_ecfp4_fingerprint
-
-
-__all__ = [
-    "HAS_MLX",
-    "HAS_RDKIT",
-    "HAS_TORCH",
-    "MLXNAFilter",
-    "_generate_ecfp4_fingerprint",
-]
-
-
-# Re-export dependency flags for backward compatibility
+            result = Filter().screen_molecule(smiles)
+            return result["is_viable"]
+        except Exception:
+            return False

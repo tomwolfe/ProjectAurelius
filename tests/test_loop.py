@@ -9,7 +9,6 @@ Verifies that the DiscoveryLoop properly closes the feedback loop by:
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from aurelius.agent.loop import DiscoveryLoop, ScreeningResult
 
@@ -56,7 +55,6 @@ class TestDiscoveryLoopActiveLearning:
 
     def test_feedback_records_fingerprints_not_smiles(self):
         """FeedbackAdapter.record() must append fingerprint arrays, not SMILES."""
-        from aurelius.agent.loop import ScreeningResult
 
         # Create a result with a fingerprint
         fp = np.zeros((2048,), dtype=np.float32)
@@ -187,7 +185,6 @@ def _make_checkpoint_manager(path: str):
 def _make_feedback_adapter():
     """Create a feedback adapter with a fitted GP surrogate."""
     from aurelius.agent.state import FeedbackAdapter
-    from aurelius.agent.surrogate import RandomForestSurrogate
 
     adapter = FeedbackAdapter()
 
