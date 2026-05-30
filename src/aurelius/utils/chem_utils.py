@@ -78,6 +78,37 @@ def _is_valid_mol(mol: Any) -> bool:
     return bool(mw < 450.0)  # type: ignore[no-any-return]
 
 
+def validate_smiles(smiles: str) -> tuple[bool, str]:
+    """Validate a SMILES string for use in the Aurelius pipeline.
+
+    Checks that the SMILES can be parsed, the molecule is chemically
+    valid, and that its molecular weight is below the 450 Da threshold.
+
+    Args:
+        smiles: SMILES string of the molecule.
+
+    Returns:
+        A ``(is_valid, error_message)`` tuple.  When ``is_valid`` is True,
+        ``error_message`` is an empty string.  When False,
+        ``error_message`` describes the first failure encountered.
+
+    Raises:
+        RuntimeError: When RDKit is unavailable.
+    """
+    if not smiles or not smiles.strip():
+        return False, "SMILES string is empty or missing"
+
+    mol = _safe_mol_from_smiles(smiles)
+    if mol is None:
+        return False, f"Invalid SMILES structure: '{smiles}'"
+
+    if not _is_valid_mol(mol):
+        mw = _Descriptors.ExactMolWt(mol)  # type: ignore[union-attr, attr-defined]
+        return False, f"Molecular weight too high ({mw:.1f} Da > 450 Da)"
+
+    return True, ""
+
+
 def generate_ecfp4_fingerprint(smiles: str, n_bits: int = FINGERPRINT_SIZE) -> np.ndarray[Any, Any]:
     """Generate a 2048-bit ECFP4 (Morgan radius=2) fingerprint from SMILES.
 
@@ -226,4 +257,5 @@ __all__ = [
     "_serialize_fp",
     "_deserialize_fp",
     "_tanimoto",
+    "validate_smiles",
 ]
