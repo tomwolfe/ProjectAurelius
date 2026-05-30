@@ -18,10 +18,10 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from rdkit import Chem
+from rdkit.Chem import AllChem
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class PropertyOracle(Oracle):
             fingerprints are available or if SMILES is invalid.
         """
         from rdkit import Chem
-        from rdkit.Chem import AllChem
+        from rdkit.DataStructs import TanimotoSimilarity
 
         mol = Chem.MolFromSmiles(smiles)
         if mol is None or self._training_fps is None:
@@ -108,7 +108,7 @@ class PropertyOracle(Oracle):
         fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
         best_sim = 0.0
         for train_fp in self._training_fps:
-            sim = _FingerprintSimilarity(fp, train_fp) if _FingerprintSimilarity else 0.0
+            sim = TanimotoSimilarity(fp, train_fp)
             if sim > best_sim:
                 best_sim = sim
         return best_sim
@@ -124,9 +124,6 @@ class PropertyOracle(Oracle):
         Raises:
             ValueError: If SMILES is invalid.
         """
-        from rdkit import Chem
-        from rdkit.Chem import AllChem
-
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             raise ValueError(f"Invalid SMILES: {smiles}")
@@ -207,9 +204,6 @@ class PropertyOracle(Oracle):
         Returns:
             A trained _MPNN model.
         """
-        from rdkit import Chem
-        from rdkit.Chem import AllChem
-
         smiles_list, y_homo, y_lumo = self._load_qm9_dataset()
 
         if len(smiles_list) < 10:
@@ -227,8 +221,6 @@ class PropertyOracle(Oracle):
         tensors: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor, int]] = []
         for smiles in smiles_list:
             num_atoms, atom_features, bond_indices = self._smiles_to_features(smiles)
-            homo_idx = y_homo.index(smiles) if smiles in y_homo else 0
-            lumo_idx = y_lumo.index(smiles) if smiles in y_lumo else 0
             homo_val = y_homo.get(smiles, 0.0)
             lumo_val = y_lumo.get(smiles, 0.0)
             atom_tensor = torch.tensor([atom_features], dtype=torch.long, device=device)
@@ -280,7 +272,7 @@ class PropertyOracle(Oracle):
                 val_loss = val_loss / len(tensors)
 
             if val_loss < best_val_loss:
-                best_val_loss = val_loss.item()
+                best_val_loss = val_loss
                 patience_counter = 0
                 best_state = {k: v.clone() for k, v in model.state_dict().items()}
             else:
@@ -335,9 +327,8 @@ class PropertyOracle(Oracle):
         Raises:
             ValueError: If SMILES is invalid.
         """
-        if smiles in self._CACHE or self._CACHE is None:
-            if self._CACHE is not None and smiles in self._CACHE:
-                return self._CACHE[smiles]
+        if self._CACHE is not None and (smiles in self._CACHE or self._CACHE is None):
+            return self._CACHE[smiles]
 
         num_atoms, atom_features, bond_indices = self._smiles_to_features(smiles)
         result = self._predict(num_atoms, atom_features, bond_indices)

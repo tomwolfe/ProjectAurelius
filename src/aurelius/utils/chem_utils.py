@@ -82,9 +82,7 @@ def _is_valid_mol(mol: Any) -> bool:
         return False
     # Battery electrolytes must have at least one H-bond acceptor for ion solvation
     h_acceptors = _Descriptors.NumHAcceptors(mol)  # type: ignore[union-attr, attr-defined]
-    if h_acceptors < 1:
-        return False
-    return True
+    return h_acceptors >= 1
 
 
 def validate_smiles(smiles: str) -> tuple[bool, str]:

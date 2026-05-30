@@ -6,8 +6,6 @@ to replace fake physics with real ML-based oracles.
 
 from __future__ import annotations
 
-import warnings
-
 
 def __getattr__(name: str) -> None:
     """Provide a helpful error when deleted modules are imported."""

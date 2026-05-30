@@ -28,6 +28,7 @@ from aurelius.screening.tier1.loaders import (
 )
 from aurelius.screening.tier1.models import (
     HAS_MLX,
+    HAS_RDKIT,
     HAS_TORCH,
     MLXBackend,
     PyTorchBackend,
@@ -38,7 +39,6 @@ from aurelius.screening.tier1.training import (
 )
 from aurelius.types import MLXFilterResult
 from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
-from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 
 logger = logging.getLogger(__name__)
 

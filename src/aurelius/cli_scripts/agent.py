@@ -31,8 +31,8 @@ from aurelius.agent.reporting import (
     write_top_discoveries,
 )
 from aurelius.agent.state import CheckpointManager
-from aurelius.config import AureliusConfig, initialize_environment
 from aurelius.pipeline import AureliusPipeline
+from aurelius.utils.chem_utils import _deserialize_fp
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -106,7 +106,7 @@ def run_screening(agent_cfg: AgentConfig, checkpoint: CheckpointManager) -> None
     state = checkpoint.load()
 
     known_fps_hex = state.get("known_fps_hex", [])
-    engine.known_fps = []
+    engine = MutationEngine()
     for h in known_fps_hex:
         with contextlib.suppress(Exception):
             engine.known_fps.append(_deserialize_fp(h))
@@ -127,6 +127,8 @@ def run_screening(agent_cfg: AgentConfig, checkpoint: CheckpointManager) -> None
     wall_start = time.time()
 
     # Build the discovery loop and run it
+    pipeline = AureliusPipeline()
+    pipeline.initialize()
     loop = DiscoveryLoop(
         pipeline=pipeline,
         engine=engine,

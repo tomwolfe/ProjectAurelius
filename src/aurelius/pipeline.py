@@ -15,12 +15,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
+from scipy.stats import norm as norm_dist
+
 from aurelius.config import AureliusConfig, apply_global_config
 from aurelius.scoring.oracle import PropertyOracle
 from aurelius.screening.tier1 import MLXNAFilter
-from aurelius.types import MLXFilterResult, MoleculeInput, OracleResult
-from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT
-from scipy.stats import norm as norm_dist
+from aurelius.types import MLXFilterResult
+from aurelius.utils.dependencies import HAS_MLX
 
 logger = logging.getLogger(__name__)
 

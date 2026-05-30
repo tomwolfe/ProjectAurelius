@@ -97,7 +97,7 @@ Examples:
     return parser.parse_args()
 
 
-def train_mlx(
+def train_torch(
     X_train: np.ndarray[Any, Any],
     y_train: np.ndarray[Any, Any],
     X_val: np.ndarray[Any, Any],
@@ -107,7 +107,7 @@ def train_mlx(
     batch_size: int,
     seed: int,
 ) -> dict[str, Any]:
-    """Train MLP using MLX (requires MLX library).
+    """Train MLP using PyTorch (CPU/MPS).
 
     Args:
         X_train: Training fingerprints (N, 2048).
@@ -122,8 +122,8 @@ def train_mlx(
     Returns:
         Dictionary with trained weights and training history.
     """
-    import mlx.core as mx
-    import mlx.nn as nn
+    import torch
+    import torch.nn as nn
 
     model = nn.Sequential(  # type: ignore[attr-defined]
         nn.Linear(2048, 128),  # type: ignore[attr-defined]
@@ -131,13 +131,8 @@ def train_mlx(
         nn.Linear(128, 1),  # type: ignore[attr-defined]
     )
 
-    def loss_fn(x: Any, y: Any) -> Any:
-        return nn.losses.mse_loss(model(x), y, reduction="mean")
-
-    X_train_mx = mx.array(X_train)
-    y_train_mx = mx.array(y_train)
-    X_val_mx = mx.array(X_val)
-    y_val_mx = mx.array(y_val)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    criterion = nn.MSELoss()
 
     n_samples = X_train.shape[0]
     history: dict[str, list[float]] = {"train_loss": [], "val_loss": []}
@@ -145,36 +140,41 @@ def train_mlx(
     best_weights = None
     patience = 30
     patience_counter = 0
-    rng_state = mx.random.key(seed)
+    rng = np.random.RandomState(seed)
 
     for epoch in range(epochs):
-        perm = mx.random.permutation(n_samples, key=rng_state)
-        X_shuffled = X_train_mx[perm]
-        y_shuffled = y_train_mx[perm]
+        perm = rng.permutation(n_samples)
+        X_shuffled = X_train[perm]
+        y_shuffled = y_train[perm]
 
         for start in range(0, n_samples, batch_size):
             end = min(start + batch_size, n_samples)
-            x_batch = X_shuffled[start:end]
-            y_batch = y_shuffled[start:end].reshape(-1, 1)
+            x_batch = torch.from_numpy(X_shuffled[start:end]).float()
+            y_batch = torch.from_numpy(y_shuffled[start:end]).float()
 
-            loss, grads = nn.value_and_grad(model, loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
+            optimizer.zero_grad()
+            loss = criterion(x_batch, y_batch)
+            loss.backward()
+            optimizer.step()
 
-            # Update model with gradients using MLX optimizer
-            optimizer = mx.optimizer.SGD(lr)  # type: ignore[attr-defined]
-            optimizer.update(model, grads)
-
-        val_loss = float(loss_fn(X_val_mx, y_val_mx.reshape(-1, 1)))
+        val_loss = criterion(
+            torch.from_numpy(X_val).float(),
+            torch.from_numpy(y_val).float().reshape(-1, 1),
+        ).item()
         history["val_loss"].append(val_loss)
 
         if (epoch + 1) % 20 == 0:
-            train_loss = float(loss_fn(X_train_mx, y_train_mx.reshape(-1, 1)))
+            train_loss = criterion(
+                torch.from_numpy(X_train).float(),
+                torch.from_numpy(y_train).float().reshape(-1, 1),
+            ).item()
             history["train_loss"].append(train_loss)
             print(f"[train_tier1] Epoch {epoch + 1}/{epochs}: train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            best_weights = {k: np.asarray(v) for k, v in model.parameters().items()}
+            best_weights = {k: np.asarray(v) for k, v in model.state_dict().items()}
         else:
             patience_counter += 1
             if patience_counter >= patience:
@@ -273,8 +273,8 @@ def train_main(
     print(f"[train_tier1] Train: {len(X_train)}, Val: {len(X_val)}")
 
     # Train model
-    print("[train_tier1] Training with MLX (Apple Silicon)")
-    result = train_mlx(X_train, y_train, X_val, y_val, epochs, learning_rate, batch_size, seed)
+    print("[train_tier1] Training with PyTorch (CPU/MPS)")
+    result = train_torch(X_train, y_train, X_val, y_val, epochs, learning_rate, batch_size, seed)
 
     # Print final metrics
     print("\n[train_tier1] Training complete!")

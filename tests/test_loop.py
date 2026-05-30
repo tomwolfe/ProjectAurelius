@@ -65,11 +65,6 @@ class TestDiscoveryLoopActiveLearning:
         result = ScreeningResult(
             smiles="CC(=O)OC",
             total_score=85.0,
-            sigma_score=0.1,
-            desolvation_score=0.2,
-            sei_homogeneity_score=90.0,
-            mx_synthesis_score=0.8,
-            gwp_penalty=0.0,
             is_viable=True,
             rejection_reasons=[],
             fingerprint=fp,

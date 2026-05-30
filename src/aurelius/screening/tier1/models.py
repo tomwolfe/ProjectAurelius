@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import os
 from importlib import resources
+from typing import Any
+
+import numpy as np
 
 from aurelius.screening.tier1.backend_torch import (
     PyTorchBackend,
@@ -24,11 +27,12 @@ from aurelius.screening.tier1.backend_torch import (
 from aurelius.screening.tier1.backend_torch import (
     _model_factory as _torch_model_factory,
 )
-from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
+from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT, HAS_TORCH
 
 __all__ = [
     "DEFAULT_MODEL_DIR",
     "HAS_MLX",
+    "HAS_RDKIT",
     "HAS_TORCH",
     "PyTorchBackend",
     "PyTorchBackendUnavailableError",

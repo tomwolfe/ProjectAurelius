@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass
@@ -138,7 +138,7 @@ def _mutate_atom(selfies_str: str, rng: np.random.Generator) -> str | None:
     current_token = tokens[idx]
 
     # Get all valid atom tokens except the current one
-    other_atoms = [t for t in atoms if t != current_token]
+    other_atoms = [t for t in tokens if t != current_token]
     if not other_atoms:
         return None
 
@@ -171,14 +171,14 @@ def _mutate_bond(selfies_str: str, rng: np.random.Generator) -> str | None:
         logger.debug("SELFIES split failed: %s", exc)
         return None
 
-    bond_tokens = [t for t in tokens if t in bonds]
+    bond_tokens = [t for t in tokens if t in tokens]
     if not bond_tokens:
         return None
 
     idx = rng.integers(0, len(bond_tokens))
     current = bond_tokens[idx]
 
-    other_bonds = [b for b in bonds if b != current]
+    other_bonds = [b for b in tokens if b != current]
     if not other_bonds:
         return None
 

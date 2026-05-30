@@ -30,17 +30,10 @@ from aurelius.agent.state import (
 from aurelius.config import (
     AureliusConfig,
     get_config,
-    initialize_environment,
 )
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.oracle import Oracle, PropertyOracle
-from aurelius.types import (
-    MLXFilterResult,
-    MoleculeInput,
-    OracleResult,
-)
-
-initialize_environment()
+from aurelius.types import MoleculeInput
 
 __all__ = [
     "__version__",
@@ -60,6 +53,5 @@ __all__ = [
     "generate_manifest",
     "generate_screening_statistics",
     "get_config",
-    "initialize_environment",
     "write_top_discoveries",
 ]
