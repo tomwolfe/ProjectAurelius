@@ -193,6 +193,22 @@ class DiscoveryLoop:
             y_new = np.array(batch_scores).reshape(-1, 1)
             self.feedback.update(X_new, y_new)
 
+            # ---- Seed pool evolution: feed back high-scoring molecules ----
+            new_seeds = [
+                smi for smi, sc in zip(batch_smiles, batch_scores)
+                if sc >= 65.0
+            ]
+            if new_seeds:
+                existing = set(self.engine.seed_pool)
+                for smi in new_seeds:
+                    if smi not in existing:
+                        self.engine.seed_pool.append(smi)
+                        existing.add(smi)
+                # Cap at 200: keep the most recent (highest-scoring) seeds
+                if len(self.engine.seed_pool) > 200:
+                    self.engine.seed_pool = self.engine.seed_pool[-200:]
+            self.convergence.seed_pool_size = len(self.engine.seed_pool)
+
             # ---- Convergence / checkpoint ----
             new_clusters = self._count_new_clusters(valid_candidates)
             self.convergence.record_batch(batch_scores, batch_viable, new_clusters)

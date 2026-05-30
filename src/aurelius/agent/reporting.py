@@ -116,6 +116,7 @@ def generate_screening_statistics(
         f.write(f"- **Total screened:** {convergence.total_screened}\n")
         f.write(f"- **Generations run:** {convergence.generations}\n")
         f.write(f"- **Viable discoveries (score >= 65):** {convergence.viable_count}\n")
+        f.write(f"- **Seed pool size:** {convergence.seed_pool_size}\n")
         f.write(f"- **Final score variance:** {convergence.final_score_variance():.4f}\n\n")
 
         f.write("## Score Distribution\n\n")

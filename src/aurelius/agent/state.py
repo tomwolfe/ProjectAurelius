@@ -285,6 +285,7 @@ class ConvergenceChecker:
         self.viable_count = 0
         self.total_screened = 0
         self.generations = 0
+        self.seed_pool_size: int = 0
 
         # Welford's online statistics
         self._welford_n = 0

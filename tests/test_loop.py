@@ -113,6 +113,29 @@ class TestDiscoveryLoopActiveLearning:
         assert X.shape[0] == y.shape[0], "X and y should have same number of samples"
         assert X.shape[1] == 2048, "Fingerprints should have 2048 features"
 
+    def test_seed_pool_evolves_with_high_scores(self):
+        """High-scoring molecules should feed back into the seed pool."""
+        mock_pipeline = _make_mock_pipeline()
+        mock_engine = _make_mock_engine()
+        checkpoint = _make_checkpoint_manager("/tmp/test_checkpoint_seed.json")
+
+        loop = DiscoveryLoop(
+            pipeline=mock_pipeline,
+            engine=mock_engine,
+            checkpoint=checkpoint,
+            max_generations=1,
+            batch_size=3,
+        )
+
+        loop.execute()
+
+        # All screened SMILES (score=85.0 >= 65.0) should be in the seed pool
+        for smi in mock_engine.mutate_batch.return_value:
+            assert smi in loop.engine.seed_pool
+
+        # Seed pool size should be reflected in convergence state
+        assert loop.convergence.seed_pool_size == len(loop.engine.seed_pool)
+
     def test_first_batch_random_selection(self):
         """First batch should select candidates randomly when surrogate is unfitted."""
         mock_pipeline = _make_mock_pipeline()
