@@ -1,8 +1,10 @@
-"""Project Aurelius v8.0 - The GNN-Enhanced Release.
+"""Project Aurelius v9.0 - Bayesian Active Learning for Novel Molecule Discovery.
 
-Accelerated computational chemistry screening pipeline with real ML-based
-property oracles, SELFIES-based mutation engine, and Gaussian Process
-surrogate-driven active learning, optimized for Apple M-series Neural Accelerators.
+A streamlined pipeline that combines:
+- MLX-based structural filtering
+- RandomForest-based property oracles
+- SELFIES-based mutation engine
+- Gaussian Process surrogate-driven active learning
 """
 
 from __future__ import annotations
@@ -11,24 +13,32 @@ from importlib import metadata
 
 __version__: str = metadata.version("aurelius")
 
+from aurelius.agent.loop import DiscoveryLoop, ScreeningResult
+from aurelius.agent.mutation import MutationEngine
+from aurelius.agent.reporting import (
+    generate_chemical_insights,
+    generate_discovery_results,
+    generate_manifest,
+    generate_screening_statistics,
+    write_top_discoveries,
+)
+from aurelius.agent.state import (
+    CheckpointManager,
+    ConvergenceChecker,
+    FeedbackAdapter,
+)
 from aurelius.config import (
     AureliusConfig,
     apply_global_config,
     get_config,
     initialize_environment,
 )
-from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
-from aurelius.scoring.oracle import Oracle, PretrainedGNNOracle
-from aurelius.screening.tier0 import PyTorchBackend
-from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
-from aurelius.screening.tier1 import MLXNAFilter
+from aurelius.scoring.oracle import Oracle, PropertyOracle
 from aurelius.types import (
-    AureliusScoreResult,
-    DesolvationPathResult,
     MLXFilterResult,
     MoleculeInput,
-    Tier2Result,
+    OracleResult,
 )
 
 initialize_environment()
@@ -37,16 +47,22 @@ __all__ = [
     "__version__",
     "AureliusConfig",
     "AureliusPipeline",
-    "AureliusScoreResult",
-    "DesolvationPathResult",
+    "CheckpointManager",
+    "ConvergenceChecker",
+    "DiscoveryLoop",
+    "FeedbackAdapter",
     "MLXFilterResult",
     "MLXNAFilter",
-    "MemoryProfiler",
     "MoleculeInput",
+    "MutationEngine",
     "Oracle",
-    "PretrainedGNNOracle",
-    "Tier0ActivationPredictor",
-    "PyTorchBackend",
-    "apply_global_config",
+    "PropertyOracle",
+    "ScreeningResult",
+    "generate_chemical_insights",
+    "generate_discovery_results",
+    "generate_manifest",
+    "generate_screening_statistics",
     "get_config",
+    "initialize_environment",
+    "write_top_discoveries",
 ]

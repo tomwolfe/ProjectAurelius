@@ -14,6 +14,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+
 from aurelius.agent.state import ConvergenceChecker, FeedbackAdapter
 from aurelius.utils.chem_utils import _is_valid_mol, _safe_mol_from_smiles
 
@@ -96,8 +98,14 @@ class DiscoveryLoop:
     def execute(self) -> dict[str, Any]:
         """Run the discovery loop and return accumulated results.
 
-        Returns:
-            A dict with keys ``all_results`` and ``discoveries``.
+        The loop implements a Bayesian active-learning cycle:
+        1. Propose a large candidate pool via the mutation engine.
+        2. Featurise the pool into ECFP4 fingerprints.
+        3. If a GP surrogate is already fitted, use Expected Improvement
+           to select the top ``batch_size`` candidates.  If not fitted,
+           select randomly for the first batch.
+        4. Screen ONLY the selected top candidates.
+        5. Update the surrogate with the new (X, y) observations.
         """
         wall_start = time.time()
         generation = 0
@@ -120,19 +128,28 @@ class DiscoveryLoop:
                 log.info("Generation %d: No valid candidates. Skipping.", generation)
                 continue
 
+            # ---- Bayesian selection ----
+            selected_indices, batch_smiles = self._select_candidates_for_screening(
+                valid_candidates, generation
+            )
+
             log.info(
-                "Generation %d: Screening %d candidates (%d invalid discarded)",
+                "Generation %d: Screening %d candidates (%d invalid discarded, %d selected via BO)",
                 generation,
                 len(valid_candidates),
                 invalid_count,
+                len(batch_smiles),
             )
+
+            if not batch_smiles:
+                continue
 
             # ---- Screening ----
             batch_scores: list[float] = []
             batch_viable = 0
             batch_discoveries: list[ScreeningResult] = []
 
-            for smi in valid_candidates:
+            for smi in batch_smiles:
                 result = self._screen_molecule(smi)
                 if result is None:
                     continue
@@ -153,7 +170,6 @@ class DiscoveryLoop:
                     and len(score.get("rejection_reasons", [])) == 0
                 )
 
-                # Convert dict result to typed ScreeningResult
                 score_data = result.get("score")
                 if score_data is None:
                     continue
@@ -277,6 +293,62 @@ class DiscoveryLoop:
             valid = valid[: self.batch_size]
 
         return valid, invalid_count
+
+    def _select_candidates_for_screening(
+        self,
+        valid_candidates: list[str],
+        generation: int,
+    ) -> tuple[list[int], list[str]]:
+        """Select candidates for screening using Bayesian Active Learning.
+
+        If the GP surrogate is already fitted, use Expected Improvement
+        to pick the top ``batch_size`` candidates.  If not fitted
+        (first generation), select randomly.
+
+        Returns:
+            (indices, smiles) — indices into valid_candidates and
+            the corresponding SMILES strings.
+        """
+        if len(valid_candidates) == 0:
+            return [], []
+
+        # Featurise the pool
+        X_pool = self._featurise_molecules(valid_candidates)
+
+        if self.feedback._surrogate is not None:
+            # Fitted surrogate — use Expected Improvement
+            ei_scores = self.feedback._surrogate.expected_improvement(X_pool)
+            top_indices = np.argsort(ei_scores)[::-1][: self.batch_size]
+        else:
+            # First batch: random selection
+            n = min(self.batch_size, len(valid_candidates))
+            indices = self.feedback._rng.choice(len(valid_candidates), size=n, replace=False)
+            top_indices = sorted(indices)
+
+        batch_smiles = [valid_candidates[i] for i in top_indices]
+        return top_indices, batch_smiles
+
+    def _featurise_molecules(self, smiles_list: list[str]) -> np.ndarray:
+        """Convert a list of SMILES to a 2-D fingerprint array.
+
+        Args:
+            smiles_list: List of SMILES strings.
+
+        Returns:
+            Array of shape (n, 2048) with ECFP4 fingerprints.
+        """
+        from rdkit import Chem
+        from rdkit.Chem import AllChem
+
+        X = np.zeros((len(smiles_list), 2048), dtype=np.float32)
+        for i, smi in enumerate(smiles_list):
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                continue
+            fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
+            for idx in fp.GetNonzeroElements():
+                X[i][idx] = 1.0
+        return X
 
     def _screen_molecule(self, smiles: str) -> dict[str, Any] | None:
         """Run a single molecule through the screening pipeline.

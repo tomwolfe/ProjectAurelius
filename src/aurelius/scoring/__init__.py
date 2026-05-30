@@ -2,12 +2,12 @@
 
 Provides:
 - Oracle abstract base class
-- PretrainedGNNOracle for real ML-based property evaluation
+- PropertyOracle for real ML-based property evaluation
 """
 
-from aurelius.scoring.oracle import Oracle, PretrainedGNNOracle
+from aurelius.scoring.oracle import Oracle, PropertyOracle
 
 __all__ = [
     "Oracle",
-    "PretrainedGNNOracle",
+    "PropertyOracle",
 ]

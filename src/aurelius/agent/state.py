@@ -435,6 +435,7 @@ class FeedbackAdapter:
         self._surrogate: GaussianProcessSurrogate | None = None
         self._X_history: list[np.ndarray[Any, Any]] = []
         self._y_history: list[float] = []
+        self._rng = np.random.default_rng(42)
 
     def record(self, result: ScreeningResult) -> None:
         """Record screening result for feedback analysis.

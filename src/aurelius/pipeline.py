@@ -1,9 +1,9 @@
-"""Aurelius v8.0 Pipeline Orchestrator.
+"""Aurelius Pipeline Orchestrator.
 
 Coordinates a streamlined two-step discovery pipeline:
   1. **Filter** — Quick structural validity and synthetic accessibility (SA) check.
-  2. **Oracle** — Evaluate target property (e.g. HOMO/LUMO gap) using the real
-     pre-trained ML model.
+  2. **Oracle** — Evaluate target property (e.g. HOMO/LUMO gap) using the
+     PropertyOracle (RandomForest-based).
 
 The results are then fed back to the GP surrogate for Bayesian optimisation.
 """
@@ -16,21 +16,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from aurelius.config import AureliusConfig, apply_global_config
-from aurelius.scoring.oracle import Oracle, PretrainedGNNOracle
+from aurelius.scoring.oracle import PropertyOracle
 from aurelius.screening.tier1 import MLXNAFilter
-from aurelius.types import (
-    DesolvationPathResult,
-    MLXFilterResult,
-    MoleculeInput,
-    Tier2Result,
-)
+from aurelius.types import MLXFilterResult, MoleculeInput, OracleResult
 from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT
 
 logger = logging.getLogger(__name__)
 
 
 class AureliusPipeline:
-    """Full Aurelius v8.0 screening pipeline orchestrator.
+    """Full Aurelius screening pipeline orchestrator.
 
     Coordinates the streamlined Filter → Oracle pipeline and computes
     the final Aurelius Score.
@@ -49,9 +44,9 @@ class AureliusPipeline:
         self.config = config or apply_global_config()
         self._mlx_filter: MLXNAFilter | None = None
         self._use_real_models = use_real_models
-        self._oracle: Oracle | None = None
+        self._oracle: PropertyOracle | None = None
         self.has_mlx = HAS_MLX
-        self.has_torch = True  # Always available for the new pipeline
+        self.has_torch = True
 
     def initialize(self) -> None:
         """Initialise all pipeline components."""
@@ -75,27 +70,11 @@ class AureliusPipeline:
                 self._mlx_filter = None
 
         # Phase 2: Oracle for real ML-based property evaluation
-        self._oracle = PretrainedGNNOracle()
-        logger.info("Oracle (Pretrained GNN): ENABLED")
+        self._oracle = PropertyOracle()
+        logger.info("Oracle (PropertyOracle): ENABLED")
 
     def _generate_failed_run(self, smiles: str, reason: str, **kwargs: Any) -> dict[str, Any]:
         """Generate a failed run result dict for early-exit scenarios."""
-        from aurelius.types import (
-            MLXFilterResult,
-            MoleculeInput,
-        )
-
-        molecule_input = MoleculeInput(
-            smiles=smiles,
-            solvent_type=kwargs.get("solvent_type", "ec:dmc"),
-            salt_type=kwargs.get("salt_type", "NaPF6"),
-            ion_type=kwargs.get("ion_type", "Na+"),
-            temperature_k=kwargs.get("temperature_k", 298.15),
-            voltage_cutoff=kwargs.get("voltage_cutoff", 0.05),
-            max_sei_time_ps=kwargs.get("max_sei_time_ps", 1000.0),
-            n_scan_cycles=kwargs.get("n_scan_cycles", 500),
-        )
-
         failed_tier1 = MLXFilterResult(
             molecule_smiles=smiles,
             is_viable=False,
@@ -104,13 +83,11 @@ class AureliusPipeline:
             na_utilization_pct=0.0,
         )
 
-        # Compute Aurelius score from oracle results directly
         oracle_result = self._oracle.evaluate(smiles) if self._oracle else {}
         lumo_gap = oracle_result.get("lumo_gap_eV", 999.0)
 
-        # Simplified scoring: viability based on LUMO gap
-        total_score = max(0.0, 100.0 - lumo_gap * 5.0)  # Linear decay
-        is_viable = lumo_gap < 6.0  # Reasonable LUMO gap threshold
+        total_score = max(0.0, 100.0 - lumo_gap * 5.0)
+        is_viable = lumo_gap < 6.0
 
         return {
             "tier1": failed_tier1,
@@ -163,42 +140,30 @@ class AureliusPipeline:
             oracle_result = self._oracle.evaluate(smiles)
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
 
-            # Convert oracle output to a Tier2Result for compatibility
-            from aurelius.types import (
-                DesolvationPathResult,
-                Tier2Result,
-            )
-
-            t2_result = Tier2Result(
-                molecule_smiles=smiles,
-                is_viable=oracle_result.get("lumo_gap_eV", 999.0) < 10.0,  # reasonable threshold
-                desolvation_path=DesolvationPathResult(
-                    molecule_smiles=smiles,
-                    barrier_height_eV=oracle_result.get("lumo_gap_eV", 999.0),
-                    local_maxima_eV=oracle_result.get("lumo_gap_eV", 999.0) * 0.8,
-                    path_integral_eV_A=oracle_result.get("lumo_gap_eV", 999.0) * 1.2,
-                    rejected=False,
-                ),
-                simulation_time_ms=tier_timings["tier2_ms"],
-                memory_used_gb=0.1,
-            )
+            # Convert oracle result to a clean dict for compatibility
+            t2_result = {
+                "homo_eV": oracle_result.get("homo_eV", 999.0),
+                "lumo_eV": oracle_result.get("lumo_eV", 999.0),
+                "lumo_gap_eV": oracle_result.get("lumo_gap_eV", 999.0),
+                "dipole_debye": oracle_result.get("dipole_debye", 999.0),
+            }
             results["tier2"] = t2_result
             logger.info(
                 "Tier 2 (Oracle) Result: %s -> LUMO gap=%.3f eV",
-                t2_result.molecule_smiles,
-                t2_result.desolvation_path.barrier_height_eV,
+                smiles,
+                t2_result["lumo_gap_eV"],
             )
 
             # HARD SHORT-CIRCUIT: Reject if LUMO gap too large
-            if t2_result.desolvation_path.barrier_height_eV > 10.0:
+            if t2_result["lumo_gap_eV"] > 10.0:
                 logger.warning(
                     "Short-circuiting: %s failed Oracle (LUMO gap=%.3f eV)",
                     smiles,
-                    t2_result.desolvation_path.barrier_height_eV,
+                    t2_result["lumo_gap_eV"],
                 )
                 return self._generate_failed_run(
                     smiles,
-                    f"Failed Tier 2 Oracle (LUMO gap: {t2_result.desolvation_path.barrier_height_eV} eV)",
+                    f"Failed Tier 2 Oracle (LUMO gap: {t2_result['lumo_gap_eV']} eV)",
                     **kwargs,
                 )
 
