@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Autonomous Screening Agent — Project Aurelius v7.0
+"""Autonomous Screening Agent — Project Aurelius v9.0
 
 Implements the full autonomous discovery loop:
-  Generation (RDKit mutation engine) -> Screening (3-tier pipeline) ->
+  Generation (RDKit mutation engine) -> Screening (filter + oracle) ->
   Feedback-driven mutation -> Convergence check -> Report generation
 
 Usage:
@@ -35,8 +35,6 @@ from aurelius.agent.state import CheckpointManager
 from aurelius.config import AureliusConfig, initialize_environment
 from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
-from aurelius.screening.tier0.predictor import Tier0ActivationPredictor
-from aurelius.utils.chem_utils import _deserialize_fp
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -63,11 +61,7 @@ np.random.seed(42)
 
 @dataclass(frozen=True)
 class AgentConfig:
-    """Parameters for the autonomous screening agent.
-
-    Replaces the previous pattern of constructing an ``argparse.Namespace``
-    and passing it around, which made the API opaque and harder to type.
-    """
+    """Parameters for the autonomous screening agent."""
 
     max_generations: int = 50
     batch_size: int = 50
@@ -86,14 +80,7 @@ def _check_apple_silicon() -> bool:
 
 
 def _load_smiles_file(path: str) -> list[str]:
-    """Load SMILES from a .smi file, skipping comments and blank lines.
-
-    Args:
-        path: Path to the SMILES file.
-
-    Returns:
-        List of SMILES strings.
-    """
+    """Load SMILES from a .smi file, skipping comments and blank lines."""
     smiles_list: list[str] = []
     p = Path(path)
     if not p.exists():
@@ -118,7 +105,6 @@ def run_screening(agent_cfg: AgentConfig, checkpoint: CheckpointManager) -> None
         checkpoint: CheckpointManager instance for saving progress.
     """
 
-    # Initialize memory profiler if requested
     profiler: MemoryProfiler | None = None
     if agent_cfg.profile_memory:
         profiler = MemoryProfiler()
@@ -127,8 +113,8 @@ def run_screening(agent_cfg: AgentConfig, checkpoint: CheckpointManager) -> None
 
     # ---- Phase 1: Environment & Pipeline Initialization ----
     print("=" * 60)
-    print("  PROJECT AURELIUS v7.0 — Autonomous Screening Agent")
-    print("  The 2nm Fusion Edition | M5 Pro Neural Accelerators")
+    print("  PROJECT AURELIUS v9.0 — Autonomous Screening Agent")
+    print("  The Bayesian Discovery Edition | M5 Pro Neural Accelerators")
     print("=" * 60)
 
     if _check_apple_silicon():
@@ -142,25 +128,11 @@ def run_screening(agent_cfg: AgentConfig, checkpoint: CheckpointManager) -> None
     pipeline = AureliusPipeline(config)
     pipeline.initialize()
 
-    # Inject Tier 0 Activation Energy Predictor (MPNN + linear fallback)
-    if pipeline._gcmtwin:
-        tier0_pred = Tier0ActivationPredictor(
-            model_path="models/tier0/mpnn_weights.pth",
-        )
-        pipeline._gcmtwin._tier0_predictor = tier0_pred
-        pipeline._gcmtwin._use_tier0_prediction = True
-        print("[AGENT] Tier 0 Activation Energy Predictor (MPNN) injected successfully.")
-    else:
-        raise RuntimeError("Pipeline GCMD Digital Twin not initialized. Cannot run Tier 3.")
-
     # ---- Phase 2: Chemical Generation Engine ----
     print("\n[AGENT] Loading seed molecules...")
 
     seed_smiles = _load_smiles_file("discovery_candidates.smi")
     seed_smiles.extend(_load_smiles_file("examples/molecules.smi"))
-    seed_smiles.extend(_load_smiles_file("homogeneity_targeted_candidates.smi"))
-    seed_smiles.extend(_load_smiles_file("phase6_refined_candidates.smi"))
-    seed_smiles.extend(_load_smiles_file("refined_candidates.smi"))
     seed_smiles = list(set(s for s in seed_smiles if s.strip()))
     print(f"[AGENT] Seed pool: {len(seed_smiles)} unique molecules")
 
@@ -247,11 +219,7 @@ def run_screening(agent_cfg: AgentConfig, checkpoint: CheckpointManager) -> None
 
 
 def _save_checkpoint_safe(checkpoint: CheckpointManager) -> None:
-    """Safely save checkpoint, suppressing any exceptions.
-
-    Args:
-        checkpoint: CheckpointManager instance to save.
-    """
+    """Safely save checkpoint, suppressing any exceptions."""
     with contextlib.suppress(Exception):
         checkpoint.save()
 
@@ -260,7 +228,7 @@ def main() -> None:
     """CLI entry point for the autonomous screening agent."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Aurelius v7.0 Autonomous Screening Agent")
+    parser = argparse.ArgumentParser(description="Aurelius v9.0 Autonomous Screening Agent")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     parser.add_argument("--max-generations", type=int, default=50, help="Maximum generations to run")
     parser.add_argument("--batch-size", type=int, default=50, help="Candidates per batch")

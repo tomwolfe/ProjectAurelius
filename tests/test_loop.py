@@ -42,7 +42,7 @@ class TestDiscoveryLoopActiveLearning:
         # The GP surrogate should have been fitted during the loop
         surrogate = loop.feedback._surrogate
         assert surrogate is not None, "GP surrogate should have been created"
-        assert surrogate._gp is not None, "GP surrogate should have been fitted"
+        assert surrogate._rf is not None, "GP surrogate should have been fitted"
         assert surrogate._X is not None, "X history should be populated"
         assert surrogate._y is not None, "y history should be populated"
 
@@ -192,7 +192,7 @@ def _make_checkpoint_manager(path: str):
 def _make_feedback_adapter():
     """Create a feedback adapter with a fitted GP surrogate."""
     from aurelius.agent.state import FeedbackAdapter
-    from aurelius.agent.surrogate import GaussianProcessSurrogate
+    from aurelius.agent.surrogate import RandomForestSurrogate
 
     adapter = FeedbackAdapter()
 

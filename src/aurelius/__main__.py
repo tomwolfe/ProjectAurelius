@@ -1,4 +1,4 @@
-"""Project Aurelius v7.0 - CLI Entry Point.
+"""Project Aurelius v9.0 - CLI Entry Point.
 
 Usage:
     aurelius init                    Initialize pipeline
@@ -6,8 +6,7 @@ Usage:
     aurelius screen <smiles>         Screen a single molecule
     aurelius batch <file>            Screen molecules from SMILES file
     aurelius score <smiles>          Compute Aurelius score only
-    aurelius train                   Train model (tier1/tier0)
-      --task tier1|tier0             Training task (default: tier1)
+    aurelius train                   Train model (tier1)
     aurelius validate <smiles>       Run physics validation
     aurelius benchmark               Run hardware benchmark
     aurelius status                  Show pipeline status and memory
@@ -25,7 +24,6 @@ from typing import Any
 import click
 
 from aurelius.cli_scripts import (
-    train_tier0,
     train_tier1,
     validate_physics,
 )
@@ -95,9 +93,9 @@ def with_pipeline(command: click.Command) -> click.Command:
 
 
 @click.group()
-@click.version_option(version="6.0.0", prog_name="Aurelius")
+@click.version_option(version="9.0.0", prog_name="Aurelius")
 def cli() -> None:
-    """Project Aurelius v5.2 - The Hardened Release.
+    """Project Aurelius v9.0 - The Bayesian Discovery Release.
 
     Accelerated computational chemistry screening pipeline optimized
     for Apple M-series Neural Accelerators.
@@ -108,7 +106,7 @@ def cli() -> None:
 @cli.command()
 @with_pipeline  # type: ignore[arg-type]
 def init(pipeline: AureliusPipeline, config: AureliusConfig) -> None:
-    """Initialize the Aurelius v5.2 pipeline."""
+    """Initialize the Aurelius v9.0 pipeline."""
     click.echo("\nPipeline initialized successfully.")
 
 
@@ -297,7 +295,7 @@ def score(
     pipeline: AureliusPipeline,
     config: AureliusConfig,
 ) -> None:
-    """Compute the Aurelius v5.2 score for a molecule (quick mode)."""
+    """Compute the Aurelius v9.0 score for a molecule (quick mode)."""
     results = pipeline.screen_molecule(
         smiles,
         solvent_type=solvent,
@@ -308,24 +306,17 @@ def score(
 
     score = results.get("score")
     if score:
-        click.echo(f"\nAurelius Score v5.2: {score.total_score:.1f}/100 {'VIABLE' if score.is_viable else 'REJECTED'}")
+        click.echo(f"\nAurelius Score v9.0: {score.total_score:.1f}/100 {'VIABLE' if score.is_viable else 'REJECTED'}")
 
 
 @cli.command("train")
 @click.option("--dataset", default="esol", help="Dataset to train on (esol/qm9)")
-@click.option(
-    "--task",
-    type=click.Choice(["tier1", "tier0"]),
-    default="tier1",
-    help="Training task (tier1 for MLX filter, tier0 for MPNN activation energy predictor)",
-)
 @click.option("--epochs", type=int, default=200, help="Number of training epochs")
 @click.option("--batch-size", type=int, default=16, help="Mini-batch size")
 @click.option("--learning-rate", type=float, default=0.005, help="Learning rate")
 @click.option("--csv-path", type=str, default=None, help="Path to local CSV file")
 def train(
     dataset: str,
-    task: str,
     epochs: int,
     batch_size: int,
     learning_rate: float,
@@ -333,15 +324,12 @@ def train(
     pipeline: AureliusPipeline,
     config: AureliusConfig,
 ) -> None:
-    """Train a model on a dataset.
+    """Train a model on a dataset (Tier 1 MLP for ESOL/QM9)."""
+    if dataset == "tier0":
+        click.echo("[ERROR] Tier 0 has been removed. Use --task tier1 only.", err=True)
+        sys.exit(1)
 
-    Use --task tier1 to train the MLX filter (esol/qm9).
-    Use --task tier0 to train the MPNN activation energy predictor.
-    """
-    if task == "tier0":
-        _run_tier0_train(epochs, batch_size, learning_rate, csv_path)
-    else:
-        _run_tier1_train(dataset, epochs, batch_size, learning_rate, csv_path)
+    _run_tier1_train(dataset, epochs, batch_size, learning_rate, csv_path)
 
 
 def _run_tier1_train(
@@ -361,21 +349,6 @@ def _run_tier1_train(
     )
 
 
-def _run_tier0_train(
-    epochs: int,
-    batch_size: int,
-    learning_rate: float,
-    csv_path: str | None,
-) -> None:
-    """Run Tier 0 MPNN model training via train_tier0.py."""
-    train_tier0.train_main(
-        epochs=epochs,
-        batch_size=batch_size,
-        learning_rate=learning_rate,
-        csv_path=csv_path,
-    )
-
-
 @cli.command("validate")
 @click.option("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to validate")
 def validate(smiles: str = "CC(=O)OC1=CC(=O)O1", pipeline: Any = None, config: Any = None) -> None:
@@ -387,10 +360,9 @@ def validate(smiles: str = "CC(=O)OC1=CC(=O)O1", pipeline: Any = None, config: A
 @cli.command("status")
 def status(pipeline: AureliusPipeline, config: AureliusConfig) -> None:
     """Show pipeline status and memory partition."""
-    click.echo("\nAurelius v5.2 Configuration:")
+    click.echo("\nAurelius v9.0 Configuration:")
     click.echo(f"  MLX Max Memory:    {config.mlx_max_mem_gb}GB")
     click.echo(f"  Shader Cache:      {config.metal_shader_cache_gb}GB")
-    click.echo(f"  GCMD kMC Steps:    {config.turquant_max_context:,} steps")
     click.echo(f"  Desolvation Cutoff: {config.desolvation_barrier_threshold_eV} eV")
     click.echo(f"  Memory Valid:      {config.validate_memory_budget()}")
 
@@ -419,13 +391,13 @@ def benchmark(
 
 @cli.command("hf-upload")
 @click.option("--model-dir", required=True, help="Local directory containing model files to upload")
-@click.option("--repo-id", required=True, help="HuggingFace Hub repository ID (e.g., 'user/repo-name')")
+@click.option("--repo-id", required=True, help="HuggingFace repository ID (e.g., 'user/repo-name')")
 @click.option(
     "--task", type=click.Choice(["tier0", "esol", "qm9"]), default="tier0", help="Model task type (default: tier0)"
 )
 @click.option("--private/--public", default=True, help="Make repository private (default: private)")
 @click.option("--commit-message", default="Upload model via Aurelius CLI", help="Commit message for the upload")
-@click.option("--dry-run", is_flag=True, help="Validate repo ID, token, and metadata without uploading")
+@click.option("--dry-run", is_flag=True, help="Validate without uploading")
 def hf_upload(
     model_dir: str,
     repo_id: str,

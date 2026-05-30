@@ -66,3 +66,67 @@ def ModelFactory() -> PyTorchBackend:  # type: ignore[return]  # noqa: N802
     raise PyTorchBackendUnavailableError(
         "PyTorch is not available. Install torch to use model backends."
     )
+
+
+class MLXBackend:
+    """MLX-compatible 2-layer MLP for ECFP4 fingerprints.
+
+    This backend provides a simple MLP that maps ECFP4 fingerprints
+    to viability predictions. When MLX is unavailable, this class
+    raises ``PyTorchBackendUnavailableError``.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the MLXBackend."""
+        self._model: Any | None = None
+        self._weights: dict[str, Any] | None = None
+
+    def predict(self, x: Any) -> Any:
+        """Run inference on the MLX model.
+
+        Args:
+            x: Input tensor or array.
+
+        Returns:
+            Predicted output.
+
+        Raises:
+            RuntimeError: If the model is not loaded.
+        """
+        if self._model is None:
+            raise RuntimeError("Model not loaded. Call load_weights() first.")
+        return self._model(x)
+
+    def load_weights(self, weights_dir: str) -> None:
+        """Load model weights from a directory.
+
+        Args:
+            weights_dir: Directory containing weight files.
+        """
+        import mlx.core as mx
+        import mlx.nn as nn
+
+        weights: dict[str, Any] = {}
+        for fname in ["W1", "b1", "W2", "b2"]:
+            path = os.path.join(weights_dir, f"{fname}.npy")
+            if os.path.isfile(path):
+                weights[fname] = mx.array(np.load(path))
+
+        self._weights = weights
+        self._model = nn.Sequential(  # type: ignore[attr-defined]
+            nn.Linear(2048, 128),  # type: ignore[attr-defined]
+            nn.ReLU(),  # type: ignore[attr-defined]
+            nn.Linear(128, 1),  # type: ignore[attr-defined]
+        )
+        if weights:
+            self._model.update(nn.state.set_weights(self._model, weights))
+
+    def save_weights(self, path: str) -> None:
+        """Save model weights to a directory.
+
+        Args:
+            path: Directory to save weights.
+        """
+        os.makedirs(path, exist_ok=True)
+        for name, value in self._weights.items():
+            np.save(os.path.join(path, f"{name}.npy"), np.asarray(value))

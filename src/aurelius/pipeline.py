@@ -2,10 +2,10 @@
 
 Coordinates a streamlined two-step discovery pipeline:
   1. **Filter** — Quick structural validity and synthetic accessibility (SA) check.
-  2. **Oracle** — Evaluate target property (e.g. HOMO/LUMO gap) using the
-     PropertyOracle (RandomForest-based).
+      2. **Oracle** — Evaluate target property (e.g. HOMO/LUMO gap) using the
+      PropertyOracle (MPNN-based).
 
-The results are then fed back to the GP surrogate for Bayesian optimisation.
+The results are then fed back to the RF surrogate for Bayesian optimisation.
 """
 
 from __future__ import annotations

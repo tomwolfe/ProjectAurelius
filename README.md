@@ -1,8 +1,8 @@
-# Project Aurelius v7.0
+# Project Aurelius v9.0
 
-**The Bayesian Discovery Release** -- Introduces a Bayesian-Guided Genetic Algorithm (GA) for active learning: Morgan fingerprints are scored via Expected Improvement from a Gaussian Process surrogate, enabling intelligent candidate selection from mutation pools. Physics engines use RDKit Gasteiger charges for dynamic charge assignment, and synthetic training data generation has been removed in favor of real QM9 LUMO data.
+**The Bayesian Discovery Release** -- Introduces a Random Forest-driven active learning for active learning: Morgan fingerprints are scored via Expected Improvement from a Random Forest surrogate, enabling intelligent candidate selection from mutation pools. Physics engines use RDKit Gasteiger charges for dynamic charge assignment, and synthetic training data generation has been removed in favor of real QM9 LUMO data.
 
-## Changelog (v7.0 → v7.0)
+## Changelog (v9.0 → v9.0)
 
 ### New Features
 

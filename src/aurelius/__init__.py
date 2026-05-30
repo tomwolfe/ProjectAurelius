@@ -4,7 +4,7 @@ A streamlined pipeline that combines:
 - PyTorch-based structural filtering
 - MPNN-based property oracles
 - SELFIES-based mutation engine
-- Gaussian Process surrogate-driven active learning
+- Random Forest surrogate-driven active learning
 """
 
 from __future__ import annotations
@@ -29,7 +29,6 @@ from aurelius.agent.state import (
 )
 from aurelius.config import (
     AureliusConfig,
-    apply_global_config,
     get_config,
     initialize_environment,
 )

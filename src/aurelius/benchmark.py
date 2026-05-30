@@ -324,7 +324,7 @@ def run_benchmark(
     n_atoms = 30 if quick else 50
 
     print("=" * 60)
-    print("  Aurelius v5.2 Hardware Benchmark")
+    print("  Aurelius v9.0 Hardware Benchmark")
     print("=" * 60)
 
     # Hardware detection

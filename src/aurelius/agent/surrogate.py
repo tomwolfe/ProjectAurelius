@@ -1,8 +1,12 @@
-"""Gaussian Process surrogate model for Bayesian-guided active learning.
+"""Random Forest surrogate model for Bayesian-guided active learning.
 
 Provides Expected Improvement (EI) acquisition function scoring over
 Morgan (ECFP4) fingerprints, enabling the DiscoveryLoop to select
 the most promising candidates from a large mutation pool.
+
+The surrogate uses a Random Forest Regressor which natively handles
+high-dimensional sparse binary vectors and provides uncertainty
+estimates from tree-based variance for the EI calculation.
 """
 
 from __future__ import annotations
@@ -11,22 +15,19 @@ from typing import Any
 
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, RationalQuadratic
-from sklearn.preprocessing import StandardScaler
 
 
-class GaussianProcessSurrogate:
-    """Gaussian Process surrogate model for active learning.
+class RandomForestSurrogate:
+    """Random Forest surrogate model for active learning.
 
     The surrogate is trained on Morgan (ECFP4) fingerprints ``X``
     and composite ``Aurelius Score`` values ``y``.  During acquisition
-    (``expected_improvement``), the GP predicts the mean and variance
+    (``expected_improvement``), the RF predicts the mean and variance
     of each candidate, and the acquisition function scores high both
     high predicted scores and high uncertainty.
 
-    As a fallback when the GP fails (e.g. singular kernel matrix),
-    a Random Forest regressor is used to score candidates.
+    As a fallback when the RF fails (e.g. insufficient data),
+    a simple random scoring is used.
     """
 
     def __init__(self, random_state: int = 42) -> None:
@@ -37,14 +38,11 @@ class GaussianProcessSurrogate:
         """
         self._X: np.ndarray[Any, Any] | None = None
         self._y: np.ndarray[Any, Any] | None = None
-        self._gp: GaussianProcessRegressor | None = None
         self._rf: RandomForestRegressor | None = None
-        self._scaler_x: StandardScaler | None = None
-        self._scaler_y: StandardScaler | None = None
         self._random_state = random_state
 
     def fit(self, X: np.ndarray[Any, Any], y: np.ndarray[Any, Any]) -> None:
-        """Fit the Gaussian Process surrogate to (X, y) data.
+        """Fit the Random Forest surrogate to (X, y) data.
 
         Args:
             X: 2-D array of shape (n_samples, n_features) with Morgan
@@ -55,28 +53,20 @@ class GaussianProcessSurrogate:
             ValueError: If fewer than 2 samples are provided.
         """
         if len(y) < 2:
-            raise ValueError("At least 2 samples are required to fit the Gaussian Process surrogate.")
+            raise ValueError("At least 2 samples are required to fit the Random Forest surrogate.")
 
-        # Scale inputs and targets for numerical stability
-        self._scaler_x = StandardScaler()
-        self._scaler_y = StandardScaler()
-        X_scaled = self._scaler_x.fit_transform(X)
-        y_scaled = self._scaler_y.fit_transform(y.reshape(-1, 1)).ravel()
-
-        kernel = C(1.0, (0.1, 10.0)) * RBF(length_scale=5.0, length_scale_bounds=(0.1, 100.0))
-        kernel += RationalQuadratic(alpha=1.0, alpha_bounds=(0.1, 10.0))
-
-        self._gp = GaussianProcessRegressor(
-            kernel=kernel,
-            n_restarts_optimizer=5,
+        self._rf = RandomForestRegressor(
+            n_estimators=100,
+            max_depth=12,
+            min_samples_leaf=5,
             random_state=self._random_state,
-            normalize_y=False,
+            n_jobs=-1,
         )
-        self._gp.fit(X_scaled, y_scaled)
+        self._rf.fit(X, y)
 
         # Store the original data for Expected Improvement computation
-        self._X = X_scaled
-        self._y = y_scaled
+        self._X = X
+        self._y = y
 
     def expected_improvement(self, X_candidates: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
         """Compute Expected Improvement acquisition values for candidates.
@@ -95,26 +85,33 @@ class GaussianProcessSurrogate:
         """
         if self._X is None or self._y is None:
             raise RuntimeError(
-                "GaussianProcessSurrogate must be fitted before scoring candidates. "
+                "RandomForestSurrogate must be fitted before scoring candidates. "
                 "Call .fit(X, y) with training data first."
             )
 
-        if self._gp is None:
-            raise RuntimeError("Gaussian Process surrogate is not trained.")
-
-        # Predict mean and variance for candidates
-        try:
-            mean, std = self._gp.predict(X_candidates, return_std=True)
-        except Exception:
-            # Fallback to Random Forest when GP fails
-            mean, std = self._rf_scores(X_candidates)
+        if self._rf is None:
+            raise RuntimeError("Random Forest surrogate is not trained.")
 
         best = self._y.max() if len(self._y) > 0 else 0.0
-        ei = np.zeros(len(mean))
 
-        for i in range(len(mean)):
-            mu = mean[i]
-            s = std[i]
+        # Compute mean and variance from individual trees
+        means = np.zeros(len(X_candidates))
+        variances = np.zeros(len(X_candidates))
+
+        for i, candidate in enumerate(X_candidates):
+            pred = self._rf.predict(candidate.reshape(1, -1))[0]
+            means[i] = pred
+
+            # Tree-based variance as uncertainty estimate
+            predictions = np.array([tree.predict(candidate.reshape(1, -1))[0] for tree in self._rf.estimators_])
+            variances[i] = np.var(predictions)
+
+        # Compute Expected Improvement using mean and variance
+        ei = np.zeros(len(X_candidates))
+        for i in range(len(X_candidates)):
+            mu = means[i]
+            v = variances[i]
+            s = np.sqrt(max(v, 1e-8))
             if s < 1e-8:
                 ei[i] = 0.0
             else:
@@ -123,29 +120,7 @@ class GaussianProcessSurrogate:
 
         return ei
 
-    def _rf_scores(self, X: np.ndarray[Any, Any]) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]:
-        """Compute Random Forest predictions as a GP fallback.
-
-        Returns:
-            Tuple of (mean_predictions, uncertainty_estimates).
-        """
-        if self._rf is None:
-            self._rf = RandomForestRegressor(
-                n_estimators=100,
-                random_state=self._random_state,
-                n_jobs=-1,
-            )
-            if self._X is not None and self._y is not None:
-                self._rf.fit(self._X, self._y)
-
-        if self._rf is not None and self._X is not None and self._y is not None:
-            mean = self._rf.predict(X)
-            std = self._rf.predict(X) * 0.1  # Dummy uncertainty
-            return mean, std
-        return np.zeros(len(X)), np.zeros(len(X))
-
-    @staticmethod
-    def _norm_cdf(x: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+    def _norm_cdf(self, x: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
         """Standard normal CDF approximation (Abramowitz & Stegun)."""
         return 0.5 * (1.0 + np.tanh(np.sqrt(2.0 / np.pi) * (x - 0.13 * x**3)))
 

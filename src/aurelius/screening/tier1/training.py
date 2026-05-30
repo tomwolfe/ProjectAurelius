@@ -70,6 +70,7 @@ def _generate_synthetic_training_data() -> tuple[np.ndarray[Any, Any], np.ndarra
 
 
 def train_on_esol(
+    model: PyTorchBackend | None = None,
     epochs: int = 200,
     lr: float = 0.005,
     batch_size: int = 16,
@@ -294,13 +295,11 @@ def train_on_qm9(
     return model
 
 
-def _train_synthetic_mlx(
-    model: PyTorchBackend,
-) -> PyTorchBackend:
-    """Train on synthetic solubility dataset (demo/fallback mode).
+def _train_synthetic_pytorch() -> PyTorchBackend:
+    """Train PyTorch fallback on synthetic solubility dataset.
 
-    Args:
-        model: The PyTorchBackend instance to train.
+    This provides a trained PyTorch model when MLX is unavailable,
+    ensuring the pipeline can run on Linux/Windows/CPU-only systems.
 
     Returns:
         The trained PyTorchBackend instance.
@@ -308,47 +307,52 @@ def _train_synthetic_mlx(
     X_train, y_train, _ = _generate_synthetic_training_data()
 
     n_samples = X_train.shape[0]
-    _n_val = max(1, int(n_samples * 0.15))
+    n_val = int(n_samples * 0.15)
 
-    # Use PyTorch optimizers for clean training loop
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    rng = np.random.RandomState(42)
+    perm = rng.permutation(n_samples)
+    X_train_split = X_train[perm[: n_samples - n_val]]
+    y_train_split = y_train[perm[: n_samples - n_val]]
+    X_val_split = X_train[perm[n_samples - n_val :]]
+    y_val_split = y_train[perm[n_samples - n_val :]]
 
-    def _loss_fn(x: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        h = nn.functional.relu(model.linear1(x))
-        out = model.linear2(h)
-        pred = torch.sigmoid(out)
-        pred = pred.reshape(-1, 1)
-        target = target.reshape(-1, 1)
-        return torch.mean((pred - target) ** 2)
+    model = PyTorchBackend()
+    criterion = _torch_nn.MSELoss()
+    optimizer = _torch.optim.Adam(model.parameters(), lr=0.01)
 
-    # Training loop with early stopping
     best_val_loss = float("inf")
+    best_state: dict[str, Any] = {}
     patience = 20
     patience_counter = 0
-    best_params: dict[str, Any] | None = None
 
     for epoch in range(100):
-        perm = torch.randperm(n_samples, generator=torch.Generator().manual_seed(42))
-        X_shuffled = X_train[perm]
-        y_shuffled = y_train[perm]
+        epoch_perm = rng.permutation(n_samples - n_val)
+        X_shuffled = X_train_split[epoch_perm]
+        y_shuffled = y_train_split[epoch_perm]
 
-        for start in range(0, n_samples, 16):
-            end = min(start + 16, n_samples)
-            x_batch = torch.from_numpy(X_shuffled[start:end]).float()
-            y_batch = torch.from_numpy(y_shuffled[start:end]).float()
+        for start in range(0, n_samples - n_val, 16):
+            end = min(start + 16, n_samples - n_val)
+            x_batch = _torch.from_numpy(X_shuffled[start:end]).float()
+            y_batch = _torch.from_numpy(y_shuffled[start:end]).float()
 
             optimizer.zero_grad()
-            loss = _loss_fn(x_batch, y_batch)
+            pred = model(x_batch).squeeze(-1)  # type: ignore[attr-defined]
+            loss = criterion(pred, y_batch)
             loss.backward()
             optimizer.step()
 
-        val_loss = _loss_fn(
-            torch.from_numpy(X_train).float(),
-            torch.from_numpy(y_train).float(),
-        ).item()
+        with _torch.no_grad():
+            val_pred = model(_torch.from_numpy(X_val_split).float()).squeeze(-1)  # type: ignore[attr-defined]
+            val_loss = criterion(val_pred, _torch.from_numpy(y_val_split).float()).item()
 
         if (epoch + 1) % 20 == 0:
-            print(f"[Aurelius v9.0 Tier1] Synthetic epoch {epoch + 1}/100: loss={val_loss:.4f}")
+            with _torch.no_grad():
+                train_pred = model(_torch.from_numpy(X_train_split).float()).squeeze(-1)  # type: ignore[attr-defined]
+                train_loss = criterion(train_pred, _torch.from_numpy(y_train_split).float()).item()
+            print(
+                f"[Aurelius v9.0 Tier1] PyTorch synthetic epoch {epoch + 1}/100: "
+                f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
+            )
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -356,13 +360,14 @@ def _train_synthetic_mlx(
         else:
             patience_counter += 1
             if patience_counter >= patience:
-                print(f"[Aurelius v9.0 Tier1] Early stopping at epoch {epoch + 1} (best val_loss={best_val_loss:.4f})")
+                print(
+                    f"[Aurelius v9.0 Tier1] PyTorch early stopping at epoch {epoch + 1} "
+                    f"(best val_loss={best_val_loss:.4f})"
+                )
                 break
 
-    if best_params is not None:
-        # Apply best weights to model
-        for param, weight in zip(model.parameters(), best_params, strict=True):
-            param.data.copy_(weight)
+    if best_state:
+        model.load_state_dict(best_state)  # type: ignore[attr-defined]
 
     return model
 
@@ -422,7 +427,7 @@ def _train_synthetic_pytorch() -> PyTorchBackend:
                 train_pred = model(_torch.from_numpy(X_train_split).float()).squeeze(-1)  # type: ignore[attr-defined]
                 train_loss = criterion(train_pred, _torch.from_numpy(y_train_split).float()).item()
             print(
-                f"[Aurelius v6.0 Tier1] PyTorch synthetic epoch {epoch + 1}/100: "
+                f"[Aurelius v9.0 Tier1] PyTorch synthetic epoch {epoch + 1}/100: "
                 f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
             )
 
@@ -433,7 +438,7 @@ def _train_synthetic_pytorch() -> PyTorchBackend:
             patience_counter += 1
             if patience_counter >= patience:
                 print(
-                    f"[Aurelius v6.0 Tier1] PyTorch early stopping at epoch {epoch + 1} "
+                    f"[Aurelius v9.0 Tier1] PyTorch early stopping at epoch {epoch + 1} "
                     f"(best val_loss={best_val_loss:.4f})"
                 )
                 break

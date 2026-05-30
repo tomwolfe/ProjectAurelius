@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import ClassVar
+from typing import Any
 
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ class PropertyOracle(Oracle):
         4.23
     """
 
-    _CACHE: ClassVar[dict[str, dict[str, float]]] = {}
+    _CACHE: dict[str, dict[str, float]] | None = None
 
     def __init__(self, model_path: str | None = None) -> None:
         """Initialise the PropertyOracle.
@@ -81,9 +82,7 @@ class PropertyOracle(Oracle):
             model_path: Optional path to a saved model checkpoint (torch).
                 If None, the model is trained on the QM9 dataset on import.
         """
-        self._model: nn.Module | None = None
-        self._scaler_x: object | None = None
-        self._scaler_y: object | None = None
+        self._model: _MPNN | None = None
         self._model_path = model_path
         self._model = self._load_or_train(model_path)
 
@@ -109,13 +108,11 @@ class PropertyOracle(Oracle):
         if mol is None:
             raise ValueError(f"Invalid SMILES: {smiles}")
 
-        # Build atom features (atomic number as a simple integer feature)
         num_atoms = mol.GetNumAtoms()
         atom_features: list[int] = []
         for atom in mol.GetAtoms():
             atom_features.append(atom.GetAtomicNum())
 
-        # Build bond index pairs
         bond_indices: list[tuple[int, int]] = []
         for bond in mol.GetBonds():
             i = bond.GetBeginAtomIdx()
@@ -147,7 +144,6 @@ class PropertyOracle(Oracle):
         with torch.no_grad():
             output = self._model(atom_tensor, bond_i, bond_j, num_atoms)
 
-        # Sigmoid output → [0, 1] range → map to eV
         raw = output[0].item()
         homo = (raw * 15.0) - 10.0
         lumo = homo + (raw * 3.0 - 2.0)
@@ -161,11 +157,11 @@ class PropertyOracle(Oracle):
             "dipole_debye": round(dipole, 4),
         }
 
-    def _load_or_train(self, model_path: str | None) -> nn.Module:
+    def _load_or_train(self, model_path: str | None) -> _MPNN:
         """Load from checkpoint or train on QM9.
 
         Returns:
-            A trained MPNN model.
+            A trained _MPNN model.
         """
         if model_path is not None:
             try:
@@ -175,167 +171,111 @@ class PropertyOracle(Oracle):
             except Exception as exc:
                 logger.warning("Failed to load model from %s: %s", model_path, exc)
 
-        # Train on QM9 dataset using ECFP4 + MLP
         logger.info("Training PropertyOracle on QM9 dataset...")
         return self._train_on_qm9()
 
-    def _train_on_qm9(self) -> nn.Module:
-        """Train a simple MLP on the QM9 dataset.
+    def _train_on_qm9(self) -> _MPNN:
+        """Train a lightweight MPNN on the QM9 dataset.
 
-        Uses ECFP4 fingerprints as features and atomization energy (U0)
-        as the target.  The model is then used to predict HOMO/LUMO
-        properties via a simple linear mapping.
-
-        Returns:
-            A trained torch.nn.Sequential model.
-        """
-        from sklearn.ensemble import RandomForestRegressor
-        from sklearn.preprocessing import StandardScaler
-
-        # Load QM9 data from available sources
-        X, y = self._load_qm9_dataset()
-
-        # Scale features
-        scaler_x = StandardScaler()
-        X_scaled = scaler_x.fit_transform(X)
-
-        # Train RandomForest
-        model = RandomForestRegressor(
-            n_estimators=100,
-            max_depth=12,
-            min_samples_leaf=5,
-            random_state=42,
-            n_jobs=-1,
-        )
-        model.fit(X_scaled, y)
-
-        # Store scaler alongside model for later use
-        model._scaler_x = scaler_x  # type: ignore[attr-defined]
-        return model
-
-    def _load_qm9_dataset(self) -> tuple[np.ndarray, np.ndarray]:
-        """Load QM9 dataset for training.
+        Uses atom features (atomic numbers) as node features and bond
+        indices as edge indices.  The model is trained to predict the
+        HOMO-LUMO gap from molecular graph structure.
 
         Returns:
-            Tuple of (X, y) where X is (n, 2048) fingerprint arrays
-            and y is (n,) target values.
+            A trained _MPNN model.
         """
         from rdkit import Chem
         from rdkit.Chem import AllChem
 
-        # Try multiple sources for QM9 data
-        sources = [
-            ("maastrichtuniversity/qm9", "qm9"),
-            ("deepchem/qm9", "qm9"),
-        ]
+        smiles_list, y_homo, y_lumo = self._load_qm9_dataset()
 
-        for dataset_name, column_name in sources:
-            try:
-                from datasets import load_dataset
+        if len(smiles_list) < 10:
+            logger.warning("Insufficient QM9 data for training. Using synthetic fallback.")
+            smiles_list, y_homo, y_lumo = self._generate_synthetic_data()
 
-                ds = load_dataset(dataset_name, split="train")
-                if len(ds) == 0:
+        device = torch.device("cpu")
+        model = _MPNN(atom_dim=1, edge_dim=1, hidden_dim=64, output_dim=2)
+        model.to(device)
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
+        criterion = nn.MSELoss()
+
+        # Prepare training data
+        tensors: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor, int]] = []
+        for smiles in smiles_list:
+            num_atoms, atom_features, bond_indices = self._smiles_to_features(smiles)
+            homo_idx = y_homo.index(smiles) if smiles in y_homo else 0
+            lumo_idx = y_lumo.index(smiles) if smiles in y_lumo else 0
+            homo_val = y_homo.get(smiles, 0.0)
+            lumo_val = y_lumo.get(smiles, 0.0)
+            atom_tensor = torch.tensor([atom_features], dtype=torch.long, device=device)
+            bond_i = torch.tensor([b[0] for b in bond_indices], dtype=torch.long, device=device)
+            bond_j = torch.tensor([b[1] for b in bond_indices], dtype=torch.long, device=device)
+            target = torch.tensor([homo_val, lumo_val], dtype=torch.float32, device=device)
+            tensors.append((atom_tensor, bond_i, bond_j, num_atoms, target))
+
+        if not tensors:
+            raise RuntimeError("No training data available for MPNN.")
+
+        num_samples = len(tensors)
+        best_val_loss = float("inf")
+        patience = 20
+        patience_counter = 0
+        best_state: dict[str, Any] | None = None
+
+        for epoch in range(200):
+            perm = torch.randperm(num_samples, generator=torch.Generator().manual_seed(42))
+            for start in range(0, num_samples, 16):
+                end = min(start + 16, num_samples)
+                idxs = perm[start:end]
+                if len(idxs) == 0:
                     continue
 
-                X = np.zeros((len(ds), 2048), dtype=np.float32)
-                y = np.zeros(len(ds), dtype=np.float32)
+                optimizer.zero_grad()
+                loss = torch.tensor(0.0, device=device)
+                for i in idxs:
+                    at, bi, bj, na, tgt = tensors[i]
+                    pred = model(at, bi, bj, na)
+                    loss = loss + criterion(pred, tgt)
 
-                for i, item in enumerate(ds):
-                    smiles = item.get("smiles", item.get("mol_file", ""))
-                    if not smiles or smiles.strip() == "":
-                        continue
+                loss.backward()
+                optimizer.step()
 
-                    mol = Chem.MolFromSmiles(smiles)
-                    if mol is None:
-                        continue
+            with torch.no_grad():
+                val_loss = torch.tensor(0.0, device=device)
+                for at, bi, bj, na, tgt in tensors[::10]:
+                    pred = model(at, bi, bj, na)
+                    val_loss = val_loss + criterion(pred, tgt)
+                val_loss = val_loss / len(tensors)
 
-                    fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
-                    for idx in range(2048):
-                        if fp[idx]:
-                            X[i][idx] = 1.0
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss.item()
+                patience_counter = 0
+                best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            else:
+                patience_counter += 1
+                if patience_counter >= patience:
+                    logger.info("Early stopping at epoch %d (best val_loss=%.6f)", epoch + 1, best_val_loss)
+                    break
 
-                    # Use U0 (atomization energy) as target
-                    u0 = item.get("U0", None)
-                    if u0 is not None and isinstance(u0, (int, float)) and not (isinstance(u0, float) and str(u0) == "nan"):
-                        y[i] = float(u0)
-                    else:
-                        continue
+            if (epoch + 1) % 50 == 0:
+                logger.info("Epoch %d/%d: val_loss=%.6f", epoch + 1, 200, val_loss.item())
 
-                valid = np.all(np.isfinite(X) & np.isfinite(y))
-                if valid and len(y) > 100:
-                    logger.info("Loaded %d valid molecules from %s", len(ds), dataset_name)
-                    return X, y
+        model.load_state_dict(best_state)  # type: ignore[union-attr]
+        return model
 
-            except Exception as exc:
-                logger.debug("Failed to load QM9 from %s: %s", dataset_name, exc)
-                continue
-
-        # Fallback: generate synthetic training data for demonstration
-        logger.warning("No QM9 dataset available. Using synthetic training data as fallback.")
-        return self._generate_synthetic_data()
-
-    def _generate_synthetic_data(self, n_samples: int = 500) -> tuple[np.ndarray, np.ndarray]:
-        """Generate synthetic training data for demonstration.
-
-        This is a lightweight fallback that produces plausible
-        (fingerprint, target) pairs for initial model fitting.
-
-        Args:
-            n_samples: Number of synthetic samples to generate.
-
-        Returns:
-            Tuple of (X, y) arrays.
-        """
-        import numpy as np
-        from rdkit import Chem
-        from rdkit.Chem import AllChem
-
-        # Simple seed SMILES for synthetic data generation
-        seeds = [
-            "CC(C)OC(C)=O",           # isopropyl acetate
-            "COC(C)=O",               # methyl acetate
-            "CC(C)OC(C)(C)OC(C)=O",   # diisopropyl carbonate
-            "C1CCOC(C)O1",            # ethylene carbonate
-            "C1CCOC(C)O1",            # propylene carbonate
-            "FC(F)(F)OC(F)(F)OC(F)(F)=O",  # perfluorinated carbonate
-            "CC(=O)OCOC(=O)C",        # dimethyl carbonate
-            "CC(C)OC",                # isopropyl methyl ether
-            "CCOC",                   # diethyl ether
-            "C1CCOCC1",               # tetrahydrofuran
-            "CC(C)O",                  # isopropanol
-            "C(F)(F)OC(F)(F)OC(F)(F)OC(F)(F)=O",
-            "CC(C)OC(C)=O",           # isopropyl acetate (dup)
-            "COC(C)=O",               # methyl acetate (dup)
-        ]
-
-        X = np.zeros((len(seeds), 2048), dtype=np.float32)
-        y = np.zeros(len(seeds), dtype=np.float32)
-
-        for i, smiles in enumerate(seeds):
-            mol = Chem.MolFromSmiles(smiles)
-            if mol is None:
-                continue
-            fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
-            for idx in range(2048):
-                if fp[idx]:
-                    X[i][idx] = 1.0
-            # Synthetic target: approximate U0-like values
-            y[i] = float(i) / len(seeds)
-
-        return X, y
-
-    def _load_checkpoint(self, path: str) -> nn.Module:
+    def _load_checkpoint(self, path: str) -> _MPNN:
         """Load model from a torch checkpoint file.
 
         Args:
             path: Path to the saved model checkpoint.
 
         Returns:
-            A torch.nn.Sequential model.
+            A _MPNN model.
         """
         try:
-            import joblib
-            model = joblib.load(path)
+            model = _MPNN(atom_dim=1, edge_dim=1, hidden_dim=64, output_dim=2)
+            model.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
             logger.info("Loaded PropertyOracle model from %s", path)
             return model
         except Exception as exc:
@@ -361,17 +301,91 @@ class PropertyOracle(Oracle):
         Raises:
             ValueError: If SMILES is invalid.
         """
-        if smiles in self._CACHE:
-            return self._CACHE[smiles]
+        if smiles in self._CACHE or self._CACHE is None:
+            if self._CACHE is not None and smiles in self._CACHE:
+                return self._CACHE[smiles]
 
         num_atoms, atom_features, bond_indices = self._smiles_to_features(smiles)
         result = self._predict(num_atoms, atom_features, bond_indices)
+        if self._CACHE is None:
+            self._CACHE = {}
         self._CACHE[smiles] = result
         return result
 
     def clear_cache(self) -> None:
         """Clear the SMILES→properties cache."""
-        self._CACHE.clear()
+        if self._CACHE is not None:
+            self._CACHE.clear()
+
+
+class _MPNN(nn.Module):
+    """Lightweight Message Passing Neural Network.
+
+    Architecture:
+        1. Node feature projection (atom_dim -> hidden_dim)
+        2. 2-layer message passing with scatter_add aggregation
+        3. Global pooling (sum over nodes)
+        4. Readout MLP for HOMO/LUMO prediction
+    """
+
+    def __init__(self, atom_dim: int = 1, edge_dim: int = 1, hidden_dim: int = 64, output_dim: int = 2) -> None:
+        super().__init__()
+        self.hidden_dim = hidden_dim
+
+        self.node_proj = nn.Linear(atom_dim, hidden_dim)
+        self.edge_mlp = nn.Sequential(
+            nn.Linear(edge_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+        self.node_mlp = nn.Sequential(
+            nn.Linear(2 * hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+        self.readout = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, output_dim),
+        )
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+
+    def _message_pass(self, h: torch.Tensor, edge_index: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+        src_idx, tgt_idx = edge_index
+        src_feat = h[src_idx]
+        tgt_feat = h[tgt_idx]
+        edge_input = torch.cat([src_feat, tgt_feat], dim=-1)
+        messages = self.edge_mlp(edge_input)
+        aggregated = torch.zeros(h.shape[0], self.hidden_dim, device=h.device)
+        aggregated.scatter_add_(0, src_idx.unsqueeze(1).expand(-1, self.hidden_dim), messages)
+        node_input = torch.cat([h, aggregated], dim=-1)
+        return self.node_mlp(node_input)
+
+    def forward(self, atom_tensor: torch.Tensor, bond_i: torch.Tensor, bond_j: torch.Tensor, num_atoms: int) -> torch.Tensor:
+        """Run the MPNN forward pass.
+
+        Args:
+            atom_tensor: (1, atom_dim) tensor of atomic numbers.
+            bond_i: (n_bonds,) tensor of begin atom indices.
+            bond_j: (n_bonds,) tensor of end atom indices.
+            num_atoms: Number of atoms in the molecule.
+
+        Returns:
+            Predicted properties (batch_size=1, output_dim).
+        """
+        h = self.node_proj(atom_tensor)
+        edge_index = (bond_i, bond_j)
+        h = h + self._message_pass(h, edge_index)
+
+        pooled = h.sum(dim=0)
+        return self.readout(pooled)
 
 
 # ---------------------------------------------------------------------------

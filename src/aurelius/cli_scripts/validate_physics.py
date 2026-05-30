@@ -44,7 +44,7 @@ def main() -> None:
 
     score = results.get("score")
     if score:
-        print(f"\nAurelius Score v5.2: {score.total_score:.1f}/100 {'VIABLE' if score.is_viable else 'REJECTED'}")
+        print(f"\nAurelius Score v9.0: {score.total_score:.1f}/100 {'VIABLE' if score.is_viable else 'REJECTED'}")
     else:
         print("No score computed.")
         sys.exit(1)

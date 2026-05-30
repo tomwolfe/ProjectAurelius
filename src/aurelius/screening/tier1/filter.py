@@ -27,10 +27,12 @@ from aurelius.screening.tier1.loaders import (
     load_pytorch_fallback,
 )
 from aurelius.screening.tier1.models import (
+    HAS_MLX,
+    HAS_TORCH,
+    MLXBackend,
     PyTorchBackend,
 )
 from aurelius.screening.tier1.training import (
-    _train_synthetic_mlx,
     _train_synthetic_pytorch,
     train_on_esol,
 )
@@ -112,20 +114,20 @@ class MLXNAFilter:
         2. Local model directory
         3. Train on ESOL dataset
         """
-        print("[Aurelius v5.2 Tier1] Attempting to load real model weights...")
+        print("[Aurelius v9.0 Tier1] Attempting to load real model weights...")
         try:
             model = self._weight_loader.load_model(task="esol_solubility", local_only=False)
         except Exception as e:
-            print(f"[Aurelius v5.2 Tier1] HF weight loading failed: {e}")
+            print(f"[Aurelius v9.0 Tier1] HF weight loading failed: {e}")
             model = None
 
         if model is not None:
             self._model = model
             self._model_loaded = True
-            print("[Aurelius v5.2 Tier1] Real model loaded successfully")
+            print("[Aurelius v9.0 Tier1] Real model loaded successfully")
             return
 
-        print("[Aurelius v5.2 Tier1] No pre-trained weights found, training on ESOL dataset...")
+        print("[Aurelius v9.0 Tier1] No pre-trained weights found, training on ESOL dataset...")
         self._train_default_model()
 
     def _get_demo_result(self) -> MLXFilterResult:
@@ -177,8 +179,8 @@ class MLXNAFilter:
             model = train_on_esol(model, epochs=200, lr=0.005, batch_size=16, seed=42)
             self._weight_loader.save_model(model, "esol_solubility")
         except (ImportError, RuntimeError, ValueError) as e:
-            print(f"[Aurelius v5.2 Tier1] ESOL training failed: {e}")
-            self._model = _train_synthetic_mlx(model)
+            print(f"[Aurelius v9.0 Tier1] ESOL training failed: {e}")
+            self._model = _train_synthetic_pytorch()
 
         return MLXFilterResult(
             molecule_smiles="",

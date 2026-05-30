@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from aurelius.agent.surrogate import GaussianProcessSurrogate
+from aurelius.agent.surrogate import RandomForestSurrogate
 
 if TYPE_CHECKING:
     from aurelius.agent.loop import ScreeningResult  # noqa: F401
@@ -428,9 +428,9 @@ class ConvergenceChecker:
 
 
 class FeedbackAdapter:
-    """Adapts mutation strategy based on rejection patterns using GP active learning.
+    """Adapts mutation strategy based on rejection patterns using RF active learning.
 
-    The adapter maintains a Gaussian Process surrogate that scores candidate
+    The adapter maintains a Random Forest surrogate that scores candidate
     molecules via Expected Improvement acquisition, enabling the discovery
     loop to intelligently select high-value candidates from the mutation pool.
 
@@ -446,7 +446,7 @@ class FeedbackAdapter:
         self.tier3_low_homogeneity = 0
         self.rationale_log: list[str] = []
 
-        self._surrogate: GaussianProcessSurrogate | None = None
+        self._surrogate: RandomForestSurrogate | None = None
         self._X_history: list[np.ndarray[Any, Any]] = []
         self._y_history: list[float] = []
         self._rng = np.random.default_rng(42)
@@ -476,7 +476,7 @@ class FeedbackAdapter:
                 "Add unsaturation/boron, increase F/C ratio"
             )
 
-        # Also feed into GP surrogate for active learning
+        # Also feed into RF surrogate for active learning
         if self._surrogate is not None:
             self._X_history.append(result.fingerprint)
             self._y_history.append(result.total_score)
@@ -492,7 +492,7 @@ class FeedbackAdapter:
             ValueError: If fewer than 2 samples are provided.
         """
         if self._surrogate is None:
-            self._surrogate = GaussianProcessSurrogate()
+            self._surrogate = RandomForestSurrogate()
 
         self._surrogate.fit(X_new, y_new)
 

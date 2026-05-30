@@ -1,12 +1,7 @@
-"""Screening pipeline — Tier 0 (MPNN activation energy predictor) and Tier 1 (PyTorch structural filter)."""
+"""Screening pipeline — Tier 1 (PyTorch structural filter) and Oracle (MPNN property predictor)."""
 
 from __future__ import annotations
 
-from aurelius.screening.tier0 import (
-    HAS_TORCH,
-    PyTorchBackend,
-    Tier0ActivationPredictor,
-)
 from aurelius.screening.tier1 import (
     HAS_MLX,
     HAS_RDKIT,
@@ -27,6 +22,4 @@ __all__ = [
     "HAS_TORCH_TIER1",
     "MLXFilterResult",
     "MLXNAFilter",
-    "PyTorchBackend",
-    "Tier0ActivationPredictor",
 ]

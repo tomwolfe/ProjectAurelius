@@ -102,9 +102,9 @@ class DiscoveryLoop:
         The loop implements a Bayesian active-learning cycle:
         1. Propose a large candidate pool via the mutation engine.
         2. Featurise the pool into ECFP4 fingerprints.
-        3. If a GP surrogate is already fitted, use Expected Improvement
-           to select the top ``batch_size`` candidates.  If not fitted,
-           select randomly for the first batch.
+        3. If a RF surrogate is already fitted, use Expected Improvement
+            to select the top ``batch_size`` candidates.  If not fitted,
+            select randomly for the first batch.
         4. Screen ONLY the selected top candidates.
         5. Update the surrogate with the new (X, y) observations.
         """
@@ -204,7 +204,7 @@ class DiscoveryLoop:
                 self.all_results.append(screening_result)
                 self.feedback.record(screening_result)
 
-            # ---- Close the active-learning loop: retrain GP surrogate ----
+            # ---- Close the active-learning loop: retrain RF surrogate ----
             X_new = self._featurise_molecules(batch_smiles)
             y_new = np.array(batch_scores).reshape(-1, 1)
             self.feedback.update(X_new, y_new)
@@ -303,7 +303,7 @@ class DiscoveryLoop:
     ) -> tuple[list[int], list[str]]:
         """Select candidates for screening using Bayesian Active Learning.
 
-        If the GP surrogate is already fitted, use Expected Improvement
+        If the RF surrogate is already fitted, use Expected Improvement
         to pick the top ``batch_size`` candidates.  If not fitted
         (first generation), select randomly.
 

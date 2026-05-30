@@ -5,15 +5,15 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from aurelius.agent.surrogate import GaussianProcessSurrogate
+from aurelius.agent.surrogate import RandomForestSurrogate
 
 
-class TestGaussianProcessSurrogate:
+class TestRandomForestSurrogate:
     """Tests for the Gaussian Process surrogate model."""
 
     def test_fit_raises_on_insufficient_data(self):
         """GP requires at least 2 data points to fit."""
-        surrogate = GaussianProcessSurrogate()
+        surrogate = RandomForestSurrogate()
         X = np.array([[1.0, 0.0, 0.0]])
         y = np.array([0.5])
         with pytest.raises(ValueError, match="At least 2 samples"):
@@ -21,21 +21,21 @@ class TestGaussianProcessSurrogate:
 
     def test_expected_improvement_requires_fit(self):
         """Scoring candidates before fitting must raise RuntimeError."""
-        surrogate = GaussianProcessSurrogate()
+        surrogate = RandomForestSurrogate()
         candidates = np.array([[1.0, 0.0, 0.0]])
         with pytest.raises(RuntimeError, match="must be fitted"):
             surrogate.expected_improvement(candidates)
 
     def test_score_candidates_requires_fit(self):
         """Selecting top candidates before fitting must raise RuntimeError."""
-        surrogate = GaussianProcessSurrogate()
+        surrogate = RandomForestSurrogate()
         candidates = np.array([[1.0, 0.0, 0.0]])
         with pytest.raises(RuntimeError, match="must be fitted"):
             surrogate.score_candidates(candidates, top_n=1)
 
     def test_expected_improvement_favors_high_mean(self):
         """EI should be higher for candidates with higher predicted mean."""
-        surrogate = GaussianProcessSurrogate()
+        surrogate = RandomForestSurrogate()
 
         # Simulate training data: 3 points with varying scores
         X_train = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
@@ -50,7 +50,7 @@ class TestGaussianProcessSurrogate:
 
     def test_expected_improvement_favors_high_uncertainty(self):
         """EI should be higher for candidates with high predictive uncertainty."""
-        surrogate = GaussianProcessSurrogate()
+        surrogate = RandomForestSurrogate()
 
         X_train = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
         y_train = np.array([0.9, 0.5, 0.3])
@@ -68,8 +68,8 @@ class TestGaussianProcessSurrogate:
         import pytest
         pytest.skip("Pre-existing test logic issue; GP convergence affects EI values", allow_module_level=True)
         """Surrogate results should be reproducible with fixed random_state."""
-        surrogate_a = GaussianProcessSurrogate(random_state=42)
-        surrogate_b = GaussianProcessSurrogate(random_state=42)
+        surrogate_a = RandomForestSurrogate(random_state=42)
+        surrogate_b = RandomForestSurrogate(random_state=42)
 
         X = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
         y = np.array([0.8, 0.5])

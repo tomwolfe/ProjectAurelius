@@ -59,7 +59,7 @@ class AureliusConfig(BaseSettings):
     # MWSE solvent exchange rate screening window (ps)
     kex_screening_window_ps: float = 10.0
 
-    # Aurelius Score weights (v5.2 formula)
+    # Aurelius Score weights (v9.0 formula)
     weight_sigma: float = 0.3
     weight_desolvation_barrier: float = 0.2
     weight_sei_homogeneity: float = 0.2
