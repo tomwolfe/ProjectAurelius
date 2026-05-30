@@ -7,7 +7,6 @@ Implements the full autonomous discovery loop:
 
 Usage:
     aurelius agent run --max-generations 100 --batch-size 100
-    aurelius agent run --profile-memory
 """
 
 from __future__ import annotations
@@ -33,7 +32,6 @@ from aurelius.agent.reporting import (
 )
 from aurelius.agent.state import CheckpointManager
 from aurelius.config import AureliusConfig, initialize_environment
-from aurelius.memory.profiler import MemoryProfiler
 from aurelius.pipeline import AureliusPipeline
 
 # ---------------------------------------------------------------------------
@@ -65,7 +63,6 @@ class AgentConfig:
 
     max_generations: int = 50
     batch_size: int = 50
-    profile_memory: bool = False
 
 
 def _check_apple_silicon() -> bool:
@@ -104,39 +101,6 @@ def run_screening(agent_cfg: AgentConfig, checkpoint: CheckpointManager) -> None
         agent_cfg: Agent configuration with screening parameters.
         checkpoint: CheckpointManager instance for saving progress.
     """
-
-    profiler: MemoryProfiler | None = None
-    if agent_cfg.profile_memory:
-        profiler = MemoryProfiler()
-        profiler.start()
-        print("[AGENT] Memory profiling enabled. CSV reports will be generated.")
-
-    # ---- Phase 1: Environment & Pipeline Initialization ----
-    print("=" * 60)
-    print("  PROJECT AURELIUS v9.0 — Autonomous Screening Agent")
-    print("  The Bayesian Discovery Edition | M5 Pro Neural Accelerators")
-    print("=" * 60)
-
-    if _check_apple_silicon():
-        print("[AGENT] Running on Apple Silicon (optimized).\n")
-    else:
-        print("[AGENT] [CPU_FALLBACK] Not running on Apple Silicon. Performance may be reduced.\n")
-
-    initialize_environment()
-
-    config = AureliusConfig()
-    pipeline = AureliusPipeline(config)
-    pipeline.initialize()
-
-    # ---- Phase 2: Chemical Generation Engine ----
-    print("\n[AGENT] Loading seed molecules...")
-
-    seed_smiles = _load_smiles_file("discovery_candidates.smi")
-    seed_smiles.extend(_load_smiles_file("examples/molecules.smi"))
-    seed_smiles = list(set(s for s in seed_smiles if s.strip()))
-    print(f"[AGENT] Seed pool: {len(seed_smiles)} unique molecules")
-
-    engine = MutationEngine(seed_smiles)
 
     # ---- Phase 5: Checkpoint & Resume ----
     state = checkpoint.load()
@@ -188,15 +152,6 @@ def run_screening(agent_cfg: AgentConfig, checkpoint: CheckpointManager) -> None
     generate_manifest(convergence, discoveries, all_results)
     checkpoint.save()
 
-    if profiler:
-        profiler.stop()
-        report_path = profiler.generate_report()
-        print(f"\n[AGENT] Memory profile report: {report_path}")
-        print(f"  Peak RAM:      {profiler.peak_ram_gb:.2f} GB")
-        print(f"  Peak MPS:      {profiler.peak_mps_gb:.2f} GB")
-        print(f"  Peak MLX:      {profiler.peak_mlx_gb:-.2f} GB")
-        print(f"  Samples:       {profiler.n_samples}")
-
     print("\n" + "=" * 60)
     print("  SCREENING COMPLETE")
     print("=" * 60)
@@ -229,10 +184,8 @@ def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description="Aurelius v9.0 Autonomous Screening Agent")
-    parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     parser.add_argument("--max-generations", type=int, default=50, help="Maximum generations to run")
     parser.add_argument("--batch-size", type=int, default=50, help="Candidates per batch")
-    parser.add_argument("--profile-memory", action="store_true", help="Enable memory profiling with CSV report output")
     args = parser.parse_args()
 
     output_dir = os.environ.get("AURELIUS_OUTPUT_DIR")
@@ -241,7 +194,6 @@ def main() -> None:
         agent_cfg = AgentConfig(
             max_generations=args.max_generations,
             batch_size=args.batch_size,
-            profile_memory=args.profile_memory,
         )
         run_screening(agent_cfg, checkpoint)
     except KeyboardInterrupt:

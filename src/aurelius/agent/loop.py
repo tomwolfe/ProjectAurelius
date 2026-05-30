@@ -24,21 +24,14 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ScreeningResult:
-    """Typed result from a single molecule screening.
+    """Result from a single molecule screening.
 
-    This replaces the previous ``dict[str, Any]`` pattern for internal
-    tracking within the discovery loop, providing static type checking
-    while still allowing the pipeline's ``dict[str, Any]`` return type
-    to remain unchanged at the public API boundary.
+    Contains only the unified ``total_score`` and oracle-derived
+    properties — all legacy component scores have been removed.
     """
 
     smiles: str
     total_score: float
-    sigma_score: float
-    desolvation_score: float
-    sei_homogeneity_score: float
-    mx_synthesis_score: float
-    gwp_penalty: float
     is_viable: bool
     rejection_reasons: list[str]
     fingerprint: np.ndarray[Any, Any] | None = None
@@ -174,11 +167,6 @@ class DiscoveryLoop:
                 screening_result = ScreeningResult(
                     smiles=smi,
                     total_score=total_score,
-                    sigma_score=score_data.get("sigma_score", 0.0),
-                    desolvation_score=score_data.get("desolvation_score", 0.0),
-                    sei_homogeneity_score=score_data.get("sei_homogeneity_score", 0.0),
-                    mx_synthesis_score=score_data.get("mx_synthesis_score", 0.0),
-                    gwp_penalty=score_data.get("gwp_penalty", 0.0),
                     is_viable=score_data.get("is_viable", False),
                     rejection_reasons=score_data.get("rejection_reasons", []),
                 )
@@ -188,11 +176,6 @@ class DiscoveryLoop:
                     discovery_entry = ScreeningResult(
                         smiles=smi,
                         total_score=total_score,
-                        sigma_score=score_data.get("sigma_score", 0.0),
-                        desolvation_score=score_data.get("desolvation_score", 0.0),
-                        sei_homogeneity_score=score_data.get("sei_homogeneity_score", 0.0),
-                        mx_synthesis_score=score_data.get("mx_synthesis_score", 0.0),
-                        gwp_penalty=score_data.get("gwp_penalty", 0.0),
                         is_viable=True,
                         rejection_reasons=score_data.get("rejection_reasons", []),
                     )

@@ -1,6 +1,6 @@
 # Project Aurelius v9.0
 
-**The Bayesian Discovery Release** -- Introduces a Random Forest-driven active learning for active learning: Morgan fingerprints are scored via Expected Improvement from a Random Forest surrogate, enabling intelligent candidate selection from mutation pools. Physics engines use RDKit Gasteiger charges for dynamic charge assignment, and synthetic training data generation has been removed in favor of real QM9 LUMO data.
+**The Bayesian Discovery Release** -- Introduces a Random Forest-driven active-learning loop: Morgan fingerprints are scored via Expected Improvement from a Random Forest surrogate, enabling intelligent candidate selection from mutation pools. The training data now uses real QM9 LUMO data, and all synthetic data generation has been removed.
 
 ## Changelog (v9.0 → v9.0)
 
@@ -8,21 +8,15 @@
 
 - **🥇 Task 1: Descriptor-Based Tier 0 Predictor** -- Replaced the MPNN activation energy predictor with a descriptor-based linear model using RDKit molecular descriptors (mol_weight, num_h_donors, num_h_acceptors, num_rotatable_bonds, logp, tpsa). Removed all hash-based synthetic data generation; training now requires real CSV data or QM9 LUMO datasets. Added `aurelius train --task tier0` CLI command.
 
-- **🥈 Task 2: RDKit Gasteiger Charges** -- Tier 2 physics engine now uses RDKit's EEM (Electronegativity Equalization Method) for dynamic partial charge assignment, replacing hardcoded `_CHARGES` dictionary. Each molecule gets unique, chemically meaningful charges.
+- **🧠 Task 2: Bayesian-Guided Genetic Algorithm** -- New `GaussianProcessSurrogate` class enables Expected Improvement acquisition for active learning. The `FeedbackAdapter.update(X, y)` method retrains the GP with newly screened data, closing the active learning loop.
 
-- **🧠 Task 3: Bayesian-Guided Genetic Algorithm** -- New `GaussianProcessSurrogate` class enables Expected Improvement acquisition for active learning. The `FeedbackAdapter.update(X, y)` method retrains the GP with newly screened data, closing the active learning loop.
+- **🧬 Task 3: Mutation Engine Propose Candidates** -- `MutationEngine.propose_candidates(n_candidates)` generates a large pool of unique variants for the GP to score, enabling the discovery loop to select high-EI candidates for expensive screening.
 
-- **🧬 Task 4: Mutation Engine Propose Candidates** -- `MutationEngine.propose_candidates(n_candidates)` generates a large pool of unique variants for the GP to score, enabling the discovery loop to select high-EI candidates for expensive screening.
-
-- **🏅 Task 5: HuggingFace Hub Upload** -- Added `aurelius hf-upload` CLI subcommand for pushing locally trained models to HF Hub. Supports `--model-dir`, `--repo-id`, `--task`, `--private/--public`, `--commit-message`, and `--dry-run`. Auto-generates model cards with architecture, dataset, and hyperparameters.
-
-- **📈 Task 6: Memory Profiler** -- Added `MemoryProfiler` class for tracking peak RAM, MPS/MLX memory, and GC activity. Generates timestamped CSV reports. Added `--profile-memory` flag to the autonomous screening agent CLI.
+- **🏅 Task 4: HuggingFace Hub Upload** -- Added `aurelius hf-upload` CLI subcommand for pushing locally trained models to HF Hub and `--profile-memory` flag to the agent CLI.
 
 ### v7 Improvements
 
 - **🧬 Active Learning Loop** -- The discovery loop now uses GP-guided candidate selection: mutation engine proposes 1000 candidates, GP surrogate scores via Expected Improvement, top candidates are screened, and results are fed back to the GP.
-
-- **🔬 PBC Minimum Image Convention** -- Tier 2 (`MatterSimMTSimulator`) gains periodic boundary conditions with `_apply_pbc()` for coordinate wrapping, negative coordinate handling, and default cubic box creation from `neighbor_list_cutoff`.
 
 - **📦 LRU Cache Eviction** -- `HuggingFaceWeightLoader.evict_lru_cache(max_cache_gb)` removes oldest entries when cache exceeds size limit, respecting LRU ordering.
 
@@ -39,13 +33,21 @@
 
 ## Overview
 
-Aurelius is a high-performance screening pipeline for battery electrolyte molecules, designed for novel molecule discovery. It combines three screening tiers with Apple Silicon hardware optimization:
+Aurelius is a high-performance screening pipeline for battery electrolyte molecules, designed for novel molecule discovery. The pipeline uses a Random Forest surrogate for Bayesian active learning:
 
-| Tier | Component | Framework | Purpose |
-|------|-----------|-----------|---------|
-| 1 | MLX-NA Filter | MLX | Rapid solubility/viability screening via ECFP4 fingerprints |
-| 2 | MatterSim-MT | PyTorch MPS | Vectorized Lennard-Jones + Coulombic physics simulation |
-| 3 | GCMD Digital Twin | NumPy | Arrhenius kinetic Monte Carlo (kMC) for SEI evolution |
+| Component | Framework | Purpose |
+|-----------|-----------|---------|
+| 1 | MLX-NA Filter | Rapid solubility/viability screening via ECFP4 fingerprints |
+| Surrogate | Random Forest | Expected Improvement acquisition for intelligent candidate selection |
+
+## Overview
+
+Aurelius is a high-performance screening pipeline for battery electrolyte molecules, designed for novel molecule discovery. The pipeline uses a Random Forest surrogate for Bayesian active learning:
+
+| Component | Framework | Purpose |
+|-----------|-----------|---------|
+| 1 | MLX-NA Filter | Rapid solubility/viability screening via ECFP4 fingerprints |
+| Surrogate | Random Forest | Expected Improvement acquisition for intelligent candidate selection |
 
 ## Hardware Requirements
 
@@ -57,22 +59,20 @@ Aurelius is a high-performance screening pipeline for battery electrolyte molecu
 
 ### Platform Support Matrix
 
-| Platform | Tier 1 (MLX Filter) | Tier 2 (MatterSim-MT) | Tier 3 (GCMD Twin) |
-|----------|---------------------|----------------------|---------------------|
-| **Apple Silicon** (macOS) | *Optimized* (MLX + MPS) | *Optimized* (MPS) | Supported (NumPy) |
-| **Linux x86_64** (CUDA) | PyTorch Fallback | *Optimized* (CUDA) | Supported (NumPy) |
-| **Linux x86_64** (CPU-only) | PyTorch Fallback | Supported (CPU) | Supported (NumPy) |
-| **Windows** (CUDA) | PyTorch Fallback | *Optimized* (CUDA) | Supported (NumPy) |
-| **Windows** (CPU-only) | PyTorch Fallback | Supported (CPU) | Supported (NumPy) |
+| Platform | Tier 1 (MLX Filter) |
+|----------|---------------------|
+| **Apple Silicon** (macOS) | *Optimized* (MLX + MPS) |
+| **Linux x86_64** (CUDA) | PyTorch Fallback |
+| **Linux x86_64** (CPU-only) | PyTorch Fallback |
+| **Windows** (CUDA) | PyTorch Fallback |
+| **Windows** (CPU-only) | PyTorch Fallback |
 
 ### Apple Silicon: *Optimized* (MLX + MPS)
 - Tier 1 runs natively on MLX with Neural Engine acceleration
-- Tier 2 uses PyTorch MPS backend for vectorized physics
 - Cross-framework zero-copy bridging via DLpack
 
 ### Linux/Windows: *Supported* (CUDA/CPU)
 - Tier 1 uses PyTorch fallback MLP when MLX is unavailable
-- Tier 2/3 run on CUDA (GPU) or CPU as needed
 - `bridge.py` imports successfully on all platforms; MLX-dependent methods raise `RuntimeError` with clear messaging
 
 ### Software Dependencies
@@ -110,7 +110,7 @@ platforms (Linux CPU-only, Windows, etc.).
 | Group | Dependencies | Use Case |
 |-------|-------------|----------|
 | `apple` | `mlx>=0.15.0` | Apple Silicon Neural Engine acceleration |
-| `ml` | `torch>=2.3.0`, `torchvision>=0.17.0` | PyTorch-based Tier 2/3 physics |
+| `ml` | `torch>=2.3.0`, `torchvision>=0.17.0` | PyTorch-based ML models |
 | `chem` | `rdkit>=2023.9.0` | RDKit molecular fingerprints and descriptors |
 
 **Recommended full installation:**
@@ -186,34 +186,6 @@ aurelius benchmark --tier 1 --quick
 
 **Out-of-the-box, the pipeline trains a fresh model on real experimental data each time.** For production use, you should train and save a model once, then reuse it.
 
-### Preparing for Autonomous Discovery
-
-Before running the autonomous screening agent, ensure all models are trained and validated:
-
-```bash
-# Prepare all models for discovery (Tier 0 MPNN + Tier 1 MLP)
-python scripts/prep_discovery.py
-
-# With custom hyperparameters
-python scripts/prep_discovery.py --tier0-epochs 500 --tier1-epochs 300
-
-# Use numpy-only training (no MLX required)
-python scripts/prep_discovery.py --no-mlx
-
-# Use a local CSV for Tier 1 training
-python scripts/prep_discovery.py --csv-path ./data/esol.csv
-```
-
-This script checks for existing model weights and triggers automated training if missing. After training, it runs a deterministic inference check on Ethylene Carbonate (`O=C1OCCO1`) to verify model integrity.
-
-### Tier 1: MLX-NA Filter
-
-The Tier 1 filter uses a 2-layer MLP (2048->128->1) trained on ECFP4 (Morgan radius=2) fingerprints.
-
-**Supported datasets:**
-- **ESOL** (Delaney et al., JACS 2004): 1,112 molecules with experimental aqueous solubility (logS)
-- **QM9** (Ramakrishnan et al., Sci. Data 2014): 134,887 molecules with DFT-computed quantum properties
-
 ### Training Real Models
 
 ```bash
@@ -279,25 +251,19 @@ export AURELIUS_MODEL_DIR=./models/tier1
 aurelius screen "CC(=O)OC1=CC=CC=C1"
 ```
 
-## Aurelius Score v5.2
+## Aurelius Score v9.0
 
-The composite Aurelius Score (S_A_v5.2) combines five components:
+The composite Aurelius Score (S_A_v9.0) combines three components:
 
 | Component | Weight | Description |
 |-----------|--------|-------------|
-| Sigma (σ) | 0.30 | Structural viability from Tier 1 screening |
-| Desolvation Barrier | 0.20 | Energy barrier from Tier 2 simulation |
-| SEI Homogeneity | 0.20 | Solid Electrolyte Interphase quality from Tier 3 |
-| MX Synthesis Score | 0.20 | Material synthesis feasibility |
+| Sigma (σ) | 0.40 | Structural viability from Tier 1 screening |
 | GWP Penalty | 0.10 | Global Warming Potential adjustment |
 
-**Formula:** S_A_v5.2 = 0.30*σ + 0.20*E_des + 0.20*SEI + 0.20*MX - 0.10*GWP
+**Formula:** S_A_v9.0 = 0.40*σ + 0.10*MX - 0.10*GWP
 
-Scores range from 0-100. Molecules with S_A_v5.2 >= 65 are considered viable.
+Scores range from 0-100. Molecules with S_A_v9.0 >= 65 are considered viable.
 
-## Tier 2 Complexity
-
-MatterSim-MT uses a **grid-based cell list** for neighbour-finding with O(N) memory and time complexity.  The simulation box is divided into cells of size ``cutoff``; only atoms in the same cell and the 26 adjacent cells are evaluated.  For systems with fewer than 50 atoms the dense path is used because the binning overhead outweighs the benefit.  The remaining energy evaluation itself remains fully vectorized (O(N^2) tensor operations for pairwise interaction computation), with **O(1) Python interpreter overhead** per step.
 
 ## Scientific References
 
@@ -306,20 +272,62 @@ MatterSim-MT uses a **grid-based cell list** for neighbour-finding with O(N) mem
 - Delaney, S. J. "ESOL: Estimating Aqueous Solubility Directly from Structure." *J. Chem. Inf. Model.* 2004, 44(6), 1947-1949. DOI: 10.1021/ci034236x
 - Ramakrishnan, R. et al. "Quantum Chemistry Structures and Properties of 134 Kilo Molecules." *Sci. Data* 2014, 1, 140035. DOI: 10.1038/sdata.2014.35
 
-### Tier 2: Physics Engine
-- Schutt, K. T. et al. "SchNet: A Continuous-filter Convolutional Neural Network for Quantum Chemistry." *NeurIPS* 2018.
-- Jorgensen, W. L. et al. "Comparison of Simple Potential Functions for Simulating Liquid Water." *J. Chem. Phys.* 1983, 79, 926. DOI: 10.1063/1.445869
-- Wang, J. et al. "Development and Testing of a General Amber Force Field." *J. Comput. Chem.* 2004, 25, 1157-1174. DOI: 10.1002/jcc.20035
-- Butler, K. T. et al. "Machine Learning Molecular Embeddings for Battery Materials." *Nature* 2023.
 
-### Solvation Engine
-- Still, W. C. et al. "Fast Approximate Calculation of Molecular Surface Area." *J. Am. Chem. Soc.* 1990, 112, 6127-6129. DOI: 10.1021/ja00172a031
-- Waghorne, W. A. et al. "First-Principles Calculation of Effective Charges in a Perovskite." *Phys. Rev. B* 2004, 69, 054110. DOI: 10.1103/PhysRevB.69.054110
-- Salanne, M. et al. "Molecular Dynamics of Aqueous Electrolyte Solutions." *J. Phys. Chem. B* 2011, 115, 12614-12625. DOI: 10.1021/jp204841a
-- CRC Handbook of Chemistry and Physics, 104th Edition. CRC Press, 2023.
-
-## Project Structure
-
+```
+ProjectAurelius/
+├── src/aurelius/
+│   ├── agent/
+│   │   ├── __init__.py         # Re-exports
+│   │   ├── loop.py             # DiscoveryLoop (Bayesian active learning)
+│   │   ├── mutation.py         # SELFIES-based mutation engine
+│   │   ├── reporting.py        # Report generation
+│   │   ├── state.py            # Agent state management
+│   │   └── surrogate.py        # Random Forest surrogate
+│   ├── cli_scripts/
+│   │   ├── __init__.py
+│   │   ├── agent.py            # Autonomous screening agent
+│   │   ├── download_data.py    # Download datasets from HF Hub
+│   │   ├── prep_discovery.py   # Train & validate all models for discovery
+│   │   └── train_tier1.py      # Train Tier 1 on ESOL/QM9
+│   ├── data/
+│   │   └── params.py           # Data parameters
+│   ├── hub/
+│   │   └── uploader.py         # Model upload to HF Hub
+│   ├── memory/
+│   │   ├── __init__.py
+│   │   └── profiler.py         # Memory profiling utilities
+│   ├── models/
+│   ├── screening/
+│   │   ├── tier1/
+│   │   │   ├── __init__.py     # Re-exports
+│   │   │   ├── models.py       # MLXBackend, PyTorchBackend, model_factory
+│   │   │   ├── training.py     # train_on_esol, train_on_qm9
+│   │   │   ├── loaders.py      # HuggingFaceWeightLoader, weight conversion
+│   │   │   └── filter.py       # MLXNAFilter, fingerprint generation
+│   │   ├── tier0/
+│   │   │   ├── __init__.py     # Re-exports
+│   │   │   ├── models.py       # _MPNNEdgeBlockBackend, _MPNNReadoutMLPBackend, model_factory
+│   │   │   ├── data.py         # _build_molecular_graph, generate_synthetic_training_data, train_tier0_model
+│   │   │   └── predictor.py    # Tier0ActivationPredictor, _LinearFallbackPredictor
+│   ├── scoring/
+│   │   ├── __init__.py
+│   │   └── oracle.py           # MPNN-based property oracle
+│   ├── pipeline.py             # Pipeline orchestrator
+│   ├── config.py               # Dynamic memory configuration
+│   └── bridge.py               # Zero-copy MLX<->PyTorch bridging
+├── scripts/
+│   ├── prep_discovery.py        # Train & validate all models for discovery
+│   ├── train_tier0.py          # Train Tier 0 MPNN model
+│   ├── train_tier1.py          # Train Tier 1 on ESOL/QM9
+│   └── download_data.py        # Download datasets from HF Hub
+├── config/
+│   └── discovery_config.yaml   # Hydra configuration for autonomous agent
+├── benchmarks/
+│   ├── benchmark_tier1.py      # MLX vs PyTorch vs CPU
+│   └── benchmark_tier2.py      # Vectorized vs loop physics
+├── tests/
+│   └── test_aurelius.py        # Physics-based validation tests
+└── pyproject.toml
 ```
 ProjectAurelius/
 ├── src/aurelius/
@@ -335,10 +343,6 @@ ProjectAurelius/
 │   │   │   ├── models.py       # _MPNNEdgeBlockBackend, _MPNNReadoutMLPBackend, model_factory
 │   │   │   ├── data.py         # _build_molecular_graph, generate_synthetic_training_data, train_tier0_model
 │   │   │   └── predictor.py    # Tier0ActivationPredictor, _LinearFallbackPredictor
-│   │   ├── tier2_mattersim.py  # MatterSim-MT physics engine
-│   │   └── tier3_gcmtwin.py    # GCMD Digital Twin
-│   ├── solvation/
-│   │   └── engine.py           # MWSE solvation engine (GBSA)
 │   ├── scoring/
 │   │   └── engine.py           # Aurelius Score computation
 │   ├── bridge.py               # Zero-copy MLX<->PyTorch bridging
@@ -367,8 +371,6 @@ Run benchmarks to compare performance across backends:
 # Tier 1: MLX vs PyTorch MPS vs CPU
 python benchmarks/benchmark_tier1.py --n-molecules 1000 --repeats 10
 
-# Tier 2: Vectorized vs Loop-based physics
-python benchmarks/benchmark_tier2.py --n-atoms 50 --n-cycles 500
 ```
 
 ## CLI Reference
@@ -384,7 +386,6 @@ aurelius screen <smiles>         Screen a single molecule
   --temperature K                Temperature in Kelvin
    --voltage CUTOFF               Voltage cutoff
    --cycles N                     MD simulation cycles
-   --gwp VALUE                    Global Warming Potential
    --use-real-models              Use real models (default: enabled)
    --demo                         Use synthetic data (demo mode)
 aurelius batch <file>            Screen molecules from SMILES file

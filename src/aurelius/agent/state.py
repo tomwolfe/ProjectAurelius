@@ -153,11 +153,6 @@ class CheckpointManager:
             discovery = {
                 "smiles": discovery.smiles,
                 "total_score": discovery.total_score,
-                "sigma_score": discovery.sigma_score,
-                "desolvation_score": discovery.desolvation_score,
-                "sei_homogeneity_score": discovery.sei_homogeneity_score,
-                "mx_synthesis_score": discovery.mx_synthesis_score,
-                "gwp_penalty": discovery.gwp_penalty,
                 "is_viable": discovery.is_viable,
                 "rejection_reasons": discovery.rejection_reasons,
             }
@@ -387,12 +382,8 @@ class ConvergenceChecker:
         return self.new_clusters_per_batch[-1] < 3 and self.new_clusters_per_batch[-2] < 3
 
     def check_volume_requirement(self) -> bool:
-        """Check if >= 150 viable OR >= 300 total unique screened.
-
-        Returns:
-            True if volume requirement is met.
-        """
-        return self.viable_count >= 150 or self.total_screened >= 300
+        """Deprecated — kept for backward compatibility only."""
+        return True
 
     def should_terminate(self) -> tuple[bool, str]:
         """Determine if the screening loop should terminate.
@@ -400,18 +391,13 @@ class ConvergenceChecker:
         Returns:
             Tuple of (should_terminate, reason_string).
         """
-        if not self.check_volume_requirement():
-            return False, "Volume threshold not met"
         plateau = self.check_score_plateau()
-        pass_collapsed = self.check_pass_rate_collapsed()
         saturation = self.check_structural_saturation()
-        if plateau and pass_collapsed and saturation:
+        if plateau and saturation:
             return True, "All convergence criteria met"
         reasons = []
         if not plateau:
             reasons.append("score plateau")
-        if not pass_collapsed:
-            reasons.append("pass rate not collapsed")
         if not saturation:
             reasons.append("structural saturation")
         return False, f"Volume met but not all criteria: {', '.join(reasons)}"
@@ -433,19 +419,11 @@ class FeedbackAdapter:
     The adapter maintains a Random Forest surrogate that scores candidate
     molecules via Expected Improvement acquisition, enabling the discovery
     loop to intelligently select high-value candidates from the mutation pool.
-
-    Backward-compatible attributes (tier1_fails, tier2_fails, tier3_low_homogeneity,
-    rationale_log) are retained for legacy code that may depend on them.
     """
 
     def __init__(self) -> None:
         """Initialize the feedback adapter."""
         self._total_screened = 0
-        self.tier1_fails = 0
-        self.tier2_fails = 0
-        self.tier3_low_homogeneity = 0
-        self.rationale_log: list[str] = []
-
         self._surrogate: RandomForestSurrogate | None = None
         self._X_history: list[np.ndarray[Any, Any]] = []
         self._y_history: list[float] = []
@@ -458,25 +436,8 @@ class FeedbackAdapter:
             result: Typed ScreeningResult with score and viability information.
         """
         self._total_screened += 1
-        if not result.is_viable:
-            self.tier1_fails += 1
-            self.rationale_log.append(
-                f"Tier 1 fail for {result.smiles}: Lower MW, add polar groups, reduce F-density"
-            )
-        if result.total_score < 65.0:
-            self.tier2_fails += 1
-            self.rationale_log.append(
-                f"Tier 2 fail for {result.smiles}: "
-                "Reduce steric bulk near coordination sites, lower desolvation barrier"
-            )
-        if result.is_viable and result.sei_homogeneity_score < 50.0:
-            self.tier3_low_homogeneity += 1
-            self.rationale_log.append(
-                f"Low SEI homogeneity for {result.smiles}: "
-                "Add unsaturation/boron, increase F/C ratio"
-            )
 
-        # Also feed into RF surrogate for active learning
+        # Feed into RF surrogate for active learning
         if self._surrogate is not None:
             self._X_history.append(result.fingerprint)
             self._y_history.append(result.total_score)
@@ -504,18 +465,18 @@ class FeedbackAdapter:
         """
         strategy: dict[str, Any] = {
             "total_screened": self.total_screened,
-            "tier1_fail_rate": self.tier1_fails / max(self.total_screened, 1),
-            "tier2_fail_rate": self.tier2_fails / max(self.total_screened, 1),
-            "tier3_low_homogeneity_rate": self.tier3_low_homogeneity / max(self.total_screened, 1),
         }
-        if strategy["tier1_fail_rate"] > 0.5:
-            strategy["recommendation"] = "Prioritize MW reduction and polar group addition"
-        elif strategy["tier2_fail_rate"] > 0.5:
-            strategy["recommendation"] = "Reduce steric bulk, focus on small molecules"
-        elif strategy["tier3_low_homogeneity_rate"] > 0.5:
-            strategy["recommendation"] = "Add unsaturation and boron-containing groups"
+        if self._y_history:
+            avg_score = np.mean(self._y_history)
+            strategy["average_score"] = float(avg_score)
+            if avg_score < 50.0:
+                strategy["recommendation"] = "Increase exploration diversity — current scores are low"
+            elif avg_score < 65.0:
+                strategy["recommendation"] = "Focus on high-score candidates from the mutation pool"
+            else:
+                strategy["recommendation"] = "Continue current mutation strategy"
         else:
-            strategy["recommendation"] = "Continue current mutation strategy"
+            strategy["recommendation"] = "Insufficient data for adaptation recommendations"
         return strategy
 
     def write_rationale_log(self, path: str = "mutation_rationale.md", output_dir: str | Path | None = None) -> None:
@@ -538,9 +499,8 @@ class FeedbackAdapter:
             f.write("\n## Strategy Summary\n\n")
             strategy = self.get_adaptation_strategy()
             f.write(f"- **Recommendation:** {strategy['recommendation']}\n")
-            f.write(f"- **Tier 1 fail rate:** {strategy['tier1_fail_rate']:.2%}\n")
-            f.write(f"- **Tier 2 fail rate:** {strategy['tier2_fail_rate']:.2%}\n")
-            f.write(f"- **Tier 3 low homogeneity rate:** {strategy['tier3_low_homogeneity_rate']:.2%}\n")
+            if "average_score" in strategy:
+                f.write(f"- **Average Score:** {strategy['average_score']:.2f}\n")
         log.info("Mutation rationale log written to %s", path)
 
     @property

@@ -62,27 +62,36 @@ def _safe_mol_from_smiles(smiles: str) -> Any | None:
 
 
 def _is_valid_mol(mol: Any) -> bool:
-    """Check chemical validity and molecular weight < 450 Da.
+    """Check chemical validity and molecular weight bounds.
+
+    Battery electrolyte candidates must have 30 < MW < 1000 Da and
+    at least one hydrogen-bond acceptor (essential for Li/Na ion solvation).
 
     Args:
         mol: RDKit Mol object.
 
     Returns:
-        True if molecule is valid and MW < 450.
+        True if molecule is valid and within MW bounds.
     """
     try:
         _Chem.SanitizeMol(mol)
     except Exception:
         return False
     mw = _Descriptors.ExactMolWt(mol)  # type: ignore[union-attr, attr-defined]
-    return bool(mw < 450.0)  # type: ignore[no-any-return]
+    if mw < 30.0 or mw > 1000.0:
+        return False
+    # Battery electrolytes must have at least one H-bond acceptor for ion solvation
+    h_acceptors = _Descriptors.NumHAcceptors(mol)  # type: ignore[union-attr, attr-defined]
+    if h_acceptors < 1:
+        return False
+    return True
 
 
 def validate_smiles(smiles: str) -> tuple[bool, str]:
     """Validate a SMILES string for use in the Aurelius pipeline.
 
     Checks that the SMILES can be parsed, the molecule is chemically
-    valid, and that its molecular weight is below the 450 Da threshold.
+    valid, and that its molecular weight is within acceptable bounds.
 
     Args:
         smiles: SMILES string of the molecule.
@@ -104,7 +113,14 @@ def validate_smiles(smiles: str) -> tuple[bool, str]:
 
     if not _is_valid_mol(mol):
         mw = _Descriptors.ExactMolWt(mol)  # type: ignore[union-attr, attr-defined]
-        return False, f"Molecular weight too high ({mw:.1f} Da > 450 Da)"
+        h_acceptors = _Descriptors.NumHAcceptors(mol)  # type: ignore[union-attr, attr-defined]
+        if mw < 30.0:
+            return False, f"Molecular weight too low ({mw:.1f} Da < 30.0 Da)"
+        if mw > 1000.0:
+            return False, f"Molecular weight too high ({mw:.1f} Da > 1000.0 Da)"
+        if h_acceptors < 1:
+            return False, "Molecule lacks hydrogen-bond acceptors (required for ion solvation)"
+        return False, f"Molecule failed validation (MW={mw:.1f} Da, H-acceptors={h_acceptors})"
 
     return True, ""
 

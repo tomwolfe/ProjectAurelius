@@ -62,6 +62,11 @@ class PropertyOracle(Oracle):
     on molecular graphs (atom features + bond types), providing
     scientifically grounded predictions for battery-electrolyte screening.
 
+    Additionally, a Domain of Applicability (DoA) check is performed:
+    the Tanimoto similarity of the input molecule to the training set
+    (QM9). If similarity is too low, the prediction uncertainty is
+    flagged via ``uncertainty_penalty``.
+
     Requirements:
         - ``torch`` must be importable
         - ``rdkit`` must be importable
@@ -84,11 +89,29 @@ class PropertyOracle(Oracle):
         """
         self._model: _MPNN | None = None
         self._model_path = model_path
+        self._training_fps: list[Any] | None = None
         self._model = self._load_or_train(model_path)
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
+    def _compute_tanimoto_similarity(self, smiles: str) -> float:
+        """Compute Tanimoto similarity to the training set (QM9).
+
+        Returns:
+            Tanimoto similarity in [0, 1]. Returns 0.0 if no training
+            fingerprints are available or if SMILES is invalid.
+        """
+        from rdkit import Chem
+        from rdkit.Chem import AllChem
+
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None or self._training_fps is None:
+            return 0.0
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+        best_sim = 0.0
+        for train_fp in self._training_fps:
+            sim = _FingerprintSimilarity(fp, train_fp) if _FingerprintSimilarity else 0.0
+            if sim > best_sim:
+                best_sim = sim
+        return best_sim
 
     def _smiles_to_features(self, smiles: str) -> tuple[int, list[int], list[int]]:
         """Convert SMILES to MPNN-compatible features.
@@ -214,6 +237,14 @@ class PropertyOracle(Oracle):
             target = torch.tensor([homo_val, lumo_val], dtype=torch.float32, device=device)
             tensors.append((atom_tensor, bond_i, bond_j, num_atoms, target))
 
+        # Pre-compute training fingerprints for DoA checks
+        self._training_fps = []
+        for smiles in smiles_list:
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is not None:
+                fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+                self._training_fps.append(fp)
+
         if not tensors:
             raise RuntimeError("No training data available for MPNN.")
 
@@ -290,13 +321,16 @@ class PropertyOracle(Oracle):
         """Evaluate a molecule and return predicted quantum properties.
 
         Results are cached by SMILES string to avoid redundant computation.
+        An uncertainty penalty is applied based on the Domain of Applicability:
+        Tanimoto similarity to the training set. Low similarity flags the
+        prediction as high-uncertainty.
 
         Args:
             smiles: Canonical or isomeric SMILES string.
 
         Returns:
             Dictionary with keys ``homo_eV``, ``lumo_eV``,
-            ``lumo_gap_eV``, and ``dipole_debye``.
+            ``lumo_gap_eV``, ``dipole_debye``, and ``uncertainty_penalty``.
 
         Raises:
             ValueError: If SMILES is invalid.
@@ -307,6 +341,17 @@ class PropertyOracle(Oracle):
 
         num_atoms, atom_features, bond_indices = self._smiles_to_features(smiles)
         result = self._predict(num_atoms, atom_features, bond_indices)
+
+        # Domain of Applicability: penalize predictions for out-of-domain molecules
+        sim = self._compute_tanimoto_similarity(smiles)
+        threshold = 0.15  # Below this, the model is extrapolating
+        if sim < threshold:
+            # Scale down the gap prediction for out-of-domain molecules
+            result["lumo_gap_eV"] = round(result["lumo_gap_eV"] * 0.5, 4)
+            result["uncertainty_penalty"] = round(1.0 - sim, 4)
+        else:
+            result["uncertainty_penalty"] = 0.0
+
         if self._CACHE is None:
             self._CACHE = {}
         self._CACHE[smiles] = result

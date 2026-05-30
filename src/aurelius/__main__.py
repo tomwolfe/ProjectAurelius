@@ -178,7 +178,7 @@ def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: Aure
     if not HAS_MLX:
         issues.append("MLX (Apple Silicon optimization)")
     if not HAS_TORCH:
-        issues.append("PyTorch (Tier 2 physics)")
+        issues.append("PyTorch (ML models)")
     if not HAS_RDKIT:
         issues.append("RDKit (real model screening)")
 
@@ -199,7 +199,6 @@ def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: Aure
 @click.option("--temperature", default=298.15, type=float, help="Temperature in Kelvin")
 @click.option("--voltage", default=3.7, type=float, help="Voltage cutoff")
 @click.option("--cycles", default=500, type=int, help="Number of scan cycles")
-@click.option("--gwp", default=1.0, type=float, help="GWP value")
 @with_pipeline  # type: ignore[arg-type]
 def screen(
     smiles: str,
@@ -209,7 +208,6 @@ def screen(
     temperature: float,
     voltage: float,
     cycles: int,
-    gwp: float,
     pipeline: AureliusPipeline,
     config: AureliusConfig,
 ) -> None:
@@ -222,7 +220,6 @@ def screen(
         temperature_k=temperature,
         voltage_cutoff=voltage,
         n_scan_cycles=cycles,
-        gwp_value=gwp,
     )
 
     score = results.get("score")
@@ -266,11 +263,6 @@ def batch(
                     "smiles": score.molecule_smiles,
                     "total_score": score.total_score,
                     "is_viable": score.is_viable,
-                    "sigma": score.sigma_score,
-                    "desolvation": score.desolvation_score,
-                    "sei_homogeneity": score.sei_homogeneity_score,
-                    "mx_synthesis": score.mx_synthesis_score,
-                    "gwp_penalty": score.gwp_penalty,
                     "rejection_reasons": score.rejection_reasons,
                 }
             )
@@ -284,14 +276,12 @@ def batch(
 @click.option("--solvent", default="ec:dmc", help="Solvent type")
 @click.option("--salt", default="NaPF6", help="Salt type")
 @click.option("--ion", default="Na+", help="Ion type")
-@click.option("--gwp", default=1.0, help="Global Warming Potential")
 @with_pipeline  # type: ignore[arg-type]
 def score(
     smiles: str,
     solvent: str,
     salt: str,
     ion: str,
-    gwp: float,
     pipeline: AureliusPipeline,
     config: AureliusConfig,
 ) -> None:
@@ -301,7 +291,6 @@ def score(
         solvent_type=solvent,
         salt_type=salt,
         ion_type=ion,
-        gwp_value=gwp,
     )
 
     score = results.get("score")
@@ -422,11 +411,9 @@ def hf_upload(
 @cli.command("agent")
 @click.option("--max-generations", type=int, default=50, help="Maximum generations to run")
 @click.option("--batch-size", type=int, default=50, help="Candidates per batch")
-@click.option("--profile-memory", is_flag=True, default=False, help="Enable memory profiling with CSV report output")
 def agent(
     max_generations: int,
     batch_size: int,
-    profile_memory: bool,
     pipeline: AureliusPipeline,
     config: AureliusConfig,
 ) -> None:
@@ -440,7 +427,6 @@ def agent(
         agent_cfg = AgentConfig(
             max_generations=max_generations,
             batch_size=batch_size,
-            profile_memory=profile_memory,
         )
         run_screening(agent_cfg, checkpoint)
     except Exception as e:

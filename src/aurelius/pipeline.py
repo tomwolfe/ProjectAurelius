@@ -150,7 +150,7 @@ class AureliusPipeline:
             }
             results["tier2"] = t2_result
             logger.info(
-                "Tier 2 (Oracle) Result: %s -> LUMO gap=%.3f eV",
+                "Property Oracle Result: %s -> LUMO gap=%.3f eV",
                 smiles,
                 t2_result["lumo_gap_eV"],
             )
@@ -164,7 +164,7 @@ class AureliusPipeline:
                 )
                 return self._generate_failed_run(
                     smiles,
-                    f"Failed Tier 2 Oracle (LUMO gap: {t2_result['lumo_gap_eV']} eV)",
+                    f"Failed Oracle (LUMO gap: {t2_result['lumo_gap_eV']} eV)",
                     **kwargs,
                 )
 

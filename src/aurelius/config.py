@@ -50,21 +50,9 @@ class AureliusConfig(BaseSettings):
     # Metal shader pre-compilation buffer (10% of RAM, capped at 2GB)
     metal_shader_cache_gb: float = 0.0
 
-    # GCMD kMC simulation parameters
-    turquant_max_context: int = 8192
-
-    # Desolvation energy barrier rejection threshold (eV)
-    desolvation_barrier_threshold_eV: float = 0.5
-
-    # MWSE solvent exchange rate screening window (ps)
-    kex_screening_window_ps: float = 10.0
-
-    # Aurelius Score weights (v9.0 formula)
-    weight_sigma: float = 0.3
+    # Quantization presets
+    weight_sigma: float = 0.4
     weight_desolvation_barrier: float = 0.2
-    weight_sei_homogeneity: float = 0.2
-    weight_mx_synthesis_score: float = 0.2
-    weight_gwp: float = 0.1
 
     # Quantization presets
     chemvlm_quantization: str = "MX4"
@@ -72,9 +60,6 @@ class AureliusConfig(BaseSettings):
     # Screening pipeline tiers
     tier1_mlxfilter_enabled: bool = True
 
-    # Tier 2 neighbor list settings
-    use_neighbor_list: bool = False
-    neighbor_list_cutoff: float = 12.0
 
     def model_post_init(self, __context: Any) -> None:
         """Compute dynamic memory allocations after model initialization.
@@ -143,7 +128,6 @@ class AureliusConfig(BaseSettings):
             f"  MLX (ChemVLM-2 MX4):         {mlx_reserved:>5.1f}GB reserved\n"
             f"  Metal Shader Cache:          {shader_reserved:>5.1f}GB reserved\n"
             f"  PyTorch MPS:                 {pytorch_available:>5.1f}GB available\n"
-            f"  Desolvation Barrier Cutoff:  {self.desolvation_barrier_threshold_eV} eV\n"
         )
 
 

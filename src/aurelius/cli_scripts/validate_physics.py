@@ -39,7 +39,6 @@ def main() -> None:
         solvent_type="ec:dmc",
         salt_type="NaPF6",
         ion_type="Na+",
-        gwp_value=1.0,
     )
 
     score = results.get("score")

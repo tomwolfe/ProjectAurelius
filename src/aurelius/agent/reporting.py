@@ -56,16 +56,10 @@ def generate_discovery_results(
     for r in all_results:
         entry: dict[str, Any] = {
             "smiles": r.smiles,
+            "total_score": r.total_score,
+            "is_viable": r.is_viable,
+            "rejection_reasons": r.rejection_reasons,
         }
-        entry["total_score"] = r.total_score
-        entry["sigma"] = r.sigma_score
-        entry["desolvation"] = r.desolvation_score
-        entry["sei_homogeneity"] = r.sei_homogeneity_score
-        entry["mx_synthesis"] = r.mx_synthesis_score
-        entry["gwp_penalty"] = r.gwp_penalty
-        entry["is_viable"] = r.is_viable
-        entry["rejection_reasons"] = r.rejection_reasons
-        entry["components"] = r.rejection_reasons
         serializable.append(entry)
 
     with open(path, "w") as f:
@@ -313,14 +307,8 @@ def generate_manifest(
             {
                 "smiles": d.smiles,
                 "total_score": d.total_score,
-                "sigma": d.sigma_score,
-                "desolvation": d.desolvation_score,
-                "sei_homogeneity": d.sei_homogeneity_score,
-                "mx_synthesis": d.mx_synthesis_score,
-                "gwp_penalty": d.gwp_penalty,
                 "is_viable": d.is_viable,
                 "rejection_reasons": d.rejection_reasons,
-                "components": d.rejection_reasons,
             }
         )
 
