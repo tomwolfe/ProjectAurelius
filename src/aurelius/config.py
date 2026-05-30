@@ -22,29 +22,15 @@ class AureliusConfig(BaseSettings):
     """
 
     weight_sigma: float = 0.4
-    weight_desolvation_barrier: float = 0.2
 
 
-def get_config(
-    *,
-    total_memory_gb: float = 0.0,
-) -> AureliusConfig:
+def get_config() -> AureliusConfig:
     """Retrieve the configured AureliusPipeline settings.
-
-    Args:
-        total_memory_gb: Override total RAM (for testing).
 
     Returns:
         An AureliusConfig instance.
     """
-    config = AureliusConfig.model_validate(
-        {
-            "total_memory_gb": total_memory_gb,
-        }
-    )
-    if total_memory_gb > 0:
-        config.total_memory_gb = total_memory_gb
-    return config
+    return AureliusConfig()
 
 
 # Backward compatibility alias

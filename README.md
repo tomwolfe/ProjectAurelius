@@ -37,16 +37,8 @@ Aurelius is a high-performance screening pipeline for battery electrolyte molecu
 
 | Component | Framework | Purpose |
 |-----------|-----------|---------|
-| 1 | MLX-NA Filter | Rapid solubility/viability screening via ECFP4 fingerprints |
-| Surrogate | Random Forest | Expected Improvement acquisition for intelligent candidate selection |
-
-## Overview
-
-Aurelius is a high-performance screening pipeline for battery electrolyte molecules, designed for novel molecule discovery. The pipeline uses a Random Forest surrogate for Bayesian active learning:
-
-| Component | Framework | Purpose |
-|-----------|-----------|---------|
-| 1 | MLX-NA Filter | Rapid solubility/viability screening via ECFP4 fingerprints |
+| Tier 1 Filter | RDKit | Structural viability (Lipinski Rule-of-5) |
+| Oracle | Random Forest + ESOL | logS solubility prediction |
 | Surrogate | Random Forest | Expected Improvement acquisition for intelligent candidate selection |
 
 ## Hardware Requirements
@@ -252,16 +244,16 @@ aurelius screen "CC(=O)OC1=CC=CC=C1"
 
 ## Aurelius Score v9.0
 
-The composite Aurelius Score (S_A_v9.0) combines three components:
+The composite Aurelius Score (S_A) combines two real components:
 
 | Component | Weight | Description |
 |-----------|--------|-------------|
-| Sigma (σ) | 0.40 | Structural viability from Tier 1 screening |
-| GWP Penalty | 0.10 | Global Warming Potential adjustment |
+| Sigma (σ) | 50.0 | Structural viability from Tier 1 screening (0 or 1) |
+| Oracle Score | 50.0 | Normalised logS solubility prediction ([0, 1]) |
 
-**Formula:** S_A_v9.0 = 0.40*σ + 0.10*MX - 0.10*GWP
+**Formula:** S_A = 50.0 * σ + 50.0 * oracle_score_normalized
 
-Scores range from 0-100. Molecules with S_A_v9.0 >= 65 are considered viable.
+Scores range from 0-100. Molecules with S_A >= 50 are considered viable.
 
 
 ## Scientific References
@@ -327,40 +319,6 @@ ProjectAurelius/
 ├── tests/
 │   └── test_aurelius.py        # Physics-based validation tests
 └── pyproject.toml
-```
-ProjectAurelius/
-├── src/aurelius/
-│   ├── screening/
-│   │   ├── tier1/
-│   │   │   ├── __init__.py     # Re-exports
-│   │   │   ├── models.py       # MLXBackend, PyTorchBackend, model_factory
-│   │   │   ├── training.py     # train_on_esol, train_on_qm9
-│   │   │   ├── loaders.py      # HuggingFaceWeightLoader, weight conversion
-│   │   │   └── filter.py       # MLXNAFilter, fingerprint generation
-│   │   ├── tier0/
-│   │   │   ├── __init__.py     # Re-exports
-│   │   │   ├── models.py       # _MPNNEdgeBlockBackend, _MPNNReadoutMLPBackend, model_factory
-│   │   │   ├── data.py         # _build_molecular_graph, generate_synthetic_training_data, train_tier0_model
-│   │   │   └── predictor.py    # Tier0ActivationPredictor, _LinearFallbackPredictor
-│   ├── scoring/
-│   │   └── engine.py           # Aurelius Score computation
-│   ├── bridge.py               # Zero-copy MLX<->PyTorch bridging
-│   ├── config.py               # Dynamic memory configuration
-│   └── pipeline.py             # Pipeline orchestrator
-├── scripts/
-│   ├── prep_discovery.py        # Train & validate all models for discovery
-│   ├── train_tier0.py          # Train Tier 0 MPNN model
-│   ├── train_tier1.py          # Train Tier 1 on ESOL/QM9
-│   └── download_data.py        # Download datasets from HF Hub
-├── config/
-│   └── discovery_config.yaml   # Hydra configuration for autonomous agent
-├── benchmarks/
-│   ├── benchmark_tier1.py      # MLX vs PyTorch vs CPU
-│   └── benchmark_tier2.py      # Vectorized vs loop physics
-├── tests/
-│   └── test_aurelius.py        # Physics-based validation tests
-└── pyproject.toml
-```
 
 ## Benchmarks
 

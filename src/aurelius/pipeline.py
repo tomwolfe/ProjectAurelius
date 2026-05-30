@@ -1,9 +1,8 @@
 """Aurelius Pipeline Orchestrator.
 
 Coordinates a streamlined two-step discovery pipeline:
-  1. **Filter** — Quick structural validity and synthetic accessibility (SA) check.
-  2. **Oracle** — Evaluate target property (e.g. HOMO/LUMO gap) using the
-     PropertyOracle (QSPR-based).
+  1. **Filter** — Quick structural validity (Tier 1) check.
+  2. **Oracle** — Evaluate logS solubility via the PropertyOracle.
 
 The results are then fed back to the RF surrogate for Bayesian optimisation.
 """
@@ -14,8 +13,6 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
-
-from scipy.stats import norm as norm_dist
 
 from aurelius.config import AureliusConfig, apply_global_config
 from aurelius.scoring.oracle import PropertyOracle
@@ -78,10 +75,9 @@ class AureliusPipeline:
         }
 
         oracle_result = self._oracle.evaluate(smiles) if self._oracle else {}
-        lumo_gap = oracle_result.get("lumo_gap_eV", 999.0)
-
-        total_score = max(0.0, 100.0 - lumo_gap * 5.0)
-        is_viable = lumo_gap < 6.0
+        score_eV = oracle_result.get("score_eV", 0.0)
+        total_score = 50.0 * (score_eV / 100.0)
+        is_viable = total_score >= 50.0
 
         return {
             "tier1": t1_result,
@@ -134,31 +130,31 @@ class AureliusPipeline:
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
 
             t2_result = {
-                "homo_eV": oracle_result.get("homo_eV", 999.0),
-                "lumo_eV": oracle_result.get("lumo_eV", 999.0),
-                "lumo_gap_eV": oracle_result.get("lumo_gap_eV", 999.0),
-                "dipole_debye": oracle_result.get("dipole_debye", 999.0),
+                "logS": oracle_result.get("logS", -99.0),
+                "score_eV": oracle_result.get("score_eV", 0.0),
             }
             results["tier2"] = t2_result
             logger.info(
-                "Property Oracle Result: %s -> LUMO gap=%.3f eV",
+                "Property Oracle Result: %s -> logS=%.3f score_eV=%.1f",
                 smiles,
-                t2_result["lumo_gap_eV"],
+                t2_result["logS"],
+                t2_result["score_eV"],
             )
 
-            if t2_result["lumo_gap_eV"] > 10.0:
+            if t2_result["score_eV"] < 1.0:
                 logger.warning(
-                    "Short-circuiting: %s failed Oracle (LUMO gap=%.3f eV)",
+                    "Short-circuiting: %s failed Oracle (score_eV=%.1f)",
                     smiles,
-                    t2_result["lumo_gap_eV"],
+                    t2_result["score_eV"],
                 )
                 return self._generate_failed_run(
                     smiles,
-                    f"Failed Oracle (LUMO gap: {t2_result['lumo_gap_eV']} eV)",
+                    f"Failed Oracle (score_eV: {t2_result['score_eV']})",
                     **kwargs,
                 )
 
-        score = self._compute_score(oracle_result)
+        sigma = 1 if t1_result and t1_result.get("is_viable", False) else 0
+        score = self._compute_score(oracle_result, sigma)
         results["score"] = score
 
         logger.debug("Scorecard:\n%s", self._format_score(score))
@@ -172,43 +168,32 @@ class AureliusPipeline:
 
         return results
 
-    def _compute_score(self, oracle_result: dict[str, float]) -> dict[str, Any]:
-        """Compute the final Aurelius Score from oracle results.
+    def _compute_score(self, oracle_result: dict[str, float], sigma: int = 0) -> dict[str, Any]:
+        """Compute the final Aurelius Score.
 
-        Rewards LUMO in [-1.5, -0.5] eV (SEI formation window) and
-        HOMO < -6.0 eV (oxidative stability).  Outside these bounds,
-        a Gaussian penalty is applied.
+        Formula: S_A = 50.0 * σ + 50.0 * oracle_score_normalized
+
+        Where:
+          - σ (0 or 1): Tier 1 structural viability
+          - oracle_score_normalized: oracle logS score scaled to [0, 1]
 
         Args:
-            oracle_result: Dictionary with keys like ``lumo_gap_eV``, ``homo_eV``, etc.
+            oracle_result: Dictionary with keys ``logS``, ``score_eV``.
+            sigma: 1 if molecule passed Tier 1 structural filter, 0 otherwise.
 
         Returns:
             Dict with ``total_score``, ``is_viable``, and ``rejection_reasons``.
         """
-        lumo_gap = oracle_result.get("lumo_gap_eV", 999.0)
-        homo = oracle_result.get("homo_eV", 999.0)
-
-        lumo_mean, lumo_std = -1.0, 0.35
-        homo_mean, homo_std = -6.0, 1.0
-
-        lumo_score = norm_dist.pdf(lumo_gap, loc=lumo_mean, scale=lumo_std) * 100.0
-        homo_score = norm_dist.pdf(homo, loc=homo_mean, scale=homo_std) * 100.0
-
-        if lumo_gap < -1.5 or lumo_gap > -0.5:
-            lumo_score *= 0.1
-        if homo > -6.0:
-            homo_score *= 0.1
-
-        total_score = min(lumo_score, homo_score)
-        total_score = max(0.0, total_score)
-
-        is_viable = total_score >= 20.0
+        score_eV = oracle_result.get("score_eV", 0.0)
+        oracle_component = score_eV / 100.0
+        total_score = 50.0 * sigma + 50.0 * oracle_component
+        is_viable = total_score >= 50.0
 
         rejection_reasons: list[str] = []
         if not is_viable:
             rejection_reasons.append(
                 f"Aurelius Score {total_score:.1f} below viability threshold "
-                f"(LUMO gap: {lumo_gap:.3f} eV, HOMO: {homo:.3f} eV)"
+                f"(σ={sigma}, score_eV={score_eV:.1f})"
             )
 
         return {

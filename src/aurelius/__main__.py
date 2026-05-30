@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import functools
 import json
-import os
 import sys
 from typing import Any
 
@@ -36,17 +35,6 @@ from aurelius.utils.dependencies import (
 )
 
 
-def _apply_env_thread_safe(env_vars: dict[str, str]) -> None:
-    """Apply environment variables in a thread-safe manner.
-
-    Only sets variables that are not already set by the user,
-    preventing race conditions during concurrent pipeline init.
-    """
-    for k, v in env_vars.items():
-        if k not in os.environ:
-            os.environ[k] = v
-
-
 def _init_pipeline_from_ctx(ctx: click.Context) -> None:
     """Initialise the pipeline stored in the Click context.
 
@@ -55,8 +43,6 @@ def _init_pipeline_from_ctx(ctx: click.Context) -> None:
     """
     pipeline: AureliusPipeline = ctx.ensure_object(dict)["pipeline"]
     config: AureliusConfig = ctx.ensure_object(dict)["config"]
-    env_vars = config.apply_environment()
-    _apply_env_thread_safe(env_vars)
     pipeline.initialize()
 
 
@@ -183,7 +169,6 @@ def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: Aure
 @click.option("--temperature", default=298.15, type=float, help="Temperature in Kelvin")
 @click.option("--voltage", default=3.7, type=float, help="Voltage cutoff")
 @click.option("--cycles", default=500, type=int, help="Number of scan cycles")
-@with_pipeline  # type: ignore[arg-type]
 def screen(
     smiles: str,
     solvent: str,
@@ -192,10 +177,14 @@ def screen(
     temperature: float,
     voltage: float,
     cycles: int,
-    pipeline: AureliusPipeline,
-    config: AureliusConfig,
 ) -> None:
     """Screen a single molecule through the full Aurelius pipeline."""
+    from aurelius.config import get_config
+    from aurelius.pipeline import AureliusPipeline
+
+    config = get_config()
+    pipeline = AureliusPipeline(config)
+    pipeline.initialize()
     results = pipeline.screen_molecule(
         smiles,
         solvent_type=solvent,
@@ -207,7 +196,10 @@ def screen(
     )
 
     score = results.get("score", {})
-    if score and not score.get("is_viable", True):
+    total = score.get("total_score", 0.0)
+    viable = score.get("is_viable", False)
+    click.echo(f"\nAurelius Score: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}")
+    if score and not viable:
         sys.exit(1)
 
 
@@ -334,8 +326,7 @@ def validate(smiles: str = "CC(=O)OC1=CC(=O)O1", pipeline: Any = None, config: A
 def status(pipeline: AureliusPipeline, config: AureliusConfig) -> None:
     """Show pipeline status and memory partition."""
     click.echo("\nAurelius v9.0 Configuration:")
-    click.echo(f"  Desolvation Cutoff: {config.desolvation_barrier_threshold_eV} eV")
-    click.echo(f"  Memory Valid:      {config.validate_memory_budget()}")
+    click.echo(f"  Pipeline initialised: True")
 
 
 @cli.command("benchmark")

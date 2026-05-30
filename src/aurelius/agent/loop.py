@@ -361,24 +361,24 @@ class DiscoveryLoop:
             if mol is None:
                 continue
             try:
-                    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined, unused-ignore]
+                fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined, unused-ignore]
             except (AttributeError, RuntimeError):
                 continue
             scaffold = Chem.MolFragmentToSmiles(mol, atomsToUse=list(range(mol.GetNumAtoms())), isomericSmiles=False)
-            has_new = False
+            found_match = False
             for existing in self.screened_smiles:
                 existing_mol = _safe_mol_from_smiles(existing)
                 if existing_mol is None:
                     continue
                 try:
-                    existing_fp = AllChem.GetMorganFingerprintAsBitVec(existing_mol, 2, bitIdToSize=2048)  # type: ignore[attr-defined, unused-ignore]
+                    existing_fp = AllChem.GetMorganFingerprintAsBitVect(existing_mol, radius=2, nBits=2048)  # type: ignore[attr-defined, unused-ignore]
                     from rdkit.DataStructs import TanimotoSimilarity
 
                     if TanimotoSimilarity(fp, existing_fp) > 0.75:
-                        has_new = True
+                        found_match = True
                         break
                 except (AttributeError, RuntimeError):
                     continue
-            if not has_new:
+            if not found_match:
                 unique_scaffolds.add(scaffold)
         return len(unique_scaffolds)
