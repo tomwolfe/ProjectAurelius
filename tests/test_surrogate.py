@@ -64,9 +64,6 @@ class TestRandomForestSurrogate:
         assert ei[0] >= -0.1, f"Expected EI >= -0.1 but got {ei[0]}"
 
     def test_score_candidates_returns_top_indices(self):
-        """Pre-existing test logic issue; GP convergence affects EI values."""
-        import pytest
-        pytest.skip("Pre-existing test logic issue; GP convergence affects EI values", allow_module_level=True)
         """Surrogate results should be reproducible with fixed random_state."""
         surrogate_a = RandomForestSurrogate(random_state=42)
         surrogate_b = RandomForestSurrogate(random_state=42)

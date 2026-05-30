@@ -60,7 +60,7 @@ class RandomForestSurrogate:
             max_depth=12,
             min_samples_leaf=5,
             random_state=self._random_state,
-            n_jobs=-1,
+            n_jobs=1,
         )
         self._rf.fit(X, y)
 
