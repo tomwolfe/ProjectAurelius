@@ -1,8 +1,8 @@
 """Project Aurelius v9.0 - Bayesian Active Learning for Novel Molecule Discovery.
 
 A streamlined pipeline that combines:
-- MLX-based structural filtering
-- RandomForest-based property oracles
+- PyTorch-based structural filtering
+- MPNN-based property oracles
 - SELFIES-based mutation engine
 - Gaussian Process surrogate-driven active learning
 """
@@ -51,8 +51,6 @@ __all__ = [
     "ConvergenceChecker",
     "DiscoveryLoop",
     "FeedbackAdapter",
-    "MLXFilterResult",
-    "MLXNAFilter",
     "MoleculeInput",
     "MutationEngine",
     "Oracle",

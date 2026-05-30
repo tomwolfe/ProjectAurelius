@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aurelius"
-version = "7.0.0"
-description = "Project Aurelius v7.0 - The GNN-Enhanced Release. Accelerated computational chemistry screening pipeline with MPNN activation energy prediction, cutoff-aware neighbor lists, and HuggingFace integration, optimized for Apple M-series Neural Accelerators."
+version = "9.0.0"
+description = "Project Aurelius v9.0 - Bayesian active-learning screening pipeline with MPNN oracle, Gaussian penalty objective, and closed-loop active learning."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
@@ -28,9 +28,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-apple = [
-    "mlx>=0.15.0",
-]
 ml = [
     "torch>=2.3.0",
     "torchvision>=0.17.0",

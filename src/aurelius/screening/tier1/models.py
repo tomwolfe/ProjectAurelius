@@ -17,13 +17,6 @@ from __future__ import annotations
 import os
 from importlib import resources
 
-from aurelius.screening.tier1.backend_mlx import (
-    MLXBackend,
-    MLXBackendUnavailableError,
-)
-from aurelius.screening.tier1.backend_mlx import (
-    _model_factory as _mlx_model_factory,
-)
 from aurelius.screening.tier1.backend_torch import (
     PyTorchBackend,
     PyTorchBackendUnavailableError,
@@ -37,8 +30,6 @@ __all__ = [
     "DEFAULT_MODEL_DIR",
     "HAS_MLX",
     "HAS_TORCH",
-    "MLXBackend",
-    "MLXBackendUnavailableError",
     "PyTorchBackend",
     "PyTorchBackendUnavailableError",
     "HUGGINGFACE_MODELS",
@@ -61,20 +52,17 @@ HUGGINGFACE_MODELS: dict[str, str] = {
 }
 
 
-def ModelFactory() -> MLXBackend | PyTorchBackend:  # noqa: N802
-    """Return the appropriate backend based on framework availability.
+def ModelFactory() -> PyTorchBackend:  # type: ignore[return]  # noqa: N802
+    """Return a PyTorch backend for molecular viability screening.
 
     Returns:
-        MLXBackend or PyTorchBackend depending on availability.
+        PyTorchBackend instance.
 
     Raises:
-        MLXBackendUnavailableError: If MLX is not available.
         PyTorchBackendUnavailableError: If PyTorch is not available.
     """
-    if HAS_MLX:
-        return _mlx_model_factory()
     if HAS_TORCH:
         return _torch_model_factory()
     raise PyTorchBackendUnavailableError(
-        "Neither MLX nor PyTorch is available. Install mlx or torch to use model backends."
+        "PyTorch is not available. Install torch to use model backends."
     )

@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from aurelius.agent.surrogate import GaussianProcessSurrogate
+
 if TYPE_CHECKING:
     from aurelius.agent.loop import ScreeningResult  # noqa: F401
 
@@ -141,12 +143,24 @@ class CheckpointManager:
         """
         self._save()
 
-    def add_discovery(self, discovery: dict[str, Any]) -> None:
+    def add_discovery(self, discovery: dict[str, Any] | ScreeningResult) -> None:
         """Add a discovery to the checkpoint.
 
         Args:
-            discovery: Dict with discovery data.
+            discovery: Dict or ScreeningResult with discovery data.
         """
+        if hasattr(discovery, "smiles"):
+            discovery = {
+                "smiles": discovery.smiles,
+                "total_score": discovery.total_score,
+                "sigma_score": discovery.sigma_score,
+                "desolvation_score": discovery.desolvation_score,
+                "sei_homogeneity_score": discovery.sei_homogeneity_score,
+                "mx_synthesis_score": discovery.mx_synthesis_score,
+                "gwp_penalty": discovery.gwp_penalty,
+                "is_viable": discovery.is_viable,
+                "rejection_reasons": discovery.rejection_reasons,
+            }
         self._discoveries.append(discovery)
 
     def update_stats(
@@ -426,10 +440,10 @@ class FeedbackAdapter:
 
     def __init__(self) -> None:
         """Initialize the feedback adapter."""
+        self._total_screened = 0
         self.tier1_fails = 0
         self.tier2_fails = 0
         self.tier3_low_homogeneity = 0
-        self.total_screened = 0
         self.rationale_log: list[str] = []
 
         self._surrogate: GaussianProcessSurrogate | None = None
@@ -443,7 +457,7 @@ class FeedbackAdapter:
         Args:
             result: Typed ScreeningResult with score and viability information.
         """
-        self.total_screened += 1
+        self._total_screened += 1
         if not result.is_viable:
             self.tier1_fails += 1
             self.rationale_log.append(
@@ -464,7 +478,7 @@ class FeedbackAdapter:
 
         # Also feed into GP surrogate for active learning
         if self._surrogate is not None:
-            self._X_history.append(result.smiles)
+            self._X_history.append(result.fingerprint)
             self._y_history.append(result.total_score)
 
     def update(self, X_new: np.ndarray[Any, Any], y_new: np.ndarray[Any, Any]) -> None:

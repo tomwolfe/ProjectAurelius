@@ -1,7 +1,7 @@
 """Tier 1: Weight loading utilities.
 
-Handles loading pre-trained model weights from HuggingFace Hub,
-local directories, and converting between MLX and PyTorch formats.
+Handles loading pre-trained model weights from HuggingFace Hub
+and local directories.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import psutil
 from aurelius.screening.tier1.models import (
     DEFAULT_MODEL_DIR,
     HUGGINGFACE_MODELS,
-    MLXBackend,
+    PyTorchBackend,
 )
 from aurelius.utils.dependencies import HAS_TORCH
 
@@ -87,17 +87,17 @@ def check_disk_space(path: str, min_free_gb: float = 10.0) -> tuple[bool, float]
         return True, 0.0  # Assume OK if we can't check
 
 
-def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, Any]:
-    """Convert MLX model weights (stored as .npy files) to PyTorch tensors.
+def convert_numpy_to_torch_weights(weights_dir: str) -> dict[str, Any]:
+    """Convert NumPy weight files to PyTorch tensors.
 
-    Loads .npy files from the MLX model directory and converts them
+    Loads .npy files from the model directory and converts them
     directly to PyTorch tensors using torch.from_numpy(). Since the
     architecture is a standard MLP (2048->128->1), no complex topology
     mapping is needed - the NumPy arrays map directly to PyTorch tensor
     shapes.
 
     Args:
-        mlx_weights_dir: Path to the directory containing MLX model weights
+        weights_dir: Path to the directory containing model weights
             (.npy files for W1, b1, W2, b2).
 
     Returns:
@@ -105,11 +105,11 @@ def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, Any]:
         Returns empty dict if loading fails or torch is unavailable.
     """
     if not HAS_TORCH:
-        print("[Aurelius v7.0 Tier1] WARNING: PyTorch is not available. Cannot convert MLX weights.")
+        print("[Aurelius v9.0 Tier1] WARNING: PyTorch is not available. Cannot convert weights.")
         return {}
 
-    if not os.path.isdir(mlx_weights_dir):
-        print(f"[Aurelius v7.0 Tier1] WARNING: MLX weights directory not found: {mlx_weights_dir}")
+    if not os.path.isdir(weights_dir):
+        print(f"[Aurelius v9.0 Tier1] WARNING: Weights directory not found: {weights_dir}")
         return {}
 
     weight_files: dict[str, Any | None] = {
@@ -120,11 +120,11 @@ def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, Any]:
     }
 
     for fname in weight_files:
-        fpath = os.path.join(mlx_weights_dir, f"{fname}.npy")
+        fpath = os.path.join(weights_dir, f"{fname}.npy")
         if os.path.isfile(fpath):
             weight_files[fname] = np.load(fpath)
         else:
-            print(f"[Aurelius v7.0 Tier1] WARNING: Missing weight file: {fpath}")
+            print(f"[Aurelius v9.0 Tier1] WARNING: Missing weight file: {fpath}")
             return {}
 
     expected_shapes: dict[str, tuple[int, ...]] = {
@@ -141,7 +141,7 @@ def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, Any]:
         expected = expected_shapes.get(name)
         if expected and arr.shape != expected:
             print(
-                f"[Aurelius v7.0 Tier1] WARNING: Shape mismatch for {name}: "
+                f"[Aurelius v9.0 Tier1] WARNING: Shape mismatch for {name}: "
                 f"expected {expected}, got {arr.shape}. "
                 "Using uninitialized PyTorch fallback weights. "
                 "Run `aurelius train --task tier1` to train properly."
@@ -152,24 +152,21 @@ def convert_mlx_to_torch_weights(mlx_weights_dir: str) -> dict[str, Any]:
     return torch_weights
 
 
-def load_pytorch_fallback_with_mlx_weights(
-    model: Any,
-    mlx_weights_dir: str,
-) -> Any:
-    """Load PyTorch fallback model with weights converted from MLX format.
+def load_pytorch_fallback(weights_dir: str, model: Any) -> Any:
+    """Load PyTorch model with weights from NumPy files.
 
     Args:
+        weights_dir: Path to the model weights directory.
         model: The PyTorchBackend instance to load weights into.
-        mlx_weights_dir: Path to the MLX model weights directory.
 
     Returns:
         The PyTorchBackend with loaded (or randomly initialized) weights.
     """
-    torch_weights = convert_mlx_to_torch_weights(mlx_weights_dir)
+    torch_weights = convert_numpy_to_torch_weights(weights_dir)
 
     if not torch_weights:
         print(
-            "[Aurelius v7.0 Tier1] WARNING: Using uninitialized PyTorch fallback weights. "
+            "[Aurelius v9.0 Tier1] WARNING: Using uninitialized PyTorch fallback weights. "
             "Run `aurelius train --task tier1` to train properly."
         )
         return model
@@ -188,9 +185,9 @@ def load_pytorch_fallback_with_mlx_weights(
 
     if state_dict:
         model.load_state_dict(state_dict, strict=False)  # type: ignore[attr-defined]
-        print(f"[Aurelius v7.0 Tier1] Loaded PyTorch fallback weights from MLX: {mlx_weights_dir}")
+        print(f"[Aurelius v9.0 Tier1] Loaded PyTorch fallback weights: {weights_dir}")
     else:
-        print("[Aurelius v7.0 Tier1] WARNING: Could not map any weights from MLX format. Using random initialization.")
+        print("[Aurelius v9.0 Tier1] WARNING: Could not map any weights. Using random initialization.")
 
     return model
 
@@ -317,9 +314,9 @@ class HuggingFaceWeightLoader:
         # point to a location with more space, or use HF cache symlinks
         # manually via: ln -s $HF_HOME/models/... $AURELIUS_MODEL_DIR/
 
-        model = MLXBackend()
+        model = PyTorchBackend()
         model.load_weights(local_dir)
-        print(f"[Aurelius v5.2 Tier1] Loaded {task} model from Hugging Face Hub: {model_id}")
+        print(f"[Aurelius v9.0 Tier1] Loaded {task} model from Hugging Face Hub: {model_id}")
         return model
 
     def _load_from_local(self, task: str) -> Any | None:
@@ -336,12 +333,12 @@ class HuggingFaceWeightLoader:
             return None
 
         try:
-            model = MLXBackend()
+            model = PyTorchBackend()
             model.load_weights(local_path)
-            print(f"[Aurelius v5.2 Tier1] Loaded {task} model from local: {local_path}")
+            print(f"[Aurelius v9.0 Tier1] Loaded {task} model from local: {local_path}")
             return model
         except Exception as e:
-            print(f"[Aurelius v5.2 Tier1] Local load failed: {e}")
+            print(f"[Aurelius v9.0 Tier1] Local load failed: {e}")
             return None
 
     def save_model(self, model: Any, task: str) -> str:
@@ -439,6 +436,6 @@ __all__ = [
     "HAS_TORCH",
     "HUGGINGFACE_MODELS",
     "HuggingFaceWeightLoader",
-    "convert_mlx_to_torch_weights",
-    "load_pytorch_fallback_with_mlx_weights",
+    "convert_numpy_to_torch_weights",
+    "load_pytorch_fallback",
 ]

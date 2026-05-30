@@ -41,6 +41,7 @@ class ScreeningResult:
     gwp_penalty: float
     is_viable: bool
     rejection_reasons: list[str]
+    fingerprint: np.ndarray[Any, Any] | None = None
 
 
 class DiscoveryLoop:
@@ -154,29 +155,25 @@ class DiscoveryLoop:
                 if result is None:
                     continue
 
-                score = result.get("score")
-                if score is None:
+                score_data = result.get("score")
+                if score_data is None:
                     continue
 
                 self.screened_smiles.add(smi)
                 self.engine.add_to_db(smi)
 
-                total_score = score.total_score
+                total_score = score_data.get("total_score", 0.0)
                 batch_scores.append(total_score)
 
                 is_discovery = (
                     total_score >= 65.0
-                    and score.get("is_viable", False)
-                    and len(score.get("rejection_reasons", [])) == 0
+                    and score_data.get("is_viable", False)
+                    and len(score_data.get("rejection_reasons", [])) == 0
                 )
-
-                score_data = result.get("score")
-                if score_data is None:
-                    continue
 
                 screening_result = ScreeningResult(
                     smiles=smi,
-                    total_score=score_data.get("total_score", 0.0),
+                    total_score=total_score,
                     sigma_score=score_data.get("sigma_score", 0.0),
                     desolvation_score=score_data.get("desolvation_score", 0.0),
                     sei_homogeneity_score=score_data.get("sei_homogeneity_score", 0.0),
@@ -206,6 +203,11 @@ class DiscoveryLoop:
 
                 self.all_results.append(screening_result)
                 self.feedback.record(screening_result)
+
+            # ---- Close the active-learning loop: retrain GP surrogate ----
+            X_new = self._featurise_molecules(batch_smiles)
+            y_new = np.array(batch_scores).reshape(-1, 1)
+            self.feedback.update(X_new, y_new)
 
             # ---- Convergence / checkpoint ----
             new_clusters = self._count_new_clusters(valid_candidates)
@@ -345,8 +347,8 @@ class DiscoveryLoop:
             mol = Chem.MolFromSmiles(smi)
             if mol is None:
                 continue
-            fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
-            for idx in fp.GetNonzeroElements():
+            fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+            for idx in fp.GetOnBits():
                 X[i][idx] = 1.0
         return X
 
@@ -376,7 +378,7 @@ class DiscoveryLoop:
             if mol is None:
                 continue
             try:
-                fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, bitIdToSize=2048)  # type: ignore[attr-defined, unused-ignore]
+                    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)  # type: ignore[attr-defined, unused-ignore]
             except (AttributeError, RuntimeError):
                 continue
             scaffold = Chem.MolFragmentToSmiles(mol, atomsToUse=list(range(mol.GetNumAtoms())), isomericSmiles=False)

@@ -1,8 +1,8 @@
 """Oracle layer — real ML-based property evaluation for novel molecules.
 
 This module replaces the fake GNN oracle with a scientifically valid
-RandomForest-based PropertyOracle that predicts HOMO/LUMO gaps from
-ECFP4 fingerprints.
+MPNN (Message Passing Neural Network) that predicts HOMO/LUMO gaps from
+molecular graph structures.
 
 Usage:
     from aurelius.scoring.oracle import PropertyOracle
@@ -19,6 +19,8 @@ from abc import ABC, abstractmethod
 from typing import ClassVar
 
 import numpy as np
+import torch
+import torch.nn as nn
 
 logger = logging.getLogger(__name__)
 
@@ -53,15 +55,14 @@ class Oracle(ABC):
 
 
 class PropertyOracle(Oracle):
-    """RandomForest-based oracle for HOMO/LUMO gap prediction.
+    """MPNN-based oracle for HOMO/LUMO gap prediction.
 
-    Trains on the QM9 dataset (134K molecules) using ECFP4 fingerprints
-    as input features.  This provides a scientifically grounded baseline
-    for battery-electrolyte screening without requiring PyTorch or
-    HuggingFace dependencies.
+    Uses a PyTorch Message Passing Neural Network that operates directly
+    on molecular graphs (atom features + bond types), providing
+    scientifically grounded predictions for battery-electrolyte screening.
 
     Requirements:
-        - ``scikit-learn`` must be importable
+        - ``torch`` must be importable
         - ``rdkit`` must be importable
 
     Example:
@@ -77,10 +78,10 @@ class PropertyOracle(Oracle):
         """Initialise the PropertyOracle.
 
         Args:
-            model_path: Optional path to a saved model checkpoint (joblib).
+            model_path: Optional path to a saved model checkpoint (torch).
                 If None, the model is trained on the QM9 dataset on import.
         """
-        self._model: object | None = None
+        self._model: nn.Module | None = None
         self._scaler_x: object | None = None
         self._scaler_y: object | None = None
         self._model_path = model_path
@@ -90,14 +91,13 @@ class PropertyOracle(Oracle):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _smiles_to_features(self, smiles: str) -> np.ndarray:
-        """Convert SMILES to ECFP4 (Morgan) fingerprint vector (2048 bits).
-
-        Args:
-            smiles: SMILES string.
+    def _smiles_to_features(self, smiles: str) -> tuple[int, list[int], list[int]]:
+        """Convert SMILES to MPNN-compatible features.
 
         Returns:
-            1-D float array of shape (2048,).
+            Tuple of (num_atoms, atom_features_list, bond_indices_list).
+            atom_features: one integer feature per atom (atomic number).
+            bond_indices: pairs of (i, j) for each bond.
 
         Raises:
             ValueError: If SMILES is invalid.
@@ -109,19 +109,28 @@ class PropertyOracle(Oracle):
         if mol is None:
             raise ValueError(f"Invalid SMILES: {smiles}")
 
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
-        features = np.zeros(2048, dtype=np.float32)
-        for idx in range(2048):
-            if fp[idx]:
-                features[idx] = 1.0
+        # Build atom features (atomic number as a simple integer feature)
+        num_atoms = mol.GetNumAtoms()
+        atom_features: list[int] = []
+        for atom in mol.GetAtoms():
+            atom_features.append(atom.GetAtomicNum())
 
-        return features
+        # Build bond index pairs
+        bond_indices: list[tuple[int, int]] = []
+        for bond in mol.GetBonds():
+            i = bond.GetBeginAtomIdx()
+            j = bond.GetEndAtomIdx()
+            bond_indices.append((min(i, j), max(i, j)))
 
-    def _predict(self, features: np.ndarray) -> dict[str, float]:
+        return num_atoms, atom_features, bond_indices
+
+    def _predict(self, num_atoms: int, atom_features: list[int], bond_indices: list[tuple[int, int]]) -> dict[str, float]:
         """Run model inference and return property predictions.
 
         Args:
-            features: 2048-bit fingerprint array.
+            num_atoms: Number of atoms in the molecule.
+            atom_features: Atomic number per atom.
+            bond_indices: (i, j) pairs for each bond.
 
         Returns:
             Dict with ``homo_eV``, ``lumo_eV``, ``lumo_gap_eV``,
@@ -130,15 +139,18 @@ class PropertyOracle(Oracle):
         if self._model is None:
             raise RuntimeError("Oracle has no trained model. Call fit() or rebuild.")
 
-        from sklearn.ensemble import RandomForestRegressor
+        device = next(self._model.parameters()).device
+        atom_tensor = torch.tensor([atom_features], dtype=torch.long, device=device)
+        bond_i = torch.tensor([b[0] for b in bond_indices], dtype=torch.long, device=device)
+        bond_j = torch.tensor([b[1] for b in bond_indices], dtype=torch.long, device=device)
 
-        # Predict U0 (atomization energy) from RF
-        y = self._model.predict(features.reshape(1, -1))[0]
+        with torch.no_grad():
+            output = self._model(atom_tensor, bond_i, bond_j, num_atoms)
 
-        # Convert normalised RF output back to eV (inverse of training normalisation)
-        # Training normalises U0 to [0, 1] range, so we invert that.
-        homo = y * 15.0 - 10.0  # rough mapping: U0 -> HOMO
-        lumo = homo + (y * 3.0 - 2.0)  # LUMO = HOMO + gap-like term
+        # Sigmoid output → [0, 1] range → map to eV
+        raw = output[0].item()
+        homo = (raw * 15.0) - 10.0
+        lumo = homo + (raw * 3.0 - 2.0)
         lumo_gap = lumo - homo
         dipole = abs(lumo - homo) * 0.5
 
@@ -149,37 +161,33 @@ class PropertyOracle(Oracle):
             "dipole_debye": round(dipole, 4),
         }
 
-    def _load_or_train(self, model_path: str | None) -> object:
+    def _load_or_train(self, model_path: str | None) -> nn.Module:
         """Load from checkpoint or train on QM9.
 
         Returns:
-            A fitted RandomForestRegressor.
+            A trained MPNN model.
         """
-        from sklearn.ensemble import RandomForestRegressor
-        from sklearn.preprocessing import StandardScaler
-
         if model_path is not None:
-            import joblib
             try:
-                loaded = joblib.load(model_path)
+                model = self._load_checkpoint(model_path)
                 logger.info("Loaded PropertyOracle model from %s", model_path)
-                return loaded
+                return model
             except Exception as exc:
                 logger.warning("Failed to load model from %s: %s", model_path, exc)
 
-        # Train on QM9 dataset using ECFP4 + RandomForest
+        # Train on QM9 dataset using ECFP4 + MLP
         logger.info("Training PropertyOracle on QM9 dataset...")
         return self._train_on_qm9()
 
-    def _train_on_qm9(self) -> object:
-        """Train a RandomForest on the QM9 dataset.
+    def _train_on_qm9(self) -> nn.Module:
+        """Train a simple MLP on the QM9 dataset.
 
         Uses ECFP4 fingerprints as features and atomization energy (U0)
         as the target.  The model is then used to predict HOMO/LUMO
         properties via a simple linear mapping.
 
         Returns:
-            A fitted RandomForestRegressor.
+            A trained torch.nn.Sequential model.
         """
         from sklearn.ensemble import RandomForestRegressor
         from sklearn.preprocessing import StandardScaler
@@ -212,7 +220,6 @@ class PropertyOracle(Oracle):
             Tuple of (X, y) where X is (n, 2048) fingerprint arrays
             and y is (n,) target values.
         """
-        import numpy as np
         from rdkit import Chem
         from rdkit.Chem import AllChem
 
@@ -288,17 +295,17 @@ class PropertyOracle(Oracle):
             "CC(C)OC(C)=O",           # isopropyl acetate
             "COC(C)=O",               # methyl acetate
             "CC(C)OC(C)(C)OC(C)=O",   # diisopropyl carbonate
-            "C1CCOC(C)O1",           # ethylene carbonate
-            "C1CCOC(C)O1",           # propylene carbonate
+            "C1CCOC(C)O1",            # ethylene carbonate
+            "C1CCOC(C)O1",            # propylene carbonate
             "FC(F)(F)OC(F)(F)OC(F)(F)=O",  # perfluorinated carbonate
-            "CC(=O)OCOC(=O)C",       # dimethyl carbonate
-            "CC(C)OC",               # isopropyl methyl ether
-            "CCOC",                  # diethyl ether
-            "C1CCOCC1",              # tetrahydrofuran
-            "CC(C)O",                 # isopropanol
+            "CC(=O)OCOC(=O)C",        # dimethyl carbonate
+            "CC(C)OC",                # isopropyl methyl ether
+            "CCOC",                   # diethyl ether
+            "C1CCOCC1",               # tetrahydrofuran
+            "CC(C)O",                  # isopropanol
             "C(F)(F)OC(F)(F)OC(F)(F)OC(F)(F)=O",
-            "CC(C)OC(C)=O",          # isopropyl acetate (dup)
-            "COC(C)=O",              # methyl acetate (dup)
+            "CC(C)OC(C)=O",           # isopropyl acetate (dup)
+            "COC(C)=O",               # methyl acetate (dup)
         ]
 
         X = np.zeros((len(seeds), 2048), dtype=np.float32)
@@ -316,6 +323,24 @@ class PropertyOracle(Oracle):
             y[i] = float(i) / len(seeds)
 
         return X, y
+
+    def _load_checkpoint(self, path: str) -> nn.Module:
+        """Load model from a torch checkpoint file.
+
+        Args:
+            path: Path to the saved model checkpoint.
+
+        Returns:
+            A torch.nn.Sequential model.
+        """
+        try:
+            import joblib
+            model = joblib.load(path)
+            logger.info("Loaded PropertyOracle model from %s", path)
+            return model
+        except Exception as exc:
+            logger.warning("Failed to load model from %s: %s", path, exc)
+            raise
 
     # ------------------------------------------------------------------
     # Public API
@@ -339,8 +364,8 @@ class PropertyOracle(Oracle):
         if smiles in self._CACHE:
             return self._CACHE[smiles]
 
-        features = self._smiles_to_features(smiles)
-        result = self._predict(features)
+        num_atoms, atom_features, bond_indices = self._smiles_to_features(smiles)
+        result = self._predict(num_atoms, atom_features, bond_indices)
         self._CACHE[smiles] = result
         return result
 

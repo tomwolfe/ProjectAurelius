@@ -16,22 +16,17 @@ from importlib import resources
 from typing import Any
 
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
 
-from aurelius.screening.tier1.models import MLXBackend, PyTorchBackend
-from aurelius.utils.dependencies import HAS_MLX, HAS_TORCH
+from aurelius.screening.tier1.models import PyTorchBackend
+from aurelius.utils.dependencies import HAS_TORCH
 
-if HAS_MLX:
-    import mlx.core as mx
-    import mlx.nn as mlx_nn
-    import mlx.optimizers as optimizers
-else:
-    mx = None  # type: ignore[assignment]
-    mlx_nn = None  # type: ignore[assignment]
-    optimizers = None  # type: ignore[assignment]
-
-if HAS_TORCH:
-    import torch as _torch
-    import torch.nn as _torch_nn
+if not HAS_TORCH:
+    raise ImportError(
+        "PyTorch is required for training. Install torch to use model backends."
+    )
 
 
 def _get_fingerprint_fn() -> Any:
@@ -75,22 +70,19 @@ def _generate_synthetic_training_data() -> tuple[np.ndarray[Any, Any], np.ndarra
 
 
 def train_on_esol(
-    model: MLXBackend,
     epochs: int = 200,
     lr: float = 0.005,
     batch_size: int = 16,
     seed: int = 42,
     val_split: float = 0.15,
-) -> MLXBackend:
-    """Train the MLX-NA model on the ESOL dataset (Delaney et al. 2004).
+) -> PyTorchBackend:
+    """Train the PyTorch model on the ESOL dataset (Delaney et al. 2004).
 
     The ESOL (Estimated SOLubility) dataset contains 1112 molecules
     with experimentally measured aqueous solubility (logS in mol/L).
-    This is a standard benchmark for molecular property prediction
-    and provides real experimental data for training.
+    This is a standard benchmark for molecular property prediction.
 
     Args:
-        model: The MLXBackend instance to train.
         epochs: Maximum number of training epochs.
         lr: Learning rate for gradient descent.
         batch_size: Mini-batch size.
@@ -98,14 +90,11 @@ def train_on_esol(
         val_split: Fraction of data held out for validation.
 
     Returns:
-        The trained MLXBackend instance (modified in place).
+        The trained PyTorchBackend instance.
 
     Raises:
-        RuntimeError: If MLX or RDKit is unavailable.
+        RuntimeError: If RDKit is unavailable.
     """
-    if not HAS_MLX:
-        raise RuntimeError("train_on_esol requires MLX")
-
     generate_fp = _get_fingerprint_fn()
 
     # Load ESOL dataset via huggingface datasets library
@@ -120,7 +109,7 @@ def train_on_esol(
         print(
             f"[tier1] 'datasets' library not available or dataset unavailable, loading from packaged CSV: {training_data_path}"
         )
-        print("[Aurelius v5.2 Tier1] Using packaged ESOL fallback data (50 molecules from Delaney 2004)")
+        print("[Aurelius v9.0 Tier1] Using packaged ESOL fallback data (50 molecules from Delaney 2004)")
 
         import csv
 
@@ -137,108 +126,96 @@ def train_on_esol(
         normalized = (log_s + 6.0) / 7.0
         y_train[i] = np.clip(normalized, 0.0, 1.0)
 
-    X_mx = mx.array(X_train)
-    y_mx = mx.array(y_train)
     n_samples = X_train.shape[0]
 
     # Split into train/validation
     n_val = int(n_samples * val_split)
-    perm = mx.random.permutation(n_samples, key=mx.random.key(seed))
-    X_train_split = X_mx[perm[: n_samples - n_val]]
-    y_train_split = y_mx[perm[: n_samples - n_val]]
-    X_val_split = X_mx[perm[n_samples - n_val :]]
-    y_val_split = y_mx[perm[n_samples - n_val :]]
+    rng = np.random.RandomState(seed)
+    perm = rng.permutation(n_samples)
+    X_train_split = X_train[perm[: n_samples - n_val]]
+    y_train_split = y_train[perm[: n_samples - n_val]]
+    X_val_split = X_train[perm[n_samples - n_val :]]
+    y_val_split = y_train[perm[n_samples - n_val :]]
 
-    # Use MLX optimizers for clean training loop
-    optimizer = optimizers.SGD(learning_rate=lr)
-
-    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:  # type: ignore[name-defined]
-        pred = model(x)
-        pred = mx.reshape(pred, (-1,))
-        target = mx.reshape(target, (-1,))
-        return mx.mean((pred - target) ** 2)
+    model = PyTorchBackend()
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
 
     # Training loop with early stopping
     best_val_loss = float("inf")
     patience = 30
     patience_counter = 0
-    best_params = None
+    best_state: dict[str, Any] | None = None
 
     for epoch in range(epochs):
-        perm = mx.random.permutation(n_samples - n_val, key=mx.random.key(seed))
-        X_shuffled = X_train_split[perm]
+        epoch_perm = rng.permutation(n_samples - n_val)
+        X_shuffled = X_train_split[epoch_perm]
 
         for start in range(0, n_samples - n_val, batch_size):
             end = min(start + batch_size, n_samples - n_val)
-            x_batch = X_shuffled[start:end]
-            y_batch = y_train_split[start:end]
+            x_batch = torch.from_numpy(X_shuffled[start:end]).float()
+            y_batch = torch.from_numpy(y_train_split[start:end]).float()
 
-            # Compute gradients using mlx.nn.value_and_grad
-            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
+            optimizer.zero_grad()
+            pred = model(x_batch).squeeze(-1)  # type: ignore[attr-defined]
+            loss = criterion(pred, y_batch)
+            loss.backward()
+            optimizer.step()
 
-            # Apply optimizer step
-            optimizer.update(model, grads)
-
-        val_loss = float(_loss_fn(X_val_split, y_val_split))  # type: ignore[arg-type]
+        with torch.no_grad():
+            val_pred = model(torch.from_numpy(X_val_split).float()).squeeze(-1)  # type: ignore[attr-defined]
+            val_loss = criterion(val_pred, torch.from_numpy(y_val_split).float()).item()
 
         if (epoch + 1) % 20 == 0:
-            train_loss = float(_loss_fn(X_train_split, y_train_split))
-            preds = mx.reshape(model(X_val_split), (-1,))
-            accuracy = float(mx.mean(preds > 0.5 == y_val_split))  # type: ignore[arg-type]
+            with torch.no_grad():
+                train_pred = model(torch.from_numpy(X_train_split).float()).squeeze(-1)  # type: ignore[attr-defined]
+                train_loss = criterion(train_pred, torch.from_numpy(y_train_split).float()).item()
             print(
-                f"[Aurelius v5.2 Tier1] Epoch {epoch + 1}/{epochs}: "
-                f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, "
-                f"val_accuracy={accuracy:.2f}"
+                f"[Aurelius v9.0 Tier1] Epoch {epoch + 1}/{epochs}: "
+                f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
             )
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}  # type: ignore[attr-defined]
         else:
             patience_counter += 1
             if patience_counter >= patience:
-                print(f"[Aurelius v5.2 Tier1] Early stopping at epoch {epoch + 1} (best val_loss={best_val_loss:.4f})")
+                print(f"[Aurelius v9.0 Tier1] Early stopping at epoch {epoch + 1} (best val_loss={best_val_loss:.4f})")
                 break
 
-    if best_params is not None:
-        # Apply best weights to model
-        for param, weight in zip(model.trainable_parameters(), best_params, strict=True):
-            param[...] = weight
+    if best_state is not None:
+        model.load_state_dict(best_state)  # type: ignore[attr-defined]
 
     return model
 
 
 def train_on_qm9(
-    model: MLXBackend,
     epochs: int = 300,
     lr: float = 0.005,
     batch_size: int = 32,
     seed: int = 42,
-) -> MLXBackend:
-    """Train the MLX-NA model on the QM9 dataset (Ramakrishnan et al. 2014).
+) -> PyTorchBackend:
+    """Train the PyTorch model on the QM9 dataset (Ramakrishnan et al. 2014).
 
     The QM9 dataset contains 130,837 small molecules with DFT-computed
     quantum mechanical properties. This function trains on the
     atomization energy (U0) property.
 
     Args:
-        model: The MLXBackend instance to train.
         epochs: Number of training epochs.
         lr: Learning rate for gradient descent.
         batch_size: Mini-batch size.
         seed: Random seed for reproducibility.
 
     Returns:
-        The trained MLXBackend instance (modified in place).
+        The trained PyTorchBackend instance.
 
     Raises:
-        RuntimeError: If MLX is unavailable.
         ValueError: If QM9 U0 has zero range after filtering.
         ConnectionError: If network error loading QM9 dataset.
     """
-    if not HAS_MLX:
-        raise RuntimeError("train_on_qm9 requires MLX")
-
     generate_fp = _get_fingerprint_fn()
 
     from datasets import load_dataset
@@ -266,123 +243,112 @@ def train_on_qm9(
         X_train[i] = fp
         y_train[i] = np.clip((valid_u0[i] - u0_min) / u0_range, 0.0, 1.0)
 
-    X_mx = mx.array(X_train)
-    y_mx = mx.array(y_train)
-
-    # Use MLX optimizers for clean training loop
-    optimizer = optimizers.SGD(learning_rate=lr)
-
-    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:  # type: ignore[name-defined]
-        pred = model(x)
-        pred = mx.reshape(pred, (-1,))
-        target = mx.reshape(target, (-1,))
-        return mx.mean((pred - target) ** 2)
+    model = PyTorchBackend()
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
 
     # Training loop with early stopping
     best_val_loss = float("inf")
     patience = 30
     patience_counter = 0
-    best_params = None
+    best_state: dict[str, Any] | None = None
 
-    rng_state = mx.random.key(seed)
+    rng = np.random.RandomState(seed)
 
     for epoch in range(epochs):
-        perm = mx.random.permutation(n_samples, key=rng_state)
-        X_shuffled = X_mx[perm]
-        y_shuffled = y_mx[perm]
+        perm = rng.permutation(n_samples)
+        X_shuffled = X_train[perm]
+        y_shuffled = y_train[perm]
 
         for start in range(0, n_samples, batch_size):
             end = min(start + batch_size, n_samples)
-            x_batch = X_shuffled[start:end]
-            y_batch = y_shuffled[start:end]
+            x_batch = torch.from_numpy(X_shuffled[start:end]).float()
+            y_batch = torch.from_numpy(y_shuffled[start:end]).float()
 
-            # Compute gradients using mlx.nn.value_and_grad
-            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
+            optimizer.zero_grad()
+            pred = model(x_batch).squeeze(-1)  # type: ignore[attr-defined]
+            loss = criterion(pred, y_batch)
+            loss.backward()
+            optimizer.step()
 
-            # Apply optimizer step
-            optimizer.update(model, grads)
-
-        val_loss = float(_loss_fn(X_mx, y_mx))
+        with torch.no_grad():
+            val_pred = model(torch.from_numpy(X_train).float()).squeeze(-1)  # type: ignore[attr-defined]
+            val_loss = criterion(val_pred, torch.from_numpy(y_train).float()).item()
 
         if (epoch + 1) % 50 == 0:
-            current_loss = val_loss
-            print(f"[Aurelius v5.2 Tier1] QM9 training epoch {epoch + 1}/{epochs}: loss={current_loss:.4f}")
+            print(f"[Aurelius v9.0 Tier1] QM9 training epoch {epoch + 1}/{epochs}: loss={val_loss:.4f}")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}  # type: ignore[attr-defined]
         else:
             patience_counter += 1
             if patience_counter >= patience:
-                print(f"[Aurelius v5.2 Tier1] Early stopping at epoch {epoch + 1} (best val_loss={best_val_loss:.4f})")
+                print(f"[Aurelius v9.0 Tier1] Early stopping at epoch {epoch + 1} (best val_loss={best_val_loss:.4f})")
                 break
 
-    if best_params is not None:
-        # Apply best weights to model
-        for param, weight in zip(model.trainable_parameters(), best_params, strict=True):
-            param[...] = weight
+    if best_state is not None:
+        model.load_state_dict(best_state)  # type: ignore[attr-defined]
 
     return model
 
 
 def _train_synthetic_mlx(
-    model: MLXBackend,
-) -> MLXBackend:
+    model: PyTorchBackend,
+) -> PyTorchBackend:
     """Train on synthetic solubility dataset (demo/fallback mode).
 
     Args:
-        model: The MLXBackend instance to train.
+        model: The PyTorchBackend instance to train.
 
     Returns:
-        The trained MLXBackend instance.
+        The trained PyTorchBackend instance.
     """
     X_train, y_train, _ = _generate_synthetic_training_data()
 
     n_samples = X_train.shape[0]
     _n_val = max(1, int(n_samples * 0.15))
 
-    # Convert numpy arrays to MLX arrays for training
-    X_mx = mx.array(X_train)
-    y_mx = mx.array(y_train)
+    # Use PyTorch optimizers for clean training loop
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
 
-    # Use MLX optimizers for clean training loop
-    optimizer = optimizers.SGD(learning_rate=0.01)
-
-    def _loss_fn(x: mx.Array, target: mx.Array) -> mx.Array:  # type: ignore[name-defined]
-        h = model.linear1(x)
-        h = mx.maximum(h, 0.0)
+    def _loss_fn(x: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        h = nn.functional.relu(model.linear1(x))
         out = model.linear2(h)
-        pred = mx.sigmoid(out)
-        pred = mx.reshape(pred, (-1,))
-        target = mx.reshape(target, (-1,))
-        return mx.mean((pred - target) ** 2)
+        pred = torch.sigmoid(out)
+        pred = pred.reshape(-1, 1)
+        target = target.reshape(-1, 1)
+        return torch.mean((pred - target) ** 2)
 
     # Training loop with early stopping
     best_val_loss = float("inf")
     patience = 20
     patience_counter = 0
-    best_params = None
+    best_params: dict[str, Any] | None = None
 
     for epoch in range(100):
-        perm = mx.random.permutation(n_samples, key=mx.random.key(42))
-        X_shuffled = X_mx[perm]
-        y_shuffled = y_mx[perm]
+        perm = torch.randperm(n_samples, generator=torch.Generator().manual_seed(42))
+        X_shuffled = X_train[perm]
+        y_shuffled = y_train[perm]
 
         for start in range(0, n_samples, 16):
             end = min(start + 16, n_samples)
-            x_batch = X_shuffled[start:end]
-            y_batch = y_shuffled[start:end]
+            x_batch = torch.from_numpy(X_shuffled[start:end]).float()
+            y_batch = torch.from_numpy(y_shuffled[start:end]).float()
 
-            # Compute gradients using mlx.nn.value_and_grad
-            loss, grads = mlx_nn.value_and_grad(model, _loss_fn)(x_batch, y_batch)  # type: ignore[attr-defined]
+            optimizer.zero_grad()
+            loss = _loss_fn(x_batch, y_batch)
+            loss.backward()
+            optimizer.step()
 
-            # Apply optimizer step
-            optimizer.update(model, grads)
-
-        val_loss = float(_loss_fn(X_mx, y_mx))
+        val_loss = _loss_fn(
+            torch.from_numpy(X_train).float(),
+            torch.from_numpy(y_train).float(),
+        ).item()
 
         if (epoch + 1) % 20 == 0:
-            print(f"[Aurelius v6.0 Tier1] Synthetic epoch {epoch + 1}/100: loss={val_loss:.4f}")
+            print(f"[Aurelius v9.0 Tier1] Synthetic epoch {epoch + 1}/100: loss={val_loss:.4f}")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -390,13 +356,13 @@ def _train_synthetic_mlx(
         else:
             patience_counter += 1
             if patience_counter >= patience:
-                print(f"[Aurelius v6.0 Tier1] Early stopping at epoch {epoch + 1} (best val_loss={best_val_loss:.4f})")
+                print(f"[Aurelius v9.0 Tier1] Early stopping at epoch {epoch + 1} (best val_loss={best_val_loss:.4f})")
                 break
 
     if best_params is not None:
         # Apply best weights to model
-        for param, weight in zip(model.trainable_parameters(), best_params, strict=True):
-            param[...] = weight
+        for param, weight in zip(model.parameters(), best_params, strict=True):
+            param.data.copy_(weight)
 
     return model
 

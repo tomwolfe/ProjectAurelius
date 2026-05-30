@@ -20,6 +20,7 @@ from aurelius.scoring.oracle import PropertyOracle
 from aurelius.screening.tier1 import MLXNAFilter
 from aurelius.types import MLXFilterResult, MoleculeInput, OracleResult
 from aurelius.utils.dependencies import HAS_MLX, HAS_RDKIT
+from scipy.stats import norm as norm_dist
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +188,10 @@ class AureliusPipeline:
     def _compute_score(self, oracle_result: dict[str, float]) -> dict[str, Any]:
         """Compute the final Aurelius Score from oracle results.
 
+        Rewards LUMO in [-1.5, -0.5] eV (SEI formation window) and
+        HOMO < -6.0 eV (oxidative stability).  Outside these bounds,
+        a Gaussian penalty is applied.
+
         Args:
             oracle_result: Dictionary with keys like ``lumo_gap_eV``, ``homo_eV``, etc.
 
@@ -194,15 +199,32 @@ class AureliusPipeline:
             Dict with ``total_score``, ``is_viable``, and ``rejection_reasons``.
         """
         lumo_gap = oracle_result.get("lumo_gap_eV", 999.0)
+        homo = oracle_result.get("homo_eV", 999.0)
 
-        # Simple scoring based on LUMO gap
-        total_score = max(0.0, 100.0 - lumo_gap * 5.0)
-        is_viable = lumo_gap < 6.0
+        # Gaussian rewards for target ranges
+        lumo_mean, lumo_std = -1.0, 0.35
+        homo_mean, homo_std = -6.0, 1.0
+
+        # Reward: Gaussian PDF at target values (higher near centre)
+        lumo_score = norm_dist.pdf(lumo_gap, loc=lumo_mean, scale=lumo_std) * 100.0
+        homo_score = norm_dist.pdf(homo, loc=homo_mean, scale=homo_std) * 100.0
+
+        # Penalty for out-of-range values
+        if lumo_gap < -1.5 or lumo_gap > -0.5:
+            lumo_score *= 0.1
+        if homo > -6.0:
+            homo_score *= 0.1
+
+        total_score = min(lumo_score, homo_score)
+        total_score = max(0.0, total_score)
+
+        is_viable = total_score >= 20.0
 
         rejection_reasons: list[str] = []
         if not is_viable:
             rejection_reasons.append(
-                f"Aurelius Score {total_score:.1f} below viability threshold (LUMO gap: {lumo_gap:.3f} eV)"
+                f"Aurelius Score {total_score:.1f} below viability threshold "
+                f"(LUMO gap: {lumo_gap:.3f} eV, HOMO: {homo:.3f} eV)"
             )
 
         return {

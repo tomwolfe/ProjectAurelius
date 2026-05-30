@@ -16,11 +16,10 @@ from aurelius.screening.tier1.loaders import (
     DEFAULT_MODEL_DIR,
     HUGGINGFACE_MODELS,
     HuggingFaceWeightLoader,
-    convert_mlx_to_torch_weights,
-    load_pytorch_fallback_with_mlx_weights,
+    convert_numpy_to_torch_weights,
+    load_pytorch_fallback,
 )
 from aurelius.screening.tier1.models import (
-    MLXBackend,
     PyTorchBackend,
 )
 from aurelius.screening.tier1.training import (
@@ -37,12 +36,11 @@ __all__ = [
     "HUGGINGFACE_MODELS",
     "HuggingFaceWeightLoader",
     "MLXNAFilter",
-    "MLXBackend",
     "PyTorchBackend",
     "generate_ecfp4_fingerprint",
     "_generate_ecfp4_fingerprint",
-    "convert_mlx_to_torch_weights",
-    "load_pytorch_fallback_with_mlx_weights",
+    "convert_numpy_to_torch_weights",
+    "load_pytorch_fallback",
     "train_on_esol",
     "train_on_qm9",
 ]

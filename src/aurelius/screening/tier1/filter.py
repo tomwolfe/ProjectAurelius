@@ -24,10 +24,9 @@ import numpy as np
 
 from aurelius.screening.tier1.loaders import (
     HuggingFaceWeightLoader,
-    load_pytorch_fallback_with_mlx_weights,
+    load_pytorch_fallback,
 )
 from aurelius.screening.tier1.models import (
-    MLXBackend,
     PyTorchBackend,
 )
 from aurelius.screening.tier1.training import (
@@ -210,7 +209,7 @@ class MLXNAFilter:
                 return self._get_demo_result()
             self._model = PyTorchBackend()
             if os.path.isdir(model_path):
-                self._model = load_pytorch_fallback_with_mlx_weights(self._model, model_path)
+                self._model = load_pytorch_fallback(self._model, model_path)
             self._model_loaded = True
             print("[Aurelius v6.0 Tier1] Model ready")
             return None

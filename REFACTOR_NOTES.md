@@ -9,101 +9,94 @@ that closes the Bayesian active-learning loop for molecule discovery.
 
 ## Phase 1: Purge Zombie Physics Code
 
-**File: `src/aurelius/types.py`**
+**File: `src/aurelius/screening/tier1/backend_mlx.py`**
 
-- **Removed** `DesolvationPathResult`, `Tier2Result`, `SEIEvolution`,
-  `GCMDTwinResult`, `GCMDTConfig`, `AureliusScoreResult` — all were
-  fake physics wrappers with no real implementation.
-- **Kept** `MoleculeInput`, `MLXFilterResult`.
-- **Added** `OracleResult` — a clean, flat dataclass holding only the
-  HOMO/LUMO properties returned by the PropertyOracle.
+- **Deleted** `backend_mlx.py` — the MLX-compatible 2-layer MLP and all weight-conversion
+  logic are no longer needed. PyTorch is now the sole inference backend.
 
-**File: `src/aurelius/pipeline.py`**
+**Files: `tests/test_physics.py`, `tests/test_scoring.py`, `tests/test_tier2.py`, `tests/test_tier3.py`**
 
-- Replaced `PretrainedGNNOracle` import with `PropertyOracle`.
-- Removed all code that faked `Tier2Result` or `DesolvationPathResult`
-  (e.g. mapping LUMO gap → `barrier_height_eV`).
-- `screen_molecule()` now returns a flat dict with `tier1`, `tier2`
-  (raw oracle dict), and `score` — no nested physics wrappers.
+- **Deleted** all four test files. The fake physics engines, scoring engine,
+  MatterSim, and GCMDigitalTwin were replaced by real ML oracles.
+  These tests are no longer needed.
 
-**File: `src/aurelius/agent/loop.py`**
+**File: `src/aurelius/config.py`**
 
-- Replaced direct screening of all valid_candidates with a
-  **Bayesian active-learning loop** (see Phase 4).
+- **Removed** `tier2_mattersim_enabled` and `tier3_gcmtwin_enabled` fields.
+- **Removed** `mattersim_quantization` and `gcmd_quantization` fields.
+- **Removed** GCMD kMC steps reference from `memory_report()`.
 
-**File: `src/aurelius/agent/reporting.py`**
+**File: `src/aurelius/screening/tier1/loaders.py`**
 
-- No changes needed; `ScreeningResult` is unchanged.
+- **Renamed** `convert_mlx_to_torch_weights` → `convert_numpy_to_torch_weights`.
+- **Renamed** `load_pytorch_fallback_with_mlx_weights` → `load_pytorch_fallback`.
+- **Removed** `MLXBackend` import; now imports `PyTorchBackend` from `models`.
+- **Updated** `_load_from_hf_hub` and `_load_from_local` to instantiate
+  `PyTorchBackend` instead of `MLXBackend`.
 
 ---
 
-## Phase 2: Fix the Oracle (Scientific Validity)
+## Phase 2: Scientific Validity (Oracle & Scoring)
 
 **File: `src/aurelius/scoring/oracle.py`**
 
-- **Deleted** `PretrainedGNNOracle` (and `MLPNNOracle` alias) — the
-  fake HuggingFace model path `aurelius/qm9-gnn` and the GNN-inference
-  code that passed flat 2048-bit ECFP4 fingerprints to a "GNN".
-- **Added** `PropertyOracle` — a RandomForest-based oracle trained on
-  ECFP4 fingerprints.  Falls back to synthetic data if no QM9 dataset
-  is available (no heavy PyTorch/PyG dependency).
-- `evaluate(smiles)` returns a dict with `homo_eV`, `lumo_eV`,
-  `lumo_gap_eV`, `dipole_debye`.
+- **Replaced** `PropertyOracle`'s `RandomForest` backend with a proper
+  MPNN (Message Passing Neural Network) using PyTorch Geometric.
+- The oracle now operates on molecular graph structures (atom features + bond indices)
+  rather than hashed ECFP4 fingerprints, enabling genuine extrapolation to
+  novel chemical space.
+- `evaluate(smiles)` still returns `homo_eV`, `lumo_eV`, `lumo_gap_eV`, `dipole_debye`,
+  but predictions now come from a trained graph network.
+
+**File: `src/aurelius/pipeline.py`**
+
+- **Replaced** the toy linear formula `100.0 - lumo_gap * 5.0` with a proper
+  Gaussian penalty-based scoring function:
+  - Rewards LUMO ∈ [-1.5, -0.5] eV (SEI formation window).
+  - Rewards HOMO < -6.0 eV (oxidative stability).
+  - Applies Gaussian PDF-based penalties for out-of-range values.
 
 ---
 
-## Phase 3: Real Battery Electrolyte Objective
-
-**File: `src/aurelius/scoring/oracle.py` (integrated)**
-
-- The score computation now uses a bounded objective function:
-  - **Reward** molecules whose LUMO falls in the SEI formation window
-    (−1.5 eV to −0.5 eV, reducible to form SEI).
-  - **Reward** molecules whose HOMO < −6.0 eV (oxidative stability).
-  - **Penalise** molecules outside this window using a Gaussian penalty
-    (not linear decay).
-- This replaces the previous `100.0 - lumo_gap * 5.0` linear formula
-  which was scientifically meaningless.
-
----
-
-## Phase 4: Close the Active Learning Loop
-
-**File: `src/aurelius/agent/loop.py`**
-
-- `DiscoveryLoop.execute()` now implements the full Bayesian loop:
-  1. `engine.propose_candidates(n_candidates=1000)` generates a large pool.
-  2. Pool is featurised into ECFP4 fingerprints (`X_pool`).
-  3. If `self.feedback._surrogate` is fitted, `expected_improvement()`
-     scores the pool → top `batch_size` candidates selected.
-  4. If not fitted, first batch is selected randomly.
-  5. Only selected candidates are screened.
-  6. `self.feedback.update(X_new, y_new)` re-trains the GP surrogate.
+## Phase 3: Close the Active Learning Loop
 
 **File: `src/aurelius/agent/state.py`**
 
-- Added `FeedbackAdapter._rng` (seeded `np.random.default_rng(42)`)
-  so the loop can select random candidates when the surrogate is
-  unfitted.
+- **Fixed** `FeedbackAdapter.record()` to append actual 2048-bit ECFP4 fingerprint
+  arrays (`result.fingerprint`) instead of raw SMILES strings.
+- Added `fingerprint` field to `ScreeningResult` dataclass.
+
+**File: `src/aurelius/agent/loop.py`**
+
+- **Added** explicit GP retraining after each batch: `self.feedback.update(X_new, y_new)`
+  is now called at the end of every generation's screening phase.
+- The loop now properly closes the Bayesian active-learning cycle:
+  1. Select candidates via Expected Improvement (or random for first batch).
+  2. Screen selected candidates.
+  3. **Update the GP surrogate** with new observations.
+  4. Record feedback and convergence state.
 
 ---
 
 ## Dependencies
 
-No new heavy dependencies introduced.  The refactoring stays within:
-- `rdkit` (molecule handling)
-- `scikit-learn` (RandomForest, GaussianProcessRegressor)
-- `numpy` (array operations)
-- `selfies` (mutation engine, unchanged)
-
----
-
-## Files Modified
-
 | File | Change |
 |------|--------|
-| `src/aurelius/types.py` | Removed fake physics types; kept only `MoleculeInput`, `MLXFilterResult`, `OracleResult` |
-| `src/aurelius/pipeline.py` | Replaced `PretrainedGNNOracle` import; removed fake Tier2/Desolvation path mapping |
-| `src/aurelius/scoring/oracle.py` | Replaced `PretrainedGNNOracle` with `PropertyOracle` (RandomForest) |
-| `src/aurelius/agent/loop.py` | Replaced direct screening with Bayesian active-learning loop |
-| `src/aurelius/agent/state.py` | Added `_rng` attribute to `FeedbackAdapter` |
+| `pyproject.toml` | Removed `mlx` optional dependency; version bumped to 9.0.0 |
+| `src/aurelius/screening/tier1/backend_mlx.py` | Deleted |
+| `src/aurelius/screening/tier1/loaders.py` | Removed MLX conversion, renamed functions |
+| `src/aurelius/config.py` | Removed `tier2_mattersim_enabled`, `tier3_gcmtwin_enabled` |
+| `src/aurelius/agent/loop.py` | Added `X_new, y_new = feedback.update()` call |
+| `src/aurelius/agent/state.py` | Fixed `record()` to append fingerprint arrays |
+| `src/aurelius/scoring/oracle.py` | Replaced RandomForest with MPNN-based oracle |
+| `src/aurelius/pipeline.py` | Gaussian penalty scoring replaces linear formula |
+
+## Files Deleted
+
+| File | Reason |
+|------|--------|
+| `src/aurelius/screening/tier1/backend_mlx.py` | MLX backend purged; PyTorch is sole backend |
+| `tests/test_physics.py` | Fake physics removed |
+| `tests/test_scoring.py` | Fake scoring engine removed |
+| `tests/test_tier2.py` | MatterSim replaced by real oracle |
+| `tests/test_tier3.py` | GCMDigitalTwin replaced by real oracle |

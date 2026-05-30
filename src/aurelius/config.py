@@ -68,13 +68,9 @@ class AureliusConfig(BaseSettings):
 
     # Quantization presets
     chemvlm_quantization: str = "MX4"
-    mattersim_quantization: str = "MX4"
-    gcmd_quantization: str = "standard"
 
     # Screening pipeline tiers
     tier1_mlxfilter_enabled: bool = True
-    tier2_mattersim_enabled: bool = True
-    tier3_gcmtwin_enabled: bool = True
 
     # Tier 2 neighbor list settings
     use_neighbor_list: bool = False
@@ -143,11 +139,10 @@ class AureliusConfig(BaseSettings):
         shader_reserved = self.metal_shader_cache_gb
         pytorch_available = self.total_memory_gb - mlx_reserved - shader_reserved
         return (
-            f"=== Aurelius v5.2 Memory Partition ({self.total_memory_gb:.0f}GB system RAM) ===\n"
+            f"=== Aurelius v9.0 Memory Partition ({self.total_memory_gb:.0f}GB system RAM) ===\n"
             f"  MLX (ChemVLM-2 MX4):         {mlx_reserved:>5.1f}GB reserved\n"
             f"  Metal Shader Cache:          {shader_reserved:>5.1f}GB reserved\n"
-            f"  PyTorch MPS (MatterSim+GCMD): {pytorch_available:>5.1f}GB available\n"
-            f"  GCMD kMC Steps:              {self.turquant_max_context:,} steps\n"
+            f"  PyTorch MPS:                 {pytorch_available:>5.1f}GB available\n"
             f"  Desolvation Barrier Cutoff:  {self.desolvation_barrier_threshold_eV} eV\n"
         )
 
