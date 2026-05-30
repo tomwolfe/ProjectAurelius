@@ -33,7 +33,25 @@ class OracleResult:
     score_eV: float
 
 
+@dataclass
+class AureliusScore:
+    """Composite Aurelius score for battery electrolyte screening.
+
+    ``total_score`` is a weighted combination:
+        total_score = 0.6 * lumo_score + 0.4 * solubility_score
+
+    where both component scores are normalized to [0, 100].
+    """
+
+    lumo_score: float
+    solubility_score: float
+    total_score: float
+    is_viable: bool
+    rejection_reasons: list[str]
+
+
 __all__ = [
+    "AureliusScore",
     "MoleculeInput",
     "OracleResult",
 ]

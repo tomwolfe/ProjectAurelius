@@ -17,6 +17,7 @@ from typing import Any
 from aurelius.config import AureliusConfig, apply_global_config
 from aurelius.scoring.oracle import PropertyOracle
 from aurelius.screening.tier1 import Filter
+from aurelius.types import AureliusScore
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +75,9 @@ class AureliusPipeline:
             "inference_time_ms": 0.0,
         }
 
-        oracle_result = self._oracle.evaluate(smiles) if self._oracle else {}
-        score_eV = oracle_result.get("score_eV", 0.0)
-        total_score = 50.0 * (score_eV / 100.0)
+        lumo_score = self._oracle.predict_normalized_lumo(smiles) if self._oracle else 0.0
+        solubility_score = self._oracle.predict_solubility(smiles) if self._oracle else 0.0
+        total_score = 0.6 * lumo_score + 0.4 * solubility_score
         is_viable = total_score >= 50.0
 
         return {
@@ -84,6 +85,8 @@ class AureliusPipeline:
             "tier2": None,
             "score": {
                 "total_score": total_score,
+                "lumo_score": lumo_score,
+                "solubility_score": solubility_score,
                 "is_viable": is_viable,
                 "rejection_reasons": [reason],
             },
@@ -127,6 +130,8 @@ class AureliusPipeline:
         if self._oracle:
             t2_start = time.perf_counter()
             oracle_result = self._oracle.evaluate(smiles)
+            lumo_score = self._oracle.predict_normalized_lumo(smiles)
+            solubility_score = self._oracle.predict_solubility(smiles)
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
 
             t2_result = {
@@ -134,31 +139,22 @@ class AureliusPipeline:
                 "lumo_eV": oracle_result.get("lumo_eV", -99.0),
                 "gap_eV": oracle_result.get("gap_eV", 0.0),
                 "score_eV": oracle_result.get("score_eV", 0.0),
+                "lumo_score": lumo_score,
+                "solubility_score": solubility_score,
             }
             results["tier2"] = t2_result
             logger.info(
-                "Property Oracle Result: %s -> HOMO=%.3f LUMO=%.3f gap=%.3f score_eV=%.1f",
+                "Property Oracle Result: %s -> HOMO=%.3f LUMO=%.3f gap=%.3f "
+                "lumo_score=%.1f solubility_score=%.1f",
                 smiles,
                 t2_result["homo_eV"],
                 t2_result["lumo_eV"],
                 t2_result["gap_eV"],
-                t2_result["score_eV"],
+                lumo_score,
+                solubility_score,
             )
 
-            if t2_result["score_eV"] < 1.0:
-                logger.warning(
-                    "Short-circuiting: %s failed Oracle (score_eV=%.1f)",
-                    smiles,
-                    t2_result["score_eV"],
-                )
-                return self._generate_failed_run(
-                    smiles,
-                    f"Failed Oracle (score_eV: {t2_result['score_eV']})",
-                    **kwargs,
-                )
-
-        sigma = 1 if t1_result and t1_result.get("is_viable", False) else 0
-        score = self._compute_score(oracle_result, sigma)
+        score = self._compute_score(lumo_score, solubility_score)
         results["score"] = score
 
         logger.debug("Scorecard:\n%s", self._format_score(score))
@@ -172,36 +168,37 @@ class AureliusPipeline:
 
         return results
 
-    def _compute_score(self, oracle_result: dict[str, float], sigma: int = 0) -> dict[str, Any]:
+    def _compute_score(self, lumo_score: float, solubility_score: float) -> dict[str, Any]:
         """Compute the final Aurelius Score.
 
-        Formula: S_A = 50.0 * σ + 50.0 * oracle_score_normalized
+        Formula: total = 0.6 * lumo_score + 0.4 * solubility_score
 
         Where:
-          - σ (0 or 1): Tier 1 structural viability
-          - oracle_score_normalized: oracle gap score scaled to [0, 1]
+          - lumo_score: normalized LUMO-based score [0, 100] (weight 60%)
+          - solubility_score: normalized logS-based score [0, 100] (weight 40%)
 
         Args:
-            oracle_result: Dictionary with keys ``logS``, ``score_eV``.
-            sigma: 1 if molecule passed Tier 1 structural filter, 0 otherwise.
+            lumo_score: Normalized LUMO score from oracle.
+            solubility_score: Normalized solubility score from oracle.
 
         Returns:
-            Dict with ``total_score``, ``is_viable``, and ``rejection_reasons``.
+            Dict with ``total_score``, ``lumo_score``, ``solubility_score``,
+            ``is_viable``, and ``rejection_reasons``.
         """
-        score_eV = oracle_result.get("score_eV", 0.0)
-        oracle_component = score_eV / 100.0
-        total_score = 50.0 * sigma + 50.0 * oracle_component
+        total_score = 0.6 * lumo_score + 0.4 * solubility_score
         is_viable = total_score >= 50.0
 
         rejection_reasons: list[str] = []
         if not is_viable:
             rejection_reasons.append(
                 f"Aurelius Score {total_score:.1f} below viability threshold "
-                f"(σ={sigma}, score_eV={score_eV:.1f})"
+                f"(lumo={lumo_score:.1f}, solubility={solubility_score:.1f})"
             )
 
         return {
             "total_score": total_score,
+            "lumo_score": lumo_score,
+            "solubility_score": solubility_score,
             "is_viable": is_viable,
             "rejection_reasons": rejection_reasons,
         }

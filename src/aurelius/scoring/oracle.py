@@ -28,7 +28,7 @@ from typing import Any
 import numpy as np
 from rdkit import Chem
 
-from aurelius.utils.chem_utils import generate_molecular_descriptors
+from aurelius.utils.chem_utils import generate_ecfp4_fingerprint, generate_molecular_descriptors
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,133 @@ def _generate_synthetic_homo_lumo(descs: np.ndarray) -> tuple[float, float]:
         lumo = homo + 2.0
 
     return float(homo), float(lumo)
+
+
+def _load_esol_data() -> list[tuple[str, float]]:
+    """Load ESOL logS data from the bundled fallback CSV."""
+    csv_path = os.path.join(os.path.dirname(__file__), "..", "data", "esol_fallback.csv")
+    csv_path = os.path.abspath(csv_path)
+    data: list[tuple[str, float]] = []
+    with open(csv_path) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            smi = row.get("smiles", "").strip()
+            logS = row.get("logS", "").strip()
+            if smi and logS:
+                try:
+                    data.append((smi, float(logS)))
+                except ValueError:
+                    continue
+    return data
+
+
+def _train_lumo_rf() -> tuple[Any, float, float]:
+    """Train RF for LUMO prediction on ECFP4 fingerprints.
+
+    Tries QM9 data first; falls back to synthetic training data
+    with generated LUMO targets.
+    """
+    from sklearn.ensemble import RandomForestRegressor
+
+    # Try QM9 data (may fail if huggingface datasets unavailable)
+    qm9_data: list[tuple[str, float]] | None = None
+    try:
+        from aurelius.data.loaders import load_qm9_lumo_data
+
+        qm9_data = load_qm9_lumo_data()
+    except Exception:
+        qm9_data = None
+
+    X_list: list[np.ndarray] = []
+    y_list: list[float] = []
+
+    if qm9_data is not None and len(qm9_data) >= 10:
+        for smi, lumo in qm9_data:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                continue
+            try:
+                fp = generate_ecfp4_fingerprint(smi)
+            except Exception:
+                continue
+            X_list.append(fp)
+            y_list.append(lumo)
+        logger.info("PropertyOracle: loaded %d QM9 LUMO entries.", len(X_list))
+    else:
+        # Fallback: synthetic data with generated LUMO values
+        smiles_list = _load_training_smiles()
+        for smi in smiles_list:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                continue
+            try:
+                fp = generate_ecfp4_fingerprint(smi)
+                desc = _descriptor_vector(smi)
+            except Exception:
+                continue
+            _, lumo = _generate_synthetic_homo_lumo(desc)
+            X_list.append(fp)
+            y_list.append(lumo)
+
+    X = np.array(X_list, dtype=np.float32)
+    y = np.array(y_list, dtype=np.float32)
+
+    rf = RandomForestRegressor(
+        n_estimators=100,
+        max_depth=12,
+        min_samples_leaf=5,
+        random_state=42,
+        n_jobs=-1,
+    )
+    rf.fit(X, y)
+
+    lumo_min = float(y.min())
+    lumo_max = float(y.max())
+    logger.info(
+        "PropertyOracle: trained LUMO RF on %d molecules (range [%.4f, %.4f] eV).",
+        len(X), lumo_min, lumo_max,
+    )
+    return rf, lumo_min, lumo_max
+
+
+def _train_solubility_rf() -> tuple[Any, float, float]:
+    """Train RF for logS (solubility) prediction on ECFP4 fingerprints."""
+    from sklearn.ensemble import RandomForestRegressor
+
+    data = _load_esol_data()
+
+    X_list: list[np.ndarray] = []
+    y_list: list[float] = []
+    for smi, logS in data:
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            continue
+        try:
+            fp = generate_ecfp4_fingerprint(smi)
+        except Exception:
+            continue
+        X_list.append(fp)
+        y_list.append(logS)
+
+    X = np.array(X_list, dtype=np.float32)
+    y = np.array(y_list, dtype=np.float32)
+
+    rf = RandomForestRegressor(
+        n_estimators=100,
+        max_depth=12,
+        min_samples_leaf=5,
+        random_state=42,
+        n_jobs=-1,
+    )
+    rf.fit(X, y)
+
+    logS_min = float(y.min())
+    logS_max = float(y.max())
+    logger.info(
+        "PropertyOracle: trained solubility RF on %d molecules (range [%.4f, %.4f]).",
+        len(X), logS_min, logS_max,
+    )
+    return rf, logS_min, logS_max
 
 
 def _train_homo_lumo_models() -> tuple[Any, float, float]:
@@ -170,6 +297,8 @@ class PropertyOracle:
 
     _model: tuple[Any, float, float] | None = None
     _CACHE: dict[str, dict[str, float]] | None = None
+    _lumo_rf: tuple[Any, float, float] | None = None
+    _solubility_rf: tuple[Any, float, float] | None = None
 
     def __init__(self, model_path: str | None = None) -> None:
         """Initialise the PropertyOracle.
@@ -185,6 +314,42 @@ class PropertyOracle:
         """Load or train the model if not already loaded."""
         if PropertyOracle._model is None:
             PropertyOracle._model = _train_homo_lumo_models()
+
+    def _ensure_lumo_model(self) -> None:
+        """Load or train the LUMO RF model if not already loaded."""
+        if PropertyOracle._lumo_rf is None:
+            PropertyOracle._lumo_rf = _train_lumo_rf()
+
+    def _ensure_solubility_model(self) -> None:
+        """Load or train the solubility RF model if not already loaded."""
+        if PropertyOracle._solubility_rf is None:
+            PropertyOracle._solubility_rf = _train_solubility_rf()
+
+    def predict_normalized_lumo(self, smiles: str) -> float:
+        """Predict normalized LUMO score in [0, 100] from ECFP4 fingerprints.
+
+        Higher score = more positive LUMO = better reductive stability.
+        """
+        self._ensure_lumo_model()
+        rf, lumo_min, lumo_max = PropertyOracle._lumo_rf
+        fp = generate_ecfp4_fingerprint(smiles).reshape(1, -1)
+        lumo = float(rf.predict(fp)[0])
+        rng = lumo_max - lumo_min
+        normalized = (lumo - lumo_min) / rng * 100.0 if rng > 0 else 50.0
+        return round(float(np.clip(normalized, 0.0, 100.0)), 2)
+
+    def predict_solubility(self, smiles: str) -> float:
+        """Predict normalized solubility score in [0, 100] from ECFP4 fingerprints.
+
+        Higher score = more soluble (better for electrolyte formulation).
+        """
+        self._ensure_solubility_model()
+        rf, logS_min, logS_max = PropertyOracle._solubility_rf
+        fp = generate_ecfp4_fingerprint(smiles).reshape(1, -1)
+        logS = float(rf.predict(fp)[0])
+        rng = logS_max - logS_min
+        normalized = (logS - logS_min) / rng * 100.0 if rng > 0 else 50.0
+        return round(float(np.clip(normalized, 0.0, 100.0)), 2)
 
     def _predict(self, smiles: str) -> dict[str, float]:
         """Run model inference and return HOMO/LUMO energies.
