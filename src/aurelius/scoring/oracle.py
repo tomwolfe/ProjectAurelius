@@ -328,15 +328,18 @@ class PropertyOracle:
     def predict_normalized_lumo(self, smiles: str) -> float:
         """Predict normalized LUMO score in [0, 100] from ECFP4 fingerprints.
 
-        Higher score = more positive LUMO = better reductive stability.
+        Uses a fixed LUMO range of [-3.0, 2.0] eV corresponding to the
+        span of typical organic molecules in QM9.  Higher score = more
+        positive LUMO = better reductive stability.
         """
         self._ensure_lumo_model()
         rf, lumo_min, lumo_max = PropertyOracle._lumo_rf
         fp = generate_ecfp4_fingerprint(smiles).reshape(1, -1)
         lumo = float(rf.predict(fp)[0])
-        rng = lumo_max - lumo_min
-        normalized = (lumo - lumo_min) / rng * 100.0 if rng > 0 else 50.0
-        return round(float(np.clip(normalized, 0.0, 100.0)), 2)
+        # Use the theoretical QM9 range for meaningful battery scoring
+        normalized = (lumo - (-3.0)) / (2.0 - (-3.0)) * 100.0
+        normalized = np.clip(normalized, 0.0, 100.0)
+        return round(float(normalized), 2)
 
     def predict_solubility(self, smiles: str) -> float:
         """Predict normalized solubility score in [0, 100] from ECFP4 fingerprints.

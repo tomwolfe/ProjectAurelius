@@ -83,8 +83,8 @@ def write_top_discoveries(
 
     with open(path, "w") as f:
         f.write("# Project Aurelius v9.0 — Top Discoveries (Score >= 65.0)\n")
-    for d in discoveries:
-        f.write(f"{d.smiles}  # score={d.total_score:.1f}\n")
+        for d in discoveries:
+            f.write(f"{d.smiles}  # score={d.total_score:.1f}\n")
     log.info("Top discoveries written to %s (%d molecules)", path, len(discoveries))
 
 
