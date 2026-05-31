@@ -14,6 +14,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
+import numpy as np
+
 from aurelius.config import AureliusConfig, apply_global_config
 from aurelius.scoring.oracle import PropertyOracle
 from aurelius.screening.tier1 import Filter
@@ -77,6 +79,7 @@ class AureliusPipeline:
 
         lumo_score = self._oracle.predict_normalized_lumo(smiles) if self._oracle else 0.0
         solubility_score = self._oracle.predict_solubility(smiles) if self._oracle else 0.0
+        # For failed runs, use a simplified score
         total_score = 0.6 * lumo_score + 0.4 * solubility_score
         is_viable = total_score >= 50.0
 
@@ -127,6 +130,10 @@ class AureliusPipeline:
 
         # Step 2: Oracle (property evaluation)
         t2_result = None
+        lumo_score = 0.0
+        solubility_score = 0.0
+        homo_eV = -99.0
+        lumo_eV = -99.0
         if self._oracle:
             t2_start = time.perf_counter()
             oracle_result = self._oracle.evaluate(smiles)
@@ -134,9 +141,12 @@ class AureliusPipeline:
             solubility_score = self._oracle.predict_solubility(smiles)
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
 
+            homo_eV = oracle_result.get("homo_eV", -99.0)
+            lumo_eV = oracle_result.get("lumo_eV", -99.0)
+
             t2_result = {
-                "homo_eV": oracle_result.get("homo_eV", -99.0),
-                "lumo_eV": oracle_result.get("lumo_eV", -99.0),
+                "homo_eV": homo_eV,
+                "lumo_eV": lumo_eV,
                 "gap_eV": oracle_result.get("gap_eV", 0.0),
                 "score_eV": oracle_result.get("score_eV", 0.0),
                 "lumo_score": lumo_score,
@@ -147,14 +157,14 @@ class AureliusPipeline:
                 "Property Oracle Result: %s -> HOMO=%.3f LUMO=%.3f gap=%.3f "
                 "lumo_score=%.1f solubility_score=%.1f",
                 smiles,
-                t2_result["homo_eV"],
-                t2_result["lumo_eV"],
+                homo_eV,
+                lumo_eV,
                 t2_result["gap_eV"],
                 lumo_score,
                 solubility_score,
             )
 
-        score = self._compute_score(lumo_score, solubility_score)
+        score = self._compute_score(lumo_score, solubility_score, homo_eV, lumo_eV)
         results["score"] = score
 
         logger.debug("Scorecard:\n%s", self._format_score(score))
@@ -168,31 +178,67 @@ class AureliusPipeline:
 
         return results
 
-    def _compute_score(self, lumo_score: float, solubility_score: float) -> dict[str, Any]:
-        """Compute the final Aurelius Score.
+    @staticmethod
+    def _gaussian_lumo(lumo_eV: float) -> float:
+        """Gaussian reward for LUMO in the electrochemical stability window.
 
-        Formula: total = 0.6 * lumo_score + 0.4 * solubility_score
+        Centered at -1.0 eV with sigma=0.75, rewarding LUMO ∈ [-1.75, -0.25] eV
+        which covers the typical SEI formation window for Li/Na electrolytes.
+        """
+        return float(np.exp(-0.5 * ((lumo_eV + 1.0) / 0.75) ** 2))
 
-        Where:
-          - lumo_score: normalized LUMO-based score [0, 100] (weight 60%)
-          - solubility_score: normalized logS-based score [0, 100] (weight 40%)
+    @staticmethod
+    def _sigmoid_homo(homo_eV: float) -> float:
+        """Sigmoid penalty for HOMO above -6.0 eV.
+
+        When HOMO < -6.0 eV (oxidative stability), score → 1.0.
+        When HOMO > -6.0 eV, score falls to 0.0 with steepness k=5.
+        """
+        return float(1.0 / (1.0 + np.exp(5.0 * (homo_eV + 6.0))))
+
+    def _compute_score(
+        self,
+        lumo_score: float,
+        solubility_score: float,
+        homo_eV: float = -99.0,
+        lumo_eV: float = -99.0,
+    ) -> dict[str, Any]:
+        """Compute the final Aurelius Score using Gaussian penalty approach.
+
+        Scoring:
+          - LUMO Gaussian reward centered at -1.0 eV, sigma=0.75 (SEI formation)
+          - HOMO sigmoid penalty for oxidative stability (threshold -6.0 eV)
+          - Solubility as a soft constraint (multiplicative, not linear)
+
+        The final score is in [0, 100] for backward compatibility.
 
         Args:
-            lumo_score: Normalized LUMO score from oracle.
-            solubility_score: Normalized solubility score from oracle.
+            lumo_score: Normalized LUMO score from oracle (0-100), kept for
+                backward compatibility in output dict.
+            solubility_score: Normalized solubility score from oracle (0-100).
+            homo_eV: Predicted HOMO energy in eV.
+            lumo_eV: Predicted LUMO energy in eV.
 
         Returns:
             Dict with ``total_score``, ``lumo_score``, ``solubility_score``,
             ``is_viable``, and ``rejection_reasons``.
         """
-        total_score = 0.6 * lumo_score + 0.4 * solubility_score
+        g_lumo = self._gaussian_lumo(lumo_eV)
+        s_homo = self._sigmoid_homo(homo_eV)
+
+        raw = g_lumo * s_homo
+
+        sol_factor = 0.3 + 0.7 * (solubility_score / 100.0)
+        total_score = 100.0 * raw * sol_factor
+        total_score = float(np.clip(total_score, 0.0, 100.0))
+
         is_viable = total_score >= 50.0
 
         rejection_reasons: list[str] = []
         if not is_viable:
             rejection_reasons.append(
                 f"Aurelius Score {total_score:.1f} below viability threshold "
-                f"(lumo={lumo_score:.1f}, solubility={solubility_score:.1f})"
+                f"(g_lumo={g_lumo:.3f}, s_homo={s_homo:.3f}, solubility={solubility_score:.1f})"
             )
 
         return {

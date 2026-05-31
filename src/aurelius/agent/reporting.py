@@ -6,6 +6,7 @@ insights, and agent discovery manifests.
 
 from __future__ import annotations
 
+import csv
 import json
 import logging
 from datetime import UTC, datetime
@@ -333,3 +334,84 @@ def generate_manifest(
     with open(path, "w") as f:
         json.dump(manifest, f, indent=2)
     log.info("Discovery manifest written to %s", path)
+
+
+def generate_discoveries_csv(
+    discoveries: list[ScreeningResult],
+    pipeline: Any = None,
+    path: str = "discoveries.csv",
+    output_dir: str | Path | None = None,
+) -> None:
+    """Write top-50 discoveries to CSV with HOMO, LUMO, solubility, novelty.
+
+    Args:
+        discoveries: List of discovery ScreeningResult objects.
+        pipeline: AureliusPipeline instance (needed for oracle predictions).
+        path: Output CSV path.
+        output_dir: Directory to write to.
+    """
+    path = _resolve_output_path(path, output_dir)
+    log = logging.getLogger("aurelius_agent")
+
+    top = sorted(discoveries, key=lambda r: -r.total_score)[:50]
+
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["SMILES", "total_score", "homo_eV", "lumo_eV", "solubility_score", "novelty_to_seed"])
+        for r in top:
+            homo = ""
+            lumo = ""
+            sol = ""
+            if pipeline is not None and hasattr(pipeline, "_oracle") and pipeline._oracle is not None:
+                try:
+                    res = pipeline._oracle.evaluate(r.smiles)
+                    homo = res.get("homo_eV", "")
+                    lumo = res.get("lumo_eV", "")
+                except Exception:
+                    pass
+                try:
+                    sol = pipeline._oracle.predict_solubility(r.smiles)
+                except Exception:
+                    pass
+            writer.writerow([
+                r.smiles,
+                f"{r.total_score:.2f}",
+                homo,
+                lumo,
+                sol,
+                f"{r.novelty_to_seed:.4f}" if r.novelty_to_seed is not None else "",
+            ])
+    log.info("Discoveries CSV written to %s (%d molecules)", path, len(top))
+
+
+def generate_discoveries_sdf(
+    discoveries: list[ScreeningResult],
+    path: str = "discoveries.sdf",
+    output_dir: str | Path | None = None,
+) -> None:
+    """Write top-50 discoveries to SDF format for molecular viewer.
+
+    Args:
+        discoveries: List of discovery ScreeningResult objects.
+        path: Output SDF path.
+        output_dir: Directory to write to.
+    """
+    path = _resolve_output_path(path, output_dir)
+    log = logging.getLogger("aurelius_agent")
+
+    from rdkit import Chem
+
+    top = sorted(discoveries, key=lambda r: -r.total_score)[:50]
+
+    writer = Chem.SDWriter(str(path))
+    for r in top:
+        mol = Chem.MolFromSmiles(r.smiles)
+        if mol is None:
+            continue
+        mol.SetProp("SMILES", r.smiles)
+        mol.SetProp("total_score", f"{r.total_score:.2f}")
+        if r.novelty_to_seed is not None:
+            mol.SetProp("novelty_to_seed", f"{r.novelty_to_seed:.4f}")
+        writer.write(mol)
+    writer.close()
+    log.info("Discoveries SDF written to %s (%d molecules)", path, len(top))

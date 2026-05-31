@@ -302,6 +302,14 @@ class MutationEngine:
                 for novelty checking.
         """
         self.seed_pool: list[str] = list(set(seed_smiles))
+        self.seed_fingerprints: list[Any] = []
+        for smi in self.seed_pool:
+            mol = _safe_mol_from_smiles(smi)
+            if mol is not None:
+                from rdkit.Chem import AllChem
+                self.seed_fingerprints.append(
+                    AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+                )
         self.known_fps: list[Any] = []
         for h in known_fps_hex or []:
             with contextlib.suppress(Exception):

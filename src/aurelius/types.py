@@ -37,10 +37,12 @@ class OracleResult:
 class AureliusScore:
     """Composite Aurelius score for battery electrolyte screening.
 
-    ``total_score`` is a weighted combination:
-        total_score = 0.6 * lumo_score + 0.4 * solubility_score
+    ``total_score`` is computed via Gaussian penalty approach:
+      - LUMO rewarded via Gaussian centered at -1.0 eV, sigma=0.5
+      - HOMO penalised via sigmoid when above -6.0 eV
+      - Solubility applied as a soft multiplicative constraint
 
-    where both component scores are normalized to [0, 100].
+    where all component scores are normalized to [0, 100].
     """
 
     lumo_score: float

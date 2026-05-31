@@ -17,6 +17,8 @@ from aurelius.agent.loop import DiscoveryLoop, ScreeningResult
 from aurelius.agent.mutation import MutationEngine
 from aurelius.agent.reporting import (
     generate_chemical_insights,
+    generate_discoveries_csv,
+    generate_discoveries_sdf,
     generate_discovery_results,
     generate_manifest,
     generate_screening_statistics,
@@ -48,6 +50,8 @@ __all__ = [
     "PropertyOracle",
     "ScreeningResult",
     "generate_chemical_insights",
+    "generate_discoveries_csv",
+    "generate_discoveries_sdf",
     "generate_discovery_results",
     "generate_manifest",
     "generate_screening_statistics",

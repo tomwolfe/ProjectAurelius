@@ -60,6 +60,7 @@ data/
 !src/aurelius/data/esol_fallback.csv
 !src/aurelius/data/synthetic_training_data.csv
 !src/aurelius/data/tier0_seed_smiles.json
+!src/aurelius/data/qm9_subset.csv
 
 # Outputs and research archives
 outputs/

@@ -1,7 +1,9 @@
 """PropertyOracle — HOMO/LUMO energy prediction for battery electrolyte screening.
 
 This module provides a QSPR-based HOMO/LUMO (frontier orbital energy) predictor
-using a scikit-learn RandomForestRegressor trained on RDKit molecular descriptors.
+using a scikit-learn RandomForestRegressor trained on RDKit ECFP4 fingerprints
+with real QM9 ground-truth data.
+
 HOMO/LUMO energies and their gap are the primary determinants of electrochemical
 stability for battery electrolyte molecules.
 
@@ -28,73 +30,20 @@ from typing import Any
 import numpy as np
 from rdkit import Chem
 
-from aurelius.utils.chem_utils import generate_ecfp4_fingerprint, generate_molecular_descriptors
+from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
 
 logger = logging.getLogger(__name__)
 
 
-_DESCRIPTOR_NAMES = [
-    "mol_weight",
-    "num_h_donors",
-    "num_h_acceptors",
-    "num_rotatable_bonds",
-    "logp",
-    "tpsa",
-]
+_DATA_SOURCE: str | None = None
 
 
-def _load_training_smiles() -> list[str]:
-    """Load unique SMILES strings from the bundled synthetic training CSV."""
-    csv_path = os.path.join(os.path.dirname(__file__), "..", "data", "synthetic_training_data.csv")
-    csv_path = os.path.abspath(csv_path)
-    seen: set[str] = set()
-    with open(csv_path) as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            smi = row.get("smiles", "").strip()
-            if smi and smi not in seen:
-                seen.add(smi)
-    return list(seen)
-
-
-def _descriptor_vector(smiles: str) -> np.ndarray:
-    """Compute the 6-descriptor feature vector for a SMILES string."""
-    desc = generate_molecular_descriptors(smiles)
-    return np.array([desc[name] for name in _DESCRIPTOR_NAMES], dtype=np.float32)
-
-
-def _generate_synthetic_homo_lumo(descs: np.ndarray) -> tuple[float, float]:
-    """Generate physically plausible HOMO/LUMO values from descriptors.
-
-    Uses heuristic linear models trained on QM9 trends:
-      - HOMO (eV): ~ -9 to -5  — more negative = harder to oxidise
-      - LUMO (eV): ~ -3 to +2  — more positive = harder to reduce
-      - gap = LUMO - HOMO
-
-    Heuristics:
-      - Higher molecular weight / more conjugation → narrower gap
-      - Higher logP (less polar) → higher HOMO (easier to oxidise)
-      - More H-bond acceptors / higher TPSA → lower LUMO (easier to reduce)
-    """
-    mol_w = descs[0]
-    logp = descs[4]
-    tpsa = descs[5]
-    h_acc = descs[2]
-
-    # HOMO: base -7.0 eV, shifted by logP (electron-rich → higher HOMO)
-    homo = -7.0 + 0.3 * logp + 0.02 * tpsa - 0.001 * mol_w
-    homo = np.clip(homo, -9.0, -5.0)
-
-    # LUMO: base -0.5 eV, shifted by polarity/acceptors (polar → lower LUMO)
-    lumo = -0.5 - 0.1 * h_acc - 0.005 * tpsa + 0.002 * mol_w
-    lumo = np.clip(lumo, -3.0, 2.0)
-
-    # Ensure minimum gap of 2.0 eV
-    gap = lumo - homo
-    if gap < 2.0:
-        lumo = homo + 2.0
-
-    return float(homo), float(lumo)
+def get_data_source() -> str:
+    """Return a human-readable string describing which data the oracle was trained on."""
+    global _DATA_SOURCE
+    if _DATA_SOURCE is None:
+        return "oracle not yet initialized"
+    return _DATA_SOURCE
 
 
 def _load_esol_data() -> list[tuple[str, float]]:
@@ -115,53 +64,66 @@ def _load_esol_data() -> list[tuple[str, float]]:
     return data
 
 
-def _train_lumo_rf() -> tuple[Any, float, float]:
-    """Train RF for LUMO prediction on ECFP4 fingerprints.
+def _load_qm9_data_for_training(
+    min_count: int = 100,
+) -> list[tuple[str, float, float]]:
+    """Load QM9 HOMO/LUMO data with loud error reporting.
 
-    Tries QM9 data first; falls back to synthetic training data
-    with generated LUMO targets.
+    Args:
+        min_count: Minimum number of molecules required.
+
+    Returns:
+        List of (smiles, homo_eV, lumo_eV) tuples.
+
+    Raises:
+        RuntimeError: If fewer than min_count molecules are loaded.
     """
+    from aurelius.data.loaders import load_qm9_homo_lumo_data
+
+    try:
+        data = load_qm9_homo_lumo_data()
+    except Exception as exc:
+        logger.error(
+            "PropertyOracle: FAILED to load QM9 data — %s. "
+            "The oracle will be non-functional without QM9 training data.",
+            exc,
+        )
+        raise RuntimeError(f"QM9 data loading failed: {exc}") from exc
+
+    if len(data) < min_count:
+        msg = (
+            f"PropertyOracle: insufficient QM9 data — got {len(data)} molecules, "
+            f"need at least {min_count}. Cannot train a meaningful model."
+        )
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    # Log data source
+    global _DATA_SOURCE
+    _DATA_SOURCE = f"QM9 real data ({len(data)} molecules, HuggingFace / bundled fallback)"
+    logger.info("PropertyOracle: data source = %s", _DATA_SOURCE)
+
+    return data
+
+
+def _train_lumo_rf() -> tuple[Any, float, float]:
+    """Train RF for LUMO prediction on ECFP4 fingerprints using real QM9 data."""
     from sklearn.ensemble import RandomForestRegressor
 
-    # Try QM9 data (may fail if huggingface datasets unavailable)
-    qm9_data: list[tuple[str, float]] | None = None
-    try:
-        from aurelius.data.loaders import load_qm9_lumo_data
-
-        qm9_data = load_qm9_lumo_data()
-    except Exception:
-        qm9_data = None
+    qm9_data = _load_qm9_data_for_training()
 
     X_list: list[np.ndarray] = []
     y_list: list[float] = []
-
-    if qm9_data is not None and len(qm9_data) >= 10:
-        for smi, lumo in qm9_data:
-            mol = Chem.MolFromSmiles(smi)
-            if mol is None:
-                continue
-            try:
-                fp = generate_ecfp4_fingerprint(smi)
-            except Exception:
-                continue
-            X_list.append(fp)
-            y_list.append(lumo)
-        logger.info("PropertyOracle: loaded %d QM9 LUMO entries.", len(X_list))
-    else:
-        # Fallback: synthetic data with generated LUMO values
-        smiles_list = _load_training_smiles()
-        for smi in smiles_list:
-            mol = Chem.MolFromSmiles(smi)
-            if mol is None:
-                continue
-            try:
-                fp = generate_ecfp4_fingerprint(smi)
-                desc = _descriptor_vector(smi)
-            except Exception:
-                continue
-            _, lumo = _generate_synthetic_homo_lumo(desc)
-            X_list.append(fp)
-            y_list.append(lumo)
+    for smi, _homo, lumo in qm9_data:
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            continue
+        try:
+            fp = generate_ecfp4_fingerprint(smi)
+        except Exception:
+            continue
+        X_list.append(fp)
+        y_list.append(lumo)
 
     X = np.array(X_list, dtype=np.float32)
     y = np.array(y_list, dtype=np.float32)
@@ -178,7 +140,7 @@ def _train_lumo_rf() -> tuple[Any, float, float]:
     lumo_min = float(y.min())
     lumo_max = float(y.max())
     logger.info(
-        "PropertyOracle: trained LUMO RF on %d molecules (range [%.4f, %.4f] eV).",
+        "PropertyOracle: trained LUMO RF on %d QM9 molecules (range [%.4f, %.4f] eV).",
         len(X), lumo_min, lumo_max,
     )
     return rf, lumo_min, lumo_max
@@ -225,10 +187,9 @@ def _train_solubility_rf() -> tuple[Any, float, float]:
 
 
 def _train_homo_lumo_models() -> tuple[Any, float, float]:
-    """Train and return RandomForest models for HOMO and LUMO prediction.
+    """Train RandomForest models for HOMO and LUMO prediction on ECFP4 fingerprints.
 
-    Uses the synthetic training data SMILES to generate descriptor-based
-    features and physically plausible HOMO/LUMO target values.
+    Uses real QM9 ground-truth HOMO/LUMO values.
 
     Returns:
         A tuple of (model, gap_min, gap_max) where model is a
@@ -238,20 +199,19 @@ def _train_homo_lumo_models() -> tuple[Any, float, float]:
     from sklearn.ensemble import RandomForestRegressor
     from sklearn.multioutput import MultiOutputRegressor
 
-    smiles_list = _load_training_smiles()
+    qm9_data = _load_qm9_data_for_training()
 
     X_list: list[np.ndarray] = []
     y_list: list[list[float]] = []
-    for smi in smiles_list:
+    for smi, homo, lumo in qm9_data:
         mol = Chem.MolFromSmiles(smi)
         if mol is None:
             continue
         try:
-            desc = _descriptor_vector(smi)
+            fp = generate_ecfp4_fingerprint(smi).astype(np.float32)
         except Exception:
             continue
-        homo, lumo = _generate_synthetic_homo_lumo(desc)
-        X_list.append(desc)
+        X_list.append(fp)
         y_list.append([homo, lumo])
 
     X = np.array(X_list, dtype=np.float32)
@@ -259,7 +219,8 @@ def _train_homo_lumo_models() -> tuple[Any, float, float]:
 
     base = RandomForestRegressor(
         n_estimators=100,
-        max_depth=10,
+        max_depth=12,
+        min_samples_leaf=5,
         random_state=42,
         n_jobs=-1,
     )
@@ -270,7 +231,7 @@ def _train_homo_lumo_models() -> tuple[Any, float, float]:
     gap_min = float(gaps.min())
     gap_max = float(gaps.max())
     logger.info(
-        "PropertyOracle: trained HOMO/LUMO model on %d molecules (gap range [%.2f, %.2f] eV).",
+        "PropertyOracle: trained HOMO/LUMO model on %d QM9 molecules (gap range [%.2f, %.2f] eV).",
         len(X), gap_min, gap_max,
     )
     return model, gap_min, gap_max
@@ -371,11 +332,11 @@ class PropertyOracle:
         model, gap_min, gap_max = PropertyOracle._model
 
         try:
-            desc = _descriptor_vector(smiles)
+            fp = generate_ecfp4_fingerprint(smiles).reshape(1, -1).astype(np.float32)
         except Exception as exc:
-            raise RuntimeError(f"Failed to generate descriptors for {smiles}: {exc}") from exc
+            raise RuntimeError(f"Failed to generate fingerprint for {smiles}: {exc}") from exc
 
-        homo, lumo = model.predict(desc.reshape(1, -1))[0]
+        homo, lumo = model.predict(fp)[0]
         homo = float(homo)
         lumo = float(lumo)
         gap = lumo - homo

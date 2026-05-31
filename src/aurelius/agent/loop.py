@@ -16,6 +16,10 @@ from typing import Any
 
 import numpy as np
 
+from rdkit import Chem
+from rdkit.Chem import AllChem
+from rdkit.DataStructs import BulkTanimotoSimilarity
+
 from aurelius.agent.state import ConvergenceChecker, FeedbackAdapter
 from aurelius.utils.chem_utils import _is_valid_mol, _safe_mol_from_smiles
 
@@ -35,6 +39,7 @@ class ScreeningResult:
     is_viable: bool
     rejection_reasons: list[str]
     fingerprint: np.ndarray[Any, Any] | None = None
+    novelty_to_seed: float | None = None
 
 
 class DiscoveryLoop:
@@ -143,6 +148,7 @@ class DiscoveryLoop:
             batch_scores: list[float] = []
             batch_viable = 0
             batch_discoveries: list[ScreeningResult] = []
+            batch_fingerprints: list[np.ndarray] = []
 
             for smi in batch_smiles:
                 result = self._screen_molecule(smi)
@@ -159,6 +165,23 @@ class DiscoveryLoop:
                 total_score = score_data.get("total_score", 0.0)
                 batch_scores.append(total_score)
 
+                # Compute fingerprint and novelty to seed
+                mol = Chem.MolFromSmiles(smi)
+                fp: np.ndarray | None = None
+                novelty: float | None = None
+                if mol is not None:
+                    rdkit_fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+                    fp_arr = np.zeros(2048, dtype=np.float32)
+                    for idx in rdkit_fp.GetOnBits():
+                        fp_arr[idx] = 1.0
+                    batch_fingerprints.append(fp_arr)
+                    fp = fp_arr
+                    # Compute novelty to seed (Tanimoto distance to nearest seed)
+                    seed_fps = getattr(self.engine, "seed_fingerprints", None)
+                    if isinstance(seed_fps, list) and seed_fps:
+                        sims = BulkTanimotoSimilarity(rdkit_fp, seed_fps)
+                        novelty = 1.0 - max(sims) if sims else None
+
                 is_discovery = (
                     total_score >= 65.0
                     and score_data.get("is_viable", False)
@@ -170,6 +193,8 @@ class DiscoveryLoop:
                     total_score=total_score,
                     is_viable=score_data.get("is_viable", False),
                     rejection_reasons=score_data.get("rejection_reasons", []),
+                    fingerprint=fp,
+                    novelty_to_seed=novelty,
                 )
 
                 if is_discovery:
@@ -179,6 +204,8 @@ class DiscoveryLoop:
                         total_score=total_score,
                         is_viable=True,
                         rejection_reasons=score_data.get("rejection_reasons", []),
+                        fingerprint=fp,
+                        novelty_to_seed=novelty,
                     )
                     batch_discoveries.append(discovery_entry)
                     self.discoveries.append(discovery_entry)
@@ -216,6 +243,11 @@ class DiscoveryLoop:
             self.total_screened += len(valid_candidates)
             self.total_viable += batch_viable
             self.total_invalid += invalid_count
+
+            # ---- Diversity tracking ----
+            mean_div = self._compute_mean_pairwise_tanimoto(batch_fingerprints)
+            if mean_div is not None:
+                log.info("  Generation %d: mean pairwise Tanimoto diversity = %.4f", generation, mean_div)
 
             log.info(
                 "  Generation %d complete: %d screened, %d viable, best=%.1f",
@@ -406,3 +438,46 @@ class DiscoveryLoop:
 
         self._prev_centroids = current_centroids
         return new_count
+
+    @staticmethod
+    def _compute_mean_pairwise_tanimoto(fingerprints: list[np.ndarray]) -> float | None:
+        """Compute mean pairwise Tanimoto diversity among a list of fingerprint arrays.
+
+        Uses RDKit BulkTanimotoSimilarity on a random subset of up to 100 fingerprints
+        for performance.
+
+        Args:
+            fingerprints: List of ECFP4 fingerprint arrays (2048-bit).
+
+        Returns:
+            Mean 1 - Tanimoto similarity, or None if fewer than 2 fingerprints.
+        """
+        if len(fingerprints) < 2:
+            return None
+
+        from rdkit.DataStructs import ExplicitBitVect
+
+        # Subsampling for performance
+        fps = fingerprints
+        if len(fps) > 100:
+            rng = np.random.default_rng(42)
+            idx = rng.choice(len(fps), size=100, replace=False)
+            fps = [fps[i] for i in idx]
+
+        rdkit_fps: list[ExplicitBitVect] = []
+        for arr in fps:
+            bv = ExplicitBitVect(2048)
+            for i, val in enumerate(arr):
+                if val > 0.5:
+                    bv.SetBit(i)
+            rdkit_fps.append(bv)
+
+        similarities: list[float] = []
+        for i, fp_i in enumerate(rdkit_fps):
+            sims = BulkTanimotoSimilarity(fp_i, rdkit_fps[i + 1 :])
+            similarities.extend(sims)
+
+        if not similarities:
+            return None
+        mean_sim = float(np.mean(similarities))
+        return 1.0 - mean_sim

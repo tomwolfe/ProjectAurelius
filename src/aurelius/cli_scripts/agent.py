@@ -25,6 +25,8 @@ from aurelius.agent import MutationEngine
 from aurelius.agent.loop import DiscoveryLoop
 from aurelius.agent.reporting import (
     generate_chemical_insights,
+    generate_discoveries_csv,
+    generate_discoveries_sdf,
     generate_discovery_results,
     generate_manifest,
     generate_screening_statistics,
@@ -152,6 +154,8 @@ def run_screening(agent_cfg: AgentConfig, checkpoint: CheckpointManager) -> None
     generate_screening_statistics(convergence, all_results)
     generate_chemical_insights(all_results, discoveries)
     generate_manifest(convergence, discoveries, all_results)
+    generate_discoveries_csv(discoveries, pipeline=pipeline)
+    generate_discoveries_sdf(discoveries)
     checkpoint.save()
 
     print("\n" + "=" * 60)
