@@ -10,8 +10,6 @@ import csv
 import logging
 import os
 
-from typing import Any
-
 
 def load_esol_data(csv_path: str | None = None) -> list[tuple[str, float]]:
     """Load the ESOL dataset.
