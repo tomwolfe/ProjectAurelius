@@ -39,14 +39,27 @@ logger = logging.getLogger(__name__)
 # Electrolyte-relevant SMARTS reaction library
 # ---------------------------------------------------------------------------
 # These reactions guide mutations toward chemical motifs commonly found in
-# battery electrolytes: fluorinated chains, carbonates, ethers, and esters.
+# battery electrolytes: fluorinated chains, carbonates, ethers, sulfones,
+# and esters.  Each reaction is a simple functional-group replacement that
+# preserves the molecular scaffold while introducing electrolyte-essential
+# heteroatoms (F, O, S).
 ELECTROLYTE_SMARTS: list[tuple[str, str]] = [
+    # --- Fluorination ---
     ("[CH3:1]>>[F:1]", "Methyl to fluorine"),
     ("[CH3:1]>>[C:1](F)(F)F", "Methyl to trifluoromethyl"),
     ("[OH:1]>>[F:1]", "Hydroxyl to fluorine"),
-    ("[C:1]>>[C:1](C)", "Methylation"),
+    ("[C:1]>>[C:1]OC(F)(F)F", "Add trifluoromethoxy"),
+    # --- Carbonate / ester formation ---
     ("[C:1](=O)[O:2]>>[C:1](=O)[O:2]C", "Ester to methyl ester"),
+    ("[C:1](=O)[OH:1]>>[C:1](=O)[O:1]C", "Carboxylic acid to methyl ester"),
+    # --- Ether / alkoxy ---
     ("[C:1]>>[C:1]OC", "Add methoxy"),
+    ("[C:1]>>[C:1]OCC", "Add ethoxy"),
+    # --- Sulfone / sulfonyl ---
+    ("[C:1]>>[C:1]S(=O)(=O)C", "Add methyl sulfone"),
+    ("[C:1]>>[C:1]S(=O)(=O)F", "Add sulfonyl fluoride"),
+    # --- Alkylation ---
+    ("[C:1]>>[C:1](C)", "Methylation"),
 ]
 
 
@@ -186,11 +199,37 @@ class MutationEngine:
     # Strategy 2: BRICS fragmentation + reassembly
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _is_electrolyte_like(mol: Any) -> bool:
+        """Check if a molecule resembles an electrolyte rather than a drug-like compound.
+
+        Battery electrolytes should have:
+          - At least one heteroatom (O, S, F, P) for ion solvation
+          - Limited aromatic character (drug-like molecules tend to be highly aromatic)
+
+        Args:
+            mol: RDKit Mol object.
+
+        Returns:
+            True if the molecule is electrolyte-like.
+        """
+        from rdkit.Chem import rdMolDescriptors
+
+        n_arom = rdMolDescriptors.CalcNumAromaticRings(mol)
+        if n_arom > 2:
+            return False
+        for atom in mol.GetAtoms():
+            if atom.GetAtomicNum() in (8, 16, 9, 15):
+                return True
+        return False
+
     def _brics_from_pool(self, mol: Any) -> list[str]:
         """BRICS decomposition + reassembly using a shared fragment pool.
 
         Decomposes the input molecule into BRICS fragments, then combines
         fragments from the global seed pool to generate novel scaffolds.
+        Candidates are filtered to favor electrolyte-like molecules
+        (heteroatom-containing, limited aromaticity).
 
         Args:
             mol: RDKit Mol object to decompose.
@@ -218,7 +257,12 @@ class MutationEngine:
                         try:
                             Chem.SanitizeMol(r_mol)
                             s = Chem.MolToSmiles(r_mol, isomericSmiles=True)
-                            if _is_valid_mol(r_mol) and self._novelty_check(r_mol) and s:
+                            if (
+                                _is_valid_mol(r_mol)
+                                and self._novelty_check(r_mol)
+                                and self._is_electrolyte_like(r_mol)
+                                and s
+                            ):
                                 generated.append(s)
                         except Exception:
                             continue

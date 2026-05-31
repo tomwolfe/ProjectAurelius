@@ -14,13 +14,6 @@ class MoleculeInput:
     """Input molecule specification for the Aurelius screening pipeline."""
 
     smiles: str
-    solvent_type: str = "ec:dmc"
-    salt_type: str = "NaPF6"
-    ion_type: str = "Na+"
-    temperature_k: float = 298.15
-    voltage_cutoff: float = 0.05
-    max_sei_time_ps: float = 1000.0
-    n_scan_cycles: int = 500
 
 
 @dataclass

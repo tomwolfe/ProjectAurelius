@@ -103,43 +103,93 @@ def _compute_qm9_centroid(qm9_data: list[tuple[str, float, float]]) -> np.ndarra
     return np.mean(fps, axis=0).astype(np.float32)
 
 
-def _domain_applicable(smiles: str) -> tuple[bool, str]:
-    """Check if a molecule is Out-Of-Distribution relative to the QM9 training set.
+_QM9_ELEMENT_LIMITS: dict[str, int] = {
+    "F": 3,
+    "S": 0,
+    "P": 0,
+    "Cl": 0,
+    "Br": 0,
+    "B": 0,
+    "Si": 0,
+}
 
-    Uses Tanimoto similarity to the QM9 centroid fingerprint to flag OOD molecules.
-    A soft penalty is applied later based on this check.
 
-    NOTE: Battery electrolytes heavily feature Fluorine and Sulfur atoms which are
-    rare in QM9. The threshold (sim < 0.3) is intentionally conservative to avoid
-    blindly rejecting valid fluorinated carbonates. The penalty applied downstream
-    is a mild 10% reduction, not a hard rejection.
+def _check_element_ood(mol: Any) -> tuple[bool, str, float]:
+    """Check if molecule contains elements rare or absent in QM9 training set.
+
+    QM9 contains only CHON and trace F (≤3 atoms per molecule).
+    Battery electrolytes frequently contain F, S, P which are absent from the
+    RF's training distribution.  The RF will hallucinate on these substructures.
 
     Returns:
-        (is_applicable, reason) tuple.
+        (is_applicable, reason, penalty_multiplier) where penalty_multiplier
+        is a score scaling factor (1.0 = no penalty, 0.5 = 50% reduction).
+    """
+    from collections import Counter
+
+    element_counts: dict[str, int] = Counter()
+    for atom in mol.GetAtoms():
+        sym = atom.GetSymbol()
+        element_counts[sym] = element_counts.get(sym, 0) + 1
+
+    ood_elements: list[str] = []
+    for elem, limit in _QM9_ELEMENT_LIMITS.items():
+        count = element_counts.get(elem, 0)
+        if count > limit:
+            ood_elements.append(f"{elem}={count}")
+
+    if ood_elements:
+        reason = (
+            f"Element(s) outside QM9 distribution: {', '.join(ood_elements)}. "
+            f"The RF model was trained on QM9 (CHON ± trace F) and will "
+            f"hallucinate on unseen elements."
+        )
+        return False, reason, 0.5
+
+    return True, "", 1.0
+
+
+def _domain_applicable(smiles: str) -> tuple[bool, str, float]:
+    """Check if a molecule is Out-Of-Distribution relative to the QM9 training set.
+
+    A two-phase OOD check:
+      1. **Element-based**: Hard OOD — detects atoms absent or extremely rare in
+         QM9 (F>3, any S, P, Cl, Br, B, Si). Heavy penalty (50% score reduction).
+      2. **Fingerprint-based**: Soft OOD — Tanimoto similarity to the QM9 centroid
+         fingerprint. Mild penalty (10% score reduction).
+
+    Returns:
+        (is_applicable, reason, penalty_multiplier) tuple where
+        penalty_multiplier ∈ [0, 1] scales the final score.
     """
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
-        return False, "Invalid SMILES"
+        return False, "Invalid SMILES", 0.0
 
-    # Check Tanimoto similarity to QM9 centroid
+    # Phase 1: Element-based OOD check (hard)
+    elem_applicable, elem_reason, elem_penalty = _check_element_ood(mol)
+    if not elem_applicable:
+        logger.warning("OOD element(s) in %s: %s", smiles, elem_reason)
+        return False, elem_reason, elem_penalty
+
+    # Phase 2: Fingerprint Tanimoto similarity to QM9 centroid (soft)
     centroid = getattr(PropertyOracle, "_qm9_centroid", None)
     if centroid is None:
-        return True, ""
+        return True, "", 1.0
     from rdkit.Chem import AllChem
     from rdkit.DataStructs import TanimotoSimilarity
     from rdkit.DataStructs.cDataStructs import ExplicitBitVect
 
     fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-    # Convert centroid to ExplicitBitVect for similarity
     centroid_bv = ExplicitBitVect(2048)
     for i, v in enumerate(centroid):
         if v > 0.3:
             centroid_bv.SetBit(i)
     sim = TanimotoSimilarity(fp, centroid_bv)
     if sim < 0.3:
-        return False, f"Low Tanimoto similarity ({sim:.3f}) to QM9 centroid — out of distribution"
+        return False, f"Low Tanimoto similarity ({sim:.3f}) to QM9 centroid — out of distribution", 0.9
 
-    return True, ""
+    return True, "", 1.0
 
 
 def _train_homo_lumo_models() -> tuple[Any, float, float]:
@@ -297,15 +347,15 @@ class PropertyOracle:
         """Evaluate a molecule and return predicted HOMO/LUMO properties.
 
         Results are cached by SMILES string to avoid redundant computation.
-        Also checks QM9 domain applicability.
+        Also checks QM9 domain applicability (element-based and fingerprint-based).
 
         Args:
             smiles: Canonical or isomeric SMILES string.
 
         Returns:
             Dictionary with keys ``homo_eV``, ``lumo_eV``, ``gap_eV``,
-            ``score_eV``, ``domain_applicable`` (bool), and
-            ``domain_reason`` (str).
+            ``score_eV``, ``domain_applicable`` (bool),
+            ``domain_reason`` (str), and ``domain_penalty`` (float).
 
         Raises:
             ValueError: If SMILES is invalid.
@@ -315,14 +365,33 @@ class PropertyOracle:
 
         result: dict[str, Any] = self._predict(smiles)
 
-        # Domain applicability
-        is_applicable, reason = _domain_applicable(smiles)
+        # Domain applicability (now returns 3-tuple with penalty)
+        is_applicable, reason, penalty = _domain_applicable(smiles)
         result["domain_applicable"] = is_applicable
         result["domain_reason"] = reason
+        result["domain_penalty"] = penalty
 
         if self._CACHE is None:
             self._CACHE = {}
         self._CACHE[smiles] = result
+        return result
+
+    def evaluate_with_ood_penalty(self, smiles: str) -> dict[str, Any]:
+        """Evaluate and apply OOD penalty directly in the result score.
+
+        For heavy OOD molecules (high F/S content), the ``score_eV`` is
+        multiplied by the ``domain_penalty`` to reflect increased uncertainty
+        from extrapolating beyond QM9 training distribution.
+
+        Args:
+            smiles: Canonical SMILES string.
+
+        Returns:
+            Result dict with OOD-penalised ``score_eV``.
+        """
+        result = self.evaluate(smiles)
+        penalty = result.get("domain_penalty", 1.0)
+        result["score_eV"] = round(result.get("score_eV", 0.0) * penalty, 2)
         return result
 
     def save(self, path: str = "oracle_cache.joblib") -> None:

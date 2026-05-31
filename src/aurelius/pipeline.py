@@ -74,7 +74,7 @@ class AureliusPipeline:
             logger.info("Oracle (PropertyOracle): loaded from cache (%s).", oracle_cache)
         logger.info("Oracle (PropertyOracle): ENABLED")
 
-    def _generate_failed_run(self, smiles: str, reason: str, **kwargs: Any) -> dict[str, Any]:
+    def _generate_failed_run(self, smiles: str, reason: str) -> dict[str, Any]:
         """Generate a failed run result dict for early-exit scenarios."""
         t1_result = {
             "molecule_smiles": smiles,
@@ -97,7 +97,7 @@ class AureliusPipeline:
             },
         }
 
-    def screen_molecule(self, smiles: str, **kwargs: Any) -> dict[str, Any]:
+    def screen_molecule(self, smiles: str) -> dict[str, Any]:
         """Run a single molecule through the Filter -> Oracle pipeline.
 
         Returns a dict with tier results and the final Aurelius score.
@@ -125,7 +125,7 @@ class AureliusPipeline:
             )
             if not t1_result.get("is_viable", True):
                 logger.warning("Short-circuiting: %s failed Tier 1.", smiles)
-                return self._generate_failed_run(smiles, "Failed Tier 1 Structural Filter", **kwargs)
+                return self._generate_failed_run(smiles, "Failed Tier 1 Structural Filter")
         else:
             results = {}
             tier_timings = {}
@@ -136,6 +136,7 @@ class AureliusPipeline:
         homo_eV = -99.0
         lumo_eV = -99.0
         domain_applicable = True
+        domain_penalty = 1.0
         if self._oracle:
             t2_start = time.perf_counter()
             oracle_result = self._oracle.evaluate(smiles)
@@ -146,6 +147,7 @@ class AureliusPipeline:
             lumo_eV = oracle_result.get("lumo_eV", -99.0)
             domain_applicable = oracle_result.get("domain_applicable", True)
             domain_reason = oracle_result.get("domain_reason", "")
+            domain_penalty = oracle_result.get("domain_penalty", 1.0)
 
             t2_result = {
                 "homo_eV": homo_eV,
@@ -155,6 +157,7 @@ class AureliusPipeline:
                 "lumo_score": lumo_score,
                 "domain_applicable": domain_applicable,
                 "domain_reason": domain_reason,
+                "domain_penalty": domain_penalty,
             }
             results["tier2"] = t2_result
             logger.info(
@@ -170,6 +173,7 @@ class AureliusPipeline:
         score = self._compute_score(
             lumo_score, homo_eV, lumo_eV,
             smiles=smiles, domain_applicable=domain_applicable,
+            domain_penalty=domain_penalty,
         )
         results["score"] = score
 
@@ -251,6 +255,7 @@ class AureliusPipeline:
         lumo_eV: float = -99.0,
         smiles: str | None = None,
         domain_applicable: bool = True,
+        domain_penalty: float = 1.0,
     ) -> dict[str, Any]:
         """Compute the final Aurelius Score using Gaussian penalty approach.
 
@@ -258,7 +263,8 @@ class AureliusPipeline:
           - LUMO Gaussian reward centered at -1.0 eV, sigma=0.75 (SEI formation)
           - HOMO sigmoid penalty for oxidative stability (threshold -6.0 eV)
           - Synthetic accessibility penalty for novel but synthesisable molecules
-          - Soft OOD penalty for out-of-QM9-distribution molecules
+          - Domain applicability penalty for OOD molecules (element-based or
+            fingerprint-based)
 
         The final score is in [0, 100].
 
@@ -268,6 +274,8 @@ class AureliusPipeline:
             lumo_eV: Predicted LUMO energy in eV.
             smiles: Optional SMILES for synthetic accessibility penalty.
             domain_applicable: Whether molecule is within QM9 applicability domain.
+            domain_penalty: Score multiplier from OOD checks (1.0 = in-domain,
+                0.5 = element OOD, 0.9 = fingerprint OOD, 0.0 = hard reject).
 
         Returns:
             Dict with ``total_score``, ``lumo_score``,
@@ -283,15 +291,22 @@ class AureliusPipeline:
             sa = self._compute_sa_score(smiles)
             total_score *= sa
 
-        # Domain applicability — the RF surrogate's natural variance already
-        # captures OOD uncertainty, and the NWEI acquisition function explicitly
-        # rewards novelty. A hard OOD penalty would conflict with the active-
-        # learning objective of exploring novel chemical space. We apply only a
-        # trivial penalty (10%) and log a warning, relying on the RF's tree
-        # variance and the SA filter for quality control.
-        if not domain_applicable:
-            total_score *= 0.9
-            logger.warning("OOD molecule (low Tanimoto to QM9 centroid) — applying mild 10%% penalty")
+        # Domain applicability penalty
+        # The RF model was trained only on QM9 (CHON ± trace F). Battery
+        # electrolytes with heavy fluorination, sulfonation, or other
+        # unseen elements cause the RF to hallucinate. The domain_penalty
+        # applies a score reduction proportional to OOD severity:
+        #   1.0  = in-domain (no penalty)
+        #   0.9  = fingerprint OOD (mild Tanimoto dissimilarity)
+        #   0.5  = element OOD (F>3, any S/P/etc — model extrapolating)
+        #   0.0  = invalid SMILES (hard reject)
+        if not domain_applicable and domain_penalty < 1.0:
+            penalty_pct = int((1.0 - domain_penalty) * 100)
+            total_score *= domain_penalty
+            logger.warning(
+                "OOD penalty applied (%d%% reduction): domain_penalty=%.1f",
+                penalty_pct, domain_penalty,
+            )
 
         total_score = float(np.clip(total_score, 0.0, 100.0))
 
@@ -318,19 +333,19 @@ class AureliusPipeline:
         viable = score.get("is_viable", False)
         return f"Score: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}"
 
-    def screen_batch(self, smiles_list: list[str], n_workers: int = 1, **kwargs: Any) -> list[dict[str, Any]]:
+    def screen_batch(self, smiles_list: list[str], n_workers: int = 1) -> list[dict[str, Any]]:
         """Screen a batch of molecules through the full pipeline.
 
         When ``n_workers`` is greater than 1, molecules are screened
         in parallel using ``ThreadPoolExecutor``.
         """
         if n_workers < 1 or n_workers == 1:
-            return [self.screen_molecule(smiles, **kwargs) for smiles in smiles_list]
+            return [self.screen_molecule(smiles) for smiles in smiles_list]
 
         results: dict[int, dict[str, Any]] = {}
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
             future_to_idx = {
-                executor.submit(self.screen_molecule, smiles, **kwargs): i
+                executor.submit(self.screen_molecule, smiles): i
                 for i, smiles in enumerate(smiles_list)
             }
             for future in as_completed(future_to_idx):

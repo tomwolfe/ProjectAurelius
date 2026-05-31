@@ -1,5 +1,9 @@
 # === Project Aurelius — Conda environment ===
 #
+# Source of truth for pip dependencies: pyproject.toml (project.dependencies)
+# This file only pins conda-only packages (RDKit, Python version).
+# Pip dependencies are installed via: pip install -e .
+#
 # Create environment:
 #   conda env create -f environment.yml
 #
@@ -23,7 +27,6 @@ dependencies:
   - pandas=2.2.0
   - scikit-learn>=1.4.0
   - joblib>=1.3.0
-  - pydantic=2.8.0
   - tqdm=4.66.0
   - click=8.1.0
   - structlog=24.1.0
@@ -43,5 +46,3 @@ dependencies:
 
   # pip-only packages (not available via conda-forge)
   - pip
-  - pip:
-      - types-psutil

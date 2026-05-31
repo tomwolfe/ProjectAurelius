@@ -3,18 +3,13 @@
 
 from __future__ import annotations
 
-import logging
-
-from pydantic_settings import BaseSettings
-
-logger = logging.getLogger(__name__)
+from dataclasses import dataclass
 
 
-class AureliusConfig(BaseSettings):
+@dataclass
+class AureliusConfig:
     """Pipeline configuration for Project Aurelius.
     """
-
-    weight_sigma: float = 0.4
 
 
 def get_config() -> AureliusConfig:
@@ -24,10 +19,6 @@ def get_config() -> AureliusConfig:
         An AureliusConfig instance.
     """
     return AureliusConfig()
-
-
-# Backward compatibility alias
-AureliusConfig = AureliusConfig
 
 
 def apply_global_config() -> AureliusConfig:

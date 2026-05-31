@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Physics validation for a single molecule.
+"""ML Oracle evaluation for a single molecule.
 
-Validates that the physical properties of a molecule are consistent with
-known chemistry (e.g., charge balance, energy conservation, etc.).
+Runs the molecule through the Aurelius screening pipeline using the
+ML Oracle (Random Forest on ECFP4 fingerprints).
 
 Usage:
-    python validate_physics.py --smiles CC(=O)OC1=CC(=O)O1
+    python evaluate.py --smiles CC(=O)OC1=CC(=O)O1
 """
 
 from __future__ import annotations
@@ -18,11 +18,11 @@ from aurelius.pipeline import AureliusPipeline
 
 
 def main() -> None:
-    """Run physics validation on a molecule."""
+    """Run ML Oracle evaluation on a molecule."""
     parser = argparse.ArgumentParser(
-        description="Run physics validation on a molecule.",
+        description="Run ML Oracle evaluation on a molecule.",
     )
-    parser.add_argument("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to validate")
+    parser.add_argument("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to evaluate")
     args = parser.parse_args()
 
     config = get_config()
@@ -34,12 +34,7 @@ def main() -> None:
         print("No score computed.")
         sys.exit(1)
 
-    results = pipeline.screen_molecule(
-        args.smiles,
-        solvent_type="ec:dmc",
-        salt_type="NaPF6",
-        ion_type="Na+",
-    )
+    results = pipeline.screen_molecule(args.smiles)
 
     score = results.get("score") if isinstance(results, dict) else getattr(results, "score", None)
     if score:

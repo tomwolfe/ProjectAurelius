@@ -6,7 +6,7 @@ Usage:
     aurelius screen <smiles>         Screen a single molecule
     aurelius batch <file>            Screen molecules from SMILES file
     aurelius score <smiles>          Compute Aurelius score only
-    aurelius validate <smiles>       Run physics validation
+    aurelius evaluate <smiles>       Run ML Oracle evaluation
     aurelius train                   Train the QM9 surrogate model
     aurelius agent                   Run the autonomous screening agent
 """
@@ -21,7 +21,7 @@ from typing import Any
 
 import click
 
-from aurelius.cli_scripts import validate_physics
+from aurelius.cli_scripts import evaluate
 from aurelius.config import AureliusConfig, get_config
 from aurelius.pipeline import AureliusPipeline
 from aurelius.utils.dependencies import HAS_RDKIT
@@ -112,21 +112,7 @@ def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: Aure
 
 @cli.command("screen")
 @click.argument("smiles")
-@click.option("--solvent", default="ec:dmc", help="Solvent type")
-@click.option("--salt", default="LiPF6", help="Salt type")
-@click.option("--ion", default="Na+", help="Ion type")
-@click.option("--temperature", default=298.15, type=float, help="Temperature in Kelvin")
-@click.option("--voltage", default=3.7, type=float, help="Voltage cutoff")
-@click.option("--cycles", default=500, type=int, help="Number of scan cycles")
-def screen(
-    smiles: str,
-    solvent: str,
-    salt: str,
-    ion: str,
-    temperature: float,
-    voltage: float,
-    cycles: int,
-) -> None:
+def screen(smiles: str) -> None:
     """Screen a single molecule through the full Aurelius pipeline."""
     from aurelius.config import get_config
     from aurelius.pipeline import AureliusPipeline
@@ -134,15 +120,7 @@ def screen(
     config = get_config()
     pipeline = AureliusPipeline(config)
     pipeline.initialize()
-    results = pipeline.screen_molecule(
-        smiles,
-        solvent_type=solvent,
-        salt_type=salt,
-        ion_type=ion,
-        temperature_k=temperature,
-        voltage_cutoff=voltage,
-        n_scan_cycles=cycles,
-    )
+    results = pipeline.screen_molecule(smiles)
 
     score = results.get("score", {})
     total = score.get("total_score", 0.0)
@@ -154,18 +132,15 @@ def screen(
 
 @cli.command("batch")
 @click.argument("file", type=click.Path(exists=True))
-@click.option("--solvent", default="ec:dmc", help="Solvent type")
 @click.option("--output", type=click.Path(), help="Output JSON file")
 @with_pipeline  # type: ignore[arg-type]
 def batch(
     file: str,
-    solvent: str,
     output: str | None,
     pipeline: AureliusPipeline,
     config: AureliusConfig,
 ) -> None:
     """Screen multiple molecules from a SMILES file (one per line)."""
-    salt = "NaPF6"
     smiles_list = []
     with open(file) as f:
         for line in f:
@@ -174,7 +149,7 @@ def batch(
                 smiles_list.append(line)
 
     click.echo(f"Screening {len(smiles_list)} molecules...")
-    results = pipeline.screen_batch(smiles_list, solvent_type=solvent, salt_type=salt)
+    results = pipeline.screen_batch(smiles_list)
 
     viable = sum(1 for r in results if r["score"].get("is_viable", False) if r.get("score"))
     click.echo(f"\nBatch complete: {viable}/{len(smiles_list)} viable ({100 * viable / max(len(smiles_list), 1):.0f}%)")
@@ -198,25 +173,14 @@ def batch(
 
 @cli.command("score")
 @click.argument("smiles")
-@click.option("--solvent", default="ec:dmc", help="Solvent type")
-@click.option("--salt", default="NaPF6", help="Salt type")
-@click.option("--ion", default="Na+", help="Ion type")
 @with_pipeline  # type: ignore[arg-type]
 def score(
     smiles: str,
-    solvent: str,
-    salt: str,
-    ion: str,
     pipeline: AureliusPipeline,
     config: AureliusConfig,
 ) -> None:
     """Compute the Aurelius v9.0 score for a molecule (quick mode)."""
-    results = pipeline.screen_molecule(
-        smiles,
-        solvent_type=solvent,
-        salt_type=salt,
-        ion_type=ion,
-    )
+    results = pipeline.screen_molecule(smiles)
 
     score = results.get("score", {})
     if score:
@@ -233,12 +197,12 @@ def train() -> None:
     click.echo("Oracle RF model trained and saved to oracle_cache.joblib")
 
 
-@cli.command("validate")
-@click.option("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to validate")
-def validate(smiles: str = "CC(=O)OC1=CC(=O)O1", pipeline: Any = None, config: Any = None) -> None:
-    """Run physics validation on a molecule."""
-    sys.argv = ["validate_physics", "--smiles", smiles]
-    validate_physics.main()
+@cli.command("evaluate")
+@click.option("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to evaluate")
+def evaluate_cmd(smiles: str = "CC(=O)OC1=CC(=O)O1", pipeline: Any = None, config: Any = None) -> None:
+    """Run ML Oracle evaluation on a molecule."""
+    sys.argv = ["evaluate", "--smiles", smiles]
+    evaluate.main()
 
 
 @cli.command("agent")
