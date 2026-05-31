@@ -108,23 +108,40 @@ class TestRandomForestSurrogate:
         assert np.isfinite(nwei_a[0]), f"NWEI close candidate not finite: {nwei_a[0]}"
         assert np.isfinite(nwei_b[0]), f"NWEI far candidate not finite: {nwei_b[0]}"
 
-        # Verify internal: Tanimoto distance for A should be ≈ 0 (identical vector)
-        # For B should be ≈ 1 (no overlapping bits)
-        X_cand_ecfp_a = candidate_a[:, :2048]
-        X_train_ecfp = X_train[:, :2048]
-        dot_a = X_cand_ecfp_a @ X_train_ecfp.T
-        sum_cand_a = X_cand_ecfp_a.sum()
-        sum_train_a = X_train_ecfp.sum(axis=1)
-        denom_a = sum_cand_a + sum_train_a - dot_a[0]
-        denom_a = np.maximum(denom_a, 1e-10)
-        sim_a = dot_a[0] / denom_a
-        dist_a = 1.0 - sim_a.max()
+        # Novelty bonus behavior: far candidate (no overlap with training set)
+        # should receive a higher novelty-weighted EI than the identical candidate.
+        # NWEI = EI * (1 + alpha * max_tanimoto_distance), so with alpha=2.0,
+        # candidate B (distance ≈ 1) gets a 3x multiplier vs candidate A (distance ≈ 0).
+        assert nwei_b[0] > nwei_a[0], (
+            f"Far candidate should have higher NWEI than close candidate: "
+            f"nwei_a={nwei_a[0]:.4f}, nwei_b={nwei_b[0]:.4f}"
+        )
+
+        # Verify via RDKit BulkTanimotoSimilarity that Tanimoto distance for
+        # candidate A is ≈ 0 (identical to training point) and for B is ≈ 1.
+        from rdkit.DataStructs import BulkTanimotoSimilarity, ExplicitBitVect
+
+        ecfp_nbits = 2048
+        fp_a = ExplicitBitVect(ecfp_nbits)
+        for idx in np.flatnonzero(candidate_a[0, :ecfp_nbits] > 0.5):
+            fp_a.SetBit(int(idx))
+        train_fps = [
+            ExplicitBitVect(ecfp_nbits)
+            for _ in range(10)
+        ]
+        for j in range(10):
+            bv = ExplicitBitVect(ecfp_nbits)
+            for idx in np.flatnonzero(X_train[j, :ecfp_nbits] > 0.5):
+                bv.SetBit(int(idx))
+            train_fps[j] = bv
+
+        sims_a = BulkTanimotoSimilarity(fp_a, train_fps)
+        dist_a = 1.0 - max(sims_a)
         assert dist_a < 0.1, f"Close candidate Tanimoto distance should be near 0, got {dist_a}"
 
-        X_cand_ecfp_b = candidate_b[:, :2048]
-        dot_b = X_cand_ecfp_b @ X_train_ecfp.T
-        sim_b = dot_b[0] / np.maximum(
-            X_cand_ecfp_b.sum() + X_train_ecfp.sum(axis=1) - dot_b[0], 1e-10
-        )
-        dist_b = 1.0 - sim_b.max()
+        fp_b = ExplicitBitVect(ecfp_nbits)
+        for idx in np.flatnonzero(candidate_b[0, :ecfp_nbits] > 0.5):
+            fp_b.SetBit(int(idx))
+        sims_b = BulkTanimotoSimilarity(fp_b, train_fps)
+        dist_b = 1.0 - max(sims_b)
         assert dist_b > 0.9, f"Far candidate Tanimoto distance should be near 1, got {dist_b}"

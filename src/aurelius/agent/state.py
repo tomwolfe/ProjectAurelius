@@ -205,24 +205,20 @@ class CheckpointManager:
 class ConvergenceChecker:
     """Evaluates whether the screening loop should terminate.
 
-    Uses Welford's online algorithm for computing running statistics
-    without storing all individual scores.  Only per-batch aggregate
-    values are stored for plateau and saturation detection.
+    Tracks per-batch statistics using simple running lists.  No
+    online-algorithm complexity needed for a loop that runs 50-100
+    generations.
     """
 
     def __init__(self) -> None:
         """Initialize the convergence checker."""
         self.new_clusters_per_batch: list[int] = []
         self._batch_means: list[float] = []
+        self._all_scores: list[float] = []
         self.viable_count = 0
         self.total_screened = 0
         self.generations = 0
         self.seed_pool_size: int = 0
-
-        # Welford's online statistics
-        self._welford_n = 0
-        self._welford_mean = 0.0
-        self._welford_m2 = 0.0
 
     def record_batch(
         self,
@@ -242,19 +238,11 @@ class ConvergenceChecker:
         self.generations += 1
 
         self.new_clusters_per_batch.append(new_clusters)
-
-        # Update Welford's online statistics and record batch mean
-        for score in scores:
-            self._welford_n += 1
-            delta = score - self._welford_mean
-            self._welford_mean += delta / self._welford_n
-            self._welford_m2 += delta * (score - self._welford_mean)
-        self._batch_means.append(self._welford_mean)
+        self._all_scores.extend(scores)
+        self._batch_means.append(float(np.mean(scores)) if scores else 0.0)
 
     def check_score_plateau(self) -> bool:
-        """Check if running mean changes < 1.0% over 3 consecutive batches.
-
-        Uses the per-batch running mean from Welford's algorithm.
+        """Check if batch mean changes < 1.0% over 3 consecutive batches.
 
         Returns:
             True if the score has plateaued.
@@ -299,14 +287,14 @@ class ConvergenceChecker:
         return False, f"Volume met but not all criteria: {', '.join(reasons)}"
 
     def final_score_variance(self) -> float:
-        """Compute the variance of all recorded scores using Welford's algorithm.
+        """Compute the variance of all recorded scores.
 
         Returns:
             Variance of all scores.
         """
-        if self._welford_n < 2:
+        if len(self._all_scores) < 2:
             return 0.0
-        return float(self._welford_m2 / (self._welford_n - 1))
+        return float(np.var(self._all_scores, ddof=1))
 
 
 class FeedbackAdapter:

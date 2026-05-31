@@ -17,6 +17,8 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from rdkit.DataStructs import BulkTanimotoSimilarity, ExplicitBitVect
+from scipy.stats import norm as _norm
 from sklearn.ensemble import RandomForestRegressor
 
 
@@ -47,6 +49,7 @@ class RandomForestSurrogate:
         self._rf: RandomForestRegressor | None = None
         self._random_state = random_state
         self._alpha = alpha
+        self._train_bitvects: list[ExplicitBitVect] | None = None
 
     def fit(self, X: np.ndarray[Any, Any], y: np.ndarray[Any, Any]) -> None:
         """Fit the Random Forest surrogate to (X, y) data.
@@ -74,6 +77,16 @@ class RandomForestSurrogate:
         # Store the original data for Expected Improvement computation
         self._X = X
         self._y = y
+
+        # Pre-compute ExplicitBitVect objects for Tanimoto novelty computation
+        ecfp_nbits = min(2048, X.shape[1])
+        self._train_bitvects = []
+        for i in range(X.shape[0]):
+            bv = ExplicitBitVect(ecfp_nbits)
+            row = X[i, :ecfp_nbits]
+            for idx in np.flatnonzero(row > 0.5):
+                bv.SetBit(int(idx))
+            self._train_bitvects.append(bv)
 
     def expected_improvement(self, X_candidates: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
         """Compute Novelty-Weighted Expected Improvement (NWEI) for candidates.
@@ -115,45 +128,36 @@ class RandomForestSurrogate:
         means = tree_preds.mean(axis=0)
         variances = tree_preds.var(axis=0)
 
-        # Standard Expected Improvement
+        # Standard Expected Improvement using scipy.stats.norm
         s = np.sqrt(np.maximum(variances, 1e-8))
         ei = np.zeros_like(means)
         mask = s >= 1e-8
         z = (means[mask] - best) / s[mask]
-        ei[mask] = (means[mask] - best) * self._norm_cdf(z) + s[mask] * self._norm_pdf(z)
+        ei[mask] = (means[mask] - best) * _norm.cdf(z) + s[mask] * _norm.pdf(z)
 
         # Novelty bonus: max Tanimoto distance to training set (ECFP4 bits only)
-        ecfp_nbits = min(2048, X_candidates.shape[1], self._X.shape[1])
-        X_cand_ecfp = X_candidates[:, :ecfp_nbits]
-        X_train_ecfp = self._X[:, :ecfp_nbits]
+        # Uses RDKit BulkTanimotoSimilarity on ExplicitBitVect for C++-speed bulk operation
+        ecfp_nbits = min(2048, X_candidates.shape[1])
+        max_tanimoto_dist = np.zeros(X_candidates.shape[0], dtype=np.float64)
+        candidate_bitvects: list[ExplicitBitVect] = []
+        for i in range(X_candidates.shape[0]):
+            bv = ExplicitBitVect(ecfp_nbits)
+            row = X_candidates[i, :ecfp_nbits]
+            for idx in np.flatnonzero(row > 0.5):
+                bv.SetBit(int(idx))
+            candidate_bitvects.append(bv)
 
-        dot_prod = X_cand_ecfp @ X_train_ecfp.T
-        sum_cand = X_cand_ecfp.sum(axis=1, keepdims=True)
-        sum_train = X_train_ecfp.sum(axis=1, keepdims=True).T
-        denom = sum_cand + sum_train - dot_prod
-        denom = np.maximum(denom, 1e-10)
-
-        tanimoto = dot_prod / denom
-        max_sim = tanimoto.max(axis=1)
-        max_tanimoto_dist = 1.0 - max_sim
-
-        # Guard against degenerate zero-vector fingerprints: no novelty bonus
-        zero_vector = sum_cand.ravel() == 0
-        max_tanimoto_dist[zero_vector] = 0.0
+        for i, cand_bv in enumerate(candidate_bitvects):
+            if sum(cand_bv.ToList()) == 0:
+                continue
+            sims = BulkTanimotoSimilarity(cand_bv, self._train_bitvects)
+            if sims:
+                max_tanimoto_dist[i] = 1.0 - max(sims)
 
         # Novelty-weighted EI
         nwei = ei * (1.0 + self._alpha * max_tanimoto_dist)
 
         return nwei
-
-    def _norm_cdf(self, x: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
-        """Standard normal CDF approximation (Abramowitz & Stegun)."""
-        return 0.5 * (1.0 + np.tanh(np.sqrt(2.0 / np.pi) * (x - 0.13 * x**3)))
-
-    @staticmethod
-    def _norm_pdf(x: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
-        """Standard normal PDF."""
-        return np.exp(-0.5 * x**2) / np.sqrt(2.0 * np.pi)
 
     def score_candidates(
         self,

@@ -16,7 +16,7 @@ from typing import Any
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import AllChem, Descriptors
+from rdkit.Chem import AllChem
 from rdkit.DataStructs import BulkTanimotoSimilarity
 from scipy.spatial.distance import jaccard
 from sklearn.cluster import MiniBatchKMeans
@@ -175,20 +175,11 @@ class DiscoveryLoop:
                 fp: np.ndarray | None = None
                 novelty: float | None = None
                 if mol is not None:
-                    # ECFP4 fingerprint (2048 bits)
-                    rdkit_fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-                    fp_arr = np.zeros(2053, dtype=np.float32)
-                    for idx in rdkit_fp.GetOnBits():
-                        fp_arr[idx] = 1.0
-                    # Append global RDKit 2D descriptors
-                    fp_arr[2048] = Descriptors.ExactMolWt(mol)
-                    fp_arr[2049] = Descriptors.MolLogP(mol)
-                    fp_arr[2050] = Descriptors.TPSA(mol)
-                    fp_arr[2051] = Descriptors.RingCount(mol)
-                    fp_arr[2052] = Descriptors.NumRotatableBonds(mol)
+                    fp_arr = generate_full_feature_vector(smi)
                     batch_fingerprints.append(fp_arr)
                     fp = fp_arr
                     # Compute novelty to seed (Tanimoto distance to nearest seed)
+                    rdkit_fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
                     seed_fps = getattr(self.engine, "seed_fingerprints", None)
                     if isinstance(seed_fps, list) and seed_fps:
                         sims = BulkTanimotoSimilarity(rdkit_fp, seed_fps)
