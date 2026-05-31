@@ -41,26 +41,86 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # These reactions guide mutations toward chemical motifs commonly found in
 # battery electrolytes: fluorinated chains, carbonates, ethers, sulfones,
-# and esters.  Each reaction is a simple functional-group replacement that
-# preserves the molecular scaffold while introducing electrolyte-essential
-# heteroatoms (F, O, S).
+# nitriles, and esters.  Each reaction is a simple functional-group
+# replacement that preserves the molecular scaffold while introducing
+# electrolyte-essential heteroatoms (F, O, S, P).
 ELECTROLYTE_SMARTS: list[tuple[str, str]] = [
     # --- Fluorination ---
     ("[CH3:1]>>[F:1]", "Methyl to fluorine"),
     ("[CH3:1]>>[C:1](F)(F)F", "Methyl to trifluoromethyl"),
     ("[OH:1]>>[F:1]", "Hydroxyl to fluorine"),
     ("[C:1]>>[C:1]OC(F)(F)F", "Add trifluoromethoxy"),
+    ("[CH2:1]>>[C:1](F)F", "Methylene to difluoromethylene"),
     # --- Carbonate / ester formation ---
     ("[C:1](=O)[O:2]>>[C:1](=O)[O:2]C", "Ester to methyl ester"),
     ("[C:1](=O)[OH:1]>>[C:1](=O)[O:1]C", "Carboxylic acid to methyl ester"),
+    ("[OH:1]>>[O:1]C(=O)OC", "Hydroxyl to carbonate"),
+    ("[OH:1]>>[O:1]C(=O)OCC", "Hydroxyl to ethyl carbonate"),
+    ("[OH:1]>>[O:1]C(=O)OC(F)(F)F", "Hydroxyl to fluorinated carbonate"),
     # --- Ether / alkoxy ---
     ("[C:1]>>[C:1]OC", "Add methoxy"),
     ("[C:1]>>[C:1]OCC", "Add ethoxy"),
+    ("[C:1]>>[C:1]OCCOC", "Add diethylene glycol ether"),
     # --- Sulfone / sulfonyl ---
     ("[C:1]>>[C:1]S(=O)(=O)C", "Add methyl sulfone"),
     ("[C:1]>>[C:1]S(=O)(=O)F", "Add sulfonyl fluoride"),
+    ("[C:1]>>[C:1]S(=O)(=O)CF", "Add fluoromethyl sulfone"),
+    # --- Nitrile ---
+    ("[Br:1]>>[C:1]#N", "Bromo to nitrile"),
+    ("[C:1]I>>[C:1]#N", "Iodo to nitrile"),
+    ("[C:1]>>[C:1]C#N", "Add acetonitrile"),
+    # --- Phosphate ---
+    ("[OH:1]>>[O:1]P(=O)(OC)OC", "Hydroxyl to dimethyl phosphate"),
     # --- Alkylation ---
     ("[C:1]>>[C:1](C)", "Methylation"),
+    ("[C:1]>>[C:1]CC", "Ethylation"),
+]
+
+# ---------------------------------------------------------------------------
+# Electrolyte-specific fragment pool for BRICS-guided reassembly
+# ---------------------------------------------------------------------------
+# These are common SEI-forming motifs and electrolyte building blocks.
+# The BRICS reassembly is biased to favor connecting these fragments
+# rather than generic drug-like fragments.
+ELECTROLYTE_FRAGMENT_POOL: list[str] = [
+    # Carbonates
+    "COC(=O)OC",        # dimethyl carbonate
+    "CCOC(=O)OCC",      # diethyl carbonate
+    "O=C1OCCCO1",       # propylene carbonate
+    "O=C1OCCO1",        # ethylene carbonate
+    "O=C1OC(F)CO1",     # fluoroethylene carbonate
+    "FC(F)(F)OCOC(=O)OC(F)(F)F",  # fluorinated carbonate
+    # Ethers
+    "CCOC",             # ethyl methyl ether
+    "CCOCC",            # diethyl ether
+    "COCCOC",           # dimethoxyethane (glyme)
+    "COCCOCCOC",        # triglyme
+    "C1CCOC1",          # THF
+    "C1COCCO1",         # 1,4-dioxane
+    # Sulfones
+    "CS(=O)(=O)C",      # dimethyl sulfone
+    "CS(=O)(=O)CC",     # ethyl methyl sulfone
+    "FC(F)(F)S(=O)(=O)C(F)(F)F",  # perfluorinated sulfone
+    # Nitriles
+    "CC#N",             # acetonitrile
+    "N#CCC#N",          # succinonitrile
+    "N#CCCC#N",         # adiponitrile
+    # Sulfates / sulfonates
+    "COS(=O)(=O)OC",    # dimethyl sulfate
+    "CF",               # fluoromethane
+    "C(F)(F)F",         # fluoroform (trifluoromethyl)
+    "CC(F)(F)F",        # 1,1,1-trifluoroethane
+    # Phosphates
+    "COP(=O)(OC)OC",    # trimethyl phosphate
+    # Borates
+    "OB(OC)OC",         # trimethyl borate
+    # SEI additives
+    "O=C1OC=CO1",       # vinylene carbonate
+    "O=S1(=O)OCC1",     # 1,3-propane sultone
+    "O=S1(=O)OCCO1",    # ethylene sulfite
+    # Fluorinated alkyls
+    "FC(F)(F)C(F)(F)F",  # perfluoroethane
+    "FC(F)(F)C(F)(F)C(F)(F)F",  # perfluoropropane
 ]
 
 
@@ -201,6 +261,20 @@ class MutationEngine:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _load_electrolyte_fragments() -> list[Any]:
+        """Load the electrolyte fragment pool as RDKit Mol objects.
+
+        Returns:
+            List of sanitized RDKit Mol objects for electrolyte fragments.
+        """
+        fragments: list[Any] = []
+        for smi in ELECTROLYTE_FRAGMENT_POOL:
+            mol = _safe_mol_from_smiles(smi)
+            if mol is not None:
+                fragments.append(mol)
+        return fragments
+
+    @staticmethod
     def _is_electrolyte_like(mol: Any) -> bool:
         """Check if a molecule resembles an electrolyte rather than a drug-like compound.
 
@@ -225,12 +299,13 @@ class MutationEngine:
         return False
 
     def _brics_from_pool(self, mol: Any) -> list[str]:
-        """BRICS decomposition + reassembly using a shared fragment pool.
+        """BRICS decomposition + electrolyte-fragment-guided reassembly.
 
-        Decomposes the input molecule into BRICS fragments, then combines
-        fragments from the global seed pool to generate novel scaffolds.
-        Candidates are filtered to favor electrolyte-like molecules
-        (heteroatom-containing, limited aromaticity).
+        Decomposes the input molecule into BRICS fragments, then extends
+        the pool with pre-defined electrolyte building blocks (carbonates,
+        sulfones, nitriles, fluorinated alkyls, etc.). Reassembly is
+        biased toward connecting these electrolyte fragments to generate
+        novel electrolyte-relevant scaffolds.
 
         Args:
             mol: RDKit Mol object to decompose.
@@ -241,19 +316,20 @@ class MutationEngine:
         generated: list[str] = []
 
         try:
+            # Decompose the seed molecule
             frag_smiles = list(BRICS.BRICSDecompose(mol))
-            if len(frag_smiles) < 2:
-                return generated
             frag_mols = [Chem.MolFromSmiles(s) for s in frag_smiles if Chem.MolFromSmiles(s) is not None]
-            if len(frag_mols) < 2:
+
+            # Add electrolyte fragment pool
+            electrolyte_mols = self._load_electrolyte_fragments()
+            all_frags = frag_mols + electrolyte_mols
+
+            if len(all_frags) < 2:
                 return generated
 
-            # Pre-filter fragments: discard any that would guarantee MW > 300
-            # or violate HBD == 0 after reassembly (Tier 1 requirements).
-            # BRICS reassembles exactly 2 fragments; if either has MW > 250 or
-            # HBD > 0, the product will almost certainly fail Tier 1.
+            # Filter fragments for compatibility
             filtered: list[Any] = []
-            for f_mol in frag_mols:
+            for f_mol in all_frags:
                 f_mw = rdMolDescriptors.CalcExactMolWt(f_mol)
                 f_hbd = rdMolDescriptors.CalcNumHBD(f_mol)
                 if f_mw > 250:
@@ -263,13 +339,26 @@ class MutationEngine:
                 filtered.append(f_mol)
             if len(filtered) < 2:
                 return generated
-            frag_mols = filtered
+            all_frags = filtered
 
-            for _ in range(30):
+            # Separate seed fragments from electrolyte fragments for biased sampling
+            n_seed = len(frag_mols)
+            n_electrolyte = len(electrolyte_mols)
+            # Bias: 70% chance to include at least one electrolyte fragment
+            for _ in range(40):
                 rng = np.random.default_rng(self._rng.integers(0, 2**31))
-                idx = rng.choice(len(frag_mols), size=min(2, len(frag_mols)), replace=False)
+                if n_electrolyte > 0 and rng.random() < 0.7:
+                    # Pick one from electrolyte pool, one from anywhere
+                    idx1 = n_seed + rng.integers(0, n_electrolyte) if n_electrolyte > 0 else 0
+                    idx2 = rng.integers(0, len(all_frags))
+                    if idx1 == idx2:
+                        idx2 = (idx2 + 1) % len(all_frags)
+                    idx = [idx1, idx2]
+                else:
+                    idx = rng.choice(len(all_frags), size=min(2, len(all_frags)), replace=False)
+
                 try:
-                    for r_mol in BRICS.BRICSBuild([frag_mols[idx[0]], frag_mols[idx[1]]]):
+                    for r_mol in BRICS.BRICSBuild([all_frags[i] for i in idx]):
                         if r_mol is None:
                             continue
                         try:

@@ -10,6 +10,8 @@ electrolyte-specific viability criteria for battery discovery:
    packing and reductive stability.
 4. **At least one H-Bond Acceptor (O, N, F)** — required for Li+/Na+
    ion solvation.
+5. **LogP <= 2.5** — Electrolytes must be highly polar to dissolve
+   Li/Na salts; high LogP indicates poor salt solubility.
 
 Together these provide a fast, interpretable gate that eliminates
 chemically unsuitable candidates before the expensive Oracle step.
@@ -28,7 +30,7 @@ import time
 from typing import Any
 
 from rdkit import Chem
-from rdkit.Chem import rdMolDescriptors
+from rdkit.Chem import Descriptors, rdMolDescriptors
 
 
 class Filter:
@@ -42,6 +44,7 @@ class Filter:
         - H-Bond Donors == 0 (no protic H for reductive stability)
         - Rotatable Bonds <= 6 (conformational rigidity for SEI)
         - At least one H-Bond Acceptor (O, N, F) for ion solvation
+        - LogP <= 2.5 (polarity required for salt dissolution)
 
     A molecule passes only if **all** criteria are met.
 
@@ -60,11 +63,12 @@ class Filter:
     def __init__(self) -> None:
         pass
 
-    def screen_molecule(self, smiles: str) -> dict[str, Any]:
+    def screen_molecule(self, smiles: str, mol: Chem.Mol | None = None) -> dict[str, Any]:
         """Screen a single molecule for electrolyte viability.
 
         Args:
             smiles: SMILES string of the molecule.
+            mol: Optional pre-parsed RDKit Mol object (avoids redundant parsing).
 
         Returns:
             Dict with keys:
@@ -78,20 +82,21 @@ class Filter:
         """
         start = time.perf_counter()
 
-        mol = Chem.MolFromSmiles(smiles)
         if mol is None:
-            raise ValueError(f"Invalid SMILES: {smiles}")
-
-        try:
-            Chem.SanitizeMol(mol)
-        except Exception as exc:
-            raise ValueError(f"Cannot sanitise molecule from SMILES: {smiles}") from exc
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is None:
+                raise ValueError(f"Invalid SMILES: {smiles}")
+            try:
+                Chem.SanitizeMol(mol)
+            except Exception as exc:
+                raise ValueError(f"Cannot sanitise molecule from SMILES: {smiles}") from exc
 
         violations: list[str] = []
 
         mw = rdMolDescriptors.CalcExactMolWt(mol)
         h_donors = rdMolDescriptors.CalcNumHBD(mol)
         n_rotatable = rdMolDescriptors.CalcNumRotatableBonds(mol)
+        logp = Descriptors.MolLogP(mol)
 
         # Count HBA by specific heteroatoms relevant to ion solvation
         hba_count = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() in self._HBA_ELEMENTS)
@@ -104,6 +109,8 @@ class Filter:
             violations.append(f"Too many rotatable bonds ({n_rotatable} > 6)")
         if hba_count < 1:
             violations.append("No H-bond acceptors (O, N, or F) — insufficient ion solvation")
+        if logp > 2.5:
+            violations.append(f"LogP too high ({logp:.2f} > 2.5) — poor salt solubility")
 
         is_viable = len(violations) == 0
 

@@ -5,28 +5,27 @@ generation (mutation), screening, feedback, convergence checking, and
 checkpointing.  It is designed as a pure, testable component that
 receives its dependencies (pipeline, mutation engine, checkpoint manager,
 etc.) rather than constructing them internally.
+
+SMILES strings are parsed into RDKit Mol objects **exactly once** per
+molecule per generation via ``MoleculeContext``, and the parsed object
+is reused across Filter, Oracle, and Featurizer stages.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import AllChem
 from rdkit.DataStructs import BulkTanimotoSimilarity
 from scipy.spatial.distance import jaccard
 from sklearn.cluster import MiniBatchKMeans
 
 from aurelius.agent.state import ConvergenceChecker, FeedbackAdapter
-from aurelius.utils.chem_utils import (
-    _is_valid_mol,
-    _safe_mol_from_smiles,
-    generate_full_feature_vector,
-)
+from aurelius.types import MoleculeContext
 
 log = logging.getLogger(__name__)
 
@@ -53,10 +52,12 @@ class DiscoveryLoop:
     The loop runs for *max_generations* iterations (or until a time
     cap / convergence condition is met).  Each generation:
     1. Mutates seed molecules via the mutation engine
-    2. Filters invalid / duplicate candidates
-    3. Screens candidates through the pipeline
-    4. Records results / feedback / convergence state
-    5. Saves checkpoint at the end of each generation
+    2. Filters invalid / duplicate candidates (parses to MoleculeContext)
+    3. Featurises candidates from MoleculeContext pre-computed vectors
+    4. Selects top candidates via Bayesian Expected Improvement
+    5. Screens selected candidates through the pipeline (reuses Mol)
+    6. Records results / feedback / convergence state
+    7. Saves checkpoint at the end of each generation
     """
 
     def __init__(
@@ -105,11 +106,11 @@ class DiscoveryLoop:
 
         The loop implements a Bayesian active-learning cycle:
         1. Propose a large candidate pool via the mutation engine.
-        2. Featurise the pool into ECFP4 fingerprints.
+        2. Parse SMILES -> MoleculeContext (Mol parsed ONCE here).
         3. If a RF surrogate is already fitted, use Expected Improvement
-            to select the top ``batch_size`` candidates.  If not fitted,
-            select randomly for the first batch.
-        4. Screen ONLY the selected top candidates.
+           to select the top ``batch_size`` candidates.  If not fitted,
+           select randomly for the first batch.
+        4. Screen ONLY the selected top candidates (reuses pre-parsed Mol).
         5. Update the surrogate with the new (X, y) observations.
         """
         wall_start = time.time()
@@ -126,37 +127,37 @@ class DiscoveryLoop:
             # ---- Generation ----
             candidates = self._generate_candidates(generation)
 
-            # ---- Filtering ----
-            valid_candidates, invalid_count = self._filter_candidates(candidates)
+            # ---- Parse SMILES to Mol ONCE, filter invalid ----
+            valid_contexts, invalid_count = self._filter_candidates(candidates)
 
-            if not valid_candidates:
+            if not valid_contexts:
                 log.info("Generation %d: No valid candidates. Skipping.", generation)
                 continue
 
-            # ---- Bayesian selection ----
-            selected_indices, batch_smiles = self._select_candidates_for_screening(
-                valid_candidates, generation
+            # ---- Bayesian selection (uses ECFP4 from MoleculeContext) ----
+            selected_indices, batch_contexts = self._select_candidates_for_screening(
+                valid_contexts, generation
             )
 
             log.info(
                 "Generation %d: Screening %d candidates (%d invalid discarded, %d selected via BO)",
                 generation,
-                len(valid_candidates),
+                len(valid_contexts),
                 invalid_count,
-                len(batch_smiles),
+                len(batch_contexts),
             )
 
-            if not batch_smiles:
+            if not batch_contexts:
                 continue
 
-            # ---- Screening ----
+            # ---- Screening (passes MoleculeContext to avoid re-parsing) ----
             batch_scores: list[float] = []
             batch_viable = 0
             batch_discoveries: list[ScreeningResult] = []
-            batch_fingerprints: list[np.ndarray] = []
+            batch_feature_vectors: list[np.ndarray] = []
 
-            for smi in batch_smiles:
-                result = self._screen_molecule(smi)
+            for ctx in batch_contexts:
+                result = self._screen_molecule(ctx)
                 if result is None:
                     continue
 
@@ -164,26 +165,24 @@ class DiscoveryLoop:
                 if score_data is None:
                     continue
 
+                smi = ctx.smiles
                 self.screened_smiles.add(smi)
                 self.engine.add_to_db(smi)
 
                 total_score = score_data.get("total_score", 0.0)
                 batch_scores.append(total_score)
 
-                # Compute fingerprint with global descriptors and novelty to seed
-                mol = Chem.MolFromSmiles(smi)
-                fp: np.ndarray | None = None
+                # Feature vector from MoleculeContext (already computed)
+                fv = ctx.get_feature_vector()
+                batch_feature_vectors.append(fv)
+
+                # Novelty to seed
                 novelty: float | None = None
-                if mol is not None:
-                    fp_arr = generate_full_feature_vector(smi)
-                    batch_fingerprints.append(fp_arr)
-                    fp = fp_arr
-                    # Compute novelty to seed (Tanimoto distance to nearest seed)
-                    rdkit_fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-                    seed_fps = getattr(self.engine, "seed_fingerprints", None)
-                    if isinstance(seed_fps, list) and seed_fps:
-                        sims = BulkTanimotoSimilarity(rdkit_fp, seed_fps)
-                        novelty = 1.0 - max(sims) if sims else None
+                rdkit_fp = ctx.get_ecfp4()
+                seed_fps = getattr(self.engine, "seed_fingerprints", None)
+                if isinstance(seed_fps, list) and seed_fps:
+                    sims = BulkTanimotoSimilarity(rdkit_fp, seed_fps)
+                    novelty = 1.0 - max(sims) if sims else None
 
                 is_discovery = (
                     total_score >= 65.0
@@ -196,7 +195,7 @@ class DiscoveryLoop:
                     total_score=total_score,
                     is_viable=score_data.get("is_viable", False),
                     rejection_reasons=score_data.get("rejection_reasons", []),
-                    fingerprint=fp,
+                    fingerprint=fv,
                     novelty_to_seed=novelty,
                 )
 
@@ -207,7 +206,7 @@ class DiscoveryLoop:
                         total_score=total_score,
                         is_viable=True,
                         rejection_reasons=score_data.get("rejection_reasons", []),
-                        fingerprint=fp,
+                        fingerprint=fv,
                         novelty_to_seed=novelty,
                     )
                     batch_discoveries.append(discovery_entry)
@@ -219,13 +218,11 @@ class DiscoveryLoop:
                 self.feedback.record(screening_result)
 
             # ---- Close the active-learning loop: retrain RF surrogate ----
-            # FeedbackAdapter.record() already appended each molecule's fingerprint
-            # and score; finalize_batch() reads accumulated history and refits.
             self.feedback.finalize_batch()
 
             # ---- Seed pool evolution: feed back high-scoring molecules ----
             new_seeds = [
-                smi for smi, sc in zip(batch_smiles, batch_scores, strict=False)
+                ctx.smiles for ctx, sc in zip(batch_contexts, batch_scores, strict=False)
                 if sc >= 65.0
             ]
             if new_seeds:
@@ -240,22 +237,25 @@ class DiscoveryLoop:
             self.convergence.seed_pool_size = len(self.engine.seed_pool)
 
             # ---- Convergence / checkpoint ----
-            new_clusters = self._count_new_clusters(valid_candidates)
+            new_clusters = self._count_new_clusters_from_contexts(valid_contexts)
             self.convergence.record_batch(batch_scores, batch_viable, new_clusters)
-            self.checkpoint.update_stats(valid_candidates, batch_scores, batch_viable, invalid_count)
-            self.total_screened += len(valid_candidates)
+            self.checkpoint.update_stats(
+                [c.smiles for c in batch_contexts],
+                batch_scores, batch_viable, invalid_count,
+            )
+            self.total_screened += len(valid_contexts)
             self.total_viable += batch_viable
             self.total_invalid += invalid_count
 
             # ---- Diversity tracking ----
-            mean_div = self._compute_mean_pairwise_tanimoto(batch_fingerprints)
+            mean_div = self._compute_mean_pairwise_tanimoto(batch_feature_vectors)
             if mean_div is not None:
                 log.info("  Generation %d: mean pairwise Tanimoto diversity = %.4f", generation, mean_div)
 
             log.info(
                 "  Generation %d complete: %d screened, %d viable, best=%.1f",
                 generation,
-                len(valid_candidates),
+                len(valid_contexts),
                 batch_viable,
                 max(batch_scores) if batch_scores else 0,
             )
@@ -302,121 +302,147 @@ class DiscoveryLoop:
         n = max(5, len(scored) // 5)
         return [s for _, s in scored[:n]]
 
-    def _filter_candidates(self, candidates: list[str]) -> tuple[list[str], int]:
-        """Filter out invalid / already-screened candidates.
+    def _filter_candidates(
+        self,
+        candidates: list[str],
+    ) -> tuple[list[MoleculeContext], int]:
+        """Parse SMILES into MoleculeContext and filter invalid/duplicate.
+
+        This is the single point where SMILES -> Mol parsing occurs per
+        generation. The returned MoleculeContext objects are reused by
+        all subsequent pipeline stages.
 
         Returns:
-            (valid_candidates, invalid_count) tuple.
+            (valid_contexts, invalid_count) tuple.
         """
-        valid: list[str] = []
+        valid_contexts: list[MoleculeContext] = []
         invalid_count = 0
 
         for smi in candidates:
             if smi in self.screened_smiles:
                 invalid_count += 1
                 continue
-            mol = _safe_mol_from_smiles(smi)
-            if mol is None:
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is None:
                 invalid_count += 1
                 continue
-            if not _is_valid_mol(mol):
+            from aurelius.utils.chem_utils import _is_valid_mol
+            if not _is_valid_mol(ctx.mol):
                 invalid_count += 1
                 continue
-            valid.append(smi)
+            valid_contexts.append(ctx)
 
-        if len(valid) > self.batch_size:
-            valid = valid[: self.batch_size]
+        if len(valid_contexts) > self.batch_size:
+            valid_contexts = valid_contexts[: self.batch_size]
 
-        return valid, invalid_count
+        return valid_contexts, invalid_count
 
     def _select_candidates_for_screening(
         self,
-        valid_candidates: list[str],
+        valid_contexts: list[MoleculeContext],
         generation: int,
-    ) -> tuple[list[int], list[str]]:
+    ) -> tuple[list[int], list[MoleculeContext]]:
         """Select candidates for screening using Bayesian Active Learning.
 
         If the RF surrogate is already fitted, use Expected Improvement
         to pick the top ``batch_size`` candidates.  If not fitted
         (first generation), select randomly.
 
+        Featurisation uses the pre-computed feature vectors from
+        MoleculeContext (no redundant SMILES -> Mol parsing).
+
         Returns:
-            (indices, smiles) — indices into valid_candidates and
-            the corresponding SMILES strings.
+            (indices, contexts) — indices into valid_contexts and
+            the corresponding MoleculeContext objects.
         """
-        if len(valid_candidates) == 0:
+        if len(valid_contexts) == 0:
             return [], []
 
-        # Featurise the pool
-        X_pool = self._featurise_molecules(valid_candidates)
+        # Featurise from MoleculeContext pre-computed vectors
+        X_pool = self._featurise_from_contexts(valid_contexts)
 
         if self.feedback._surrogate is not None:
-            # Fitted surrogate — use Expected Improvement
             ei_scores = self.feedback._surrogate.expected_improvement(X_pool)
             top_indices: list[int] = np.argsort(ei_scores)[::-1][: self.batch_size].tolist()
         else:
             # First batch: random selection
-            n = min(self.batch_size, len(valid_candidates))
-            indices = self.feedback._rng.choice(len(valid_candidates), size=n, replace=False)
+            n = min(self.batch_size, len(valid_contexts))
+            indices = self.feedback._rng.choice(len(valid_contexts), size=n, replace=False)
             top_indices = sorted(indices.tolist())
 
-        batch_smiles = [valid_candidates[i] for i in top_indices]
-        return top_indices, batch_smiles
+        batch_contexts = [valid_contexts[i] for i in top_indices]
+        return top_indices, batch_contexts
 
-    def _featurise_molecules(self, smiles_list: list[str]) -> np.ndarray:
-        """Convert a list of SMILES to a 2-D feature array.
+    def _featurise_from_contexts(self, contexts: list[MoleculeContext]) -> np.ndarray:
+        """Convert a list of MoleculeContexts to a 2-D feature array.
 
         Feature vector of shape (n, 2053):
         - 2048 bits: ECFP4 (Morgan radius=2) binary fingerprint
         - 5 values: global RDKit 2D descriptors (MW, LogP, TPSA,
           RingCount, NumRotatableBonds)
 
-        Delegates per-molecule feature generation to
-        ``chem_utils.generate_full_feature_vector``.
+        Uses pre-computed feature vectors from MoleculeContext to avoid
+        redundant SMILES parsing and descriptor computation.
 
         Args:
-            smiles_list: List of SMILES strings.
+            contexts: List of MoleculeContext objects.
 
         Returns:
             Array of shape (n, 2053) with fingerprints + descriptors.
         """
-        X = np.zeros((len(smiles_list), 2053), dtype=np.float32)
-        for i, smi in enumerate(smiles_list):
+        X = np.zeros((len(contexts), 2053), dtype=np.float32)
+        for i, ctx in enumerate(contexts):
             try:
-                X[i] = generate_full_feature_vector(smi)
+                X[i] = ctx.get_feature_vector()
             except Exception:
                 continue
         return X
 
-    def _screen_molecule(self, smiles: str) -> dict[str, Any] | None:
+    def _screen_molecule(self, ctx: MoleculeContext) -> dict[str, Any] | None:
         """Run a single molecule through the screening pipeline.
 
+        Passes the pre-parsed MoleculeContext to avoid re-parsing.
         Returns the result dict or None on error.
         """
         try:
-            result = self.pipeline.screen_molecule(smiles)
+            result = self.pipeline.screen_molecule(ctx)
         except (ImportError, ValueError, RuntimeError) as e:
-            log.warning("Pipeline error for %s: %s", smiles, e)
+            log.warning("Pipeline error for %s: %s", ctx.smiles, e)
             return None
         return result if result is not None else None
 
     def _count_new_clusters(self, candidates: list[str]) -> int:
+        """Legacy: parse SMILES to count clusters.
+
+        Deprecated in favor of ``_count_new_clusters_from_contexts``.
+        """
+        contexts = [MoleculeContext.from_smiles(s) for s in candidates]
+        contexts = [c for c in contexts if c is not None]
+        return self._count_new_clusters_from_contexts(contexts) if contexts else 0
+
+    def _count_new_clusters_from_contexts(self, contexts: list[MoleculeContext]) -> int:
         """Count new structural clusters using MiniBatchKMeans on ECFP4 fingerprints.
 
         Clusters all viable screened molecules, fits KMeans, and counts
         centroids that are not within Tanimoto distance 0.4 of any
         centroid from the previous batch.
         """
-        viable_smiles = [
-            r.smiles for r in self.all_results
+        viable_contexts = [
+            r for r in self.all_results
             if r.is_viable and r.total_score >= 50.0
         ]
-        n_viable = len(viable_smiles)
+        n_viable = len(viable_contexts)
         if n_viable < 2:
             return 0
 
-        X = self._featurise_molecules(viable_smiles)
-        n_clusters = min(10, n_viable)
+        viable_smiles = [r.smiles for r in viable_contexts]
+        viable_ctxs = [MoleculeContext.from_smiles(s) for s in viable_smiles]
+        viable_ctxs = [c for c in viable_ctxs if c is not None]
+        if len(viable_ctxs) < 2:
+            return 0
+
+        X = self._featurise_from_contexts(viable_ctxs)
+        n_clusters = min(10, len(viable_ctxs))
         kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42, n_init="auto")
         kmeans.fit(X)
         current_centroids = kmeans.cluster_centers_
@@ -460,7 +486,6 @@ class DiscoveryLoop:
 
         from rdkit.DataStructs import ExplicitBitVect
 
-        # Subsampling for performance
         fps = fingerprints
         if len(fps) > 100:
             rng = np.random.default_rng(42)
@@ -477,7 +502,7 @@ class DiscoveryLoop:
 
         similarities: list[float] = []
         for i, fp_i in enumerate(rdkit_fps):
-            sims = BulkTanimotoSimilarity(fp_i, rdkit_fps[i + 1 :])
+            sims = BulkTanimotoSimilarity(fp_i, rdkit_fps[i + 1:])
             similarities.extend(sims)
 
         if not similarities:

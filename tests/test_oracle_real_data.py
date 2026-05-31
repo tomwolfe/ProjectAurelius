@@ -28,7 +28,7 @@ def test_oracle_data_source_is_real(oracle: PropertyOracle) -> None:
     oracle.evaluate("CCO")
     source = get_data_source()
     assert "QM9" in source, f"Expected QM9 data source, got: {source}"
-    assert "real data" in source, f"Expected real data, got: {source}"
+    assert "fragment-additivity" in source, f"Expected fragment-additivity in source, got: {source}"
     assert "synthetic" not in source.lower(), "Should not contain 'synthetic'"
 
 

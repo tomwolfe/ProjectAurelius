@@ -1,10 +1,12 @@
 """Aurelius Pipeline Orchestrator.
 
 Coordinates a streamlined two-step discovery pipeline:
-  1. **Filter** — Quick structural validity (Tier 1) check.
-  2. **Oracle** — Evaluate HOMO/LUMO frontier orbital energies via the PropertyOracle.
+  1. **Filter** — Quick structural validity (Tier 1) check with LogP and MW gates.
+  2. **Oracle** — Evaluate HOMO/LUMO frontier orbital energies via hybrid
+     RF (in-domain) + fragment-additivity (OOD) model.
 
 The results are then fed back to the RF surrogate for Bayesian optimisation.
+All stages accept a pre-parsed RDKit Mol object to avoid redundant parsing.
 """
 
 from __future__ import annotations
@@ -15,20 +17,60 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import numpy as np
+from rdkit import Chem
 
 from aurelius.config import AureliusConfig, apply_global_config
 from aurelius.scoring.oracle import PropertyOracle
 from aurelius.screening.tier1 import Filter
-from aurelius.utils.dependencies import HAS_RDKIT
+from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Hydrolytically unstable SMARTS patterns
+# ---------------------------------------------------------------------------
+# These motifs degrade in battery electrolyte environments via hydrolysis
+# or decomposition, making them unsuitable for long-cycle-life cells.
+_HYDROLYTICALLY_UNSTABLE_SMARTS: list[tuple[str, str, float]] = [
+    ("[CX3](=[OX1])[OX2][CX3](=[OX1])[OX2]", "anhydride", 0.3),
+    ("[CX3](=[OX1])[OX2][CX2]#[N]", "acyl_cyanide", 0.4),
+    ("[SX4](=[OX1])(=[OX1])[OX2][CX3](=[OX1])", "sulfonate_ester", 0.2),
+    ("[PX4](=[OX1])([OX2][CX4])[OX2][CX4]", "phosphate_ester", 0.15),
+    ("[Si]([OX2])[OX2]", "silyl_ether", 0.3),
+    ("[CX3](=[OX1])[OX2][CX2]=[CX2]", "enol_ester", 0.35),
+    ("[#6][CX3](=[OX1])[OX2][CX3](=[OX1])[#6]", "geminal_diester", 0.2),
+]
+
+# ---------------------------------------------------------------------------
+# Electrolyte Synthesizability SMARTS patterns
+# ---------------------------------------------------------------------------
+# Patterns that make electrolyte synthesis easier (rewarded) or harder (penalized).
+_ELECTROLYTE_SYNTH_BONUS_SMARTS: list[str] = [
+    "[CX4]([OX2])([OX2])[OX2]",  # orthoester — symmetric
+    "O=C([OX2])[OX2]",           # carbonate/ester — symmetric (favored)
+    "S(=O)(=O)",                 # sulfone — well-established chemistry
+    "[CX4]OC([CX4])[CX4]",      # ether — simple Williamson
+    "[CX4]F",                    # alkyl fluoride — common
+    "[CX4](F)F",                 # difluoromethyl
+    "[CX4](F)(F)F",              # trifluoromethyl
+]
+
+_ELECTROLYTE_SYNTH_PENALTY_SMARTS: list[str] = [
+    "[CX4]([F])([F])([F])([F])",  # perfluorinated quaternary carbon
+    "[CX3]1[CX3]=[CX3][CX3]=[CX3]1",  # highly conjugated rings
+    "[#16][#16]",  # disulfide
+    "[#7](-[#8])=[#6]",  # nitro/oxime — unstable
+    "[CX3](=[OX1])[OX2][OX2]",  # peracid
+    "[CX3]1[CX3]=[CX3][CX3]=[CX3][CX3]=[CX3]1",  # large conjugated rings
+]
 
 
 class AureliusPipeline:
     """Full Aurelius screening pipeline orchestrator.
 
     Coordinates the Filter -> Oracle pipeline and computes
-    the final Aurelius Score.
+    the final Aurelius Score. All stages accept a pre-parsed
+    MoleculeContext to avoid redundant RDKit Mol object creation.
     """
 
     def __init__(
@@ -92,23 +134,56 @@ class AureliusPipeline:
             },
         }
 
-    def screen_molecule(self, smiles: str) -> dict[str, Any]:
+    @staticmethod
+    def _parse_once(smiles: str) -> MoleculeContext | None:
+        """Parse SMILES to Mol exactly once and return a MoleculeContext.
+
+        Args:
+            smiles: SMILES string.
+
+        Returns:
+            MoleculeContext or None if parsing fails.
+        """
+        return MoleculeContext.from_smiles(smiles)
+
+    def screen_molecule(
+        self,
+        smiles_or_ctx: str | MoleculeContext,
+    ) -> dict[str, Any]:
         """Run a single molecule through the Filter -> Oracle pipeline.
 
-        Returns a dict with tier results and the final Aurelius score.
-        Includes per-tier timing metrics for performance monitoring.
+        Accepts either a SMILES string or a pre-parsed MoleculeContext.
+        If a SMILES string is provided, it is parsed into a MoleculeContext
+        exactly once at the start, and the Mol object is reused across
+        all pipeline stages.
+
+        Args:
+            smiles_or_ctx: SMILES string or MoleculeContext.
+
+        Returns:
+            Dict with tier results and the final Aurelius score.
         """
         if not self._oracle:
             raise RuntimeError("Pipeline not initialised. Call initialise() first.")
 
+        # Parse SMILES -> Mol exactly once
+        if isinstance(smiles_or_ctx, MoleculeContext):
+            ctx = smiles_or_ctx
+            smiles = ctx.smiles
+        else:
+            smiles = smiles_or_ctx
+            ctx = self._parse_once(smiles)
+            if ctx is None:
+                return self._generate_failed_run(smiles, "Invalid SMILES — parsing failed")
+
         logger.info("Processing: %s", smiles)
         pipeline_start = time.perf_counter()
 
-        # Step 1: Filter (structural validity + SA score)
+        # Step 1: Filter (structural validity + LogP + MW)
         t1_result = None
         if self._filter:
             t1_start = time.perf_counter()
-            t1_result = self._filter.screen_molecule(smiles)
+            t1_result = self._filter.screen_molecule(smiles, mol=ctx.mol)
             tier_timings: dict[str, float] = {}
             tier_timings["tier1_ms"] = (time.perf_counter() - t1_start) * 1000
             results: dict[str, Any] = {"tier1": t1_result}
@@ -125,7 +200,7 @@ class AureliusPipeline:
             results = {}
             tier_timings = {}
 
-        # Step 2: Oracle (property evaluation)
+        # Step 2: Oracle (property evaluation — accepts pre-parsed Mol)
         t2_result = None
         homo_eV = -99.0
         lumo_eV = -99.0
@@ -133,7 +208,7 @@ class AureliusPipeline:
         domain_penalty = 1.0
         if self._oracle:
             t2_start = time.perf_counter()
-            oracle_result = self._oracle.evaluate(smiles)
+            oracle_result = self._oracle.evaluate(smiles, mol=ctx.mol)
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
 
             homo_eV = oracle_result.get("homo_eV", -99.0)
@@ -160,9 +235,11 @@ class AureliusPipeline:
                 t2_result["gap_eV"],
             )
 
+        # Step 3: Score computation (uses pre-parsed Mol)
         score = self._compute_score(
             homo_eV, lumo_eV,
-            smiles=smiles, domain_applicable=domain_applicable,
+            smiles=smiles, mol=ctx.mol,
+            domain_applicable=domain_applicable,
             domain_penalty=domain_penalty,
         )
         results["score"] = score
@@ -179,46 +256,67 @@ class AureliusPipeline:
         return results
 
     @staticmethod
-    def _compute_sa_score(smiles: str) -> float:
-        """Compute synthetic accessibility score in [0, 1] (1 = easy to synthesise).
+    def _check_hydrolytic_instability(mol: Chem.Mol) -> float:
+        """Check for hydrolytically unstable motifs and return a penalty multiplier.
 
-        Uses RDKit's sascorer if available, otherwise falls back to a
-        fragment-complexity heuristic based on rings, stereocenters,
-        and rotatable bonds.
-
-        Returns:
-            0.0–1.0 where 1.0 = trivially synthesizable.
+        Scans the molecule for SMARTS patterns known to degrade in battery
+        electrolyte environments. Returns a multiplier in [0.5, 1.0].
         """
-        if not HAS_RDKIT:
-            return 1.0
-        from rdkit import Chem
+        penalty = 1.0
+        for smarts, name, severity in _HYDROLYTICALLY_UNSTABLE_SMARTS:
+            pattern = Chem.MolFromSmarts(smarts)
+            if pattern is not None and mol.HasSubstructMatch(pattern):
+                penalty *= (1.0 - severity)
+                logger.debug("Hydrolytic instability detected: %s (penalty %.2f)", name, severity)
+        return max(penalty, 0.5)
 
-        mol = Chem.MolFromSmiles(smiles)
+    @staticmethod
+    def _compute_electrolyte_sa_score(mol: Chem.Mol) -> float:
+        """Compute electrolyte synthesizability score in [0, 1] (1 = easy).
+
+        Rewards symmetric carbonates, ethers, sulfones, and common electrolyte
+        motifs that are well-established in electrolyte synthesis. Penalizes
+        exotic structural complexity that would be difficult to synthesize.
+
+        Unlike the generic SA score (which penalizes all complexity),
+        this heuristic actively rewards electrolyte-relevant symmetry
+        (e.g., symmetric carbonates > asymmetric ones).
+        """
         if mol is None:
             return 1.0
 
-        # Try RDKit Contrib sascorer first
-        try:
-            from rdkit.Contrib.SA_Score import sascorer  # type: ignore[import-not-found]
-
-            raw = sascorer.calculateScore(mol)
-            # sascorer returns ~1 (easy) to ~10 (hard); map to [0, 1]
-            return max(0.0, 1.0 - (raw - 1.0) / 9.0)
-        except ImportError:
-            pass
-
-        # Fallback heuristic: penalize structural complexity
         from rdkit.Chem import rdMolDescriptors
 
-        n_rings = rdMolDescriptors.CalcNumRings(mol)
-        n_rot = rdMolDescriptors.CalcNumRotatableBonds(mol)
-        n_stereo = len(Chem.FindMolChiralCenters(mol, includeUnassigned=True))
-        n_het = rdMolDescriptors.CalcNumHeterocycles(mol)
+        score = 0.5  # neutral baseline
 
-        # Heuristic: fewer rings, rotors, stereocenters, and heterocycles = easier
-        complexity = n_rings * 0.15 + n_rot * 0.05 + n_stereo * 0.2 + n_het * 0.1
-        raw = min(complexity, 5.0) / 5.0  # normalize to [0, 1]
-        return max(0.0, 1.0 - raw)
+        # Rewards: simple, electrolyte-relevant motifs
+        for smarts in _ELECTROLYTE_SYNTH_BONUS_SMARTS:
+            pattern = Chem.MolFromSmarts(smarts)
+            if pattern is not None and mol.HasSubstructMatch(pattern):
+                score += 0.08
+
+        # Penalties: difficult or unstable structural features
+        for smarts in _ELECTROLYTE_SYNTH_PENALTY_SMARTS:
+            pattern = Chem.MolFromSmarts(smarts)
+            if pattern is not None and mol.HasSubstructMatch(pattern):
+                score -= 0.15
+
+        # Size penalty: molecules > 250 Da get progressively harder
+        mw = rdMolDescriptors.CalcExactMolWt(mol)
+        if mw > 250:
+            score -= 0.1 * min(1.0, (mw - 250) / 100)
+
+        # Stereocenter penalty: complex stereochemistry is hard to control
+        from rdkit.Chem import FindMolChiralCenters
+        n_stereo = len(FindMolChiralCenters(mol, includeUnassigned=True))
+        score -= n_stereo * 0.1
+
+        # Ring penalty: >2 rings increase synthetic difficulty
+        n_rings = rdMolDescriptors.CalcNumRings(mol)
+        if n_rings > 2:
+            score -= 0.1 * (n_rings - 2)
+
+        return float(np.clip(score, 0.0, 1.0))
 
     @staticmethod
     def _gaussian_lumo(lumo_eV: float) -> float:
@@ -233,7 +331,7 @@ class AureliusPipeline:
     def _sigmoid_homo(homo_eV: float) -> float:
         """Sigmoid penalty for HOMO above -6.0 eV.
 
-        When HOMO < -6.0 eV (oxidative stability), score → 1.0.
+        When HOMO < -6.0 eV (oxidative stability), score -> 1.0.
         When HOMO > -6.0 eV, score falls to 0.0 with steepness k=5.
         """
         return float(1.0 / (1.0 + np.exp(5.0 * (homo_eV + 6.0))))
@@ -243,27 +341,28 @@ class AureliusPipeline:
         homo_eV: float = -99.0,
         lumo_eV: float = -99.0,
         smiles: str | None = None,
+        mol: Chem.Mol | None = None,
         domain_applicable: bool = True,
         domain_penalty: float = 1.0,
     ) -> dict[str, Any]:
-        """Compute the final Aurelius Score using Gaussian penalty approach.
+        """Compute the final Aurelius Score.
 
         Scoring:
           - LUMO Gaussian reward centered at -1.0 eV, sigma=0.75 (SEI formation)
           - HOMO sigmoid penalty for oxidative stability (threshold -6.0 eV)
-          - Synthetic accessibility penalty for novel but synthesisable molecules
-          - Domain applicability penalty for OOD molecules (element-based or
-            fingerprint-based)
+          - Electrolyte synthesizability score (replaces generic SA score)
+          - Hydrolytic instability penalty (SMARTS-based)
+          - Domain applicability flag (RF vs GC, no longer a score penalty)
 
         The final score is in [0, 100].
 
         Args:
             homo_eV: Predicted HOMO energy in eV.
             lumo_eV: Predicted LUMO energy in eV.
-            smiles: Optional SMILES for synthetic accessibility penalty.
-            domain_applicable: Whether molecule is within QM9 applicability domain.
-            domain_penalty: Score multiplier from OOD checks (1.0 = in-domain,
-                0.9 = fingerprint/element OOD, 0.0 = invalid SMILES).
+            smiles: Optional SMILES for context.
+            mol: Pre-parsed RDKit Mol object for substructure checks.
+            domain_applicable: Whether RF model was used (True) or GC (False).
+            domain_penalty: Always 1.0 with hybrid oracle (GC handles OOD).
 
         Returns:
             Dict with ``total_score``, ``is_viable``, and ``rejection_reasons``.
@@ -273,26 +372,25 @@ class AureliusPipeline:
 
         total_score = 100.0 * g_lumo * s_homo
 
-        # SA penalty — penalise molecules that are impossible to synthesise
-        if smiles is not None:
-            sa = self._compute_sa_score(smiles)
-            total_score *= sa
+        # Electrolyte synthesizability penalty/reward
+        if mol is not None:
+            synth = self._compute_electrolyte_sa_score(mol)
+            total_score *= synth
+        elif smiles is not None:
+            m = Chem.MolFromSmiles(smiles)
+            if m is not None:
+                synth = self._compute_electrolyte_sa_score(m)
+                total_score *= synth
 
-        # Domain applicability penalty
-        # Battery electrolytes require heavy fluorination and heteroatoms (F, S, P)
-        # for SEI formation which lie outside the QM9 training distribution.
-        # The domain_penalty applies a mild score reduction to flag extrapolation:
-        #   1.0  = in-domain (no penalty)
-        #   0.9  = fingerprint OOD (mild Tanimoto dissimilarity)
-        #   0.9  = element OOD (F>20, S>6, P>3, etc — mild penalty)
-        #   0.0  = invalid SMILES (hard reject)
-        if not domain_applicable and domain_penalty < 1.0:
-            penalty_pct = int((1.0 - domain_penalty) * 100)
-            total_score *= domain_penalty
-            logger.warning(
-                "OOD penalty applied (%d%% reduction): domain_penalty=%.1f",
-                penalty_pct, domain_penalty,
-            )
+        # Hydrolytic instability penalty
+        if mol is not None:
+            hydro_penalty = self._check_hydrolytic_instability(mol)
+            total_score *= hydro_penalty
+        elif smiles is not None:
+            m = Chem.MolFromSmiles(smiles)
+            if m is not None:
+                hydro_penalty = self._check_hydrolytic_instability(m)
+                total_score *= hydro_penalty
 
         total_score = float(np.clip(total_score, 0.0, 100.0))
 
@@ -318,23 +416,27 @@ class AureliusPipeline:
         viable = score.get("is_viable", False)
         return f"Score: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}"
 
-    def screen_batch(self, smiles_list: list[str], n_workers: int = 1) -> list[dict[str, Any]]:
+    def screen_batch(
+        self,
+        smiles_or_ctx_list: list[str | MoleculeContext],
+        n_workers: int = 1,
+    ) -> list[dict[str, Any]]:
         """Screen a batch of molecules through the full pipeline.
 
         When ``n_workers`` is greater than 1, molecules are screened
         in parallel using ``ThreadPoolExecutor``.
         """
         if n_workers < 1 or n_workers == 1:
-            return [self.screen_molecule(smiles) for smiles in smiles_list]
+            return [self.screen_molecule(smi) for smi in smiles_or_ctx_list]
 
         results: dict[int, dict[str, Any]] = {}
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
             future_to_idx = {
-                executor.submit(self.screen_molecule, smiles): i
-                for i, smiles in enumerate(smiles_list)
+                executor.submit(self.screen_molecule, smi): i
+                for i, smi in enumerate(smiles_or_ctx_list)
             }
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]
                 results[idx] = future.result()
 
-        return [results[i] for i in range(len(smiles_list))]
+        return [results[i] for i in range(len(smiles_or_ctx_list))]

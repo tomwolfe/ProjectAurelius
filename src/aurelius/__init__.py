@@ -1,16 +1,18 @@
 """Project Aurelius - Bayesian Active Learning for Novel Molecule Discovery.
 
 A streamlined pipeline that combines:
-- RDKit-based structural filtering (SA score + electrolyte viability)
-- QSPR property oracles (Random Forest on ECFP4 fingerprints)
+- RDKit-based structural filtering (electrolyte viability + LogP + MW gates)
+- Hybrid property oracle (RF on ECFP4 + fragment-additivity for S/P/F)
 - Bayesian active learning loop (RF surrogate, Expected Improvement acquisition)
-- Real QM9 training data (500-molecule subset)
+- QM9 + fragment-additivity training data
 
 Key design decisions:
-- scikit-learn Random Forest for property prediction (lightweight, no GPU)
+- scikit-learn Random Forest for in-domain prediction (lightweight, no GPU)
+- Fragment-additivity corrections for electrolyte-specific motifs (S, P, F)
 - ECFP4 Morgan fingerprints (radius=2, 2048 bits) for molecular featurisation
 - Gaussian-penalty objective function for battery-relevant scoring
 - Threshold-based viability criteria (Aurelius Score >= 50 / 100)
+- Single SMILES->Mol parsing per molecule per generation via MoleculeContext
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ from aurelius.config import (
 )
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.oracle import PropertyOracle
-from aurelius.types import MoleculeInput
+from aurelius.types import MoleculeContext, MoleculeInput
 
 __all__ = [
     "__version__",
@@ -46,6 +48,7 @@ __all__ = [
     "ConvergenceChecker",
     "DiscoveryLoop",
     "FeedbackAdapter",
+    "MoleculeContext",
     "MoleculeInput",
     "MutationEngine",
     "PropertyOracle",
