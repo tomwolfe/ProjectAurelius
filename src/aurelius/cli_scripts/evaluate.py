@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import sys
 
-from aurelius.config import get_config
 from aurelius.pipeline import AureliusPipeline
 
 
@@ -25,8 +24,7 @@ def main() -> None:
     parser.add_argument("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to evaluate")
     args = parser.parse_args()
 
-    config = get_config()
-    pipeline = AureliusPipeline(config)
+    pipeline = AureliusPipeline()
     try:
         pipeline.initialize()
     except Exception as exc:

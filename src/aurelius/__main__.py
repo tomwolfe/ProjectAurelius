@@ -13,57 +13,21 @@ Usage:
 
 from __future__ import annotations
 
-import functools
 import json
-import os
 import sys
-from typing import Any
 
 import click
 
-from aurelius.config import AureliusConfig, get_config
 from aurelius.pipeline import AureliusPipeline
 from aurelius.types import MoleculeContext
 from aurelius.utils.dependencies import HAS_RDKIT
 
 
-def _init_pipeline_from_ctx(ctx: click.Context) -> None:
-    """Initialise the pipeline stored in the Click context.
-
-    Called by ``@with_pipeline`` after the command function has been
-    matched but before the command body runs.
-    """
-    pipeline: AureliusPipeline = ctx.ensure_object(dict)["pipeline"]
+def _make_pipeline() -> AureliusPipeline:
+    """Create and initialize a pipeline."""
+    pipeline = AureliusPipeline()
     pipeline.initialize()
-
-
-def with_pipeline(command: click.Command) -> click.Command:
-    """Click decorator that injects ``pipeline`` and ``config`` into the command.
-
-    The decorated command receives ``pipeline`` and ``config`` as the
-    first two positional arguments.  This eliminates the repeated
-    ``config = get_config()`` / ``pipeline = AureliusPipeline(config)``
-    boilerplate found in every CLI command.
-    """
-
-    @functools.wraps(command)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        ctx = click.get_current_context()
-        obj: dict[str, Any] = ctx.ensure_object(dict)
-        if "pipeline" not in obj:
-            config = get_config()
-            pipeline = AureliusPipeline(config)
-            obj["config"] = config
-            obj["pipeline"] = pipeline
-        else:
-            config = obj["config"]
-            pipeline = obj["pipeline"]
-
-        _init_pipeline_from_ctx(ctx)
-
-        return command(pipeline, config, *args, **kwargs)  # type: ignore[return-value]
-
-    return wrapper  # type: ignore[return-value]
+    return pipeline
 
 
 @click.group()
@@ -77,15 +41,15 @@ def cli() -> None:
 
 
 @cli.command()
-@with_pipeline  # type: ignore[arg-type]
-def init(pipeline: AureliusPipeline, config: AureliusConfig) -> None:
+def init() -> None:
     """Initialize the Aurelius v9.0 pipeline."""
+    _make_pipeline()
     click.echo("\nPipeline initialized successfully.")
 
 
 @cli.command()
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Show detailed framework versions")
-def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: AureliusConfig | None = None) -> None:
+def doctor(verbose: bool) -> None:
     """Validate dependencies, hardware, and configuration."""
     click.echo("[Frameworks]")
     icon = "OK" if HAS_RDKIT else "MISSING"
@@ -114,12 +78,7 @@ def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: Aure
 @click.argument("smiles")
 def screen(smiles: str) -> None:
     """Screen a single molecule through the full Aurelius pipeline."""
-    from aurelius.config import get_config
-    from aurelius.pipeline import AureliusPipeline
-
-    config = get_config()
-    pipeline = AureliusPipeline(config)
-    pipeline.initialize()
+    pipeline = _make_pipeline()
     results = pipeline.screen_smiles(smiles)
 
     score = results.get("score", {})
@@ -133,14 +92,12 @@ def screen(smiles: str) -> None:
 @cli.command("batch")
 @click.argument("file", type=click.Path(exists=True))
 @click.option("--output", type=click.Path(), help="Output JSON file")
-@with_pipeline  # type: ignore[arg-type]
 def batch(
     file: str,
     output: str | None,
-    pipeline: AureliusPipeline,
-    config: AureliusConfig,
 ) -> None:
     """Screen multiple molecules from a SMILES file (one per line)."""
+    pipeline = _make_pipeline()
     smiles_list = []
     with open(file) as f:
         for line in f:
@@ -178,13 +135,11 @@ def batch(
 
 @cli.command("score")
 @click.argument("smiles")
-@with_pipeline  # type: ignore[arg-type]
 def score(
     smiles: str,
-    pipeline: AureliusPipeline,
-    config: AureliusConfig,
 ) -> None:
     """Compute the Aurelius v9.0 score for a molecule (quick mode)."""
+    pipeline = _make_pipeline()
     results = pipeline.screen_smiles(smiles)
 
     score = results.get("score", {})
@@ -209,13 +164,11 @@ def train(model_path: str) -> None:
 
 @cli.command("evaluate")
 @click.option("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to evaluate")
-@with_pipeline  # type: ignore[arg-type]
 def evaluate_cmd(
-    pipeline: AureliusPipeline,
-    config: AureliusConfig,
     smiles: str = "CC(=O)OC1=CC(=O)O1",
 ) -> None:
     """Run ML Oracle evaluation on a molecule."""
+    pipeline = _make_pipeline()
     try:
         results = pipeline.screen_smiles(smiles)
         score = results.get("score", {})
@@ -235,20 +188,10 @@ def agent(
     batch_size: int,
 ) -> None:
     """Run the autonomous screening agent."""
-    from aurelius.agent.state import CheckpointManager
-    from aurelius.cli_scripts.agent import AgentConfig, run_screening
+    from aurelius.agent.loop import AgentConfig, run_screening
 
-    output_dir = os.environ.get("AURELIUS_OUTPUT_DIR")
-    checkpoint = CheckpointManager(output_dir=output_dir)
-    try:
-        agent_cfg = AgentConfig(
-            max_generations=max_generations,
-            batch_size=batch_size,
-        )
-        run_screening(agent_cfg, checkpoint)
-    except Exception as e:
-        click.echo(f"[ERROR] {e}", err=True)
-        sys.exit(1)
+    cfg = AgentConfig(max_generations=max_generations, batch_size=batch_size)
+    run_screening(cfg)
 
 
 if __name__ == "__main__":

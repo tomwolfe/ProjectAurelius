@@ -49,7 +49,6 @@ from aurelius.constants import (
     CF3_CORRECTION_LUMO,
     F_CORRECTION_HOMO,
     F_CORRECTION_LUMO,
-    FINGERPRINT_SIZE,
     MAX_DIELECTRIC_PER_TPSA,
     PHOSPHATE_CORRECTION_HOMO,
     PHOSPHATE_CORRECTION_LUMO,
@@ -257,6 +256,13 @@ def train_oracle_rf(save_path: str = DEFAULT_RF_MODEL_PATH) -> str:
     X = np.array(X_list, dtype=np.float32)
     y = np.column_stack([y_homo, y_lumo])
 
+    if X.shape[0] < 1000:
+        logger.warning(
+            "RF trained on only %d samples with %d features — this is statistically unsound. "
+            "Predictions will rely heavily on the GC + F/P/S correction layer. "
+            "Provide a custom dataset with >= 1000 molecules for a meaningful QSPR model.",
+            X.shape[0], X.shape[1],
+        )
     logger.info("Training RandomForest on %d samples with %d features...", X.shape[0], X.shape[1])
     model = RandomForestRegressor(
         n_estimators=100,

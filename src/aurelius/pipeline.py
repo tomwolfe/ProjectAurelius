@@ -20,7 +20,6 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Contrib.SA_Score import sascorer
 
-from aurelius.config import AureliusConfig, apply_global_config
 from aurelius.constants import (
     AL_CORROSION_LUMO_THRESHOLD,
     AL_CORROSION_MIN_FLUORINE,
@@ -71,10 +70,8 @@ class AureliusPipeline:
 
     def __init__(
         self,
-        config: AureliusConfig | None = None,
         use_real_models: bool = True,
     ) -> None:
-        self.config = config or apply_global_config()
         self._filter: Filter | None = None
         self._use_real_models = use_real_models
         self._oracle: PropertyOracle | None = None

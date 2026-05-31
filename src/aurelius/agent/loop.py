@@ -2,20 +2,20 @@
 
 The ``DiscoveryLoop`` encapsulates the main autonomous screening loop:
 generation (mutation), screening, feedback, convergence checking, and
-checkpointing.  It is designed as a pure, testable component that
-receives its dependencies (pipeline, mutation engine, checkpoint manager,
-etc.) rather than constructing them internally.
+checkpointing.  SMILES strings are parsed into RDKit Mol objects **exactly once**
+per molecule per generation via ``MoleculeContext``.
 
-SMILES strings are parsed into RDKit Mol objects **exactly once** per
-molecule per generation via ``MoleculeContext``, and the parsed object
-is reused across Filter, Oracle, and Featurizer stages.
+``AgentConfig`` and ``run_screening`` are the consolidated entry points for
+agent execution — ``__main__.py`` imports these rather than duplicate the logic.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -23,47 +23,109 @@ from rdkit.DataStructs import BulkTanimotoSimilarity
 from scipy.spatial.distance import jaccard
 from sklearn.cluster import MiniBatchKMeans
 
-from aurelius.agent.state import ConvergenceChecker, FeedbackAdapter
+from aurelius.agent.mutation import MutationEngine
+from aurelius.agent.reporting import generate_discoveries_sdf, generate_run_summary
+from aurelius.agent.state import CheckpointManager, ConvergenceChecker, FeedbackAdapter
+from aurelius.agent.surrogate import RandomForestSurrogate
 from aurelius.constants import DISCOVERY_THRESHOLD
-from aurelius.types import MoleculeContext
+from aurelius.pipeline import AureliusPipeline
+from aurelius.types import MoleculeContext, ScreeningResult
 
 log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class ScreeningResult:
-    """Result from a single molecule screening.
+class AgentConfig:
+    """Parameters for the autonomous screening agent."""
 
-    Contains the unified total_score and multi-objective sub-scores
-    for downstream analysis and SDF export.
+    max_generations: int = 50
+    batch_size: int = 50
+
+
+# ---------------------------------------------------------------------------
+# Consolidated agent entry point
+# ---------------------------------------------------------------------------
+
+
+def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
+    """Run the autonomous screening loop and generate deliverables.
+
+    This is the single entry point for agent execution, called both from
+    the CLI (``aurelius agent``) and programmatic use.  All heavy lifting
+    (pipeline construction, checkpointing, loop orchestration) lives here.
     """
+    output_dir = None  # could be lifted to AgentConfig in future
 
-    smiles: str
-    total_score: float
-    is_viable: bool
-    rejection_reasons: list[str]
-    fingerprint: np.ndarray[Any, Any] | None = None
-    novelty_to_seed: float | None = None
-    homo_eV: float | None = None
-    lumo_eV: float | None = None
-    dielectric_proxy: float | None = None
-    viscosity_proxy: float | None = None
-    sa_score: float | None = None
-    sub_scores: dict[str, float] | None = None
+    engine = MutationEngine()
+    checkpoint = CheckpointManager(output_dir=output_dir)
+
+    state = checkpoint.load()
+    for h in state.get("known_fps_hex", []):
+        with contextlib.suppress(Exception):
+            from aurelius.utils.chem_utils import _deserialize_fp
+            engine.known_fps.append(_deserialize_fp(h))
+
+    resumed = state["screened_count"] > 0
+    if resumed:
+        log.info(
+            "Resuming from checkpoint: batch=%d, screened=%d, best_score=%.1f",
+            state.get("batch", 0), state.get("screened_count", 0), state.get("best_score", 0.0),
+        )
+    else:
+        log.info("Fresh start. No checkpoint found.")
+
+    wall_start = time.time()
+
+    pipeline = AureliusPipeline()
+    pipeline.initialize()
+
+    loop = DiscoveryLoop(
+        pipeline=pipeline,
+        engine=engine,
+        checkpoint=checkpoint,
+        max_generations=agent_cfg.max_generations,
+        batch_size=agent_cfg.batch_size,
+    )
+    results = loop.execute()
+
+    all_results = results["all_results"]
+    discoveries = results["discoveries"]
+    convergence = loop.convergence
+
+    generate_run_summary(convergence, all_results, discoveries)
+    generate_discoveries_sdf(discoveries)
+    checkpoint.save()
+
+    log.info("=" * 60)
+    log.info("  SCREENING COMPLETE")
+    log.info("=" * 60)
+    log.info("  Total screened:     %d", results["total_screened"])
+    log.info("  Generations run:    %d", convergence.generations)
+    log.info("  Viable discoveries: %d", results["total_viable"])
+    log.info("  Best score:         %.1f", checkpoint.state["best_score"])
+    log.info("  Invalid discarded:  %d", results["total_invalid"])
+    log.info("  Wall time:          %.0fs", time.time() - wall_start)
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Discovery loop
+# ---------------------------------------------------------------------------
 
 
 class DiscoveryLoop:
     """Main autonomous screening loop.
 
-    The loop runs for max_generations iterations (or until a time
-    cap / convergence condition is met).  Each generation:
+    The loop runs for max_generations iterations.  Each generation:
     1. Mutates seed molecules via the mutation engine
     2. Filters invalid / duplicate candidates (parses to MoleculeContext)
     3. Featurises candidates from MoleculeContext pre-computed vectors
-    4. Selects top candidates via Bayesian Expected Improvement
+    4. Selects top candidates via Bayesian expected improvement
     5. Screens selected candidates through the pipeline (reuses Mol)
     6. Records results / feedback / convergence state
-    7. Saves checkpoint at the end of each generation
+    7. Refits the RF surrogate from accumulated (X, y) history
+    8. Saves checkpoint at the end of each generation
     """
 
     def __init__(
@@ -89,20 +151,11 @@ class DiscoveryLoop:
         self.discoveries: list[ScreeningResult] = []
         self.convergence = ConvergenceChecker()
         self.feedback = FeedbackAdapter()
+        self._surrogate: RandomForestSurrogate | None = None
         self.screened_smiles: set[str] = set()
         self._prev_centroids: np.ndarray[Any, Any] | None = None
 
     def execute(self) -> dict[str, Any]:
-        """Run the discovery loop and return accumulated results.
-
-        The loop implements a Bayesian active-learning cycle:
-        1. Propose a large candidate pool via the mutation engine.
-        2. Parse SMILES -> MoleculeContext (Mol parsed ONCE here).
-        3. If a RF surrogate is already fitted, use Expected Improvement
-           to select the top batch_size candidates.
-        4. Screen ONLY the selected top candidates (reuses pre-parsed Mol).
-        5. Update the surrogate with the new (X, y) observations.
-        """
         wall_start = time.time()
         generation = 0
 
@@ -214,7 +267,12 @@ class DiscoveryLoop:
                 self.all_results.append(screening_result)
                 self.feedback.record(screening_result)
 
-            self.feedback.finalize_batch()
+            # Fit the surrogate from accumulated (X, y) history
+            X, y = self.feedback.get_history()
+            if len(y) >= 2:
+                if self._surrogate is None:
+                    self._surrogate = RandomForestSurrogate()
+                self._surrogate.fit(X, y)
 
             new_seeds = [
                 ctx.smiles for ctx, sc in zip(batch_contexts, batch_scores, strict=False)
@@ -272,7 +330,6 @@ class DiscoveryLoop:
         }
 
     def _generate_candidates(self, generation: int) -> list[str]:
-        """Generate candidate SMILES for this generation."""
         top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
         candidates = self.engine.mutate_batch(top_seeds, self.batch_size * 3)
         return list(candidates)
@@ -287,12 +344,6 @@ class DiscoveryLoop:
         self,
         candidates: list[str],
     ) -> tuple[list[MoleculeContext], int]:
-        """Parse SMILES into MoleculeContext and filter invalid/duplicate.
-
-        This is the single point where SMILES -> Mol parsing occurs per
-        generation.  The returned MoleculeContext objects are reused by
-        all subsequent pipeline stages.
-        """
         valid_contexts: list[MoleculeContext] = []
         invalid_count = 0
 
@@ -319,37 +370,23 @@ class DiscoveryLoop:
         valid_contexts: list[MoleculeContext],
         generation: int,
     ) -> tuple[list[int], list[MoleculeContext]]:
-        """Select candidates for screening using Bayesian Active Learning.
-
-        If the RF surrogate is already fitted, use Expected Improvement
-        to pick the top batch_size candidates.  If not fitted
-        (first generation), select randomly.
-
-        Featurisation uses the pre-computed feature vectors from
-        MoleculeContext (no redundant SMILES -> Mol parsing).
-        """
         if len(valid_contexts) == 0:
             return [], []
 
         X_pool = self._featurise_from_contexts(valid_contexts)
 
-        if self.feedback._surrogate is not None:
-            ei_scores = self.feedback._surrogate.expected_improvement(X_pool)
+        if self._surrogate is not None:
+            ei_scores = self._surrogate.expected_improvement(X_pool)
             top_indices: list[int] = np.argsort(ei_scores)[::-1][: self.batch_size].tolist()
         else:
             n = min(self.batch_size, len(valid_contexts))
-            indices = self.feedback._rng.choice(len(valid_contexts), size=n, replace=False)
+            indices = np.random.default_rng(42).choice(len(valid_contexts), size=n, replace=False)
             top_indices = sorted(indices.tolist())
 
         batch_contexts = [valid_contexts[i] for i in top_indices]
         return top_indices, batch_contexts
 
     def _featurise_from_contexts(self, contexts: list[MoleculeContext]) -> np.ndarray:
-        """Convert a list of MoleculeContexts to a 2-D feature array.
-
-        Uses pre-computed feature vectors from MoleculeContext to avoid
-        redundant SMILES parsing and descriptor computation.
-        """
         X = np.zeros((len(contexts), 2053), dtype=np.float32)
         for i, ctx in enumerate(contexts):
             try:
@@ -359,10 +396,6 @@ class DiscoveryLoop:
         return X
 
     def _screen_molecule(self, ctx: MoleculeContext) -> dict[str, Any] | None:
-        """Run a single molecule through the screening pipeline.
-
-        Passes the pre-parsed MoleculeContext to avoid re-parsing.
-        """
         try:
             result = self.pipeline.screen_molecule(ctx)
         except (ImportError, ValueError, RuntimeError, TypeError) as e:
@@ -371,7 +404,6 @@ class DiscoveryLoop:
         return result if result is not None else None
 
     def _count_new_clusters_from_contexts(self, contexts: list[MoleculeContext]) -> int:
-        """Count new structural clusters using MiniBatchKMeans on ECFP4 fingerprints."""
         viable_contexts = [
             r for r in self.all_results
             if r.is_viable and r.total_score >= 50.0
@@ -414,7 +446,6 @@ class DiscoveryLoop:
 
     @staticmethod
     def _compute_mean_pairwise_tanimoto(fingerprints: list[np.ndarray]) -> float | None:
-        """Compute mean pairwise Tanimoto diversity among a list of fingerprint arrays."""
         if len(fingerprints) < 2:
             return None
 

@@ -21,7 +21,8 @@ from importlib import metadata
 
 __version__: str = metadata.version("aurelius")
 
-from aurelius.agent.loop import DiscoveryLoop, ScreeningResult
+from aurelius.agent.loop import DiscoveryLoop
+from aurelius.types import ScreeningResult
 from aurelius.agent.mutation import MutationEngine
 from aurelius.agent.reporting import (
     generate_discoveries_sdf,
@@ -32,28 +33,21 @@ from aurelius.agent.state import (
     ConvergenceChecker,
     FeedbackAdapter,
 )
-from aurelius.config import (
-    AureliusConfig,
-    get_config,
-)
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.oracle import PropertyOracle
-from aurelius.types import MoleculeContext, MoleculeInput
+from aurelius.types import MoleculeContext
 
 __all__ = [
     "__version__",
-    "AureliusConfig",
     "AureliusPipeline",
     "CheckpointManager",
     "ConvergenceChecker",
     "DiscoveryLoop",
     "FeedbackAdapter",
     "MoleculeContext",
-    "MoleculeInput",
     "MutationEngine",
     "PropertyOracle",
     "ScreeningResult",
     "generate_discoveries_sdf",
     "generate_run_summary",
-    "get_config",
 ]

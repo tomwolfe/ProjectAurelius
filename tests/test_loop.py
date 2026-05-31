@@ -33,7 +33,7 @@ class TestDiscoveryLoopActiveLearning:
 
         result = loop.execute()
 
-        surrogate = loop.feedback._surrogate
+        surrogate = loop._surrogate
         assert surrogate is not None, "RF surrogate should have been created"
         assert surrogate._rf is not None, "RF surrogate should have been fitted"
         assert surrogate._X is not None, "X history should be populated"
@@ -85,7 +85,7 @@ class TestDiscoveryLoopActiveLearning:
 
         loop.execute()
 
-        surrogate = loop.feedback._surrogate
+        surrogate = loop._surrogate
         assert surrogate is not None
         assert surrogate._X is not None
         assert surrogate._y is not None

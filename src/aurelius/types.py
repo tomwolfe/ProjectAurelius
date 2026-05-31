@@ -2,6 +2,10 @@
 
 All dataclass definitions used across the pipeline are centralized here
 to eliminate circular imports between modules.
+
+MoleculeContext is the absolute single source of truth for molecular
+parsing. No module should call ``Chem.MolFromSmiles`` outside of this
+class or the mutation engine's fragment pool.
 """
 
 from __future__ import annotations
@@ -14,11 +18,22 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
 
 
-@dataclass
-class MoleculeInput:
-    """Input molecule specification for the Aurelius screening pipeline."""
+@dataclass(frozen=True)
+class ScreeningResult:
+    """Result from a single molecule screening."""
 
     smiles: str
+    total_score: float
+    is_viable: bool
+    rejection_reasons: list[str]
+    fingerprint: np.ndarray[Any, Any] | None = None
+    novelty_to_seed: float | None = None
+    homo_eV: float | None = None
+    lumo_eV: float | None = None
+    dielectric_proxy: float | None = None
+    viscosity_proxy: float | None = None
+    sa_score: float | None = None
+    sub_scores: dict[str, float] | None = None
 
 
 @dataclass
@@ -45,14 +60,6 @@ class MoleculeContext:
 
     @classmethod
     def from_smiles(cls, smiles: str) -> MoleculeContext | None:
-        """Parse a SMILES string into a MoleculeContext.
-
-        Args:
-            smiles: SMILES string.
-
-        Returns:
-            MoleculeContext with parsed Mol, or None if parsing fails.
-        """
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return None
@@ -63,7 +70,6 @@ class MoleculeContext:
         return cls(smiles=smiles, mol=mol)
 
     def get_ecfp4(self) -> Any:
-        """Get or compute ECFP4 fingerprint (lazy)."""
         if self.fingerprint_ecfp4 is None:
             self.fingerprint_ecfp4 = AllChem.GetMorganFingerprintAsBitVect(
                 self.mol, radius=2, nBits=2048
@@ -95,11 +101,6 @@ class MoleculeContext:
         return self.feature_vector
 
     def is_valid_electrolyte_mol(self) -> bool:
-        """Check chemical validity and molecular weight bounds.
-
-        Battery electrolyte candidates must have 30 < MW < 1000 Da and
-        at least one hydrogen-bond acceptor (essential for Li/Na ion solvation).
-        """
         mw = Descriptors.ExactMolWt(self.mol)
         if mw < 30.0 or mw > 1000.0:
             return False
@@ -107,7 +108,6 @@ class MoleculeContext:
         return h_acceptors >= 1
 
     def count_heteroatoms(self) -> dict[int, int]:
-        """Count heteroatoms relevant to electrolytes: O(8), F(9), P(15), S(16)."""
         counts: dict[int, int] = {8: 0, 9: 0, 15: 0, 16: 0}
         for atom in self.mol.GetAtoms():
             z = atom.GetAtomicNum()
@@ -116,47 +116,13 @@ class MoleculeContext:
         return counts
 
     def get_tpsa(self) -> float:
-        """Return the topological polar surface area."""
         return float(Descriptors.TPSA(self.mol))
 
     def get_mw(self) -> float:
-        """Return the exact molecular weight."""
         return float(Descriptors.ExactMolWt(self.mol))
 
 
-@dataclass
-class OracleResult:
-    """Result from the PropertyOracle — predicted HOMO/LUMO properties."""
-
-    homo_eV: float
-    lumo_eV: float
-    gap_eV: float
-    score_eV: float
-
-
-@dataclass
-class AureliusScore:
-    """Composite Aurelius score for battery electrolyte screening.
-
-    ``total_score`` is computed via Gaussian penalty approach:
-      - LUMO rewarded via Gaussian centered at -1.0 eV, sigma=0.75
-      - HOMO penalised via sigmoid when above -6.0 eV
-      - SA score penalty for synthetic accessibility
-      - Hydrolytic instability penalty
-      - Domain applicability penalty for OOD extrapolation
-      - Al corrosion penalty for high-LUMO fluorinated molecules
-
-    where total_score is normalized to [0, 100].
-    """
-
-    total_score: float
-    is_viable: bool
-    rejection_reasons: list[str]
-
-
 __all__ = [
-    "AureliusScore",
     "MoleculeContext",
-    "MoleculeInput",
-    "OracleResult",
+    "ScreeningResult",
 ]

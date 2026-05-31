@@ -20,10 +20,7 @@ from rdkit.Chem import BRICS, AllChem, rdMolDescriptors
 
 from aurelius.constants import ELECTROLYTE_MIN_HETEROATOM_RATIO
 from aurelius.types import MoleculeContext
-from aurelius.utils.chem_utils import (
-    _deserialize_fp,
-    _serialize_fp,
-)
+from aurelius.utils.chem_utils import _deserialize_fp
 
 logger = logging.getLogger(__name__)
 

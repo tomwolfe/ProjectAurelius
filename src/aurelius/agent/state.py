@@ -1,7 +1,7 @@
 """Agent state management: checkpointing, convergence tracking, and feedback.
 
-The FeedbackAdapter has been simplified to remove legacy fallback paths.
-Feature vectors are always provided as numpy arrays from MoleculeContext.
+FeedbackAdapter is a pure data buffer that just stores (X, y) history.
+Surrogate fitting is owned by DiscoveryLoop in loop.py.
 """
 
 from __future__ import annotations
@@ -15,29 +15,18 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from aurelius.agent.surrogate import RandomForestSurrogate
-
 if TYPE_CHECKING:
-    from aurelius.agent.loop import ScreeningResult
+    from aurelius.types import ScreeningResult
 
 
 def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str:
-    """Resolve a relative output path against a base directory.
-
-    If output_dir is provided, path is joined to it.
-    Otherwise path is returned unchanged.
-    """
     if output_dir is not None:
         return str(Path(output_dir) / path)
     return path
 
 
 class CheckpointManager:
-    """Manages agent state using atomic JSON writes.
-
-    Stores only aggregate stats and top-N discoveries to keep JSON
-    files small.  Uses atomic writes to prevent corruption during crashes.
-    """
+    """Manages agent state using atomic JSON writes."""
 
     _MAX_DISCOVERIES = 100
 
@@ -55,7 +44,6 @@ class CheckpointManager:
         self._load()
 
     def _load(self) -> None:
-        """Load checkpoint state from the JSON file."""
         if os.path.exists(self.path):
             try:
                 with open(self.path) as f:
@@ -73,7 +61,6 @@ class CheckpointManager:
                 pass
 
     def _save(self) -> None:
-        """Save checkpoint state atomically."""
         data = {
             "batch": self._batch,
             "screened_count": self._screened_count,
@@ -98,7 +85,6 @@ class CheckpointManager:
         self._save()
 
     def add_discovery(self, discovery: dict[str, Any] | ScreeningResult) -> None:
-        """Add a discovery to the checkpoint."""
         if hasattr(discovery, "smiles"):
             discovery = {
                 "smiles": discovery.smiles,
@@ -181,7 +167,6 @@ class ConvergenceChecker:
         self._batch_means.append(float(np.mean(scores)) if scores else 0.0)
 
     def check_score_plateau(self) -> bool:
-        """Check if batch mean changes < 1.0% over 3 consecutive batches."""
         if len(self._batch_means) < 3:
             return False
         last_three = self._batch_means[-3:]
@@ -195,13 +180,11 @@ class ConvergenceChecker:
         return True
 
     def check_structural_saturation(self) -> bool:
-        """Check if < 3 new clusters over last 2 batches."""
         if len(self.new_clusters_per_batch) < 2:
             return False
         return self.new_clusters_per_batch[-1] < 3 and self.new_clusters_per_batch[-2] < 3
 
     def should_terminate(self) -> tuple[bool, str]:
-        """Determine if the screening loop should terminate."""
         plateau = self.check_score_plateau()
         saturation = self.check_structural_saturation()
         if plateau and saturation:
@@ -220,80 +203,35 @@ class ConvergenceChecker:
 
 
 class FeedbackAdapter:
-    """Adapts mutation strategy based on screening results using RF active learning.
+    """Pure data buffer storing (X, y) history for surrogate training.
 
-    Simplified: no legacy fallback featurization. Feature vectors are always
-    pre-computed numpy arrays from MoleculeContext. The surrogate takes X, y
-    numpy arrays directly.
+    Surrogate fitting is owned by DiscoveryLoop; this class just stores data.
     """
 
     def __init__(self) -> None:
         self._total_screened = 0
-        self._surrogate: RandomForestSurrogate | None = None
         self._X_history: list[np.ndarray[Any, Any]] = []
         self._y_history: list[float] = []
-        self._rng = np.random.default_rng(42)
 
     def record(self, result: ScreeningResult) -> None:
-        """Record screening result for feedback analysis.
-
-        Args:
-            result: Typed ScreeningResult with score and feature vector.
-        """
-        self._total_screened += 1
-
         if result.fingerprint is None:
             raise ValueError(
                 "ScreeningResult.fingerprint must be a numpy array. "
                 "Use MoleculeContext.get_feature_vector() to generate it."
             )
-
+        self._total_screened += 1
         self._X_history.append(result.fingerprint)
         self._y_history.append(result.total_score)
 
-        self.maybe_fit_from_history()
+    def get_history(self) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]:
+        """Return (X, y) arrays of all accumulated data."""
+        return np.array(self._X_history, dtype=np.float32), np.array(self._y_history, dtype=np.float32)
 
-    def maybe_fit_from_history(self, min_samples: int = 10) -> None:
-        """Fit the surrogate from accumulated history if enough samples exist."""
-        if self._surrogate is not None:
-            return
-        if len(self._X_history) < min_samples:
-            return
-        X = np.array(self._X_history, dtype=np.float32)
-        y = np.array(self._y_history, dtype=np.float32)
-        self._surrogate = RandomForestSurrogate()
-        self._surrogate.fit(X, y)
-
-    def finalize_batch(self) -> None:
-        """Retrain the RF surrogate from accumulated history.
-
-        Takes X and y numpy arrays directly. No legacy merging needed.
-        """
-        if not self._X_history:
-            return
-
-        if self._surrogate is None:
-            self._surrogate = RandomForestSurrogate()
-
-        X_parts = [np.asarray(x, dtype=np.float32) for x in self._X_history]
-        y_parts = [np.atleast_1d(np.asarray(y, dtype=np.float32)) for y in self._y_history]
-
-        prev_X = self._surrogate._X
-        prev_y = self._surrogate._y
-        if prev_X is not None and prev_y is not None:
-            X_parts.append(prev_X)
-            y_prev_flat = prev_y.ravel() if prev_y.ndim > 1 else prev_y
-            y_parts.append(y_prev_flat)
-
-        X_full = np.vstack(X_parts)
-        y_full = np.concatenate(y_parts)
-
-        self._surrogate.fit(X_full, y_full)
+    def clear(self) -> None:
         self._X_history.clear()
         self._y_history.clear()
 
     def get_adaptation_strategy(self) -> dict[str, Any]:
-        """Return current mutation adaptation recommendations."""
         strategy: dict[str, Any] = {
             "total_screened": self.total_screened,
         }

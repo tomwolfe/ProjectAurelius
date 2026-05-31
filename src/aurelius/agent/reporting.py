@@ -18,8 +18,8 @@ from typing import Any
 
 import numpy as np
 
-from aurelius.agent.loop import ScreeningResult
 from aurelius.agent.state import ConvergenceChecker
+from aurelius.types import ScreeningResult
 
 
 def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str:
