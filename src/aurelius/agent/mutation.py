@@ -1,27 +1,24 @@
-"""SELFIES-based molecule mutation engine.
+"""Molecule mutation engine for battery electrolyte discovery.
 
-Generates candidate molecules from seed SMILES using:
-- SELFIES token-level mutation (atom substitution, bond type changes)
-- SELFIES token insertion/deletion (scaffold modification)
-- SELFIES token permutation (isomer generation)
+Generates candidate molecules from seed SMILES using three strategies
+in priority order:
 
-This ensures syntactically valid SELFIES strings that can be decoded
-to valid RDKit molecules, enabling exploration of a far broader
-chemical space than BRICS-only reassembly.
+1. **SMARTS functional-group replacement** — targeted electrolyte-relevant
+   transformations (fluorination, methylation, ether/carbonate edits).
+2. **BRICS fragmentation + reassembly** — scaffold hopping by breaking
+   and reconnecting fragments at retrosynthetically sensible bonds.
+3. **SELFIES token mutation** — broad, unbiased exploration (low-probability
+   fallback when the first two strategies produce too few candidates).
 
 Requirements:
-    - ``selfies`` package (pip install selfies)
-    - RDKit for molecule validation
+    - RDKit for SMARTS, BRICS, and SELFIES-based mutation
+    - ``selfies`` package (pip install selfies, optional fallback)
 """
 
 from __future__ import annotations
 
-import contextlib
 import logging
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    pass
+from typing import Any
 
 import numpy as np
 
@@ -33,23 +30,38 @@ from aurelius.utils.chem_utils import (
 from aurelius.utils.dependencies import HAS_RDKIT
 
 if HAS_RDKIT:
-    from rdkit import Chem  # type: ignore[import-not-found, unused-ignore]
+    from rdkit import Chem
     from rdkit.Chem import (
-        BRICS,  # type: ignore[import-not-found, unused-ignore]
-        Descriptors,  # type: ignore[import-not-found, unused-ignore]
+        BRICS,
+        AllChem,
     )
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# SELFIES helpers (lazy import to avoid hard dependency)
+# Electrolyte-relevant SMARTS reaction library
+# ---------------------------------------------------------------------------
+# These reactions guide mutations toward chemical motifs commonly found in
+# battery electrolytes: fluorinated chains, carbonates, ethers, and esters.
+ELECTROLYTE_SMARTS: list[tuple[str, str]] = [
+    ("[CH3:1]>>[F:1]", "Methyl to fluorine"),
+    ("[CH3:1]>>[C:1](F)(F)F", "Methyl to trifluoromethyl"),
+    ("[OH:1]>>[F:1]", "Hydroxyl to fluorine"),
+    ("[C:1]>>[C:1](C)", "Methylation"),
+    ("[C:1](=O)[O:2]>>[C:1](=O)[O:2]C", "Ester to methyl ester"),
+    ("[C:1]>>[C:1]OC", "Add methoxy"),
+]
+
+
+# ---------------------------------------------------------------------------
+# SELFIES helpers (demoted fallback)
 # ---------------------------------------------------------------------------
 
 
 def _import_selfies() -> Any:
     """Import selfies, raising ImportError with a helpful message if missing."""
     try:
-        import selfies as sf  # type: ignore[import-not-found, unused-ignore]
+        import selfies as sf
     except ImportError as exc:
         raise ImportError(
             "SELFIES-based mutation requires the selfies package. "
@@ -58,51 +70,14 @@ def _import_selfies() -> Any:
     return sf
 
 
-def smiles_to_selfies(smiles: str) -> str:
-    """Convert a SMILES string to its SELFIES representation.
-
-    Args:
-        smiles: Valid SMILES string.
-
-    Returns:
-        SELFIES string that decodes back to the input molecule.
-
-    Raises:
-        ValueError: If SMILES is invalid or SELFIES conversion fails.
-    """
+def _selfies_to_smiles(selfies_str: str) -> str | None:
+    """Decode a SELFIES string to SMILES, validating the molecule."""
     try:
         import selfies as sf
 
-        # Validate that SMILES is parseable
-        from rdkit import Chem
-
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            raise ValueError(f"Invalid SMILES: {smiles}")
-        return sf.encoder(smiles)
-    except Exception as exc:
-        raise ValueError(f"Failed to convert SMILES to SELFIES: {exc}") from exc
-
-
-def selfies_to_smiles(selfies_str: str) -> str | None:
-    """Decode a SELFIES string to SMILES, validating the molecule.
-
-    Args:
-        selfies_str: Valid SELFIES string.
-
-    Returns:
-        SMILES string if decoding produces a valid molecule, else None.
-    """
-    try:
-        import selfies as sf
-
-        # sf.decoder returns a SMILES string directly
         smi = sf.decoder(selfies_str)
         if smi is None:
             return None
-        # Validate that SMILES is parseable
-        from rdkit import Chem
-
         mol = Chem.MolFromSmiles(smi)
         if mol is None:
             return None
@@ -111,169 +86,27 @@ def selfies_to_smiles(selfies_str: str) -> str | None:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Mutation operations
-# ---------------------------------------------------------------------------
-
-
-def _mutate_atom(selfies_str: str, rng: np.random.Generator) -> str | None:
-    """Replace one atom token in SELFIES with a different atom type.
-
-    E.g. replace a carbon token with a nitrogen token to create an isomer.
-    """
-    import selfies as sf
-
-    # Get valid tokens from the SELFIES string
-    try:
-        tokens = sf.split(selfies_str)
-    except (AttributeError, ImportError) as exc:
-        logger.debug("SELFIES split failed: %s", exc)
-        return None
-
-    if len(tokens) < 2:
-        return None
-
-    idx = rng.integers(0, len(tokens))
-    current_token = tokens[idx]
-
-    # Sample replacement from the full SELFIES alphabet to explore new chemistry
-    alphabet = sorted(sf.get_semantic_robust_alphabet())
-    other_atoms = [t for t in alphabet if t != current_token]
-    if not other_atoms:
-        return None
-
-    new_token = rng.choice(other_atoms)
-    new_selfies = selfies_str.replace(current_token, new_token, 1)
-
-    # Validate and decode
-    smi = selfies_to_smiles(new_selfies)
-    if smi is None:
-        return None
-
-    # Weight limit check
-    mol = Chem.MolFromSmiles(smi)
-    if mol is not None:
-        mw = Descriptors.ExactMolWt(mol)
-        if mw > 450:
-            return None
-
-    return smi
-
-
-def _mutate_bond(selfies_str: str, rng: np.random.Generator) -> str | None:
-    """Change a bond type in SELFIES (single → double, etc.)."""
-    import selfies as sf
-
-    # Get valid tokens from the SELFIES string
-    try:
-        tokens = sf.split(selfies_str)
-    except (AttributeError, ImportError) as exc:
-        logger.debug("SELFIES split failed: %s", exc)
-        return None
-
-    if len(tokens) < 2:
-        return None
-
-    idx = rng.integers(0, len(tokens))
-    current = tokens[idx]
-
-    # Sample replacement from the full SELFIES alphabet to explore new bond types
-    alphabet = sorted(sf.get_semantic_robust_alphabet())
-    other_bonds = [t for t in alphabet if t != current]
-    if not other_bonds:
-        return None
-
-    new_bond = rng.choice(other_bonds)
-    new_selfies = selfies_str.replace(current, new_bond, 1)
-
-    smi = selfies_to_smiles(new_selfies)
-    return smi
-
-
-def _insert_token(selfies_str: str, rng: np.random.Generator) -> str | None:
-    """Insert a new atom token into the SELFIES string."""
-    import selfies as sf
-
-    atoms = sorted(sf.get_semantic_robust_alphabet())
-    if not atoms:
-        return None
-    new_atom = atoms[rng.integers(0, len(atoms))]
-
-    # Insert at a random position
-    pos = rng.integers(0, len(selfies_str) + 1)
-    new_selfies = selfies_str[:pos] + new_atom + selfies_str[pos:]
-
-    smi = selfies_to_smiles(new_selfies)
-    return smi
-
-
-def _delete_token(selfies_str: str, rng: np.random.Generator) -> str | None:
-    """Delete a random token from the SELFIES string."""
-    import selfies as sf
-
-    try:
-        tokens = sf.split(selfies_str)
-    except (AttributeError, ImportError):
-        return None
-    if len(tokens) < 2:
-        return None
-
-    idx = rng.integers(0, len(tokens))
-    new_selfies = "".join(tokens[:idx] + tokens[idx + 1 :])
-
-    smi = selfies_to_smiles(new_selfies)
-    return smi
-
-
-def _permute_tokens(selfies_str: str, rng: np.random.Generator) -> str | None:
-    """Permute (shuffle) SELFIES tokens to generate an isomer."""
-    import selfies as sf
-
-    try:
-        tokens = sf.split(selfies_str)
-    except (AttributeError, ImportError):
-        return None
-    n = len(tokens)
-    if n < 2:
-        return None
-
-    indices = list(range(n))
-    rng.shuffle(indices)
-    new_tokens = [tokens[i] for i in indices]
-    new_selfies = "".join(new_tokens)
-
-    smi = selfies_to_smiles(new_selfies)
-    return smi
-
-
-def _apply_mutation(
-    operation: str,
+def _selfies_token_mutate(
     selfies_str: str,
     rng: np.random.Generator,
 ) -> str | None:
-    """Apply a single SELFIES mutation operation.
+    """Replace one random token in a SELFIES string with another from the alphabet."""
+    try:
+        import selfies as sf
 
-    Args:
-        operation: One of ``"atom"``, ``"bond"``, ``"insert"``, ``"delete"``, ``"permute"``.
-        selfies_str: Current SELFIES string.
-        rng: Random number generator.
-
-    Returns:
-        SMILES string of the mutated molecule, or None if invalid.
-    """
-    operations = {
-        "atom": _mutate_atom,
-        "bond": _mutate_bond,
-        "insert": _insert_token,
-        "delete": _delete_token,
-        "permute": _permute_tokens,
-    }
-
-    fn = operations.get(operation)
-    if fn is None:
+        tokens = list(sf.split(selfies_str))
+    except Exception:
         return None
 
-    return fn(selfies_str, rng)
+    if len(tokens) < 2:
+        return None
+
+    alphabet = sorted(sf.get_semantic_robust_alphabet())
+    idx = rng.integers(0, len(tokens))
+    new_token = rng.choice([t for t in alphabet if t != tokens[idx]])
+
+    new_selfies = selfies_str.replace(tokens[idx], new_token, 1)
+    return _selfies_to_smiles(new_selfies)
 
 
 # ---------------------------------------------------------------------------
@@ -282,17 +115,14 @@ def _apply_mutation(
 
 
 class MutationEngine:
-    """SELFIES-based molecule mutation engine.
+    """Multi-strategy molecule mutation engine for battery electrolytes.
 
-    Generates candidate molecules from seed SMILES using:
-    - SELFIES token-level mutations (atom substitution, bond type changes)
-    - SELFIES token insertion/deletion (scaffold modification)
-    - SELFIES token permutation (isomer generation)
-    - BRICS reassembly (fallback for molecules that fail SELFIES encoding)
+    Generates candidate molecules from seed SMILES using three strategies
+    in priority order:
 
-    This ensures syntactically valid SELFIES strings that decode to
-    valid RDKit molecules, enabling exploration of a far broader
-    chemical space than BRICS-only reassembly.
+    1. **SMARTS functional-group replacement** (high probability)
+    2. **BRICS fragmentation + reassembly** (medium probability)
+    3. **SELFIES token mutation** (low-probability fallback)
     """
 
     def __init__(self, seed_smiles: list[str], known_fps_hex: list[str] | None = None) -> None:
@@ -308,15 +138,24 @@ class MutationEngine:
         for smi in self.seed_pool:
             mol = _safe_mol_from_smiles(smi)
             if mol is not None:
-                from rdkit.Chem import AllChem
                 self.seed_fingerprints.append(
                     AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
                 )
         self.known_fps: list[Any] = []
         for h in known_fps_hex or []:
-            with contextlib.suppress(Exception):
+            try:
                 self.known_fps.append(_deserialize_fp(h))
+            except Exception:
+                continue
         self._rng = np.random.default_rng(42)
+        # Pre-decoded SMARTS reactions
+        self._smarts_rxns: list[tuple[Any, str]] = []
+        for smarts, name in ELECTROLYTE_SMARTS:
+            try:
+                rxn = AllChem.ReactionFromSmarts(smarts)
+                self._smarts_rxns.append((rxn, name))
+            except Exception:
+                logger.debug("Failed to parse SMARTS '%s' (%s)", smarts, name)
 
     def fingerprint_db_size(self) -> int:
         """Return the number of known fingerprints in the database."""
@@ -330,8 +169,6 @@ class MutationEngine:
         """
         mol = _safe_mol_from_smiles(smiles)
         if mol is not None:
-            from rdkit.Chem import AllChem
-
             self.known_fps.append(
                 AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
             )
@@ -345,8 +182,6 @@ class MutationEngine:
         Returns:
             True if novel (all Tanimoto < 0.75).
         """
-        from rdkit.Chem import AllChem
-
         fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
         if not self.known_fps:
             return True
@@ -355,83 +190,153 @@ class MutationEngine:
 
         return all(TanimotoSimilarity(fp, known) < 0.75 for known in self.known_fps)
 
-    def _brics_reassemble(self, mol: Any) -> list[str]:
-        """BRICS decomposition + random reassembly using proper RDKit types."""
+    # ------------------------------------------------------------------
+    # Strategy 1: SMARTS functional-group replacement (highest priority)
+    # ------------------------------------------------------------------
+
+    def _apply_smarts_reactions(self, smiles: str) -> list[str]:
+        """Apply electrolyte-relevant SMARTS transformations to a seed molecule.
+
+        Each reaction produces chemically meaningful variants such as
+        fluorination, methylation, or functional-group interconversion.
+
+        Args:
+            smiles: Seed SMILES string.
+
+        Returns:
+            List of valid, novel product SMILES strings.
+        """
+        mol = _safe_mol_from_smiles(smiles)
+        if mol is None:
+            return []
+
+        results: list[str] = []
+        for rxn, name in self._smarts_rxns:
+            try:
+                products = rxn.RunReactants((mol,))
+                for product_tuple in products:
+                    for product in product_tuple:
+                        if product is None:
+                            continue
+                        try:
+                            Chem.SanitizeMol(product)
+                        except Exception:
+                            continue
+                        if not _is_valid_mol(product):
+                            continue
+                        if not self._novelty_check(product):
+                            continue
+                        p_smi = Chem.MolToSmiles(product)
+                        if p_smi and p_smi != smiles:
+                            results.append(p_smi)
+            except Exception:
+                logger.debug("SMARTS reaction '%s' failed for %s", name, smiles)
+
+        return list(set(results))
+
+    # ------------------------------------------------------------------
+    # Strategy 2: BRICS fragmentation + reassembly
+    # ------------------------------------------------------------------
+
+    def _brics_from_pool(self, mol: Any) -> list[str]:
+        """BRICS decomposition + reassembly using a shared fragment pool.
+
+        Decomposes the input molecule into BRICS fragments, then combines
+        fragments from the global seed pool to generate novel scaffolds.
+
+        Args:
+            mol: RDKit Mol object to decompose.
+
+        Returns:
+            List of candidate SMILES strings from BRICS reassembly.
+        """
         generated: list[str] = []
+
         try:
-            frag_smiles = list(BRICS.BRICSDecompose(mol))  # type: ignore[no-untyped-call]
+            frag_smiles = list(BRICS.BRICSDecompose(mol))
             if len(frag_smiles) < 2:
                 return generated
-
-            frag_mols = [Chem.MolFromSmiles(s) for s in frag_smiles]
-            frag_mols = [m for m in frag_mols if m is not None]
+            frag_mols = [Chem.MolFromSmiles(s) for s in frag_smiles if Chem.MolFromSmiles(s) is not None]
             if len(frag_mols) < 2:
                 return generated
 
-            for _ in range(20):
-                rng = np.random.default_rng(self._rng.integers(0, 2**31))  # type: ignore[assignment]
+            for _ in range(30):
+                rng = np.random.default_rng(self._rng.integers(0, 2**31))
                 idx = rng.choice(len(frag_mols), size=min(2, len(frag_mols)), replace=False)
                 try:
-                    result_gen = BRICS.BRICSBuild([frag_mols[idx[0]], frag_mols[idx[1]]])  # type: ignore[no-untyped-call]
-                    for r_mol in result_gen:
-                        if r_mol is not None:
-                            try:
-                                Chem.SanitizeMol(r_mol)
-                                s = Chem.MolToSmiles(r_mol, isomericSmiles=True)
+                    for r_mol in BRICS.BRICSBuild([frag_mols[idx[0]], frag_mols[idx[1]]]):
+                        if r_mol is None:
+                            continue
+                        try:
+                            Chem.SanitizeMol(r_mol)
+                            s = Chem.MolToSmiles(r_mol, isomericSmiles=True)
+                            if _is_valid_mol(r_mol) and self._novelty_check(r_mol) and s:
                                 generated.append(s)
-                            except (RuntimeError, ValueError) as e:
-                                logger.debug("RDKit operation failed: %s", e)
-                except (RuntimeError, ValueError) as e:
-                    logger.debug("BRICS build failed: %s", e)
-        except (RuntimeError, ValueError) as e:
-            logger.debug("BRICS reassembly failed: %s", e)
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+        except Exception:
+            logger.debug("BRICS reassembly failed for pool", exc_info=True)
+
         return list(set(generated))
 
-    def _selfies_mutate(self, smiles: str, batch_size: int = 50) -> list[str]:
-        """Apply SELFIES-based mutations to generate candidate variants.
+    # ------------------------------------------------------------------
+    # Strategy 3: SELFIES token mutation (low-probability fallback)
+    # ------------------------------------------------------------------
 
-        Applies random SELFIES mutations (atom substitution, bond changes,
-        token insertion/deletion, permutation) and returns valid SMILES.
+    def _selfies_mutate(self, smiles: str, batch_size: int = 10) -> list[str]:
+        """Apply random SELFIES token mutation as a broad exploration fallback.
+
+        Demoted to low probability — generates chemically noisy variants
+        but can occasionally find unexpected scaffolds.
 
         Args:
-            smiles: SMILES string of the seed molecule.
+            smiles: Seed SMILES string.
             batch_size: Maximum number of variants to return.
 
         Returns:
             List of candidate SMILES strings.
         """
-        import selfies as sf
+        try:
+            import selfies as sf
+
+            selfies_str = sf.encoder(smiles)
+        except Exception:
+            return []
 
         generated: list[str] = []
-        try:
-            selfies_str = sf.encoder(smiles)
-        except Exception as exc:
-            logger.debug("SELFIES encoding failed: %s", exc)
-            return generated
-
-        operations = ["atom", "bond", "insert", "delete", "permute"]
-
         for _ in range(batch_size):
-            operation = self._rng.choice(operations)
-            candidate = _apply_mutation(operation, selfies_str, self._rng)
-            if candidate is not None:
-                mol = Chem.MolFromSmiles(candidate)
-                if mol is None:
-                    continue
-                try:
-                    Chem.SanitizeMol(mol)
-                except Exception:
-                    continue
+            candidate = _selfies_token_mutate(selfies_str, self._rng)
+            if candidate is None:
+                continue
+            mol = _safe_mol_from_smiles(candidate)
+            if mol is None:
+                continue
+            try:
+                Chem.SanitizeMol(mol)
+            except Exception:
+                continue
+            if not _is_valid_mol(mol):
+                continue
+            if not self._novelty_check(mol):
+                continue
+            if candidate != smiles:
                 generated.append(candidate)
 
         return generated
 
+    # ------------------------------------------------------------------
+    # Public mutation API
+    # ------------------------------------------------------------------
+
     def mutate(self, smiles: str, batch_size: int = 50) -> list[str]:
         """Generate up to batch_size mutated variants of a seed molecule.
 
-        Applies SELFIES-based mutations with electrochemical stability
-        filters and diversity checks. Falls back to BRICS if SELFIES
-        encoding fails.
+        Applies the three mutation strategies in priority order:
+        1. SMARTS functional-group replacement
+        2. BRICS fragmentation + reassembly
+        3. SELFIES token mutation (fallback)
 
         Args:
             smiles: SMILES string of the seed molecule.
@@ -441,26 +346,40 @@ class MutationEngine:
             List of candidate SMILES strings.
         """
         candidates: set[str] = set()
-        candidates.add(smiles)
 
-        # Priority: SELFIES mutations
-        selfies_results = self._selfies_mutate(smiles, batch_size)
-        for s in selfies_results:
-            m = _safe_mol_from_smiles(s)
-            if m is not None and _is_valid_mol(m) and self._novelty_check(m):
-                candidates.add(s)
+        # Strategy 1: SMARTS functional-group replacement
+        smarts_results = self._apply_smarts_reactions(smiles)
+        candidates.update(smarts_results)
 
-        # Fallback: BRICS
-        brics_results = self._brics_reassemble(_safe_mol_from_smiles(smiles))
-        for s in brics_results:
-            m = _safe_mol_from_smiles(s)
-            if m is not None and _is_valid_mol(m) and self._novelty_check(m):
-                candidates.add(s)
+        # Strategy 2: BRICS reassembly
+        if len(candidates) < batch_size:
+            mol = _safe_mol_from_smiles(smiles)
+            if mol is not None:
+                brics_results = self._brics_from_pool(mol)
+                candidates.update(brics_results)
+
+        # Strategy 3: SELFIES fallback (only if still short of target)
+        if len(candidates) < batch_size // 4:
+            selfies_results = self._selfies_mutate(smiles, batch_size // 4)
+            candidates.update(selfies_results)
+            logger.debug(
+                "SELFIES fallback activated for %s (SMARTS+BRICS produced %d candidates)",
+                smiles,
+                len(candidates),
+            )
 
         result_list = list(candidates)
         if len(result_list) > batch_size:
             indices = self._rng.choice(len(result_list), size=batch_size, replace=False)
             result_list = [result_list[i] for i in indices]
+
+        logger.info(
+            "Mutation of %s: %d candidates (%d SMARTS, %d BRICS+fallback)",
+            smiles,
+            len(result_list),
+            len(smarts_results),
+            len(result_list) - len(smarts_results),
+        )
         return result_list
 
     def mutate_batch(self, batch_smiles: list[str], batch_size: int = 50) -> list[str]:
@@ -486,10 +405,9 @@ class MutationEngine:
     ) -> list[str]:
         """Generate a large pool of candidate molecules from the seed pool.
 
-        This method is the bridge between the mutation engine and the
-        Random Forest surrogate: it produces ``n_candidates`` unique
-        molecules that the Bayesian optimiser will later score via
-        Expected Improvement.
+        Mutates each seed molecule through the three-strategy pipeline
+        (SMARTS → BRICS → SELFIES) and returns a deduplicated pool for
+        the Bayesian optimisation loop.
 
         Args:
             n_candidates: Total number of unique candidates to propose.

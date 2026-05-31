@@ -15,9 +15,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-
 from rdkit import Chem
-from rdkit.Chem import AllChem
+from rdkit.Chem import AllChem, Descriptors
 from rdkit.DataStructs import BulkTanimotoSimilarity
 
 from aurelius.agent.state import ConvergenceChecker, FeedbackAdapter
@@ -165,15 +164,22 @@ class DiscoveryLoop:
                 total_score = score_data.get("total_score", 0.0)
                 batch_scores.append(total_score)
 
-                # Compute fingerprint and novelty to seed
+                # Compute fingerprint with global descriptors and novelty to seed
                 mol = Chem.MolFromSmiles(smi)
                 fp: np.ndarray | None = None
                 novelty: float | None = None
                 if mol is not None:
+                    # ECFP4 fingerprint (2048 bits)
                     rdkit_fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-                    fp_arr = np.zeros(2048, dtype=np.float32)
+                    fp_arr = np.zeros(2053, dtype=np.float32)
                     for idx in rdkit_fp.GetOnBits():
                         fp_arr[idx] = 1.0
+                    # Append global RDKit 2D descriptors
+                    fp_arr[2048] = Descriptors.ExactMolWt(mol)
+                    fp_arr[2049] = Descriptors.MolLogP(mol)
+                    fp_arr[2050] = Descriptors.TPSA(mol)
+                    fp_arr[2051] = Descriptors.RingCount(mol)
+                    fp_arr[2052] = Descriptors.NumRotatableBonds(mol)
                     batch_fingerprints.append(fp_arr)
                     fp = fp_arr
                     # Compute novelty to seed (Tanimoto distance to nearest seed)
@@ -222,7 +228,7 @@ class DiscoveryLoop:
 
             # ---- Seed pool evolution: feed back high-scoring molecules ----
             new_seeds = [
-                smi for smi, sc in zip(batch_smiles, batch_scores)
+                smi for smi, sc in zip(batch_smiles, batch_scores, strict=False)
                 if sc >= 65.0
             ]
             if new_seeds:
@@ -361,18 +367,23 @@ class DiscoveryLoop:
         return top_indices, batch_smiles
 
     def _featurise_molecules(self, smiles_list: list[str]) -> np.ndarray:
-        """Convert a list of SMILES to a 2-D fingerprint array.
+        """Convert a list of SMILES to a 2-D feature array.
+
+        Feature vector of shape (n, 2053):
+        - 2048 bits: ECFP4 (Morgan radius=2) binary fingerprint
+        - 5 values: global RDKit 2D descriptors (MW, LogP, TPSA,
+          RingCount, NumRotatableBonds)
 
         Args:
             smiles_list: List of SMILES strings.
 
         Returns:
-            Array of shape (n, 2048) with ECFP4 fingerprints.
+            Array of shape (n, 2053) with fingerprints + descriptors.
         """
         from rdkit import Chem
-        from rdkit.Chem import AllChem
+        from rdkit.Chem import AllChem, Descriptors
 
-        X = np.zeros((len(smiles_list), 2048), dtype=np.float32)
+        X = np.zeros((len(smiles_list), 2053), dtype=np.float32)
         for i, smi in enumerate(smiles_list):
             mol = Chem.MolFromSmiles(smi)
             if mol is None:
@@ -380,6 +391,11 @@ class DiscoveryLoop:
             fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
             for idx in fp.GetOnBits():
                 X[i][idx] = 1.0
+            X[i][2048] = Descriptors.ExactMolWt(mol)
+            X[i][2049] = Descriptors.MolLogP(mol)
+            X[i][2050] = Descriptors.TPSA(mol)
+            X[i][2051] = Descriptors.RingCount(mol)
+            X[i][2052] = Descriptors.NumRotatableBonds(mol)
         return X
 
     def _screen_molecule(self, smiles: str) -> dict[str, Any] | None:
@@ -423,10 +439,10 @@ class DiscoveryLoop:
 
         new_count = 0
         for c in current_centroids:
-            binary_c = (c > 0.5).astype(np.uint8)
+            binary_c = (c[:2048] > 0.5).astype(np.uint8)
             is_new = True
             for p in self._prev_centroids:
-                binary_p = (p > 0.5).astype(np.uint8)
+                binary_p = (p[:2048] > 0.5).astype(np.uint8)
                 from scipy.spatial.distance import jaccard
 
                 dist = jaccard(binary_c, binary_p)
@@ -443,11 +459,12 @@ class DiscoveryLoop:
     def _compute_mean_pairwise_tanimoto(fingerprints: list[np.ndarray]) -> float | None:
         """Compute mean pairwise Tanimoto diversity among a list of fingerprint arrays.
 
+        Uses only the first 2048 bits (ECFP4 portion) of each feature vector.
         Uses RDKit BulkTanimotoSimilarity on a random subset of up to 100 fingerprints
         for performance.
 
         Args:
-            fingerprints: List of ECFP4 fingerprint arrays (2048-bit).
+            fingerprints: List of feature arrays (2053-dim; only first 2048 bits used).
 
         Returns:
             Mean 1 - Tanimoto similarity, or None if fewer than 2 fingerprints.
@@ -467,7 +484,7 @@ class DiscoveryLoop:
         rdkit_fps: list[ExplicitBitVect] = []
         for arr in fps:
             bv = ExplicitBitVect(2048)
-            for i, val in enumerate(arr):
+            for i, val in enumerate(arr[:2048]):
                 if val > 0.5:
                     bv.SetBit(i)
             rdkit_fps.append(bv)

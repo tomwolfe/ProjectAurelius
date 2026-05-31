@@ -443,8 +443,11 @@ class FeedbackAdapter:
         if fp is None:
             try:
                 fp = generate_ecfp4_fingerprint(result.smiles)
+                # Append zero-valued global descriptors to match 2053-dim feature vector
+                if len(fp) == 2048:
+                    fp = np.concatenate([fp, np.zeros(5, dtype=np.float32)])
             except Exception:
-                fp = np.zeros(2048, dtype=np.float32)
+                fp = np.zeros(2053, dtype=np.float32)
         self._X_history.append(fp)
         self._y_history.append(result.total_score)
 

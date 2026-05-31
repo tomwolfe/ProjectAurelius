@@ -56,9 +56,9 @@ class TestDiscoveryLoopActiveLearning:
     def test_feedback_records_fingerprints_not_smiles(self):
         """FeedbackAdapter.record() must append fingerprint arrays, not SMILES."""
 
-        # Create a result with a fingerprint
-        fp = np.zeros((2048,), dtype=np.float32)
-        fp[5] = 1.0  # Set a few bits
+        # Create a result with a fingerprint (2053-dim: 2048 ECFP4 + 5 descriptors)
+        fp = np.zeros((2053,), dtype=np.float32)
+        fp[5] = 1.0  # Set a few bits in ECFP4 portion
 
         result = ScreeningResult(
             smiles="CC(=O)OC",
@@ -73,10 +73,10 @@ class TestDiscoveryLoopActiveLearning:
         # Record the result
         adapter.record(result)
 
-        # Verify that the X history contains the fingerprint array, not a string
+        # Verify that the X history contains the feature array, not a string
         assert len(adapter._X_history) == 1
         assert isinstance(adapter._X_history[0], np.ndarray)
-        assert adapter._X_history[0].shape == (2048,)
+        assert adapter._X_history[0].shape == (2053,)
         assert adapter._X_history[0][5] == 1.0
 
         # Verify y_history was also updated
@@ -111,7 +111,7 @@ class TestDiscoveryLoopActiveLearning:
         X = surrogate._X
         y = surrogate._y
         assert X.shape[0] == y.shape[0], "X and y should have same number of samples"
-        assert X.shape[1] == 2048, "Fingerprints should have 2048 features"
+        assert X.shape[1] == 2053, "Feature vectors should have 2053 dimensions (2048 ECFP4 + 5 descriptors)"
 
     def test_seed_pool_evolves_with_high_scores(self):
         """High-scoring molecules should feed back into the seed pool."""
@@ -206,13 +206,13 @@ def _make_checkpoint_manager(path: str):
 
 
 def _make_feedback_adapter():
-    """Create a feedback adapter with a fitted GP surrogate."""
+    """Create a feedback adapter with a fitted RF surrogate."""
     from aurelius.agent.state import FeedbackAdapter
 
     adapter = FeedbackAdapter()
 
-    # Pre-fit the surrogate with some training data
-    X_train = np.random.rand(10, 2048).astype(np.float32)
+    # Pre-fit the surrogate with some training data (2053-dim: 2048 ECFP4 + 5 descriptors)
+    X_train = np.random.rand(10, 2053).astype(np.float32)
     y_train = np.random.rand(10).astype(np.float32) * 80.0
     adapter.update(X_train, y_train)
 
