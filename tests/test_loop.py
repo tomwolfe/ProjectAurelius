@@ -18,12 +18,8 @@ class TestDiscoveryLoopActiveLearning:
 
     def test_update_surrogate_called_after_screening(self, tmp_path):
         """RF surrogate must be retrained with new observations after each batch."""
-        # Create mock pipeline that returns scored results
         mock_pipeline = _make_mock_pipeline()
-
-        # Create a mock engine that returns valid candidates
         mock_engine = _make_mock_engine()
-
         checkpoint_path = tmp_path / "checkpoint.json"
         checkpoint = _make_checkpoint_manager(str(checkpoint_path))
 
@@ -35,30 +31,24 @@ class TestDiscoveryLoopActiveLearning:
             batch_size=3,
         )
 
-        # Run the loop
         result = loop.execute()
 
-        # The RF surrogate should have been fitted during the loop
         surrogate = loop.feedback._surrogate
         assert surrogate is not None, "RF surrogate should have been created"
         assert surrogate._rf is not None, "RF surrogate should have been fitted"
         assert surrogate._X is not None, "X history should be populated"
         assert surrogate._y is not None, "y history should be populated"
 
-        # Verify X and y are numpy arrays with correct shapes
         assert isinstance(surrogate._X, np.ndarray), "X should be a numpy array"
         assert isinstance(surrogate._y, np.ndarray), "y should be a numpy array"
 
-        # Verify the loop recorded results
         assert len(result["all_results"]) > 0, "Should have screening results"
-        assert result["total_screened"] > 0, "Should have screened at least one molecule"
+        assert result["total_screened"] > 0
 
     def test_feedback_records_fingerprints_not_smiles(self):
         """FeedbackAdapter.record() must append fingerprint arrays, not SMILES."""
-
-        # Create a result with a fingerprint (2053-dim: 2048 ECFP4 + 5 descriptors)
         fp = np.zeros((2053,), dtype=np.float32)
-        fp[5] = 1.0  # Set a few bits in ECFP4 portion
+        fp[5] = 1.0
 
         result = ScreeningResult(
             smiles="CC(=O)OC",
@@ -69,17 +59,13 @@ class TestDiscoveryLoopActiveLearning:
         )
 
         adapter = _make_feedback_adapter()
-
-        # Record the result
         adapter.record(result)
 
-        # Verify that the X history contains the feature array, not a string
         assert len(adapter._X_history) == 1
         assert isinstance(adapter._X_history[0], np.ndarray)
         assert adapter._X_history[0].shape == (2053,)
         assert adapter._X_history[0][5] == 1.0
 
-        # Verify y_history was also updated
         assert len(adapter._y_history) == 1
         assert adapter._y_history[0] == 85.0
 
@@ -99,7 +85,6 @@ class TestDiscoveryLoopActiveLearning:
 
         loop.execute()
 
-        # Verify that the surrogate was actually fitted with real data
         surrogate = loop.feedback._surrogate
         assert surrogate is not None
         assert surrogate._X is not None
@@ -107,11 +92,10 @@ class TestDiscoveryLoopActiveLearning:
         assert len(surrogate._X) > 0
         assert len(surrogate._y) > 0
 
-        # Verify that X and y are consistent numpy arrays
         X = surrogate._X
         y = surrogate._y
-        assert X.shape[0] == y.shape[0], "X and y should have same number of samples"
-        assert X.shape[1] == 2053, "Feature vectors should have 2053 dimensions (2048 ECFP4 + 5 descriptors)"
+        assert X.shape[0] == y.shape[0]
+        assert X.shape[1] == 2053
 
     def test_seed_pool_evolves_with_high_scores(self):
         """High-scoring molecules should feed back into the seed pool."""
@@ -129,11 +113,9 @@ class TestDiscoveryLoopActiveLearning:
 
         loop.execute()
 
-        # All screened SMILES (score=85.0 >= 65.0) should be in the seed pool
         for smi in mock_engine.mutate_batch.return_value:
             assert smi in loop.engine.seed_pool
 
-        # Seed pool size should be reflected in convergence state
         assert loop.convergence.seed_pool_size == len(loop.engine.seed_pool)
 
     def test_first_batch_random_selection(self):
@@ -152,7 +134,6 @@ class TestDiscoveryLoopActiveLearning:
 
         loop.execute()
 
-        # First batch: surrogate is unfitted, selection should be random
         assert loop.total_screened > 0
         assert len(loop.all_results) > 0
 
@@ -201,19 +182,10 @@ def _make_mock_engine():
 def _make_checkpoint_manager(path: str):
     """Create a checkpoint manager at the given path."""
     from aurelius.agent.state import CheckpointManager
-
     return CheckpointManager(path=path)
 
 
 def _make_feedback_adapter():
     """Create a feedback adapter with a fitted RF surrogate."""
     from aurelius.agent.state import FeedbackAdapter
-
-    adapter = FeedbackAdapter()
-
-    # Pre-fit the surrogate with some training data (2053-dim: 2048 ECFP4 + 5 descriptors)
-    X_train = np.random.rand(10, 2053).astype(np.float32)
-    y_train = np.random.rand(10).astype(np.float32) * 80.0
-    adapter.update(X_train, y_train)
-
-    return adapter
+    return FeedbackAdapter()

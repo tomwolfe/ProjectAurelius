@@ -34,7 +34,7 @@ def main() -> None:
         print("No score computed.")
         sys.exit(1)
 
-    results = pipeline.screen_molecule(args.smiles)
+    results = pipeline.screen_smiles(args.smiles)
 
     score = results.get("score") if isinstance(results, dict) else getattr(results, "score", None)
     if score:

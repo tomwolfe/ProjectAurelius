@@ -23,6 +23,7 @@ import click
 
 from aurelius.config import AureliusConfig, get_config
 from aurelius.pipeline import AureliusPipeline
+from aurelius.types import MoleculeContext
 from aurelius.utils.dependencies import HAS_RDKIT
 
 
@@ -119,7 +120,7 @@ def screen(smiles: str) -> None:
     config = get_config()
     pipeline = AureliusPipeline(config)
     pipeline.initialize()
-    results = pipeline.screen_molecule(smiles)
+    results = pipeline.screen_smiles(smiles)
 
     score = results.get("score", {})
     total = score.get("total_score", 0.0)
@@ -148,7 +149,12 @@ def batch(
                 smiles_list.append(line)
 
     click.echo(f"Screening {len(smiles_list)} molecules...")
-    results = pipeline.screen_batch(smiles_list)
+    contexts = []
+    for smi in smiles_list:
+        ctx = MoleculeContext.from_smiles(smi)
+        if ctx is not None:
+            contexts.append(ctx)
+    results = pipeline.screen_batch(contexts)
 
     viable = sum(1 for r in results if r["score"].get("is_viable", False) if r.get("score"))
     click.echo(f"\nBatch complete: {viable}/{len(smiles_list)} viable ({100 * viable / max(len(smiles_list), 1):.0f}%)")
@@ -179,7 +185,7 @@ def score(
     config: AureliusConfig,
 ) -> None:
     """Compute the Aurelius v9.0 score for a molecule (quick mode)."""
-    results = pipeline.screen_molecule(smiles)
+    results = pipeline.screen_smiles(smiles)
 
     score = results.get("score", {})
     if score:
@@ -211,7 +217,7 @@ def evaluate_cmd(
 ) -> None:
     """Run ML Oracle evaluation on a molecule."""
     try:
-        results = pipeline.screen_molecule(smiles)
+        results = pipeline.screen_smiles(smiles)
         score = results.get("score", {})
         total = score.get("total_score", 0.0)
         viable = score.get("is_viable", False)

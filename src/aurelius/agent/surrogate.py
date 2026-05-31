@@ -5,17 +5,11 @@ function scoring over ECFP4 fingerprints augmented with global RDKit
 descriptors, enabling the DiscoveryLoop to select candidates that are
 both promising and structurally novel.
 
-The surrogate uses a Random Forest Regressor which natively handles
-high-dimensional sparse binary vectors and provides uncertainty
-estimates from tree-based variance for the NWEI calculation.
-The novelty bonus is computed as the maximum Tanimoto distance of each
-candidate to the training set, rewarding out-of-distribution exploration.
-
-A **global novelty penalty** is also applied against a static list of
-known commercial electrolytes (EC, DMC, DEC, FEC, etc.) loaded from
-``src/aurelius/data/known_electrolytes.json``. Candidates with Tanimoto
-similarity > 0.85 to any known electrolyte receive a penalty, preventing
-rediscovery of patented or well-known compounds.
+The RF inter-tree variance is used as a proxy for epistemic uncertainty.
+When variance is zero (common in RFs when candidates fall into the same
+leaf nodes as training data), a small epsilon noise based on Tanimoto
+distance to the nearest training neighbour is injected to maintain
+exploration.
 """
 
 from __future__ import annotations
@@ -29,19 +23,14 @@ from rdkit.DataStructs import BulkTanimotoSimilarity, ExplicitBitVect
 from scipy.stats import norm as _norm
 from sklearn.ensemble import RandomForestRegressor
 
-# ---------------------------------------------------------------------------
-# Global known-electrolyte fingerprint database
-# ---------------------------------------------------------------------------
+from aurelius.types import MoleculeContext
+
 _KNOWN_ELECTROLYTE_FPS: list[ExplicitBitVect] | None = None
 _KNOWN_ELECTROLYTE_NAMES: list[str] | None = None
 
 
 def _load_known_electrolytes() -> tuple[list[ExplicitBitVect], list[str]]:
-    """Load the global known-electrolyte fingerprint database.
-
-    Returns:
-        (fingerprints, names) tuple.
-    """
+    """Load the global known-electrolyte fingerprint database."""
     global _KNOWN_ELECTROLYTE_FPS, _KNOWN_ELECTROLYTE_NAMES
     if _KNOWN_ELECTROLYTE_FPS is not None:
         return _KNOWN_ELECTROLYTE_FPS, _KNOWN_ELECTROLYTE_NAMES or []
@@ -82,14 +71,11 @@ def global_novelty_penalty(
         threshold: Tanimoto similarity threshold above which penalty applies.
 
     Returns:
-        Penalty multiplier in [0, 1]. 1.0 = no similarity to known set,
-        values < 1.0 mean the candidate resembles a known electrolyte.
+        Penalty multiplier in [0, 1]. 1.0 = no similarity to known set.
     """
     known_fps, _ = _load_known_electrolytes()
     if not known_fps:
         return 1.0
-    # Handle size mismatch: if candidate has fewer bits (e.g. 3-bit test features),
-    # upscale to 2048 bits with only the intersection considered
     target_size = known_fps[0].GetNumBits()
     if candidate_bv.GetNumBits() != target_size:
         if candidate_bv.GetNumBits() > target_size:
@@ -113,43 +99,29 @@ def global_novelty_penalty(
     max_sim = max(sims)
     if max_sim <= threshold:
         return 1.0
-    # Linear penalty from threshold to 0 at perfect similarity
     return float(1.0 - (max_sim - threshold) / (1.0 - threshold))
 
 
 class RandomForestSurrogate:
     """Random Forest surrogate model for active learning.
 
-    The surrogate is trained on Morgan + global descriptor features ``X``
-    and composite ``Aurelius Score`` values ``y``.  During acquisition
-    (``expected_improvement``), the RF predicts the mean and variance
-    of each candidate, and the acquisition function scores high both
-    high predicted scores and high uncertainty.
+    The surrogate is trained on Morgan + global descriptor features X
+    and composite Aurelius Score values y.  During acquisition
+    (expected_improvement), the RF predicts the mean and variance
+    of each candidate.
 
-    The Novelty-Weighted EI (NWEI) multiplies standard EI by
-    ``1.0 + alpha * max_tanimoto_distance``, where the Tanimoto distance
-    is computed against the training set using only the ECFP4 bits
-    (first 2048 features).
-
-    A **global novelty penalty** is also applied to penalize candidates
-    that are too similar (Tanimoto > 0.85) to any known commercial electrolyte
-    in the static database.
+    When variance is zero, a Tanimoto-distance-based epsilon is injected
+    to ensure the surrogate maintains exploration pressure even for
+    in-distribution candidates.
     """
 
     def __init__(self, random_state: int = 42, alpha: float = 1.0) -> None:
-        """Initialise the surrogate.
-
-        Args:
-            random_state: Random seed for reproducibility.
-            alpha: Novelty bonus strength for NWEI.
-        """
         self._X: np.ndarray[Any, Any] | None = None
         self._y: np.ndarray[Any, Any] | None = None
         self._rf: RandomForestRegressor | None = None
         self._random_state = random_state
         self._alpha = alpha
         self._train_bitvects: list[ExplicitBitVect] | None = None
-        # Pre-load known electrolytes
         _load_known_electrolytes()
 
     def fit(self, X: np.ndarray[Any, Any], y: np.ndarray[Any, Any]) -> None:
@@ -175,11 +147,9 @@ class RandomForestSurrogate:
         )
         self._rf.fit(X, y)
 
-        # Store the original data for Expected Improvement computation
         self._X = X
         self._y = y
 
-        # Pre-compute ExplicitBitVect objects for Tanimoto novelty computation
         ecfp_nbits = min(2048, X.shape[1])
         self._train_bitvects = []
         for i in range(X.shape[0]):
@@ -192,27 +162,15 @@ class RandomForestSurrogate:
     def expected_improvement(self, X_candidates: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
         """Compute Novelty-Weighted Expected Improvement (NWEI) for candidates.
 
-        NWEI favours candidates that either have high predicted mean,
-        high predictive uncertainty, OR high structural novelty relative
-        to the training set.
-
-        Inter-tree variance from the Random Forest's ensemble of decision
-        trees is used as a proxy for epistemic uncertainty in the EI
-        calculation.
-
-        The novelty bonus is computed as the maximum Tanimoto distance
-        of each candidate's ECFP4 bits (first 2048 features) to the
-        training set, scaled by ``alpha``.
-
-        A **global novelty penalty** is multiplied into the final score
-        to discourage rediscovery of known commercial electrolytes
-        (Tanimoto similarity > 0.85 against the static known set).
+        When inter-tree variance is zero, injects an epsilon based on
+        Tanimoto distance to the nearest neighbour in the training set
+        to maintain exploration pressure.
 
         Args:
             X_candidates: 2-D array of shape (n_candidates, n_features).
 
         Returns:
-            1-D array of NWEI acquisition values (higher = more acquisition-worthy).
+            1-D array of NWEI acquisition values.
 
         Raises:
             RuntimeError: If the surrogate has not been fitted yet.
@@ -228,12 +186,10 @@ class RandomForestSurrogate:
 
         best = self._y.max() if len(self._y) > 0 else 0.0
 
-        # Vectorized: get predictions from all trees at once
         tree_preds = np.array([tree.predict(X_candidates) for tree in self._rf.estimators_])
         means = tree_preds.mean(axis=0)
         variances = tree_preds.var(axis=0)
 
-        # Standard Expected Improvement using scipy.stats.norm
         s = np.sqrt(np.maximum(variances, 1e-8))
         ei = np.zeros_like(means)
         mask = s >= 1e-8
@@ -241,10 +197,10 @@ class RandomForestSurrogate:
         ei[mask] = (means[mask] - best) * _norm.cdf(z) + s[mask] * _norm.pdf(z)
 
         # Novelty bonus: max Tanimoto distance to training set (ECFP4 bits only)
-        # Uses RDKit BulkTanimotoSimilarity on ExplicitBitVect for C++-speed bulk operation
         ecfp_nbits = min(2048, X_candidates.shape[1])
         max_tanimoto_dist = np.zeros(X_candidates.shape[0], dtype=np.float64)
         candidate_bitvects: list[ExplicitBitVect] = []
+
         for i in range(X_candidates.shape[0]):
             bv = ExplicitBitVect(ecfp_nbits)
             row = X_candidates[i, :ecfp_nbits]
@@ -259,10 +215,18 @@ class RandomForestSurrogate:
             if sims:
                 max_tanimoto_dist[i] = 1.0 - max(sims)
 
-        # Novelty-weighted EI
+        # Tanimoto-based epsilon for zero-variance candidates
+        # When variance is zero, use the Tanimoto distance to the nearest
+        # training neighbour as an exploration bonus.  This prevents the
+        # surrogate from getting stuck when new candidates fall into the
+        # same leaf nodes as training data.
+        zero_var_mask = variances < 1e-8
+        if zero_var_mask.any():
+            epsilon = max_tanimoto_dist * 0.1
+            ei[zero_var_mask] += epsilon[zero_var_mask]
+
         nwei = ei * (1.0 + self._alpha * max_tanimoto_dist)
 
-        # Global novelty penalty: penalize similarity to known commercial electrolytes
         for i, cand_bv in enumerate(candidate_bitvects):
             penalty = global_novelty_penalty(cand_bv, threshold=0.85)
             nwei[i] *= penalty
@@ -281,10 +245,7 @@ class RandomForestSurrogate:
             top_n: Number of top candidates to return.
 
         Returns:
-            List of indices into ``X_candidates`` sorted by descending NWEI.
-
-        Raises:
-            RuntimeError: If the surrogate has not been fitted yet.
+            List of indices sorted by descending NWEI.
         """
         nwei = self.expected_improvement(X_candidates)
         top_indices = np.argsort(nwei)[::-1][:top_n]

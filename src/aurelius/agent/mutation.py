@@ -7,9 +7,6 @@ in priority order:
    transformations (fluorination, methylation, ether/carbonate edits).
 2. **BRICS fragmentation + reassembly** — scaffold hopping by breaking
    and reconnecting fragments at retrosynthetically sensible bonds.
-
-Requirements:
-    - RDKit for SMARTS and BRICS
 """
 
 from __future__ import annotations
@@ -18,115 +15,77 @@ import logging
 from typing import Any
 
 import numpy as np
+from rdkit import Chem
+from rdkit.Chem import BRICS, AllChem, rdMolDescriptors
 
+from aurelius.constants import ELECTROLYTE_MIN_HETEROATOM_RATIO
+from aurelius.types import MoleculeContext
 from aurelius.utils.chem_utils import (
     _deserialize_fp,
-    _is_valid_mol,
-    _safe_mol_from_smiles,
+    _serialize_fp,
 )
-from aurelius.utils.dependencies import HAS_RDKIT
-
-if HAS_RDKIT:
-    from rdkit import Chem
-    from rdkit.Chem import (
-        BRICS,
-        AllChem,
-        rdMolDescriptors,
-    )
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Electrolyte-relevant SMARTS reaction library
 # ---------------------------------------------------------------------------
-# These reactions guide mutations toward chemical motifs commonly found in
-# battery electrolytes: fluorinated chains, carbonates, ethers, sulfones,
-# nitriles, and esters.  Each reaction is a simple functional-group
-# replacement that preserves the molecular scaffold while introducing
-# electrolyte-essential heteroatoms (F, O, S, P).
 ELECTROLYTE_SMARTS: list[tuple[str, str]] = [
-    # --- Fluorination ---
     ("[CH3:1]>>[F:1]", "Methyl to fluorine"),
     ("[CH3:1]>>[C:1](F)(F)F", "Methyl to trifluoromethyl"),
     ("[OH:1]>>[F:1]", "Hydroxyl to fluorine"),
     ("[C:1]>>[C:1]OC(F)(F)F", "Add trifluoromethoxy"),
     ("[CH2:1]>>[C:1](F)F", "Methylene to difluoromethylene"),
-    # --- Carbonate / ester formation ---
     ("[C:1](=O)[O:2]>>[C:1](=O)[O:2]C", "Ester to methyl ester"),
     ("[C:1](=O)[OH:1]>>[C:1](=O)[O:1]C", "Carboxylic acid to methyl ester"),
     ("[OH:1]>>[O:1]C(=O)OC", "Hydroxyl to carbonate"),
     ("[OH:1]>>[O:1]C(=O)OCC", "Hydroxyl to ethyl carbonate"),
     ("[OH:1]>>[O:1]C(=O)OC(F)(F)F", "Hydroxyl to fluorinated carbonate"),
-    # --- Ether / alkoxy ---
     ("[C:1]>>[C:1]OC", "Add methoxy"),
     ("[C:1]>>[C:1]OCC", "Add ethoxy"),
     ("[C:1]>>[C:1]OCCOC", "Add diethylene glycol ether"),
-    # --- Sulfone / sulfonyl ---
     ("[C:1]>>[C:1]S(=O)(=O)C", "Add methyl sulfone"),
     ("[C:1]>>[C:1]S(=O)(=O)F", "Add sulfonyl fluoride"),
     ("[C:1]>>[C:1]S(=O)(=O)CF", "Add fluoromethyl sulfone"),
-    # --- Nitrile ---
     ("[Br:1]>>[C:1]#N", "Bromo to nitrile"),
     ("[C:1]I>>[C:1]#N", "Iodo to nitrile"),
     ("[C:1]>>[C:1]C#N", "Add acetonitrile"),
-    # --- Phosphate ---
     ("[OH:1]>>[O:1]P(=O)(OC)OC", "Hydroxyl to dimethyl phosphate"),
-    # --- Alkylation ---
     ("[C:1]>>[C:1](C)", "Methylation"),
     ("[C:1]>>[C:1]CC", "Ethylation"),
 ]
 
-# ---------------------------------------------------------------------------
-# Electrolyte-specific fragment pool for BRICS-guided reassembly
-# ---------------------------------------------------------------------------
-# These are common SEI-forming motifs and electrolyte building blocks.
-# The BRICS reassembly is biased to favor connecting these fragments
-# rather than generic drug-like fragments.
 ELECTROLYTE_FRAGMENT_POOL: list[str] = [
-    # Carbonates
-    "COC(=O)OC",        # dimethyl carbonate
-    "CCOC(=O)OCC",      # diethyl carbonate
-    "O=C1OCCCO1",       # propylene carbonate
-    "O=C1OCCO1",        # ethylene carbonate
-    "O=C1OC(F)CO1",     # fluoroethylene carbonate
-    "FC(F)(F)OCOC(=O)OC(F)(F)F",  # fluorinated carbonate
-    # Ethers
-    "CCOC",             # ethyl methyl ether
-    "CCOCC",            # diethyl ether
-    "COCCOC",           # dimethoxyethane (glyme)
-    "COCCOCCOC",        # triglyme
-    "C1CCOC1",          # THF
-    "C1COCCO1",         # 1,4-dioxane
-    # Sulfones
-    "CS(=O)(=O)C",      # dimethyl sulfone
-    "CS(=O)(=O)CC",     # ethyl methyl sulfone
-    "FC(F)(F)S(=O)(=O)C(F)(F)F",  # perfluorinated sulfone
-    # Nitriles
-    "CC#N",             # acetonitrile
-    "N#CCC#N",          # succinonitrile
-    "N#CCCC#N",         # adiponitrile
-    # Sulfates / sulfonates
-    "COS(=O)(=O)OC",    # dimethyl sulfate
-    "CF",               # fluoromethane
-    "C(F)(F)F",         # fluoroform (trifluoromethyl)
-    "CC(F)(F)F",        # 1,1,1-trifluoroethane
-    # Phosphates
-    "COP(=O)(OC)OC",    # trimethyl phosphate
-    # Borates
-    "OB(OC)OC",         # trimethyl borate
-    # SEI additives
-    "O=C1OC=CO1",       # vinylene carbonate
-    "O=S1(=O)OCC1",     # 1,3-propane sultone
-    "O=S1(=O)OCCO1",    # ethylene sulfite
-    # Fluorinated alkyls
-    "FC(F)(F)C(F)(F)F",  # perfluoroethane
-    "FC(F)(F)C(F)(F)C(F)(F)F",  # perfluoropropane
+    "COC(=O)OC",
+    "CCOC(=O)OCC",
+    "O=C1OCCCO1",
+    "O=C1OCCO1",
+    "O=C1OC(F)CO1",
+    "FC(F)(F)OCOC(=O)OC(F)(F)F",
+    "CCOC",
+    "CCOCC",
+    "COCCOC",
+    "COCCOCCOC",
+    "C1CCOC1",
+    "C1COCCO1",
+    "CS(=O)(=O)C",
+    "CS(=O)(=O)CC",
+    "FC(F)(F)S(=O)(=O)C(F)(F)F",
+    "CC#N",
+    "N#CCC#N",
+    "N#CCCC#N",
+    "COS(=O)(=O)OC",
+    "CF",
+    "C(F)(F)F",
+    "CC(F)(F)F",
+    "COP(=O)(OC)OC",
+    "OB(OC)OC",
+    "O=C1OC=CO1",
+    "O=S1(=O)OCC1",
+    "O=S1(=O)OCCO1",
+    "FC(F)(F)C(F)(F)F",
+    "FC(F)(F)C(F)(F)C(F)(F)F",
 ]
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 
 class MutationEngine:
@@ -135,19 +94,13 @@ class MutationEngine:
     Generates candidate molecules from seed SMILES using two strategies
     in priority order:
 
-    1. **SMARTS functional-group replacement** (high probability)
-    2. **BRICS fragmentation + reassembly** (medium probability)
+    1. SMARTS functional-group replacement (high priority)
+    2. BRICS fragmentation + reassembly (medium priority)
+
+    Seeds are stored as MoleculeContext objects to enforce single-point parsing.
     """
 
     def __init__(self, seed_smiles: list[str] | None = None, known_fps_hex: list[str] | None = None) -> None:
-        """Initialise the mutation engine.
-
-        Args:
-            seed_smiles: List of seed SMILES strings. If None, loads from
-                the bundled tier0_seed_smiles.json.
-            known_fps_hex: Optional list of known fingerprint hex strings
-                for novelty checking.
-        """
         if seed_smiles is None:
             import json
             import os
@@ -156,23 +109,24 @@ class MutationEngine:
             with open(json_path) as f:
                 seed_smiles = json.load(f)
         self.seed_pool: list[str] = list(set(seed_smiles))
+
+        # Pre-parse seeds into MoleculeContext for fingerprint generation
+        self.seed_contexts: list[MoleculeContext] = []
         self.seed_fingerprints: list[Any] = []
         for smi in self.seed_pool:
-            mol = _safe_mol_from_smiles(smi)
-            if mol is not None:
-                self.seed_fingerprints.append(
-                    AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-                )
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is not None:
+                self.seed_contexts.append(ctx)
+                self.seed_fingerprints.append(ctx.get_ecfp4())
+
         self.known_fps: list[Any] = []
         for h in known_fps_hex or []:
             try:
                 self.known_fps.append(_deserialize_fp(h))
             except Exception:
                 continue
-        # Pre-load known commercial electrolytes for global novelty checking
         self._load_known_electrolytes()
         self._rng = np.random.default_rng(42)
-        # Pre-decoded SMARTS reactions
         self._smarts_rxns: list[tuple[Any, str]] = []
         for smarts, name in ELECTROLYTE_SMARTS:
             try:
@@ -182,12 +136,7 @@ class MutationEngine:
                 logger.debug("Failed to parse SMARTS '%s' (%s)", smarts, name)
 
     def _load_known_electrolytes(self) -> None:
-        """Load known commercial electrolytes into the fingerprint database.
-
-        Loads the static list from ``src/aurelius/data/known_electrolytes.json``
-        and adds each molecule's fingerprint to ``known_fps`` with a higher
-        similarity threshold (Tanimoto > 0.85 = too similar).
-        """
+        """Load known commercial electrolytes into the fingerprint database."""
         import json
         import os
 
@@ -200,81 +149,60 @@ class MutationEngine:
         except (FileNotFoundError, json.JSONDecodeError):
             return
 
-        existing_smis = {
-            Chem.MolToSmiles(Chem.MolFromSmiles(s))
-            for s in self.seed_pool
-            if Chem.MolFromSmiles(s) is not None
-        }
+        existing_smis = set()
+        for ctx in self.seed_contexts:
+            try:
+                canon = Chem.MolToSmiles(ctx.mol)
+                existing_smis.add(canon)
+            except Exception:
+                continue
+
         for smi in smiles_list:
-            mol = _safe_mol_from_smiles(smi)
-            if mol is not None:
-                canon = Chem.MolToSmiles(mol)
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is not None:
+                canon = Chem.MolToSmiles(ctx.mol)
                 if canon not in existing_smis:
-                    self.known_fps.append(
-                        AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-                    )
+                    self.known_fps.append(ctx.get_ecfp4())
+
         logger.info(
             "Loaded %d known electrolyte fingerprints for global novelty checking.",
             len(self.known_fps),
         )
 
     def fingerprint_db_size(self) -> int:
-        """Return the number of known fingerprints in the database."""
         return len(self.known_fps)
 
     def add_to_db(self, smiles: str) -> None:
-        """Add a SMILES molecule to the known fingerprint database.
+        """Add a SMILES molecule to the known fingerprint database."""
+        ctx = MoleculeContext.from_smiles(smiles)
+        if ctx is not None:
+            self.known_fps.append(ctx.get_ecfp4())
 
-        Args:
-            smiles: SMILES string to add.
-        """
-        mol = _safe_mol_from_smiles(smiles)
-        if mol is not None:
-            self.known_fps.append(
-                AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-            )
-
-    def _novelty_check(self, mol: Any) -> bool:
-        """Return True if molecule is novel (Tanimoto < 0.75 vs all known).
-
-        Args:
-            mol: RDKit Mol object.
-
-        Returns:
-            True if novel (all Tanimoto < 0.75).
-        """
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+    def _novelty_check(self, ctx: MoleculeContext) -> bool:
+        """Return True if molecule is novel (Tanimoto < 0.75 vs all known)."""
+        fp = ctx.get_ecfp4()
         if not self.known_fps:
             return True
-
         from rdkit.DataStructs import TanimotoSimilarity
-
         return all(TanimotoSimilarity(fp, known) < 0.75 for known in self.known_fps)
 
     # ------------------------------------------------------------------
-    # Strategy 1: SMARTS functional-group replacement (highest priority)
+    # Strategy 1: SMARTS functional-group replacement
     # ------------------------------------------------------------------
 
-    def _apply_smarts_reactions(self, smiles: str) -> list[str]:
-        """Apply electrolyte-relevant SMARTS transformations to a seed molecule.
-
-        Each reaction produces chemically meaningful variants such as
-        fluorination, methylation, or functional-group interconversion.
+    def _apply_smarts_reactions(self, ctx: MoleculeContext) -> list[str]:
+        """Apply electrolyte-relevant SMARTS transformations.
 
         Args:
-            smiles: Seed SMILES string.
+            ctx: Pre-parsed MoleculeContext of the seed molecule.
 
         Returns:
             List of valid, novel product SMILES strings.
         """
-        mol = _safe_mol_from_smiles(smiles)
-        if mol is None:
-            return []
-
         results: list[str] = []
         for rxn, name in self._smarts_rxns:
             try:
-                products = rxn.RunReactants((mol,))
+                products = rxn.RunReactants((ctx.mol,))
                 for product_tuple in products:
                     for product in product_tuple:
                         if product is None:
@@ -283,16 +211,19 @@ class MutationEngine:
                             Chem.SanitizeMol(product)
                         except Exception:
                             continue
-                        if not _is_valid_mol(product):
+                        product_ctx = MoleculeContext(
+                            smiles=Chem.MolToSmiles(product),
+                            mol=product,
+                        )
+                        if not product_ctx.is_valid_electrolyte_mol():
                             continue
-                        if not self._novelty_check(product):
+                        if not self._novelty_check(product_ctx):
                             continue
-                        p_smi = Chem.MolToSmiles(product)
-                        if p_smi and p_smi != smiles:
+                        p_smi = product_ctx.smiles
+                        if p_smi and p_smi != ctx.smiles:
                             results.append(p_smi)
             except Exception:
-                logger.debug("SMARTS reaction '%s' failed for %s", name, smiles)
-
+                logger.debug("SMARTS reaction '%s' failed for %s", name, ctx.smiles)
         return list(set(results))
 
     # ------------------------------------------------------------------
@@ -300,91 +231,91 @@ class MutationEngine:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _load_electrolyte_fragments() -> list[Any]:
-        """Load the electrolyte fragment pool as RDKit Mol objects.
-
-        Returns:
-            List of sanitized RDKit Mol objects for electrolyte fragments.
-        """
-        fragments: list[Any] = []
+    def _load_electrolyte_fragments() -> list[MoleculeContext]:
+        """Load the electrolyte fragment pool as MoleculeContext objects."""
+        fragments: list[MoleculeContext] = []
         for smi in ELECTROLYTE_FRAGMENT_POOL:
-            mol = _safe_mol_from_smiles(smi)
-            if mol is not None:
-                fragments.append(mol)
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is not None:
+                fragments.append(ctx)
         return fragments
 
     @staticmethod
-    def _is_electrolyte_like(mol: Any) -> bool:
+    def _is_electrolyte_like(ctx: MoleculeContext) -> bool:
         """Check if a molecule resembles an electrolyte rather than a drug-like compound.
 
         Battery electrolytes should have:
           - At least one heteroatom (O, S, F, P) for ion solvation
           - Limited aromatic character (drug-like molecules tend to be highly aromatic)
+          - A minimum ratio of heteroatoms (O, F) to total heavy atoms
+            to prevent BRICS from generating drug-like garbage
 
         Args:
-            mol: RDKit Mol object.
+            ctx: Pre-parsed MoleculeContext.
 
         Returns:
             True if the molecule is electrolyte-like.
         """
-        from rdkit.Chem import rdMolDescriptors
-
-        n_arom = rdMolDescriptors.CalcNumAromaticRings(mol)
+        n_arom = rdMolDescriptors.CalcNumAromaticRings(ctx.mol)
         if n_arom > 2:
             return False
-        return any(atom.GetAtomicNum() in (8, 16, 9, 15) for atom in mol.GetAtoms())
 
-    def _brics_from_pool(self, mol: Any) -> list[str]:
-        """BRICS decomposition + electrolyte-fragment-guided reassembly.
+        hetero_atoms = {8, 9, 15, 16}
+        n_hetero = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() in hetero_atoms)
+        if n_hetero < 1:
+            return False
 
-        Decomposes the input molecule into BRICS fragments, then extends
-        the pool with pre-defined electrolyte building blocks (carbonates,
-        sulfones, nitriles, fluorinated alkyls, etc.). Reassembly is
-        biased toward connecting these electrolyte fragments to generate
-        novel electrolyte-relevant scaffolds.
+        # Tightened filter: require minimum heteroatom-to-carbon ratio for BRICS products
+        n_carbon = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 6)
+        n_total_heavy = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() > 1)
 
-        Args:
-            mol: RDKit Mol object to decompose.
+        if n_total_heavy > 0:
+            o_f_count = sum(
+                1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() in (8, 9)
+            )
+            ratio = o_f_count / n_total_heavy
+            if ratio < ELECTROLYTE_MIN_HETEROATOM_RATIO:
+                return False
 
-        Returns:
-            List of candidate SMILES strings from BRICS reassembly.
-        """
+        return True
+
+    def _brics_from_pool(self, ctx: MoleculeContext) -> list[str]:
+        """BRICS decomposition + electrolyte-fragment-guided reassembly."""
         generated: list[str] = []
 
         try:
-            # Decompose the seed molecule
-            frag_smiles = list(BRICS.BRICSDecompose(mol))
-            frag_mols = [Chem.MolFromSmiles(s) for s in frag_smiles if Chem.MolFromSmiles(s) is not None]
+            frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
+            frag_ctxs = [
+                MoleculeContext.from_smiles(s) for s in frag_smiles
+                if MoleculeContext.from_smiles(s) is not None
+            ]
+            frag_ctxs = [c for c in frag_ctxs if c is not None]
 
-            # Add electrolyte fragment pool
-            electrolyte_mols = self._load_electrolyte_fragments()
-            all_frags = frag_mols + electrolyte_mols
+            electrolyte_ctxs = self._load_electrolyte_fragments()
+            all_frags = frag_ctxs + electrolyte_ctxs
 
             if len(all_frags) < 2:
                 return generated
 
-            # Filter fragments for compatibility
-            filtered: list[Any] = []
-            for f_mol in all_frags:
-                f_mw = rdMolDescriptors.CalcExactMolWt(f_mol)
-                f_hbd = rdMolDescriptors.CalcNumHBD(f_mol)
+            filtered: list[MoleculeContext] = []
+            for f_ctx in all_frags:
+                f_mw = rdMolDescriptors.CalcExactMolWt(f_ctx.mol)
+                f_hbd = rdMolDescriptors.CalcNumHBD(f_ctx.mol)
                 if f_mw > 250:
                     continue
                 if f_hbd > 0:
                     continue
-                filtered.append(f_mol)
+                filtered.append(f_ctx)
             if len(filtered) < 2:
                 return generated
             all_frags = filtered
 
-            # Separate seed fragments from electrolyte fragments for biased sampling
-            n_seed = len(frag_mols)
-            n_electrolyte = len(electrolyte_mols)
-            # Bias: 70% chance to include at least one electrolyte fragment
+            n_seed = len(frag_ctxs)
+            n_electrolyte = len(electrolyte_ctxs)
+
             for _ in range(40):
                 rng = np.random.default_rng(self._rng.integers(0, 2**31))
                 if n_electrolyte > 0 and rng.random() < 0.7:
-                    # Pick one from electrolyte pool, one from anywhere
                     idx1 = n_seed + rng.integers(0, n_electrolyte) if n_electrolyte > 0 else 0
                     idx2 = rng.integers(0, len(all_frags))
                     if idx1 == idx2:
@@ -394,16 +325,20 @@ class MutationEngine:
                     idx = rng.choice(len(all_frags), size=min(2, len(all_frags)), replace=False)
 
                 try:
-                    for r_mol in BRICS.BRICSBuild([all_frags[i] for i in idx]):
+                    for r_mol in BRICS.BRICSBuild([all_frags[i].mol for i in idx]):
                         if r_mol is None:
                             continue
                         try:
                             Chem.SanitizeMol(r_mol)
                             s = Chem.MolToSmiles(r_mol, isomericSmiles=True)
+                            product_ctx = MoleculeContext(
+                                smiles=s,
+                                mol=r_mol,
+                            )
                             if (
-                                _is_valid_mol(r_mol)
-                                and self._novelty_check(r_mol)
-                                and self._is_electrolyte_like(r_mol)
+                                product_ctx.is_valid_electrolyte_mol()
+                                and self._novelty_check(product_ctx)
+                                and self._is_electrolyte_like(product_ctx)
                                 and s
                             ):
                                 generated.append(s)
@@ -423,10 +358,6 @@ class MutationEngine:
     def mutate(self, smiles: str, batch_size: int = 50) -> list[str]:
         """Generate up to batch_size mutated variants of a seed molecule.
 
-        Applies the two mutation strategies in priority order:
-        1. SMARTS functional-group replacement
-        2. BRICS fragmentation + reassembly
-
         Args:
             smiles: SMILES string of the seed molecule.
             batch_size: Maximum number of variants to return.
@@ -434,18 +365,18 @@ class MutationEngine:
         Returns:
             List of candidate SMILES strings.
         """
+        ctx = MoleculeContext.from_smiles(smiles)
+        if ctx is None:
+            return []
+
         candidates: set[str] = set()
 
-        # Strategy 1: SMARTS functional-group replacement
-        smarts_results = self._apply_smarts_reactions(smiles)
+        smarts_results = self._apply_smarts_reactions(ctx)
         candidates.update(smarts_results)
 
-        # Strategy 2: BRICS reassembly
         if len(candidates) < batch_size:
-            mol = _safe_mol_from_smiles(smiles)
-            if mol is not None:
-                brics_results = self._brics_from_pool(mol)
-                candidates.update(brics_results)
+            brics_results = self._brics_from_pool(ctx)
+            candidates.update(brics_results)
 
         result_list = list(candidates)
         if len(result_list) > batch_size:
@@ -454,23 +385,13 @@ class MutationEngine:
 
         logger.info(
             "Mutation of %s: %d candidates (%d SMARTS, %d BRICS)",
-            smiles,
-            len(result_list),
-            len(smarts_results),
+            smiles, len(result_list), len(smarts_results),
             len(result_list) - len(smarts_results),
         )
         return result_list
 
     def mutate_batch(self, batch_smiles: list[str], batch_size: int = 50) -> list[str]:
-        """Mutate a batch of seed molecules, returning all variants.
-
-        Args:
-            batch_smiles: List of seed SMILES strings.
-            batch_size: Maximum number of variants per seed.
-
-        Returns:
-            Deduplicated list of candidate SMILES strings.
-        """
+        """Mutate a batch of seed molecules, returning all variants."""
         all_variants: list[str] = []
         for smi in batch_smiles:
             variants = self.mutate(smi, batch_size)
@@ -482,19 +403,7 @@ class MutationEngine:
         n_candidates: int = 1000,
         batch_size: int = 50,
     ) -> list[str]:
-        """Generate a large pool of candidate molecules from the seed pool.
-
-        Mutates each seed molecule through the two-strategy pipeline
-        (SMARTS → BRICS) and returns a deduplicated pool for
-        the Bayesian optimisation loop.
-
-        Args:
-            n_candidates: Total number of unique candidates to propose.
-            batch_size: Maximum variants per seed molecule.
-
-        Returns:
-            Deduplicated list of candidate SMILES strings.
-        """
+        """Generate a large pool of candidate molecules from the seed pool."""
         all_variants: list[str] = []
         for smi in self.seed_pool:
             variants = self.mutate(smi, batch_size)
@@ -504,5 +413,4 @@ class MutationEngine:
         if len(unique) > n_candidates:
             indices = self._rng.choice(len(unique), size=n_candidates, replace=False)
             unique = [unique[i] for i in indices]
-
         return unique

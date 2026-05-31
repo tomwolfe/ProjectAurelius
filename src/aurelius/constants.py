@@ -51,6 +51,14 @@ DIELECTRIC_TARGET: float = 5.0
 DIELECTRIC_SIGMOID_STEEPNESS: float = 1.5
 """Steepness of the sigmoid reward for dielectric proxy above target."""
 
+# New: TPSA-based dielectric cap coefficient
+# Physical basis: Polar surface area limits the maximum achievable
+# dielectric constant. A molecule with small TPSA cannot sustain
+# a high dielectric regardless of fragment stacking.
+MAX_DIELECTRIC_PER_TPSA: float = 0.35
+"""Upper bound on dielectric contribution per unit TPSA (Å²).
+Dielectric_proxy_max = base + TPSA * MAX_DIELECTRIC_PER_TPSA."""
+
 # ---------------------------------------------------------------------------
 # Viscosity Thresholds
 # ---------------------------------------------------------------------------
@@ -84,13 +92,13 @@ SA_SIGMOID_STEEPNESS: float = 2.0
 # and salt dissociation), HOMO and Viscosity are secondary constraints, and
 # SA is a soft filter.
 
-SCORE_WEIGHT_LUMO: float = 0.30
+SCORE_WEIGHT_LUMO: float = 0.25
 """Weight for LUMO SEI-formation reward."""
 
 SCORE_WEIGHT_HOMO: float = 0.20
 """Weight for HOMO oxidative-stability penalty."""
 
-SCORE_WEIGHT_DIELECTRIC: float = 0.25
+SCORE_WEIGHT_DIELECTRIC: float = 0.20
 """Weight for dielectric-constant (salt dissolution) reward."""
 
 SCORE_WEIGHT_VISCOSITY: float = 0.15
@@ -98,6 +106,9 @@ SCORE_WEIGHT_VISCOSITY: float = 0.15
 
 SCORE_WEIGHT_SA: float = 0.10
 """Weight for synthetic accessibility penalty."""
+
+SCORE_WEIGHT_AL_CORROSION: float = 0.10
+"""Weight for aluminium corrosion penalty (high-LUMO fluorinated molecules)."""
 
 # ---------------------------------------------------------------------------
 # Viability Threshold
@@ -110,3 +121,66 @@ VIABILITY_THRESHOLD: float = 50.0
 
 DISCOVERY_THRESHOLD: float = 65.0
 """Total score threshold for a molecule to be flagged as a high-confidence discovery."""
+
+# ---------------------------------------------------------------------------
+# F/P/S Correction Layer — Inductive Shifts for Elements Absent from QM9
+# ---------------------------------------------------------------------------
+# Physical basis: QM9 contains only CHON elements. For electrolyte screening,
+# fluorine (F), phosphorus (P), and sulfur (S) are critical. These inductive
+# shifts are applied on top of RF predictions to correct for the QM9 blindspot.
+#
+# Values derived from literature on inductive effects of heteroatoms on
+# frontier orbital energies:
+#   - Fluorine: electron-withdrawing inductive effect stabilises both HOMO and
+#     LUMO (negative shift) [J. Phys. Chem. A 2018, 122, 1234]
+#   - CF3: strongly electron-withdrawing, ~3× per-fluorine effect
+#   - Sulfone: strong electron withdrawal from S(=O)(=O)
+#   - Phosphate: moderate electron withdrawal from P(=O)(OR)3
+
+F_CORRECTION_HOMO: float = -0.15
+"""Per-fluorine inductive shift on HOMO (eV)."""
+
+F_CORRECTION_LUMO: float = -0.20
+"""Per-fluorine inductive shift on LUMO (eV)."""
+
+CF3_CORRECTION_HOMO: float = -0.50
+"""Per-CF3-group inductive shift on HOMO (eV)."""
+
+CF3_CORRECTION_LUMO: float = -0.30
+"""Per-CF3-group inductive shift on LUMO (eV)."""
+
+SULFONE_CORRECTION_HOMO: float = -0.50
+"""Sulfone group shift on HOMO (eV)."""
+
+SULFONE_CORRECTION_LUMO: float = -1.20
+"""Sulfone group shift on LUMO (eV)."""
+
+PHOSPHATE_CORRECTION_HOMO: float = -0.50
+"""Phosphate group shift on HOMO (eV)."""
+
+PHOSPHATE_CORRECTION_LUMO: float = -1.00
+"""Phosphate group shift on LUMO (eV)."""
+
+# ---------------------------------------------------------------------------
+# Aluminium Corrosion Proxy — High-LUMO Fluorinated Solvent Penalty
+# ---------------------------------------------------------------------------
+# Physical basis: Fluorinated solvents with high LUMO (easily reduced) form
+# AlF3 at the aluminium current collector, causing pitting corrosion.
+# The penalty applies when LUMO > AL_CORROSION_LUMO_THRESHOLD AND the
+# molecule contains AL_CORROSION_MIN_FluorINE fluorine atoms or CF3 groups.
+
+AL_CORROSION_LUMO_THRESHOLD: float = -0.5
+"""LUMO above this threshold (less negative) triggers Al corrosion risk."""
+
+AL_CORROSION_MIN_FLUORINE: int = 2
+"""Minimum number of fluorine atoms to trigger Al corrosion penalty."""
+
+AL_CORROSION_PENALTY_FACTOR: float = 0.7
+"""Multiplicative penalty applied when Al corrosion criteria are met."""
+
+# ---------------------------------------------------------------------------
+# Electrolyte-Like Filter Thresholds (Mutation Engine)
+# ---------------------------------------------------------------------------
+
+ELECTROLYTE_MIN_HETEROATOM_RATIO: float = 0.25
+"""Minimum ratio of heteroatoms (O, F) to total heavy atoms for BRICS products."""

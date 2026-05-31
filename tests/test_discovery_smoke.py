@@ -15,6 +15,7 @@ from aurelius.agent.loop import DiscoveryLoop
 from aurelius.agent.mutation import MutationEngine
 from aurelius.agent.state import CheckpointManager
 from aurelius.pipeline import AureliusPipeline
+from aurelius.types import MoleculeContext
 
 pytestmark = pytest.mark.slow
 
@@ -34,9 +35,10 @@ def test_discovery_loop_smoke(tmp_path) -> None:
     pipeline = AureliusPipeline()
     pipeline.initialize()
 
-    # Verify Oracle is loaded and trained
     assert pipeline._oracle is not None, "Oracle must be initialised"
-    result = pipeline._oracle.evaluate("CC(=O)OC1=CC(=O)O1")
+    ctx = MoleculeContext.from_smiles("CC(=O)OC1=CC(=O)O1")
+    assert ctx is not None
+    result = pipeline._oracle.evaluate(ctx)
     assert "homo_eV" in result
     assert "lumo_eV" in result
     assert "gap_eV" in result
@@ -60,7 +62,6 @@ def test_discovery_loop_smoke(tmp_path) -> None:
     for r in result["all_results"]:
         assert 0.0 <= r.total_score <= 100.0, f"Score {r.total_score} out of [0, 100]"
 
-    # Verify surrogate was fitted (at least one batch screened)
     assert loop.feedback._surrogate is not None or len(result["all_results"]) > 0
     assert loop.total_screened >= 1
     assert isinstance(result["discoveries"], list)

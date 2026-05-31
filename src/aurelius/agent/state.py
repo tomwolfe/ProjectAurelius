@@ -1,4 +1,8 @@
-"""Agent state management: checkpointing, convergence tracking, and feedback."""
+"""Agent state management: checkpointing, convergence tracking, and feedback.
+
+The FeedbackAdapter has been simplified to remove legacy fallback paths.
+Feature vectors are always provided as numpy arrays from MoleculeContext.
+"""
 
 from __future__ import annotations
 
@@ -12,24 +16,16 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from aurelius.agent.surrogate import RandomForestSurrogate
-from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
 
 if TYPE_CHECKING:
-    from aurelius.agent.loop import ScreeningResult  # noqa: F401
+    from aurelius.agent.loop import ScreeningResult
 
 
 def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str:
     """Resolve a relative output path against a base directory.
 
-    If ``output_dir`` is provided, ``path`` is joined to it.
-    Otherwise ``path`` is returned unchanged (backward-compatible).
-
-    Args:
-        path: Output file path (relative).
-        output_dir: Base directory to resolve against.
-
-    Returns:
-        Resolved absolute path.
+    If output_dir is provided, path is joined to it.
+    Otherwise path is returned unchanged.
     """
     if output_dir is not None:
         return str(Path(output_dir) / path)
@@ -40,19 +36,12 @@ class CheckpointManager:
     """Manages agent state using atomic JSON writes.
 
     Stores only aggregate stats and top-N discoveries to keep JSON
-    files small.  Uses atomic writes (write to .tmp, then os.replace)
-    to prevent corruption during crashes.
+    files small.  Uses atomic writes to prevent corruption during crashes.
     """
 
     _MAX_DISCOVERIES = 100
 
     def __init__(self, path: str = "agent_state.json", output_dir: str | Path | None = None) -> None:
-        """Initialize the checkpoint manager.
-
-        Args:
-            path: Path to the JSON state file (relative to output_dir).
-            output_dir: Directory to write to. If None, uses current working directory.
-        """
         self.path = _resolve_output_path(path, output_dir)
         self._batch = 0
         self._screened_count = 0
@@ -62,16 +51,11 @@ class CheckpointManager:
         self._invalid_discarded = 0
         self._started_at = datetime.now(UTC).isoformat()
         self._last_updated: str | None = None
-
         self._discoveries: list[dict[str, Any]] = []
-
         self._load()
 
     def _load(self) -> None:
-        """Load checkpoint state from the JSON file.
-
-        If the file does not exist, initializes with default values.
-        """
+        """Load checkpoint state from the JSON file."""
         if os.path.exists(self.path):
             try:
                 with open(self.path) as f:
@@ -89,7 +73,7 @@ class CheckpointManager:
                 pass
 
     def _save(self) -> None:
-        """Save checkpoint state to the JSON file atomically."""
+        """Save checkpoint state atomically."""
         data = {
             "batch": self._batch,
             "screened_count": self._screened_count,
@@ -101,44 +85,28 @@ class CheckpointManager:
             "last_updated": self._last_updated,
             "discoveries": self._discoveries,
         }
-
         tmp_path = self.path + ".tmp"
         with open(tmp_path, "w") as f:
             json.dump(data, f, indent=2)
         os.replace(tmp_path, self.path)
 
     def load(self) -> dict[str, Any]:
-        """Load checkpoint state from disk.
-
-        Returns:
-            Dict of checkpoint state.  Returns empty state if file
-            cannot be read.
-        """
         self._load()
         return self._get_state_dict()
 
     def save(self) -> None:
-        """Save checkpoint state to the JSON file atomically."""
         self._save()
 
     def add_discovery(self, discovery: dict[str, Any] | ScreeningResult) -> None:
-        """Add a discovery to the checkpoint.
-
-        Only the top ``_MAX_DISCOVERIES`` discoveries are kept, sorted
-        by ``total_score`` descending.
-
-        Args:
-            discovery: Dict or ScreeningResult with discovery data.
-        """
+        """Add a discovery to the checkpoint."""
         if hasattr(discovery, "smiles"):
             discovery = {
-                "smiles": discovery.smiles,  # type: ignore[union-attr]
-                "total_score": discovery.total_score,  # type: ignore[union-attr]
-                "is_viable": discovery.is_viable,  # type: ignore[union-attr]
-                "rejection_reasons": discovery.rejection_reasons,  # type: ignore[union-attr]
+                "smiles": discovery.smiles,
+                "total_score": discovery.total_score,
+                "is_viable": discovery.is_viable,
+                "rejection_reasons": discovery.rejection_reasons,
             }
         self._discoveries.append(discovery)
-        # Keep only top N by score
         self._discoveries.sort(key=lambda d: d.get("total_score", 0), reverse=True)
         self._discoveries = self._discoveries[: self._MAX_DISCOVERIES]
 
@@ -149,14 +117,6 @@ class CheckpointManager:
         viable_count: int,
         invalid_count: int,
     ) -> None:
-        """Update checkpoint stats for a batch.
-
-        Args:
-            batch_smiles: List of SMILES in the batch.
-            batch_scores: List of scores for the batch.
-            viable_count: Number of viable molecules.
-            invalid_count: Number of invalid discarded molecules.
-        """
         self._batch += 1
         self._screened_count += len(batch_smiles)
         self._total_generated += len(batch_smiles)
@@ -168,7 +128,6 @@ class CheckpointManager:
                 self._best_score = best
 
     def clear(self) -> None:
-        """Clear all discoveries and agent state."""
         self._batch = 0
         self._screened_count = 0
         self._best_score = 0.0
@@ -180,15 +139,9 @@ class CheckpointManager:
 
     @property
     def state(self) -> dict[str, Any]:
-        """Expose current checkpoint state as a dict (for API compatibility).
-
-        Returns:
-            Dict with all checkpoint state values.
-        """
         return self._get_state_dict()
 
     def _get_state_dict(self) -> dict[str, Any]:
-        """Return current state as a dict (for API compatibility)."""
         return {
             "batch": self._batch,
             "screened_count": self._screened_count,
@@ -203,15 +156,9 @@ class CheckpointManager:
 
 
 class ConvergenceChecker:
-    """Evaluates whether the screening loop should terminate.
-
-    Tracks per-batch statistics using simple running lists.  No
-    online-algorithm complexity needed for a loop that runs 50-100
-    generations.
-    """
+    """Evaluates whether the screening loop should terminate."""
 
     def __init__(self) -> None:
-        """Initialize the convergence checker."""
         self.new_clusters_per_batch: list[int] = []
         self._batch_means: list[float] = []
         self._all_scores: list[float] = []
@@ -226,27 +173,15 @@ class ConvergenceChecker:
         viable_count: int,
         new_clusters: int,
     ) -> None:
-        """Record batch results for convergence tracking.
-
-        Args:
-            scores: List of total scores for this batch.
-            viable_count: Number of viable molecules in the batch.
-            new_clusters: Number of new clusters discovered.
-        """
         self.total_screened += len(scores)
         self.viable_count += viable_count
         self.generations += 1
-
         self.new_clusters_per_batch.append(new_clusters)
         self._all_scores.extend(scores)
         self._batch_means.append(float(np.mean(scores)) if scores else 0.0)
 
     def check_score_plateau(self) -> bool:
-        """Check if batch mean changes < 1.0% over 3 consecutive batches.
-
-        Returns:
-            True if the score has plateaued.
-        """
+        """Check if batch mean changes < 1.0% over 3 consecutive batches."""
         if len(self._batch_means) < 3:
             return False
         last_three = self._batch_means[-3:]
@@ -260,21 +195,13 @@ class ConvergenceChecker:
         return True
 
     def check_structural_saturation(self) -> bool:
-        """Check if < 3 new clusters over last 2 batches.
-
-        Returns:
-            True if structural saturation is detected.
-        """
+        """Check if < 3 new clusters over last 2 batches."""
         if len(self.new_clusters_per_batch) < 2:
             return False
         return self.new_clusters_per_batch[-1] < 3 and self.new_clusters_per_batch[-2] < 3
 
     def should_terminate(self) -> tuple[bool, str]:
-        """Determine if the screening loop should terminate.
-
-        Returns:
-            Tuple of (should_terminate, reason_string).
-        """
+        """Determine if the screening loop should terminate."""
         plateau = self.check_score_plateau()
         saturation = self.check_structural_saturation()
         if plateau and saturation:
@@ -287,26 +214,20 @@ class ConvergenceChecker:
         return False, f"Volume met but not all criteria: {', '.join(reasons)}"
 
     def final_score_variance(self) -> float:
-        """Compute the variance of all recorded scores.
-
-        Returns:
-            Variance of all scores.
-        """
         if len(self._all_scores) < 2:
             return 0.0
         return float(np.var(self._all_scores, ddof=1))
 
 
 class FeedbackAdapter:
-    """Adapts mutation strategy based on rejection patterns using RF active learning.
+    """Adapts mutation strategy based on screening results using RF active learning.
 
-    The adapter maintains a Random Forest surrogate that scores candidate
-    molecules via Expected Improvement acquisition, enabling the discovery
-    loop to intelligently select high-value candidates from the mutation pool.
+    Simplified: no legacy fallback featurization. Feature vectors are always
+    pre-computed numpy arrays from MoleculeContext. The surrogate takes X, y
+    numpy arrays directly.
     """
 
     def __init__(self) -> None:
-        """Initialize the feedback adapter."""
         self._total_screened = 0
         self._surrogate: RandomForestSurrogate | None = None
         self._X_history: list[np.ndarray[Any, Any]] = []
@@ -317,30 +238,23 @@ class FeedbackAdapter:
         """Record screening result for feedback analysis.
 
         Args:
-            result: Typed ScreeningResult with score and viability information.
+            result: Typed ScreeningResult with score and feature vector.
         """
         self._total_screened += 1
 
-        fp = result.fingerprint
-        if fp is None:
-            try:
-                fp = generate_ecfp4_fingerprint(result.smiles)
-                # Append zero-valued global descriptors to match 2053-dim feature vector
-                if len(fp) == 2048:
-                    fp = np.concatenate([fp, np.zeros(5, dtype=np.float32)])
-            except Exception:
-                fp = np.zeros(2053, dtype=np.float32)
-        self._X_history.append(fp)
+        if result.fingerprint is None:
+            raise ValueError(
+                "ScreeningResult.fingerprint must be a numpy array. "
+                "Use MoleculeContext.get_feature_vector() to generate it."
+            )
+
+        self._X_history.append(result.fingerprint)
         self._y_history.append(result.total_score)
 
         self.maybe_fit_from_history()
 
     def maybe_fit_from_history(self, min_samples: int = 10) -> None:
-        """Fit the surrogate from accumulated history if enough samples exist.
-
-        Args:
-            min_samples: Minimum number of samples required to fit.
-        """
+        """Fit the surrogate from accumulated history if enough samples exist."""
         if self._surrogate is not None:
             return
         if len(self._X_history) < min_samples:
@@ -353,13 +267,7 @@ class FeedbackAdapter:
     def finalize_batch(self) -> None:
         """Retrain the RF surrogate from accumulated history.
 
-        Combines:
-        1. In-memory history from ``record()`` calls since last finalize.
-        2. Previously stored surrogate training data (all prior batches).
-
-        After fitting, the in-memory history is cleared.  This is the
-        single source of truth for surrogate training — the DiscoveryLoop
-        should NOT compute features separately.
+        Takes X and y numpy arrays directly. No legacy merging needed.
         """
         if not self._X_history:
             return
@@ -370,46 +278,12 @@ class FeedbackAdapter:
         X_parts = [np.asarray(x, dtype=np.float32) for x in self._X_history]
         y_parts = [np.atleast_1d(np.asarray(y, dtype=np.float32)) for y in self._y_history]
 
-        # Include previously stored surrogate training data (all prior batches)
         prev_X = self._surrogate._X
         prev_y = self._surrogate._y
         if prev_X is not None and prev_y is not None:
             X_parts.append(prev_X)
             y_prev_flat = prev_y.ravel() if prev_y.ndim > 1 else prev_y
             y_parts.append(y_prev_flat)
-
-        X_full = np.vstack(X_parts)
-        y_full = np.concatenate(y_parts)
-
-        self._surrogate.fit(X_full, y_full)
-        self._X_history.clear()
-        self._y_history.clear()
-
-    def update(self, X_new: np.ndarray[Any, Any], y_new: np.ndarray[Any, Any]) -> None:
-        """Retrain the RF surrogate with explicit feature data.
-
-        Deprecated: Prefer ``record()`` + ``finalize_batch()`` which avoids
-        redundant featurization.  Kept for backward compatibility with tests.
-
-        Args:
-            X_new: 2-D array of Morgan fingerprints for new candidates.
-            y_new: 1-D or 2-D array of Aurelius scores for new candidates.
-        """
-        if self._surrogate is None:
-            self._surrogate = RandomForestSurrogate()
-
-        X_parts = [np.asarray(x, dtype=np.float32) for x in self._X_history]
-        y_parts = [np.atleast_1d(np.asarray(y, dtype=np.float32)) for y in self._y_history]
-
-        prev_X = self._surrogate._X
-        prev_y = self._surrogate._y
-        if prev_X is not None and prev_y is not None:
-            X_parts.append(prev_X)
-            y_prev_flat = prev_y.ravel() if prev_y.ndim > 1 else prev_y
-            y_parts.append(y_prev_flat)
-
-        X_parts.append(np.asarray(X_new, dtype=np.float32))
-        y_parts.append(np.asarray(y_new, dtype=np.float32).ravel())
 
         X_full = np.vstack(X_parts)
         y_full = np.concatenate(y_parts)
@@ -419,11 +293,7 @@ class FeedbackAdapter:
         self._y_history.clear()
 
     def get_adaptation_strategy(self) -> dict[str, Any]:
-        """Return current mutation adaptation recommendations.
-
-        Returns:
-            Dict with strategy recommendation and fail rates.
-        """
+        """Return current mutation adaptation recommendations."""
         strategy: dict[str, Any] = {
             "total_screened": self.total_screened,
         }
@@ -441,14 +311,7 @@ class FeedbackAdapter:
         return strategy
 
     def write_rationale_log(self, path: str = "mutation_rationale.md", output_dir: str | Path | None = None) -> None:
-        """Write current adaptation strategy to markdown file.
-
-        Args:
-            path: Output file path (relative to output_dir).
-            output_dir: Directory to write to. If None, uses current working directory.
-        """
         log = logging.getLogger("aurelius_agent")
-
         path = _resolve_output_path(path, output_dir)
         strategy = self.get_adaptation_strategy()
 
@@ -463,6 +326,4 @@ class FeedbackAdapter:
 
     @property
     def total_screened(self) -> int:
-        """Return total number of screened molecules."""
         return self._total_screened
-

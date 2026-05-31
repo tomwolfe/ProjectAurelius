@@ -1,12 +1,12 @@
 """Aurelius Pipeline Orchestrator.
 
 Coordinates a streamlined two-step discovery pipeline:
-  1. **Filter** — Quick structural validity (Tier 1) check with LogP and MW gates.
-  2. **Oracle** — Multi-objective property evaluation via fragment-additivity
-     (HOMO, LUMO, Dielectric proxy, Viscosity proxy, SA Score).
+  1. Filter — Quick structural validity (Tier 1) check with LogP and MW gates.
+  2. Oracle — Multi-objective property evaluation via hybrid RF/GC + F/P/S
+     correction (HOMO, LUMO, Dielectric proxy, Viscosity proxy, SA Score).
+  3. Score — Multi-objective composite score with Al corrosion penalty.
 
-The multi-objective composite score weights five objectives for electrolyte fitness.
-All stages accept a pre-parsed RDKit Mol object to avoid redundant parsing.
+All stages accept a pre-parsed MoleculeContext to enforce single-point parsing.
 """
 
 from __future__ import annotations
@@ -22,6 +22,9 @@ from rdkit.Contrib.SA_Score import sascorer
 
 from aurelius.config import AureliusConfig, apply_global_config
 from aurelius.constants import (
+    AL_CORROSION_LUMO_THRESHOLD,
+    AL_CORROSION_MIN_FLUORINE,
+    AL_CORROSION_PENALTY_FACTOR,
     DIELECTRIC_SIGMOID_STEEPNESS,
     DIELECTRIC_TARGET,
     HOMO_SIGMOID_STEEPNESS,
@@ -30,6 +33,7 @@ from aurelius.constants import (
     LUMO_TARGET,
     SA_SIGMOID_STEEPNESS,
     SA_THRESHOLD,
+    SCORE_WEIGHT_AL_CORROSION,
     SCORE_WEIGHT_DIELECTRIC,
     SCORE_WEIGHT_HOMO,
     SCORE_WEIGHT_LUMO,
@@ -45,11 +49,7 @@ from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
 # Hydrolytically unstable SMARTS patterns
-# ---------------------------------------------------------------------------
-# These motifs degrade in battery electrolyte environments via hydrolysis
-# or decomposition, making them unsuitable for long-cycle-life cells.
 _HYDROLYTICALLY_UNSTABLE_SMARTS: list[tuple[str, str, float]] = [
     ("[CX3](=[OX1])[OX2][CX3](=[OX1])[OX2]", "anhydride", 0.3),
     ("[CX3](=[OX1])[OX2][CX2]#[N]", "acyl_cyanide", 0.4),
@@ -64,9 +64,9 @@ _HYDROLYTICALLY_UNSTABLE_SMARTS: list[tuple[str, str, float]] = [
 class AureliusPipeline:
     """Full Aurelius screening pipeline orchestrator.
 
-    Coordinates the Filter -> Oracle pipeline and computes
-    the multi-objective composite Aurelius Score. All stages accept a
-    pre-parsed MoleculeContext to avoid redundant RDKit Mol object creation.
+    Coordinates the Filter -> Oracle -> Score pipeline.
+    All stages accept a pre-parsed MoleculeContext to avoid redundant
+    RDKit parsing.
     """
 
     def __init__(
@@ -74,11 +74,6 @@ class AureliusPipeline:
         config: AureliusConfig | None = None,
         use_real_models: bool = True,
     ) -> None:
-        """Initialise the Aurelius pipeline.
-
-        Args:
-            config: Pipeline configuration. If None, loads default.
-        """
         self.config = config or apply_global_config()
         self._filter: Filter | None = None
         self._use_real_models = use_real_models
@@ -86,15 +81,8 @@ class AureliusPipeline:
 
     def initialize(self) -> None:
         """Initialise all pipeline components."""
-        try:
-            import rdkit  # noqa: F401
-        except ImportError:
-            raise RuntimeError(
-                "RDKit is required for pipeline initialisation. "
-                "Install with: pip install rdkit"
-            ) from None
+        import rdkit  # noqa: F401
 
-        # Phase 1: Structural filter
         if self._use_real_models:
             try:
                 self._filter = Filter()
@@ -103,7 +91,6 @@ class AureliusPipeline:
                 logger.warning("Tier 1 (Filter): DISABLED - %s", exc)
                 self._filter = None
 
-        # Phase 2: Oracle for property evaluation (pure GC — no training needed)
         self._oracle = PropertyOracle()
         oracle_cache = "oracle_cache.joblib"
         if not self._oracle.load(oracle_cache):
@@ -113,13 +100,11 @@ class AureliusPipeline:
         logger.info("Oracle (PropertyOracle): ENABLED")
 
     def _generate_failed_run(self, smiles: str, reason: str) -> dict[str, Any]:
-        """Generate a failed run result dict for early-exit scenarios."""
         t1_result = {
             "molecule_smiles": smiles,
             "is_viable": False,
             "inference_time_ms": 0.0,
         }
-
         return {
             "tier1": t1_result,
             "tier2": None,
@@ -130,57 +115,38 @@ class AureliusPipeline:
             },
         }
 
-    @staticmethod
-    def _parse_once(smiles: str) -> MoleculeContext | None:
-        """Parse SMILES to Mol exactly once and return a MoleculeContext.
-
-        Args:
-            smiles: SMILES string.
-
-        Returns:
-            MoleculeContext or None if parsing fails.
-        """
-        return MoleculeContext.from_smiles(smiles)
-
     def screen_molecule(
         self,
-        smiles_or_ctx: str | MoleculeContext,
+        ctx: MoleculeContext,
     ) -> dict[str, Any]:
-        """Run a single molecule through the Filter -> Oracle pipeline.
-
-        Accepts either a SMILES string or a pre-parsed MoleculeContext.
-        If a SMILES string is provided, it is parsed into a MoleculeContext
-        exactly once at the start, and the Mol object is reused across
-        all pipeline stages.
+        """Run a single pre-parsed molecule through the Filter -> Oracle pipeline.
 
         Args:
-            smiles_or_ctx: SMILES string or MoleculeContext.
+            ctx: Pre-parsed MoleculeContext.
 
         Returns:
             Dict with tier results and the final Aurelius score.
+
+        Raises:
+            TypeError: If ctx is not a MoleculeContext.
+            RuntimeError: If pipeline not initialised.
         """
+        if not isinstance(ctx, MoleculeContext):
+            raise TypeError(
+                f"AureliusPipeline.screen_molecule() requires a MoleculeContext, "
+                f"got {type(ctx).__name__}. Use MoleculeContext.from_smiles() first."
+            )
         if not self._oracle:
-            raise RuntimeError("Pipeline not initialised. Call initialise() first.")
+            raise RuntimeError("Pipeline not initialised. Call initialize() first.")
 
-        # Parse SMILES -> Mol exactly once
-        if isinstance(smiles_or_ctx, MoleculeContext):
-            ctx = smiles_or_ctx
-            smiles = ctx.smiles
-        else:
-            smiles = smiles_or_ctx
-            parsed = self._parse_once(smiles)
-            if parsed is None:
-                return self._generate_failed_run(smiles, "Invalid SMILES — parsing failed")
-            ctx = parsed
-
+        smiles = ctx.smiles
         logger.info("Processing: %s", smiles)
         pipeline_start = time.perf_counter()
 
-        # Step 1: Filter (structural validity + LogP + MW)
         t1_result = None
         if self._filter:
             t1_start = time.perf_counter()
-            t1_result = self._filter.screen_molecule(smiles, mol=ctx.mol)
+            t1_result = self._filter.screen(ctx)
             tier_timings: dict[str, float] = {}
             tier_timings["tier1_ms"] = (time.perf_counter() - t1_start) * 1000
             results: dict[str, Any] = {"tier1": t1_result}
@@ -197,7 +163,6 @@ class AureliusPipeline:
             results = {}
             tier_timings = {}
 
-        # Step 2: Oracle (property evaluation — accepts pre-parsed Mol)
         t2_result = None
         homo_eV = -99.0
         lumo_eV = -99.0
@@ -205,7 +170,7 @@ class AureliusPipeline:
         viscosity_proxy = 99.0
         if self._oracle:
             t2_start = time.perf_counter()
-            oracle_result = self._oracle.evaluate(smiles, mol=ctx.mol)
+            oracle_result = self._oracle.evaluate(ctx)
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
 
             homo_eV = oracle_result.get("homo_eV", -99.0)
@@ -225,19 +190,14 @@ class AureliusPipeline:
             results["tier2"] = t2_result
             logger.info(
                 "Oracle Result: %s -> HOMO=%.3f LUMO=%.3f Dielectric=%.3f Viscosity=%.3f",
-                smiles,
-                homo_eV,
-                lumo_eV,
-                dielectric_proxy,
-                viscosity_proxy,
+                smiles, homo_eV, lumo_eV, dielectric_proxy, viscosity_proxy,
             )
 
-        # Step 3: Score computation (uses pre-parsed Mol)
         score = self._compute_score(
             homo_eV, lumo_eV,
             dielectric_proxy=dielectric_proxy,
             viscosity_proxy=viscosity_proxy,
-            smiles=smiles, mol=ctx.mol,
+            ctx=ctx,
         )
         results["score"] = score
 
@@ -254,10 +214,9 @@ class AureliusPipeline:
 
     @staticmethod
     def _check_hydrolytic_instability(mol: Chem.Mol) -> float:
-        """Check for hydrolytically unstable motifs and return a penalty multiplier.
+        """Check for hydrolytically unstable motifs.
 
-        Scans the molecule for SMARTS patterns known to degrade in battery
-        electrolyte environments. Returns a multiplier in [0.5, 1.0].
+        Returns a multiplier in [0.5, 1.0].
         """
         penalty = 1.0
         for smarts, name, severity in _HYDROLYTICALLY_UNSTABLE_SMARTS:
@@ -268,45 +227,61 @@ class AureliusPipeline:
         return max(penalty, 0.5)
 
     @staticmethod
-    def _gaussian_lumo(lumo_eV: float) -> float:
-        """Gaussian reward for LUMO in the electrochemical stability window.
+    def _check_al_corrosion_risk(mol: Chem.Mol) -> float:
+        """Check for Al corrosion risk in high-LUMO fluorinated molecules.
 
-        Centered at -1.0 eV with sigma=0.75, rewarding LUMO ∈ [-1.75, -0.25] eV
-        which covers the typical SEI formation window for Li/Na electrolytes.
+        High-LUMO fluorinated solvents can corrode Al cathode current
+        collectors via AlF3 formation. Returns a penalty multiplier in [0.7, 1.0].
+
+        The penalty applies when:
+          1. The molecule has AL_CORROSION_MIN_FLUORINE or more fluorine atoms
+             AND at least one CF3 group (electron-withdrawing environment), OR
+          2. The molecule has >= 3 fluorine atoms attached directly to
+             electron-withdrawing groups (carbonyl-adjacent or sulfonyl-adjacent).
+
+        Note: LUMO threshold check is done in _compute_score; this function
+        only checks the structural criteria.
         """
+        from rdkit.Chem import rdMolDescriptors
+
+        # Count fluorine atoms
+        n_f = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 9)
+
+        # Count CF3 groups
+        cf3 = Chem.MolFromSmarts("[C](F)(F)F")
+        n_cf3 = len(mol.GetSubstructMatches(cf3)) if cf3 is not None else 0
+
+        # Count fluorine adjacent to carbonyl or sulfonyl
+        f_adjacent_ewg = Chem.MolFromSmarts("[CX3](=O)[CH2][F]")
+        n_f_ewg = 0
+        if f_adjacent_ewg is not None:
+            n_f_ewg = len(mol.GetSubstructMatches(f_adjacent_ewg))
+        f_sulfonyl = Chem.MolFromSmarts("[SX4](=O)(=O)[F]")
+        if f_sulfonyl is not None:
+            n_f_ewg += len(mol.GetSubstructMatches(f_sulfonyl))
+
+        if n_f >= AL_CORROSION_MIN_FLUORINE and (n_cf3 >= 1 or n_f_ewg >= 1):
+            return AL_CORROSION_PENALTY_FACTOR
+        return 1.0
+
+    @staticmethod
+    def _gaussian_lumo(lumo_eV: float) -> float:
         return float(np.exp(-0.5 * ((lumo_eV - LUMO_TARGET) / LUMO_SIGMA) ** 2))
 
     @staticmethod
     def _sigmoid_homo(homo_eV: float) -> float:
-        """Sigmoid penalty for HOMO above threshold.
-
-        When HOMO < HOMO_THRESHOLD (oxidative stability), score -> 1.0.
-        When HOMO > HOMO_THRESHOLD, score falls to 0.0.
-        """
         return float(1.0 / (1.0 + np.exp(HOMO_SIGMOID_STEEPNESS * (homo_eV - HOMO_THRESHOLD))))
 
     @staticmethod
     def _sigmoid_dielectric(dielectric_proxy: float) -> float:
-        """Sigmoid reward for high dielectric constant (salt dissolution capability).
-
-        Returns a value in [0, 1] where higher dielectric -> higher reward.
-        """
         return float(1.0 / (1.0 + np.exp(-DIELECTRIC_SIGMOID_STEEPNESS * (dielectric_proxy - DIELECTRIC_TARGET))))
 
     @staticmethod
     def _sigmoid_viscosity(viscosity_proxy: float) -> float:
-        """Sigmoid penalty for high viscosity (poor ion mobility).
-
-        Returns a value in [0, 1] where higher viscosity -> lower score.
-        """
         return float(1.0 / (1.0 + np.exp(VISCOSITY_SIGMOID_STEEPNESS * (viscosity_proxy - VISCOSITY_THRESHOLD))))
 
     @staticmethod
     def _sigmoid_sa(sa_score: float) -> float:
-        """Sigmoid penalty for difficult synthetic accessibility.
-
-        Returns a value in [0, 1] where harder synthesis -> lower score.
-        """
         return float(1.0 / (1.0 + np.exp(SA_SIGMOID_STEEPNESS * (sa_score - SA_THRESHOLD))))
 
     def _compute_score(
@@ -315,61 +290,55 @@ class AureliusPipeline:
         lumo_eV: float = -99.0,
         dielectric_proxy: float = 0.0,
         viscosity_proxy: float = 99.0,
-        smiles: str | None = None,
-        mol: Chem.Mol | None = None,
+        ctx: MoleculeContext | None = None,
     ) -> dict[str, Any]:
         """Compute the multi-objective composite Aurelius Score.
 
-        Five weighted objectives:
-          - **LUMO reward** (30%): Gaussian centered at LUMO_TARGET eV (SEI formation)
-          - **HOMO penalty** (20%): Sigmoid penalizing HOMO > HOMO_THRESHOLD eV (oxidative stability)
-          - **Dielectric reward** (25%): Sigmoid rewarding high dielectric (salt dissolution)
-          - **Viscosity penalty** (15%): Sigmoid penalizing high viscosity (ion mobility)
-          - **SA penalty** (10%): Sigmoid penalizing poor synthetic accessibility
-
-        Each resolved sub-score is in [0, 1]. The weighted sum is mapped to [0, 100].
+        Six weighted objectives:
+          - LUMO reward (25%): Gaussian centered at LUMO_TARGET
+          - HOMO penalty (20%): Sigmoid penalizing HOMO > threshold
+          - Dielectric reward (20%): Sigmoid rewarding high dielectric
+          - Viscosity penalty (15%): Sigmoid penalizing high viscosity
+          - SA penalty (10%): Sigmoid penalizing poor synthetic accessibility
+          - Al corrosion penalty (10%): Penalty for high-LUMO fluorinated molecules
 
         Args:
-            homo_eV: Predicted HOMO energy in eV.
-            lumo_eV: Predicted LUMO energy in eV.
-            dielectric_proxy: Predicted dielectric constant proxy.
+            homo_eV: Predicted HOMO energy.
+            lumo_eV: Predicted LUMO energy.
+            dielectric_proxy: Predicted dielectric proxy.
             viscosity_proxy: Predicted viscosity proxy.
-            smiles: Optional SMILES for context.
-            mol: Pre-parsed RDKit Mol object for substructure checks.
+            ctx: Pre-parsed MoleculeContext for substructure checks.
 
         Returns:
-            Dict with ``total_score``, ``is_viable``, ``sub_scores``,
-            and ``rejection_reasons``.
+            Dict with total_score, is_viable, sub_scores, rejection_reasons.
         """
         sub_scores: dict[str, float] = {}
 
         g_lumo = self._gaussian_lumo(lumo_eV)
         s_homo = self._sigmoid_homo(homo_eV)
+        s_dielectric = self._sigmoid_dielectric(dielectric_proxy)
+        s_viscosity = self._sigmoid_viscosity(viscosity_proxy)
+
         sub_scores["lumo_reward"] = round(g_lumo, 4)
         sub_scores["homo_penalty"] = round(s_homo, 4)
-
-        s_dielectric = self._sigmoid_dielectric(dielectric_proxy)
         sub_scores["dielectric_reward"] = round(s_dielectric, 4)
-
-        s_viscosity = self._sigmoid_viscosity(viscosity_proxy)
         sub_scores["viscosity_penalty"] = round(s_viscosity, 4)
 
-        # Compute SA score from RDKit sascorer (replaces custom heuristic)
-        sa_score: float = 5.0  # neutral default
-        if mol is not None:
+        # SA score from RDKit sascorer
+        sa_score: float = 5.0
+        if ctx is not None:
             try:
-                sa_score = float(sascorer.calculateScore(mol))
+                sa_score = float(sascorer.calculateScore(ctx.mol))
             except Exception:
                 sa_score = 5.0
-        elif smiles is not None:
-            m = Chem.MolFromSmiles(smiles)
-            if m is not None:
-                try:
-                    sa_score = float(sascorer.calculateScore(m))
-                except Exception:
-                    sa_score = 5.0
         s_sa = self._sigmoid_sa(sa_score)
         sub_scores["sa_penalty"] = round(s_sa, 4)
+
+        # Al corrosion penalty
+        al_corrosion_penalty = 1.0
+        if ctx is not None and lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
+            al_corrosion_penalty = self._check_al_corrosion_risk(ctx.mol)
+        sub_scores["al_corrosion_penalty"] = round(al_corrosion_penalty, 4)
 
         # Weighted composite
         total_score = 100.0 * (
@@ -380,15 +349,11 @@ class AureliusPipeline:
             + SCORE_WEIGHT_SA * s_sa
         )
 
-        # Hydrolytic instability penalty (multiplicative, applied after weighting)
-        if mol is not None:
-            hydro_penalty = self._check_hydrolytic_instability(mol)
+        # Hydrolytic instability penalty (multiplicative)
+        if ctx is not None:
+            hydro_penalty = self._check_hydrolytic_instability(ctx.mol)
             total_score *= hydro_penalty
-        elif smiles is not None:
-            m = Chem.MolFromSmiles(smiles)
-            if m is not None:
-                hydro_penalty = self._check_hydrolytic_instability(m)
-                total_score *= hydro_penalty
+            total_score *= al_corrosion_penalty
 
         total_score = float(np.clip(total_score, 0.0, 100.0))
 
@@ -407,6 +372,8 @@ class AureliusPipeline:
                 reasons.append(f"viscosity_proxy={viscosity_proxy:.3f} (poor ion mobility)")
             if s_sa < 0.3:
                 reasons.append(f"SA score={sa_score:.2f} (hard to synthesize)")
+            if al_corrosion_penalty < 1.0 and lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
+                reasons.append("Al corrosion risk (high-LUMO fluorinated molecule)")
             rejection_reasons.append(
                 f"Aurelius Score {total_score:.1f} below threshold: {'; '.join(reasons)}"
             )
@@ -421,32 +388,49 @@ class AureliusPipeline:
 
     @staticmethod
     def _format_score(score: dict[str, Any]) -> str:
-        """Format a score dict for logging."""
         total = score.get("total_score", 0.0)
         viable = score.get("is_viable", False)
         return f"Score: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}"
 
+    def screen_smiles(self, smiles: str) -> dict[str, Any]:
+        """Convenience: parse a SMILES string then screen it.
+
+        Args:
+            smiles: SMILES string.
+
+        Returns:
+            Result dict (same as screen_molecule).
+        """
+        ctx = MoleculeContext.from_smiles(smiles)
+        if ctx is None:
+            return self._generate_failed_run(smiles, "Invalid SMILES — parsing failed")
+        return self.screen_molecule(ctx)
+
     def screen_batch(
         self,
-        smiles_or_ctx_list: list[str | MoleculeContext],
+        contexts: list[MoleculeContext],
         n_workers: int = 1,
     ) -> list[dict[str, Any]]:
-        """Screen a batch of molecules through the full pipeline.
+        """Screen a batch of pre-parsed molecules through the full pipeline.
 
-        When ``n_workers`` is greater than 1, molecules are screened
-        in parallel using ``ThreadPoolExecutor``.
+        Args:
+            contexts: List of MoleculeContext objects.
+            n_workers: Number of parallel workers.
+
+        Returns:
+            List of result dicts.
         """
         if n_workers < 1 or n_workers == 1:
-            return [self.screen_molecule(smi) for smi in smiles_or_ctx_list]
+            return [self.screen_molecule(ctx) for ctx in contexts]
 
         results: dict[int, dict[str, Any]] = {}
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
             future_to_idx = {
-                executor.submit(self.screen_molecule, smi): i
-                for i, smi in enumerate(smiles_or_ctx_list)
+                executor.submit(self.screen_molecule, ctx): i
+                for i, ctx in enumerate(contexts)
             }
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]
                 results[idx] = future.result()
 
-        return [results[i] for i in range(len(smiles_or_ctx_list))]
+        return [results[i] for i in range(len(contexts))]
