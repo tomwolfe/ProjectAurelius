@@ -21,7 +21,6 @@ from typing import Any
 
 import click
 
-from aurelius.cli_scripts import evaluate
 from aurelius.config import AureliusConfig, get_config
 from aurelius.pipeline import AureliusPipeline
 from aurelius.utils.dependencies import HAS_RDKIT
@@ -199,10 +198,22 @@ def train() -> None:
 
 @cli.command("evaluate")
 @click.option("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to evaluate")
-def evaluate_cmd(smiles: str = "CC(=O)OC1=CC(=O)O1", pipeline: Any = None, config: Any = None) -> None:
+@with_pipeline  # type: ignore[arg-type]
+def evaluate_cmd(
+    pipeline: AureliusPipeline,
+    config: AureliusConfig,
+    smiles: str = "CC(=O)OC1=CC(=O)O1",
+) -> None:
     """Run ML Oracle evaluation on a molecule."""
-    sys.argv = ["evaluate", "--smiles", smiles]
-    evaluate.main()
+    try:
+        results = pipeline.screen_molecule(smiles)
+        score = results.get("score", {})
+        total = score.get("total_score", 0.0)
+        viable = score.get("is_viable", False)
+        click.echo(f"\nAurelius Score v9.0: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}")
+    except Exception as e:
+        click.echo(f"[Aurelius Pipeline] Evaluation failed: {e}", err=True)
+        sys.exit(1)
 
 
 @cli.command("agent")

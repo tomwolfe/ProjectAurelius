@@ -82,17 +82,12 @@ class AureliusPipeline:
             "inference_time_ms": 0.0,
         }
 
-        lumo_score = self._oracle.predict_normalized_lumo(smiles) if self._oracle else 0.0
-        total_score = lumo_score
-        is_viable = total_score >= 50.0
-
         return {
             "tier1": t1_result,
             "tier2": None,
             "score": {
-                "total_score": total_score,
-                "lumo_score": lumo_score,
-                "is_viable": is_viable,
+                "total_score": 0.0,
+                "is_viable": False,
                 "rejection_reasons": [reason],
             },
         }
@@ -132,7 +127,6 @@ class AureliusPipeline:
 
         # Step 2: Oracle (property evaluation)
         t2_result = None
-        lumo_score = 0.0
         homo_eV = -99.0
         lumo_eV = -99.0
         domain_applicable = True
@@ -140,7 +134,6 @@ class AureliusPipeline:
         if self._oracle:
             t2_start = time.perf_counter()
             oracle_result = self._oracle.evaluate(smiles)
-            lumo_score = self._oracle.predict_normalized_lumo(smiles)
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
 
             homo_eV = oracle_result.get("homo_eV", -99.0)
@@ -154,24 +147,21 @@ class AureliusPipeline:
                 "lumo_eV": lumo_eV,
                 "gap_eV": oracle_result.get("gap_eV", 0.0),
                 "score_eV": oracle_result.get("score_eV", 0.0),
-                "lumo_score": lumo_score,
                 "domain_applicable": domain_applicable,
                 "domain_reason": domain_reason,
                 "domain_penalty": domain_penalty,
             }
             results["tier2"] = t2_result
             logger.info(
-                "Property Oracle Result: %s -> HOMO=%.3f LUMO=%.3f gap=%.3f "
-                "lumo_score=%.1f",
+                "Property Oracle Result: %s -> HOMO=%.3f LUMO=%.3f gap=%.3f",
                 smiles,
                 homo_eV,
                 lumo_eV,
                 t2_result["gap_eV"],
-                lumo_score,
             )
 
         score = self._compute_score(
-            lumo_score, homo_eV, lumo_eV,
+            homo_eV, lumo_eV,
             smiles=smiles, domain_applicable=domain_applicable,
             domain_penalty=domain_penalty,
         )
@@ -250,7 +240,6 @@ class AureliusPipeline:
 
     def _compute_score(
         self,
-        lumo_score: float,
         homo_eV: float = -99.0,
         lumo_eV: float = -99.0,
         smiles: str | None = None,
@@ -269,17 +258,15 @@ class AureliusPipeline:
         The final score is in [0, 100].
 
         Args:
-            lumo_score: Normalized LUMO score from oracle (0-100).
             homo_eV: Predicted HOMO energy in eV.
             lumo_eV: Predicted LUMO energy in eV.
             smiles: Optional SMILES for synthetic accessibility penalty.
             domain_applicable: Whether molecule is within QM9 applicability domain.
             domain_penalty: Score multiplier from OOD checks (1.0 = in-domain,
-                0.5 = element OOD, 0.9 = fingerprint OOD, 0.0 = hard reject).
+                0.9 = fingerprint/element OOD, 0.0 = invalid SMILES).
 
         Returns:
-            Dict with ``total_score``, ``lumo_score``,
-            ``is_viable``, and ``rejection_reasons``.
+            Dict with ``total_score``, ``is_viable``, and ``rejection_reasons``.
         """
         g_lumo = self._gaussian_lumo(lumo_eV)
         s_homo = self._sigmoid_homo(homo_eV)
@@ -292,13 +279,12 @@ class AureliusPipeline:
             total_score *= sa
 
         # Domain applicability penalty
-        # The RF model was trained only on QM9 (CHON ± trace F). Battery
-        # electrolytes with heavy fluorination, sulfonation, or other
-        # unseen elements cause the RF to hallucinate. The domain_penalty
-        # applies a score reduction proportional to OOD severity:
+        # Battery electrolytes require heavy fluorination and heteroatoms (F, S, P)
+        # for SEI formation which lie outside the QM9 training distribution.
+        # The domain_penalty applies a mild score reduction to flag extrapolation:
         #   1.0  = in-domain (no penalty)
         #   0.9  = fingerprint OOD (mild Tanimoto dissimilarity)
-        #   0.5  = element OOD (F>3, any S/P/etc — model extrapolating)
+        #   0.9  = element OOD (F>20, S>6, P>3, etc — mild penalty)
         #   0.0  = invalid SMILES (hard reject)
         if not domain_applicable and domain_penalty < 1.0:
             penalty_pct = int((1.0 - domain_penalty) * 100)
@@ -321,7 +307,6 @@ class AureliusPipeline:
 
         return {
             "total_score": total_score,
-            "lumo_score": lumo_score,
             "is_viable": is_viable,
             "rejection_reasons": rejection_reasons,
         }

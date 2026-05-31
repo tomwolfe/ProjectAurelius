@@ -22,7 +22,11 @@ from scipy.spatial.distance import jaccard
 from sklearn.cluster import MiniBatchKMeans
 
 from aurelius.agent.state import ConvergenceChecker, FeedbackAdapter
-from aurelius.utils.chem_utils import _is_valid_mol, _safe_mol_from_smiles
+from aurelius.utils.chem_utils import (
+    _is_valid_mol,
+    _safe_mol_from_smiles,
+    generate_full_feature_vector,
+)
 
 log = logging.getLogger(__name__)
 
@@ -224,9 +228,9 @@ class DiscoveryLoop:
                 self.feedback.record(screening_result)
 
             # ---- Close the active-learning loop: retrain RF surrogate ----
-            X_new = self._featurise_molecules(batch_smiles)
-            y_new = np.array(batch_scores).reshape(-1, 1)
-            self.feedback.update(X_new, y_new)
+            # FeedbackAdapter.record() already appended each molecule's fingerprint
+            # and score; finalize_batch() reads accumulated history and refits.
+            self.feedback.finalize_batch()
 
             # ---- Seed pool evolution: feed back high-scoring molecules ----
             new_seeds = [
@@ -376,28 +380,21 @@ class DiscoveryLoop:
         - 5 values: global RDKit 2D descriptors (MW, LogP, TPSA,
           RingCount, NumRotatableBonds)
 
+        Delegates per-molecule feature generation to
+        ``chem_utils.generate_full_feature_vector``.
+
         Args:
             smiles_list: List of SMILES strings.
 
         Returns:
             Array of shape (n, 2053) with fingerprints + descriptors.
         """
-        from rdkit import Chem
-        from rdkit.Chem import AllChem, Descriptors
-
         X = np.zeros((len(smiles_list), 2053), dtype=np.float32)
         for i, smi in enumerate(smiles_list):
-            mol = Chem.MolFromSmiles(smi)
-            if mol is None:
+            try:
+                X[i] = generate_full_feature_vector(smi)
+            except Exception:
                 continue
-            fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-            for idx in fp.GetOnBits():
-                X[i][idx] = 1.0
-            X[i][2048] = Descriptors.ExactMolWt(mol)
-            X[i][2049] = Descriptors.MolLogP(mol)
-            X[i][2050] = Descriptors.TPSA(mol)
-            X[i][2051] = Descriptors.RingCount(mol)
-            X[i][2052] = Descriptors.NumRotatableBonds(mol)
         return X
 
     def _screen_molecule(self, smiles: str) -> dict[str, Any] | None:

@@ -117,11 +117,12 @@ def test_oracle_invalid_smiles_raises(oracle: PropertyOracle) -> None:
         oracle.evaluate("not_a_valid_smiles")
 
 
-def test_predict_normalized_lumo_range(oracle: PropertyOracle) -> None:
-    """Verify normalized LUMO score is in [0, 100]."""
+def test_evaluate_with_ood_penalty(oracle: PropertyOracle) -> None:
+    """Verify evaluate_with_ood_penalty still works."""
     smiles = "CC(=O)OC1=CC=CC=C1"
-    score = oracle.predict_normalized_lumo(smiles)
-    assert 0.0 <= score <= 100.0, f"Score {score} out of [0, 100] range"
+    result = oracle.evaluate_with_ood_penalty(smiles)
+    assert "score_eV" in result
+    assert 0.0 <= result["score_eV"] <= 100.0
 
 
 

@@ -196,6 +196,45 @@ def generate_molecular_descriptors(smiles: str) -> dict[str, float]:
         raise RuntimeError(f"Descriptor generation failed: {e}") from e
 
 
+def generate_full_feature_vector(smiles: str) -> np.ndarray[Any, Any]:
+    """Generate a 2053-dim feature vector: ECFP4 + global RDKit descriptors.
+
+    Feature layout:
+      - [0:2048]  ECFP4 binary fingerprint (Morgan radius=2, 2048 bits)
+      - [2048]    Exact molecular weight
+      - [2049]    MolLogP
+      - [2050]    TPSA
+      - [2051]    Ring count
+      - [2052]    NumRotatableBonds
+
+    Args:
+        smiles: SMILES string of the molecule.
+
+    Returns:
+        Float32 array of shape (2053,).
+
+    Raises:
+        RuntimeError: If RDKit is unavailable or SMILES is invalid.
+    """
+    from rdkit import Chem
+    from rdkit.Chem import AllChem, Descriptors
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise RuntimeError(f"RDKit failed to parse SMILES '{smiles}'")
+
+    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+    arr = np.zeros(2053, dtype=np.float32)
+    for idx in fp.GetOnBits():
+        arr[idx] = 1.0
+    arr[2048] = Descriptors.ExactMolWt(mol)
+    arr[2049] = Descriptors.MolLogP(mol)
+    arr[2050] = Descriptors.TPSA(mol)
+    arr[2051] = Descriptors.RingCount(mol)
+    arr[2052] = Descriptors.NumRotatableBonds(mol)
+    return arr
+
+
 def _mol_to_fp(mol: Any) -> Any:
     """Compute ECFP4 (radius=2) fingerprint using Morgan generator.
 
@@ -272,4 +311,5 @@ __all__ = [
     "_deserialize_fp",
     "_tanimoto",
     "validate_smiles",
+    "generate_full_feature_vector",
 ]

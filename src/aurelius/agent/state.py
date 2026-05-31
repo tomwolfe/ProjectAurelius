@@ -362,24 +362,20 @@ class FeedbackAdapter:
         self._surrogate = RandomForestSurrogate()
         self._surrogate.fit(X, y)
 
-    def update(self, X_new: np.ndarray[Any, Any], y_new: np.ndarray[Any, Any]) -> None:
-        """Retrain the RF surrogate with newly screened data, accumulating history.
+    def finalize_batch(self) -> None:
+        """Retrain the RF surrogate from accumulated history.
 
         Combines:
-        1. Any in-memory history from individual ``record()`` calls since last update.
+        1. In-memory history from ``record()`` calls since last finalize.
         2. Previously stored surrogate training data (all prior batches).
-        3. The new batch data ``X_new`` / ``y_new``.
 
-        After fitting, the in-memory history is cleared (it is now part of the
-        surrogate's stored training set).
-
-        Args:
-            X_new: 2-D array of Morgan fingerprints for new candidates.
-            y_new: 1-D or 2-D array of Aurelius scores for new candidates.
-
-        Raises:
-            ValueError: If fewer than 2 samples are provided.
+        After fitting, the in-memory history is cleared.  This is the
+        single source of truth for surrogate training — the DiscoveryLoop
+        should NOT compute features separately.
         """
+        if not self._X_history:
+            return
+
         if self._surrogate is None:
             self._surrogate = RandomForestSurrogate()
 
@@ -394,7 +390,36 @@ class FeedbackAdapter:
             y_prev_flat = prev_y.ravel() if prev_y.ndim > 1 else prev_y
             y_parts.append(y_prev_flat)
 
-        # Include new batch data
+        X_full = np.vstack(X_parts)
+        y_full = np.concatenate(y_parts)
+
+        self._surrogate.fit(X_full, y_full)
+        self._X_history.clear()
+        self._y_history.clear()
+
+    def update(self, X_new: np.ndarray[Any, Any], y_new: np.ndarray[Any, Any]) -> None:
+        """Retrain the RF surrogate with explicit feature data.
+
+        Deprecated: Prefer ``record()`` + ``finalize_batch()`` which avoids
+        redundant featurization.  Kept for backward compatibility with tests.
+
+        Args:
+            X_new: 2-D array of Morgan fingerprints for new candidates.
+            y_new: 1-D or 2-D array of Aurelius scores for new candidates.
+        """
+        if self._surrogate is None:
+            self._surrogate = RandomForestSurrogate()
+
+        X_parts = [np.asarray(x, dtype=np.float32) for x in self._X_history]
+        y_parts = [np.atleast_1d(np.asarray(y, dtype=np.float32)) for y in self._y_history]
+
+        prev_X = self._surrogate._X
+        prev_y = self._surrogate._y
+        if prev_X is not None and prev_y is not None:
+            X_parts.append(prev_X)
+            y_prev_flat = prev_y.ravel() if prev_y.ndim > 1 else prev_y
+            y_parts.append(y_prev_flat)
+
         X_parts.append(np.asarray(X_new, dtype=np.float32))
         y_parts.append(np.asarray(y_new, dtype=np.float32).ravel())
 

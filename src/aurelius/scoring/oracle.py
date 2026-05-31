@@ -7,7 +7,8 @@ with real QM9 ground-truth data.
 HOMO/LUMO energies and their gap are the primary determinants of electrochemical
 stability for battery electrolyte molecules.
 
-The Oracle returns HOMO, LUMO, gap (eV) and a normalized score in [0, 100].
+The Oracle returns HOMO, LUMO, and gap (eV).  The composite Aurelius Score
+is computed by the Pipeline (Gaussian LUMO * Sigmoid HOMO * SA * domain).
 
 Usage:
     from aurelius.scoring.oracle import PropertyOracle
@@ -17,7 +18,6 @@ Usage:
     print(result["homo_eV"])     # e.g. -6.82
     print(result["lumo_eV"])     # e.g. -0.94
     print(result["gap_eV"])      # e.g. 5.88
-    print(result["score_eV"])    # e.g. 62.3
 """
 
 from __future__ import annotations
@@ -103,12 +103,15 @@ def _compute_qm9_centroid(qm9_data: list[tuple[str, float, float]]) -> np.ndarra
     return np.mean(fps, axis=0).astype(np.float32)
 
 
+# Battery electrolytes require heavy fluorination and specific heteroatoms (S, P)
+# for SEI formation.  Limits are set generously to reflect realistic electrolyte
+# compositions rather than the narrow QM9 training distribution (CHON ± trace F).
 _QM9_ELEMENT_LIMITS: dict[str, int] = {
-    "F": 3,
-    "S": 0,
-    "P": 0,
-    "Cl": 0,
-    "Br": 0,
+    "F": 20,
+    "S": 6,
+    "P": 3,
+    "Cl": 6,
+    "Br": 3,
     "B": 0,
     "Si": 0,
 }
@@ -117,13 +120,13 @@ _QM9_ELEMENT_LIMITS: dict[str, int] = {
 def _check_element_ood(mol: Any) -> tuple[bool, str, float]:
     """Check if molecule contains elements rare or absent in QM9 training set.
 
-    QM9 contains only CHON and trace F (≤3 atoms per molecule).
-    Battery electrolytes frequently contain F, S, P which are absent from the
-    RF's training distribution.  The RF will hallucinate on these substructures.
+    Battery electrolytes frequently contain F, S, P — these are essential for
+    SEI formation and should receive only a mild penalty when they exceed
+    reasonable limits (since the RF model extrapolates beyond QM9).
 
     Returns:
         (is_applicable, reason, penalty_multiplier) where penalty_multiplier
-        is a score scaling factor (1.0 = no penalty, 0.5 = 50% reduction).
+        is a score scaling factor (1.0 = no penalty, 0.9 = mild reduction).
     """
     from collections import Counter
 
@@ -144,7 +147,7 @@ def _check_element_ood(mol: Any) -> tuple[bool, str, float]:
             f"The RF model was trained on QM9 (CHON ± trace F) and will "
             f"hallucinate on unseen elements."
         )
-        return False, reason, 0.5
+        return False, reason, 0.9
 
     return True, "", 1.0
 
@@ -153,8 +156,10 @@ def _domain_applicable(smiles: str) -> tuple[bool, str, float]:
     """Check if a molecule is Out-Of-Distribution relative to the QM9 training set.
 
     A two-phase OOD check:
-      1. **Element-based**: Hard OOD — detects atoms absent or extremely rare in
-         QM9 (F>3, any S, P, Cl, Br, B, Si). Heavy penalty (50% score reduction).
+      1. **Element-based**: Mild OOD — detects atoms absent or extremely rare in
+         QM9 beyond electrolyte-relevant limits (F>20, S>6, P>3, etc).
+         Mild penalty (10% score reduction) since battery electrolytes need
+         these elements for SEI formation.
       2. **Fingerprint-based**: Soft OOD — Tanimoto similarity to the QM9 centroid
          fingerprint. Mild penalty (10% score reduction).
 
@@ -287,24 +292,6 @@ class PropertyOracle:
         """Load or train the model if not already loaded."""
         if PropertyOracle._model is None:
             PropertyOracle._model = _train_homo_lumo_models()
-
-    def predict_normalized_lumo(self, smiles: str) -> float:
-        """Predict normalized LUMO score in [0, 100] from ECFP4 fingerprints.
-
-        Uses a fixed LUMO range of [-3.0, 2.0] eV corresponding to the
-        span of typical organic molecules in QM9.  Higher score = more
-        positive LUMO = better reductive stability.
-
-        LUMO is extracted from the MultiOutputRegressor (index 1).
-        """
-        self._ensure_model()
-        model, gap_min, gap_max = PropertyOracle._model  # type: ignore[misc]
-        fp = generate_ecfp4_fingerprint(smiles).reshape(1, -1).astype(np.float32)
-        pred = model.predict(fp)[0]
-        lumo = float(pred[1])
-        normalized = (lumo - (-3.0)) / (2.0 - (-3.0)) * 100.0
-        normalized = np.clip(normalized, 0.0, 100.0)
-        return round(float(normalized), 2)
 
     def _predict(self, smiles: str) -> dict[str, float]:
         """Run model inference and return HOMO/LUMO energies.

@@ -31,6 +31,7 @@ if HAS_RDKIT:
     from rdkit.Chem import (
         BRICS,
         AllChem,
+        rdMolDescriptors,
     )
 
 logger = logging.getLogger(__name__)
@@ -246,6 +247,23 @@ class MutationEngine:
             frag_mols = [Chem.MolFromSmiles(s) for s in frag_smiles if Chem.MolFromSmiles(s) is not None]
             if len(frag_mols) < 2:
                 return generated
+
+            # Pre-filter fragments: discard any that would guarantee MW > 300
+            # or violate HBD == 0 after reassembly (Tier 1 requirements).
+            # BRICS reassembles exactly 2 fragments; if either has MW > 250 or
+            # HBD > 0, the product will almost certainly fail Tier 1.
+            filtered: list[Any] = []
+            for f_mol in frag_mols:
+                f_mw = rdMolDescriptors.CalcExactMolWt(f_mol)
+                f_hbd = rdMolDescriptors.CalcNumHBD(f_mol)
+                if f_mw > 250:
+                    continue
+                if f_hbd > 0:
+                    continue
+                filtered.append(f_mol)
+            if len(filtered) < 2:
+                return generated
+            frag_mols = filtered
 
             for _ in range(30):
                 rng = np.random.default_rng(self._rng.integers(0, 2**31))

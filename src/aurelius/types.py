@@ -31,14 +31,14 @@ class AureliusScore:
     """Composite Aurelius score for battery electrolyte screening.
 
     ``total_score`` is computed via Gaussian penalty approach:
-      - LUMO rewarded via Gaussian centered at -1.0 eV, sigma=0.5
+      - LUMO rewarded via Gaussian centered at -1.0 eV, sigma=0.75
       - HOMO penalised via sigmoid when above -6.0 eV
       - SA score penalty for synthetic accessibility
+      - Domain applicability penalty for OOD extrapolation
 
-    where all component scores are normalized to [0, 100].
+    where total_score is normalized to [0, 100].
     """
 
-    lumo_score: float
     total_score: float
     is_viable: bool
     rejection_reasons: list[str]

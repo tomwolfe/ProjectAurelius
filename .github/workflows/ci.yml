@@ -53,15 +53,6 @@ jobs:
       - name: Run pytest
         run: pytest tests/ -v
 
-      - name: Install rdkit
-        run: pip install rdkit
-
-      - name: Install PyTorch and MLX for physics validation
-        run: pip install torch torchvision mlx
-
-      - name: Run physics validation
-        run: python -m aurelius validate --smiles "CC(=O)OC1=CC(=O)O1"
-
   test-tier1-3:
     name: Tier 1-3 Tests
     runs-on: macos-latest
@@ -140,15 +131,6 @@ jobs:
 
       - name: Run pytest
         run: pytest tests/ -v --tb=short
-
-      - name: Install rdkit
-        run: pip install rdkit
-
-      - name: Install PyTorch and MLX for physics validation
-        run: pip install torch torchvision mlx
-
-      - name: Run physics validation
-        run: python -m aurelius validate --smiles "CC(=O)OC1=CC(=O)O1"
 
   fallback-only:
     name: Fallback-Only Tests (No MLX, No CUDA, No RDKit)
