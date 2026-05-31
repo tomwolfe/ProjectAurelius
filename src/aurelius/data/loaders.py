@@ -10,9 +10,6 @@ import csv
 import logging
 import os
 
-from aurelius.utils.chem_utils import generate_ecfp4_fingerprint
-
-
 def load_qm9_homo_lumo_data(csv_path: str | None = None) -> list[tuple[str, float, float]]:
     """Load QM9 HOMO/LUMO data from the bundled CSV file.
 

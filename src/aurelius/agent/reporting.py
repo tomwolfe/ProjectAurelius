@@ -49,18 +49,12 @@ def generate_run_summary(
     path = _resolve_output_path(path, output_dir)
     scores = [r.total_score for r in all_results]
 
-    rolling = convergence.compute_rolling_mean(batch_size=50)
-    rolling_mean = float(np.mean(rolling[-3:])) if len(rolling) >= 3 else 0.0
-
     plateau = convergence.check_score_plateau()
-    pass_collapsed = convergence.check_pass_rate_collapsed()
     saturation = convergence.check_structural_saturation()
 
     reasons = []
     if plateau:
         reasons.append("score plateau confirmed")
-    if pass_collapsed:
-        reasons.append("pass rate collapsed")
     if saturation:
         reasons.append("structural saturation reached")
     if not reasons:
@@ -68,7 +62,7 @@ def generate_run_summary(
 
     summary: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
-        "pipeline": "Project Aurelius v9.0",
+        "pipeline": "Project Aurelius v9.1",
         "search_statistics": {
             "total_screened": convergence.total_screened,
             "generations_run": convergence.generations,
@@ -82,10 +76,7 @@ def generate_run_summary(
         },
         "convergence": {
             "score_plateau": plateau,
-            "pass_rate_collapsed": pass_collapsed,
             "structural_saturation": saturation,
-            "rolling_mean_plateau": rolling_mean,
-            "viability_rate_final": convergence.viability_rates[-1] if convergence.viability_rates else 0.0,
             "new_clusters_last_batch": convergence.new_clusters_per_batch[-1]
             if convergence.new_clusters_per_batch
             else 0,
@@ -96,7 +87,6 @@ def generate_run_summary(
                 f"Criteria: {', '.join(reasons)}."
             ),
         },
-        "viability_rate_trend": convergence.viability_rates,
         "new_clusters_per_batch": convergence.new_clusters_per_batch,
         "discoveries": [
             {

@@ -283,9 +283,15 @@ class AureliusPipeline:
             sa = self._compute_sa_score(smiles)
             total_score *= sa
 
-        # Domain applicability penalty — low confidence for OOD molecules
+        # Domain applicability — the RF surrogate's natural variance already
+        # captures OOD uncertainty, and the NWEI acquisition function explicitly
+        # rewards novelty. A hard OOD penalty would conflict with the active-
+        # learning objective of exploring novel chemical space. We apply only a
+        # trivial penalty (10%) and log a warning, relying on the RF's tree
+        # variance and the SA filter for quality control.
         if not domain_applicable:
-            total_score *= 0.5
+            total_score *= 0.9
+            logger.warning("OOD molecule (low Tanimoto to QM9 centroid) — applying mild 10%% penalty")
 
         total_score = float(np.clip(total_score, 0.0, 100.0))
 

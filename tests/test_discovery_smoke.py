@@ -12,10 +12,9 @@ import os
 import pytest
 
 from aurelius.agent.loop import DiscoveryLoop
-from aurelius.pipeline import AureliusPipeline
 from aurelius.agent.mutation import MutationEngine
 from aurelius.agent.state import CheckpointManager
-
+from aurelius.pipeline import AureliusPipeline
 
 pytestmark = pytest.mark.slow
 

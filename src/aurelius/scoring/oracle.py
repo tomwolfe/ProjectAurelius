@@ -23,7 +23,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 import numpy as np
@@ -287,7 +286,7 @@ class PropertyOracle:
         positive LUMO = better reductive stability.
         """
         self._ensure_lumo_model()
-        rf, lumo_min, lumo_max = PropertyOracle._lumo_rf
+        rf, lumo_min, lumo_max = PropertyOracle._lumo_rf  # type: ignore[misc]
         fp = generate_ecfp4_fingerprint(smiles).reshape(1, -1)
         lumo = float(rf.predict(fp)[0])
         # Use the theoretical QM9 range for meaningful battery scoring
@@ -309,7 +308,7 @@ class PropertyOracle:
             RuntimeError: If the model cannot be trained or SMILES is invalid.
         """
         self._ensure_model()
-        model, gap_min, gap_max = PropertyOracle._model
+        model, gap_min, gap_max = PropertyOracle._model  # type: ignore[misc]
 
         try:
             fp = generate_ecfp4_fingerprint(smiles).reshape(1, -1).astype(np.float32)
@@ -352,7 +351,7 @@ class PropertyOracle:
         if self._CACHE is not None and smiles in self._CACHE:
             return self._CACHE[smiles]
 
-        result = self._predict(smiles)
+        result: dict[str, Any] = self._predict(smiles)
 
         # Domain applicability
         is_applicable, reason = _domain_applicable(smiles)

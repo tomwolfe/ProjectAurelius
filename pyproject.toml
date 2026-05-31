@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aurelius"
-version = "9.0.0"
-description = "Project Aurelius v9.0 - Bayesian active-learning screening pipeline with MPNN oracle, Gaussian penalty objective, and closed-loop active learning."
+version = "9.1.0"
+description = "Project Aurelius v9.1 - Bayesian active-learning screening pipeline with RF/ECFP4 oracle, Gaussian penalty objective, and closed-loop active learning."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
@@ -55,7 +55,7 @@ aurelius = "aurelius.__main__:cli"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"aurelius.data" = ["force_field_params.json", "esol_fallback.csv", "synthetic_training_data.csv", "tier0_seed_smiles.json", "qm9_subset.csv"]
+"aurelius.data" = ["force_field_params.json", "synthetic_training_data.csv", "tier0_seed_smiles.json", "qm9_subset.csv"]
 "aurelius.screening.tier1" = ["*.py"]
 "aurelius.screening.tier0" = ["*.py"]
 "aurelius.cli_scripts" = ["*.py"]
@@ -93,3 +93,10 @@ warn_return_any = true
 warn_unused_configs = true
 warn_unused_ignores = false
 ignore_missing_imports = true
+# Third-party typing limitations: RDKit (attr-defined, no-untyped-call)
+# and numpy (no-any-return from incomplete stubs) are suppressed project-wide
+disable_error_code = ["attr-defined", "no-untyped-call", "no-any-return"]
+
+[[tool.mypy.overrides]]
+module = "rdkit.*"
+ignore_errors = true

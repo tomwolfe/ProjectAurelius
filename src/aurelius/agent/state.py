@@ -39,12 +39,12 @@ def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str
 class CheckpointManager:
     """Manages agent state using atomic JSON writes.
 
-    Replaces the previous SQLite-based implementation with a simpler
-    dictionary-backed approach that writes to a JSON file.
-
-    Uses atomic writes (write to .tmp, then os.replace) to prevent
-    corruption during crashes.
+    Stores only aggregate stats and top-N discoveries to keep JSON
+    files small.  Uses atomic writes (write to .tmp, then os.replace)
+    to prevent corruption during crashes.
     """
+
+    _MAX_DISCOVERIES = 100
 
     def __init__(self, path: str = "agent_state.json", output_dir: str | Path | None = None) -> None:
         """Initialize the checkpoint manager.
@@ -63,9 +63,6 @@ class CheckpointManager:
         self._started_at = datetime.now(UTC).isoformat()
         self._last_updated: str | None = None
 
-        self._screened_smiles: set[str] = set()
-        self._screened_entries: dict[str, tuple[float, str]] = {}
-        self._fingerprints: set[str] = set()
         self._discoveries: list[dict[str, Any]] = []
 
         self._load()
@@ -87,22 +84,12 @@ class CheckpointManager:
                 self._invalid_discarded = data.get("invalid_discarded", 0)
                 self._started_at = data.get("started_at", self._started_at)
                 self._last_updated = data.get("last_updated")
-                self._screened_smiles = set(data.get("screened_smiles", []))
-                self._screened_entries = {
-                    entry["smiles"]: (entry["score"], entry["tier_status"])
-                    for entry in data.get("screened_molecules", [])
-                }
-                self._fingerprints = set(data.get("fingerprints", []))
                 self._discoveries = data.get("discoveries", [])
             except (json.JSONDecodeError, KeyError, TypeError, OSError):
                 pass
 
     def _save(self) -> None:
-        """Save checkpoint state to the JSON file atomically.
-
-        Writes to a temporary file first, then uses os.replace() for
-        atomic safety.
-        """
+        """Save checkpoint state to the JSON file atomically."""
         data = {
             "batch": self._batch,
             "screened_count": self._screened_count,
@@ -112,12 +99,6 @@ class CheckpointManager:
             "invalid_discarded": self._invalid_discarded,
             "started_at": self._started_at,
             "last_updated": self._last_updated,
-            "screened_smiles": list(self._screened_smiles),
-            "screened_molecules": [
-                {"smiles": smi, "score": score, "tier_status": status}
-                for smi, (score, status) in self._screened_entries.items()
-            ],
-            "fingerprints": list(self._fingerprints),
             "discoveries": self._discoveries,
         }
 
@@ -137,27 +118,29 @@ class CheckpointManager:
         return self._get_state_dict()
 
     def save(self) -> None:
-        """Save checkpoint state to the JSON file atomically.
-
-        Writes to a temporary file first, then uses os.replace() for
-        atomic safety.
-        """
+        """Save checkpoint state to the JSON file atomically."""
         self._save()
 
     def add_discovery(self, discovery: dict[str, Any] | ScreeningResult) -> None:
         """Add a discovery to the checkpoint.
+
+        Only the top ``_MAX_DISCOVERIES`` discoveries are kept, sorted
+        by ``total_score`` descending.
 
         Args:
             discovery: Dict or ScreeningResult with discovery data.
         """
         if hasattr(discovery, "smiles"):
             discovery = {
-                "smiles": discovery.smiles,
-                "total_score": discovery.total_score,
-                "is_viable": discovery.is_viable,
-                "rejection_reasons": discovery.rejection_reasons,
+                "smiles": discovery.smiles,  # type: ignore[union-attr]
+                "total_score": discovery.total_score,  # type: ignore[union-attr]
+                "is_viable": discovery.is_viable,  # type: ignore[union-attr]
+                "rejection_reasons": discovery.rejection_reasons,  # type: ignore[union-attr]
             }
         self._discoveries.append(discovery)
+        # Keep only top N by score
+        self._discoveries.sort(key=lambda d: d.get("total_score", 0), reverse=True)
+        self._discoveries = self._discoveries[: self._MAX_DISCOVERIES]
 
     def update_stats(
         self,
@@ -184,63 +167,14 @@ class CheckpointManager:
             if best > self._best_score:
                 self._best_score = best
 
-    def is_screened(self, smiles: str) -> bool:
-        """Check if a SMILES string has already been screened.
-
-        Args:
-            smiles: SMILES string to check.
-
-        Returns:
-            True if the molecule has already been screened.
-        """
-        return smiles in self._screened_smiles
-
-    def add_screened_molecule(self, smiles: str, score: float, tier_status: str) -> None:
-        """Record a screened molecule.
-
-        Args:
-            smiles: SMILES string.
-            score: Molecule score.
-            tier_status: Status string (e.g. "viable", "rejected").
-        """
-        self._screened_smiles.add(smiles)
-        self._screened_entries[smiles] = (score, tier_status)
-
-    def fps_hex_list(self) -> list[str]:
-        """Return list of known fingerprint hex strings."""
-        return list(self._fingerprints)
-
-    def add_fps_hex(self, hex_str: str, smiles: str | None = None) -> None:
-        """Add a fingerprint hex string to the known list.
-
-        Args:
-            hex_str: Serialized fingerprint string.
-            smiles: Associated SMILES (for index lookup).
-        """
-        self._fingerprints.add(hex_str)
-
-    def is_known_fps(self, hex_str: str) -> bool:
-        """Check if a fingerprint hex has already been recorded.
-
-        Args:
-            hex_str: Serialized fingerprint hex string.
-
-        Returns:
-            True if the fingerprint is already known.
-        """
-        return hex_str in self._fingerprints
-
     def clear(self) -> None:
-        """Clear all screened molecules, fingerprints, and agent state."""
+        """Clear all discoveries and agent state."""
         self._batch = 0
         self._screened_count = 0
         self._best_score = 0.0
         self._viable_count = 0
         self._total_generated = 0
         self._invalid_discarded = 0
-        self._screened_smiles.clear()
-        self._screened_entries.clear()
-        self._fingerprints.clear()
         self._discoveries.clear()
         self._save()
 
@@ -271,17 +205,15 @@ class CheckpointManager:
 class ConvergenceChecker:
     """Evaluates whether the screening loop should terminate.
 
-    Uses Welford's online algorithm for computing running variance
-    without storing all scores, bounding memory usage.  ``batch_scores``
-    stores only per-batch aggregates (not individual scores), so memory
-    usage is bounded by the number of generations.
+    Uses Welford's online algorithm for computing running statistics
+    without storing all individual scores.  Only per-batch aggregate
+    values are stored for plateau and saturation detection.
     """
 
     def __init__(self) -> None:
         """Initialize the convergence checker."""
-        self.batch_scores: list[list[float]] = []
-        self.viability_rates: list[float] = []
         self.new_clusters_per_batch: list[int] = []
+        self._batch_means: list[float] = []
         self.viable_count = 0
         self.total_screened = 0
         self.generations = 0
@@ -305,55 +237,31 @@ class ConvergenceChecker:
             viable_count: Number of viable molecules in the batch.
             new_clusters: Number of new clusters discovered.
         """
-        self.batch_scores.append(scores)
         self.total_screened += len(scores)
         self.viable_count += viable_count
         self.generations += 1
 
-        viable_in_batch = sum(1 for s in scores if s >= 65.0)
-        self.viability_rates.append(viable_in_batch / max(len(scores), 1))
         self.new_clusters_per_batch.append(new_clusters)
 
-        # Update Welford's online statistics
+        # Update Welford's online statistics and record batch mean
         for score in scores:
             self._welford_n += 1
             delta = score - self._welford_mean
             self._welford_mean += delta / self._welford_n
             self._welford_m2 += delta * (score - self._welford_mean)
-
-    def compute_rolling_mean(self, batch_size: int = 50) -> list[float]:
-        """Rolling mean of total_score over windows of `batch_size`.
-
-        Uses ``batch_scores`` (a list of per-batch score lists) to
-        compute rolling means, keeping memory bounded by the number
-        of generations rather than total individual scores.
-
-        Args:
-            batch_size: Number of consecutive batches to average.
-
-        Returns:
-            List of rolling mean values.
-        """
-        if len(self.batch_scores) < batch_size:
-            return []
-        rolling: list[float] = []
-        for i in range(batch_size, len(self.batch_scores) + 1, batch_size):
-            window_scores: list[float] = []
-            for j in range(i - batch_size, i):
-                window_scores.extend(self.batch_scores[j])
-            rolling.append(float(np.mean(window_scores)))
-        return rolling
+        self._batch_means.append(self._welford_mean)
 
     def check_score_plateau(self) -> bool:
-        """Check if rolling mean changes < 1.0% over 3 consecutive batches.
+        """Check if running mean changes < 1.0% over 3 consecutive batches.
+
+        Uses the per-batch running mean from Welford's algorithm.
 
         Returns:
             True if the score has plateaued.
         """
-        rolling = self.compute_rolling_mean(batch_size=50)
-        if len(rolling) < 3:
+        if len(self._batch_means) < 3:
             return False
-        last_three = rolling[-3:]
+        last_three = self._batch_means[-3:]
         for i in range(1, 3):
             ref = last_three[i - 1]
             if ref == 0:
@@ -362,16 +270,6 @@ class ConvergenceChecker:
             if change >= 0.01:
                 return False
         return True
-
-    def check_pass_rate_collapsed(self) -> bool:
-        """Check if viability rate < 3% for 2 consecutive batches.
-
-        Returns:
-            True if pass rate has collapsed.
-        """
-        if len(self.viability_rates) < 2:
-            return False
-        return self.viability_rates[-1] < 0.03 and self.viability_rates[-2] < 0.03
 
     def check_structural_saturation(self) -> bool:
         """Check if < 3 new clusters over last 2 batches.
@@ -382,10 +280,6 @@ class ConvergenceChecker:
         if len(self.new_clusters_per_batch) < 2:
             return False
         return self.new_clusters_per_batch[-1] < 3 and self.new_clusters_per_batch[-2] < 3
-
-    def check_volume_requirement(self) -> bool:
-        """Deprecated — kept for backward compatibility only."""
-        return True
 
     def should_terminate(self) -> tuple[bool, str]:
         """Determine if the screening loop should terminate.
@@ -469,10 +363,15 @@ class FeedbackAdapter:
         self._surrogate.fit(X, y)
 
     def update(self, X_new: np.ndarray[Any, Any], y_new: np.ndarray[Any, Any]) -> None:
-        """Retrain the RF surrogate with newly screened data.
+        """Retrain the RF surrogate with newly screened data, accumulating history.
 
-        Incorporates any previously accumulated history from individual
-        ``record()`` calls.
+        Combines:
+        1. Any in-memory history from individual ``record()`` calls since last update.
+        2. Previously stored surrogate training data (all prior batches).
+        3. The new batch data ``X_new`` / ``y_new``.
+
+        After fitting, the in-memory history is cleared (it is now part of the
+        surrogate's stored training set).
 
         Args:
             X_new: 2-D array of Morgan fingerprints for new candidates.
@@ -484,12 +383,23 @@ class FeedbackAdapter:
         if self._surrogate is None:
             self._surrogate = RandomForestSurrogate()
 
-        X_full = np.array(self._X_history, dtype=np.float32) if self._X_history else X_new
-        y_full = np.array(self._y_history, dtype=np.float32) if self._y_history else np.asarray(y_new).ravel()
+        X_parts = [np.asarray(x, dtype=np.float32) for x in self._X_history]
+        y_parts = [np.atleast_1d(np.asarray(y, dtype=np.float32)) for y in self._y_history]
 
-        if self._X_history:
-            X_full = np.vstack([np.array(self._X_history, dtype=np.float32), X_new])
-            y_full = np.concatenate([np.array(self._y_history, dtype=np.float32), np.asarray(y_new).ravel()])
+        # Include previously stored surrogate training data (all prior batches)
+        prev_X = self._surrogate._X
+        prev_y = self._surrogate._y
+        if prev_X is not None and prev_y is not None:
+            X_parts.append(prev_X)
+            y_prev_flat = prev_y.ravel() if prev_y.ndim > 1 else prev_y
+            y_parts.append(y_prev_flat)
+
+        # Include new batch data
+        X_parts.append(np.asarray(X_new, dtype=np.float32))
+        y_parts.append(np.asarray(y_new, dtype=np.float32).ravel())
+
+        X_full = np.vstack(X_parts)
+        y_full = np.concatenate(y_parts)
 
         self._surrogate.fit(X_full, y_full)
         self._X_history.clear()

@@ -13,7 +13,6 @@ import pytest
 
 from aurelius.scoring.oracle import PropertyOracle, get_data_source
 
-
 pytestmark = pytest.mark.slow
 
 

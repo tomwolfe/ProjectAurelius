@@ -358,12 +358,12 @@ class DiscoveryLoop:
         if self.feedback._surrogate is not None:
             # Fitted surrogate — use Expected Improvement
             ei_scores = self.feedback._surrogate.expected_improvement(X_pool)
-            top_indices = np.argsort(ei_scores)[::-1][: self.batch_size]
+            top_indices: list[int] = np.argsort(ei_scores)[::-1][: self.batch_size].tolist()
         else:
             # First batch: random selection
             n = min(self.batch_size, len(valid_candidates))
             indices = self.feedback._rng.choice(len(valid_candidates), size=n, replace=False)
-            top_indices = sorted(indices)
+            top_indices = sorted(indices.tolist())
 
         batch_smiles = [valid_candidates[i] for i in top_indices]
         return top_indices, batch_smiles
