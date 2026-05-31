@@ -187,13 +187,18 @@ def score(
 
 
 @cli.command("train")
-def train() -> None:
-    """Retrain the Oracle's RF model on QM9 HOMO/LUMO data."""
-    from aurelius.scoring.oracle import PropertyOracle
+@click.option("--model-path", default="models/oracle_rf.joblib", show_default=True,
+              help="Path to save the trained RF model (.joblib)")
+def train(model_path: str) -> None:
+    """Retrain the Oracle's RF model on QM9 HOMO/LUMO data.
 
-    oracle = PropertyOracle()
-    oracle.save("oracle_cache.joblib")
-    click.echo("Oracle RF model trained and saved to oracle_cache.joblib")
+    Featurises ~500 QM9 molecules with ECFP4 + RDKit descriptors (2053-dim)
+    and trains a multi-output RandomForestRegressor for HOMO/LUMO prediction.
+    """
+    from aurelius.scoring.oracle import train_oracle_rf
+
+    path = train_oracle_rf(save_path=model_path)
+    click.echo(f"RF model trained and saved to {path}")
 
 
 @cli.command("evaluate")

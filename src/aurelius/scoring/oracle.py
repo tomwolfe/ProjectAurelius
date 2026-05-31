@@ -1,38 +1,56 @@
-"""PropertyOracle — Multi-objective property prediction via fragment-additivity (Group Contribution).
+"""PropertyOracle — Hybrid QSPR oracle: Random Forest (HOMO/LUMO) + Group Contribution (Dielectric/Viscosity).
 
-This module provides a pure, transparent **Fragment-Additivity (Group Contribution)** model
-for predicting electrolyte-relevant properties:
+Architecture
+------------
+A **two-tier hybrid** model for predicting electrolyte-relevant properties:
 
-  1. **HOMO energy** (eV) — oxidative stability
-  2. **LUMO energy** (eV) — SEI formation window
-  3. **Dielectric Constant proxy** (unitless) — salt dissolution capability
-  4. **Viscosity proxy** (unitless) — ion mobility indicator
+  **Tier 1 — Random Forest (HOMO / LUMO)**
+    A Scikit-Learn ``RandomForestRegressor`` trained on the bundled QM9 subset
+    (500 molecules). Featurization uses ECFP4 (Morgan radius=2, 2048 bits)
+    concatenated with five RDKit global descriptors (MW, LogP, TPSA, RingCount,
+    RotatableBonds) → 2053-dim input vector.
 
-All models are linear group-contribution models requiring no training data.
-Fragment contributions are calibrated from literature group-contribution methods
-(Joback-style) and known inductive effects for electrolyte motifs (S, P, F).
+    If the RF weights file (``models/oracle_rf.joblib``) is not found, the
+    oracle transparently falls back to the linear fragment-additivity model
+    for HOMO/LUMO with a logged warning.
+
+  **Tier 2 — Fragment-Additivity GC (Dielectric / Viscosity)**
+    The dielectric proxy and viscosity proxy remain linear group-contribution
+    models (Joback-style) because QM9 does not contain those properties.
+    Anti-gaming diminishing-returns are applied to prevent fragment-stacking.
 
 Usage:
     from aurelius.scoring.oracle import PropertyOracle
 
     oracle = PropertyOracle()
     result = oracle.evaluate("CC(=O)OC1=CC=CC=C1")
-    print(result["homo_eV"])            # e.g. -6.82
-    print(result["lumo_eV"])            # e.g. -0.94
-    print(result["dielectric_proxy"])    # e.g. 2.4
-    print(result["viscosity_proxy"])     # e.g. 1.3
+    print(result["homo_eV"])            # e.g. -6.82  (RF or GC)
+    print(result["lumo_eV"])            # e.g. -0.94  (RF or GC)
+    print(result["dielectric_proxy"])    # e.g. 2.4   (GC + anti-gaming)
+    print(result["viscosity_proxy"])     # e.g. 1.3   (GC + anti-gaming)
+
+Training:
+    aurelius train --model-path models/oracle_rf.joblib
 """
 
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from typing import Any
 
+import joblib
+import numpy as np
 from rdkit import Chem
+from sklearn.ensemble import RandomForestRegressor
 
 logger = logging.getLogger(__name__)
 
-_DATA_SOURCE: str = "pure fragment-additivity (Group Contribution — no training data required)"
+_DATA_SOURCE: str = "pure fragment-additivity (Group Contribution — fallback mode)"
+
+# Default path for the trained RF model
+DEFAULT_RF_MODEL_PATH: str = "models/oracle_rf.joblib"
 
 
 def get_data_source() -> str:
@@ -112,6 +130,33 @@ _GC_BASE_LUMO: float = 2.8
 _GC_BASE_DIELECTRIC: float = 1.9   # ethane ε ≈ 1.9
 _GC_BASE_VISCOSITY: float = 0.1    # ethane is nearly inviscid
 
+# Anti-gaming — diminishing returns for fragment stacking
+# If any fragment appears more than this many times, apply sqrt scaling
+_ANTI_GAMING_MAX_EFFECTIVE: int = 2
+
+def _apply_anti_gaming(counts: dict[str, int]) -> dict[str, int]:
+    """Apply diminishing-returns to fragment counts to prevent stacking.
+
+    For each fragment count > ``_ANTI_GAMING_MAX_EFFECTIVE``, the effective
+    count becomes ``max_effective + sqrt(count - max_effective)``, so that
+    stacking many copies of the same polar group gives sub-linear benefit.
+
+    Args:
+        counts: Raw fragment counts from ``_count_fragments``.
+
+    Returns:
+        Effective fragment counts with diminishing returns applied.
+    """
+    effective: dict[str, int] = {}
+    for name, count in counts.items():
+        if count > _ANTI_GAMING_MAX_EFFECTIVE:
+            effective[name] = int(round(
+                _ANTI_GAMING_MAX_EFFECTIVE + (count - _ANTI_GAMING_MAX_EFFECTIVE) ** 0.5
+            ))
+        else:
+            effective[name] = count
+    return effective
+
 
 def _count_fragments(mol: Chem.Mol) -> dict[str, int]:
     """Count occurrences of each fragment SMARTS pattern in a molecule.
@@ -129,10 +174,77 @@ def _count_fragments(mol: Chem.Mol) -> dict[str, int]:
     return counts
 
 
+def train_oracle_rf(save_path: str = DEFAULT_RF_MODEL_PATH) -> str:
+    """Train a RandomForest regressor for HOMO/LUMO on the bundled QM9 data.
+
+    Featurises each molecule with ``generate_full_feature_vector`` (2048-bit
+    ECFP4 + 5 RDKit descriptors → 2053-dim) and trains a multi-output
+    ``RandomForestRegressor``.
+
+    Args:
+        save_path: Where to persist the trained model via ``joblib.dump``.
+
+    Returns:
+        The absolute path the model was saved to.
+
+    Raises:
+        RuntimeError: If the QM9 data cannot be loaded or featurisation fails
+            for all entries.
+    """
+    from aurelius.data.loaders import load_qm9_homo_lumo_data
+    from aurelius.utils.chem_utils import generate_full_feature_vector
+
+    logger.info("Loading QM9 HOMO/LUMO data...")
+    data = load_qm9_homo_lumo_data()
+
+    X_list: list[np.ndarray] = []
+    y_homo: list[float] = []
+    y_lumo: list[float] = []
+    skipped = 0
+    for smiles, homo, lumo in data:
+        try:
+            fp = generate_full_feature_vector(smiles)
+            X_list.append(fp)
+            y_homo.append(homo)
+            y_lumo.append(lumo)
+        except Exception:
+            skipped += 1
+            continue
+
+    if not X_list:
+        raise RuntimeError("All QM9 molecules failed featurisation — cannot train RF model.")
+    if skipped:
+        logger.warning("Skipped %d/%d molecules that could not be featurised.", skipped, len(data))
+
+    X = np.array(X_list, dtype=np.float32)
+    y = np.column_stack([y_homo, y_lumo])
+
+    logger.info("Training RandomForest on %d samples with %d features...", X.shape[0], X.shape[1])
+    model = RandomForestRegressor(
+        n_estimators=100,
+        max_depth=20,
+        min_samples_leaf=4,
+        n_jobs=-1,
+        random_state=42,
+    )
+    model.fit(X, y)
+
+    save_path = str(save_path)
+    Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, save_path)
+    logger.info("RF model saved to %s", save_path)
+    return save_path
+
+
 def predict_fragment_additivity(
     mol: Chem.Mol,
 ) -> tuple[float, float]:
     """Predict HOMO/LUMO using a fragment-additivity (group contribution) model.
+
+    .. note::
+       This is the **fallback** for when no RF model is available. When the
+       RF model is loaded via ``PropertyOracle(model_path=...)``, HOMO/LUMO
+       predictions come from the Random Forest instead.
 
     HOMO = base_homo + sum(n_i * Δhomo_i)
     LUMO = base_lumo + sum(n_i * Δlumo_i)
@@ -154,18 +266,23 @@ def predict_fragment_additivity(
 
 
 def predict_dielectric_proxy(mol: Chem.Mol) -> float:
-    """Predict a dielectric constant proxy via fragment-additivity.
+    """Predict a dielectric constant proxy via fragment-additivity + anti-gaming.
 
     The proxy represents the effective polarity/dielectric contribution
     of the molecule. Higher values indicate better salt dissolution capability.
+
+    Anti-gaming: if the same highly-polar fragment appears more than
+    ``_ANTI_GAMING_MAX_EFFECTIVE`` times, its effective contribution follows a
+    diminishing-return (sqrt) curve to discourage fragment-stacking.
 
     Returns:
         Unitless dielectric proxy (typically 1–15 for electrolyte solvents).
     """
     counts = _count_fragments(mol)
+    effective = _apply_anti_gaming(counts)
     value = _GC_BASE_DIELECTRIC
     for _smarts, _name, _dh, _dl, dd, _dv in _GC_FRAGMENTS:
-        n = counts.get(_name, 0)
+        n = effective.get(_name, 0)
         value += n * dd
     # TPSA-based correction: molecules with higher polar surface area
     # have higher dielectric constants
@@ -176,18 +293,23 @@ def predict_dielectric_proxy(mol: Chem.Mol) -> float:
 
 
 def predict_viscosity_proxy(mol: Chem.Mol) -> float:
-    """Predict a viscosity proxy via fragment-additivity.
+    """Predict a viscosity proxy via fragment-additivity + anti-gaming.
 
     The proxy represents relative viscosity contribution.
     Higher values indicate higher viscosity (worse ion mobility).
+
+    Anti-gaming: if the same highly-polar fragment appears more than
+    ``_ANTI_GAMING_MAX_EFFECTIVE`` times, its effective contribution follows a
+    diminishing-return (sqrt) curve to discourage fragment-stacking.
 
     Returns:
         Unitless viscosity proxy (typically 0.5–5.0 for electrolyte solvents).
     """
     counts = _count_fragments(mol)
+    effective = _apply_anti_gaming(counts)
     value = _GC_BASE_VISCOSITY
     for _smarts, _name, _dh, _dl, _dd, dv in _GC_FRAGMENTS:
-        n = counts.get(_name, 0)
+        n = effective.get(_name, 0)
         value += n * dv
     # MW correction: larger molecules are more viscous
     from rdkit.Chem import rdMolDescriptors
@@ -200,42 +322,100 @@ def predict_viscosity_proxy(mol: Chem.Mol) -> float:
 
 
 # ---------------------------------------------------------------------------
-# PropertyOracle — Pure Fragment-Additivity Multi-Objective Predictor
+# PropertyOracle — Hybrid RF + GC Multi-Objective Predictor
 # ---------------------------------------------------------------------------
 
 class PropertyOracle:
-    """Multi-objective property oracle using fragment-additivity (no training data).
+    """Multi-objective property oracle using a hybrid RF + GC architecture.
 
     Predicts four electrolyte-relevant properties:
-      - **HOMO energy** (eV) — oxidative stability
-      - **LUMO energy** (eV) — SEI formation window
-      - **Dielectric proxy** — salt dissolution capability
-      - **Viscosity proxy** — ion mobility indicator (higher = worse)
 
-    The model requires zero training data. All predictions are derived from
-    linear group-contribution equations calibrated from literature values.
+      - **HOMO energy** (eV) — Random Forest (QM9-trained) or GC fallback
+      - **LUMO energy** (eV) — Random Forest (QM9-trained) or GC fallback
+      - **Dielectric proxy** — Group Contribution + anti-gaming (always)
+      - **Viscosity proxy** — Group Contribution + anti-gaming (always)
+
+    **Hybrid workflow:**
+
+    1. If a trained RF ``.joblib`` file is found at ``model_path``, it is
+       loaded and used for HOMO/LUMO predictions.  The RF featurises each
+       molecule as ECFP4 + 5 RDKit descriptors (2053-dim).
+    2. If no RF file is found, the oracle falls back to the linear
+       fragment-additivity (GC) model for HOMO/LUMO with a logged warning.
+    3. Dielectric and Viscosity always use the GC model with anti-gaming
+       diminishing-returns applied to prevent fragment-stacking.
+
     Predictions are cached by SMILES string to avoid redundant computation.
 
     Requirements:
-        - ``rdkit`` must be importable
+        - ``rdkit``, ``scikit-learn``, ``numpy``, ``joblib``
     """
 
     _CACHE: dict[str, dict[str, Any]] | None = None
+    _rf_model: RandomForestRegressor | None = None
 
     def __init__(self, model_path: str | None = None) -> None:
         """Initialise the PropertyOracle.
 
+        Attempts to load a pre-trained RF model for HOMO/LUMO prediction.
+        Falls back to pure GC (fragment-additivity) if no model is found.
+
         Args:
-            model_path: Reserved for future compatibility (unused with GC model).
+            model_path: Path to a trained RF ``.joblib`` file. If *None*,
+                defaults to ``DEFAULT_RF_MODEL_PATH`` (``models/oracle_rf.joblib``).
         """
-        pass
+        global _DATA_SOURCE
+        self._rf_model = None
+
+        if model_path is None:
+            model_path = DEFAULT_RF_MODEL_PATH
+
+        if os.path.exists(model_path):
+            try:
+                self._rf_model = joblib.load(model_path)
+                _DATA_SOURCE = (
+                    "hybrid: RF (QM9-trained) for HOMO/LUMO + "
+                    "fragment-additivity GC for dielectric/viscosity"
+                )
+                logger.info("RF model loaded from %s", model_path)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load RF model from %s: %s. Falling back to pure GC.",
+                    model_path, exc,
+                )
+                self._rf_model = None
+        else:
+            logger.warning(
+                "RF model not found at %s. Falling back to pure GC for HOMO/LUMO.",
+                model_path,
+            )
+
+        if self._rf_model is None:
+            _DATA_SOURCE = "pure fragment-additivity (Group Contribution — fallback mode)"
+
+    def _predict_homo_lumo_rf(self, smiles: str) -> tuple[float, float]:
+        """Predict HOMO/LUMO using the loaded Random Forest model.
+
+        Args:
+            smiles: SMILES string.
+
+        Returns:
+            (homo_eV, lumo_eV) tuple.
+        """
+        from aurelius.utils.chem_utils import generate_full_feature_vector
+
+        fp = generate_full_feature_vector(smiles)
+        pred = self._rf_model.predict(fp.reshape(1, -1))[0]  # type: ignore[union-attr]
+        homo = float(np.clip(pred[0], -15.0, 5.0))
+        lumo = float(np.clip(pred[1], -5.0, 10.0))
+        return homo, lumo
 
     def evaluate(self, smiles: str, mol: Chem.Mol | None = None) -> dict[str, Any]:
         """Evaluate a molecule and return predicted properties.
 
-        All four property models (HOMO, LUMO, Dielectric, Viscosity) run
-        simultaneously from the same fragment counts. Results are cached
-        by SMILES string.
+        Uses the RF model for HOMO/LUMO when available (falls back to GC),
+        and always uses GC + anti-gaming for dielectric/viscosity.
+        Results are cached by SMILES string.
 
         Args:
             smiles: Canonical or isomeric SMILES string.
@@ -248,8 +428,8 @@ class PropertyOracle:
               - ``gap_eV`` (float)
               - ``dielectric_proxy`` (float)
               - ``viscosity_proxy`` (float)
-              - ``domain_applicable`` (True — GC handles all chemistry)
-              - ``domain_reason`` (str — always "fragment-additivity model")
+              - ``domain_applicable`` (bool)
+              - ``domain_reason`` (str)
 
         Raises:
             ValueError: If SMILES is invalid.
@@ -262,7 +442,24 @@ class PropertyOracle:
         if mol is None:
             raise ValueError(f"Invalid SMILES: {smiles}")
 
-        homo, lumo = predict_fragment_additivity(mol)
+        # HOMO / LUMO via RF (with GC fallback)
+        if self._rf_model is not None:
+            try:
+                homo, lumo = self._predict_homo_lumo_rf(smiles)
+                domain_reason = (
+                    "RF (QM9-trained) for HOMO/LUMO + "
+                    "fragment-additivity GC for dielectric/viscosity"
+                )
+            except Exception:
+                logger.warning(
+                    "RF prediction failed for %s, falling back to GC.", smiles
+                )
+                homo, lumo = predict_fragment_additivity(mol)
+                domain_reason = "fragment-additivity (GC) fallback for HOMO/LUMO"
+        else:
+            homo, lumo = predict_fragment_additivity(mol)
+            domain_reason = "fragment-additivity (GC) model"
+
         gap = lumo - homo
         dielectric = predict_dielectric_proxy(mol)
         viscosity = predict_viscosity_proxy(mol)
@@ -274,7 +471,7 @@ class PropertyOracle:
             "dielectric_proxy": round(dielectric, 4),
             "viscosity_proxy": round(viscosity, 4),
             "domain_applicable": True,
-            "domain_reason": "fragment-additivity (GC) model — handles all chemistries",
+            "domain_reason": domain_reason,
         }
 
         if self._CACHE is None:
@@ -285,8 +482,9 @@ class PropertyOracle:
     def evaluate_with_ood_penalty(self, smiles: str) -> dict[str, Any]:
         """Evaluate a molecule (backward-compatible wrapper).
 
-        With the pure GC oracle there is no OOD penalty — all molecules
-        are handled by the same model.
+        With the hybrid oracle there is no out-of-distribution penalty —
+        all valid molecules receive a prediction. The ``domain_reason``
+        field indicates whether RF or GC was used.
 
         Args:
             smiles: Canonical SMILES string.
@@ -297,15 +495,14 @@ class PropertyOracle:
         return self.evaluate(smiles)
 
     def save(self, path: str = "oracle_cache.joblib") -> None:
-        """Persist the cache to disk with joblib (no model to save).
+        """Persist the cache to disk with joblib.
 
-        The GC model requires no training, so only the cache is persisted.
+        The RF model weights are saved separately via ``train_oracle_rf()``;
+        only the SMILES cache is persisted here.
 
         Args:
             path: File path for the joblib dump.
         """
-        import joblib
-
         payload: dict[str, Any] = {
             "cache": self._CACHE,
             "data_source": _DATA_SOURCE,
@@ -322,8 +519,6 @@ class PropertyOracle:
         Returns:
             True if cache was loaded successfully, False otherwise.
         """
-        import joblib
-
         try:
             payload = joblib.load(path)
         except (FileNotFoundError, Exception) as exc:
