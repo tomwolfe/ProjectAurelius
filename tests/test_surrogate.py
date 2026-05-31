@@ -1,4 +1,4 @@
-"""Tests for Gaussian Process surrogate and Expected Improvement acquisition."""
+"""Tests for Random Forest surrogate and Expected Improvement acquisition."""
 
 from __future__ import annotations
 

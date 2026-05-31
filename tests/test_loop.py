@@ -2,7 +2,7 @@
 
 Verifies that the DiscoveryLoop properly closes the feedback loop by:
 1. Screening a batch of molecules
-2. Updating the GP surrogate with new observations
+2. Updating the RF surrogate with new observations
 3. Confirming the surrogate's fit() is called with correct numpy arrays
 """
 
@@ -17,7 +17,7 @@ class TestDiscoveryLoopActiveLearning:
     """Tests for the DiscoveryLoop active-learning cycle."""
 
     def test_update_surrogate_called_after_screening(self, tmp_path):
-        """GP surrogate must be retrained with new observations after each batch."""
+        """RF surrogate must be retrained with new observations after each batch."""
         # Create mock pipeline that returns scored results
         mock_pipeline = _make_mock_pipeline()
 
@@ -38,10 +38,10 @@ class TestDiscoveryLoopActiveLearning:
         # Run the loop
         result = loop.execute()
 
-        # The GP surrogate should have been fitted during the loop
+        # The RF surrogate should have been fitted during the loop
         surrogate = loop.feedback._surrogate
-        assert surrogate is not None, "GP surrogate should have been created"
-        assert surrogate._rf is not None, "GP surrogate should have been fitted"
+        assert surrogate is not None, "RF surrogate should have been created"
+        assert surrogate._rf is not None, "RF surrogate should have been fitted"
         assert surrogate._X is not None, "X history should be populated"
         assert surrogate._y is not None, "y history should be populated"
 

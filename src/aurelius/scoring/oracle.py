@@ -186,6 +186,62 @@ def _train_solubility_rf() -> tuple[Any, float, float]:
     return rf, logS_min, logS_max
 
 
+# QM9 only contains elements up to F (atomic numbers 1, 6, 7, 8, 9)
+_QM9_ELEMENTS: set[int] = {1, 6, 7, 8, 9}  # H, C, N, O, F
+
+
+def _compute_qm9_centroid(qm9_data: list[tuple[str, float, float]]) -> np.ndarray:
+    """Compute the mean Morgan fingerprint centroid of the QM9 training set."""
+    fps: list[np.ndarray] = []
+    for smi, _homo, _lumo in qm9_data:
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            continue
+        try:
+            fp = generate_ecfp4_fingerprint(smi).astype(np.float32)
+        except Exception:
+            continue
+        fps.append(fp)
+    if not fps:
+        return np.zeros(2048, dtype=np.float32)
+    return np.mean(fps, axis=0).astype(np.float32)
+
+
+def _domain_applicable(smiles: str) -> tuple[bool, str]:
+    """Check if a molecule falls within the QM9 applicability domain.
+
+    Returns:
+        (is_applicable, reason) tuple.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return False, "Invalid SMILES"
+
+    # Check atom types
+    for a in mol.GetAtoms():
+        if a.GetAtomicNum() not in _QM9_ELEMENTS:
+            return False, f"Contains out-of-domain atom ({a.GetSymbol()}) — QM9 only supports C,H,N,O,F"
+
+    # Check Tanimoto similarity to QM9 centroid
+    centroid = getattr(PropertyOracle, "_qm9_centroid", None)
+    if centroid is not None:
+        from rdkit.Chem import AllChem
+        from rdkit.DataStructs import TanimotoSimilarity
+        from rdkit.DataStructs.cDataStructs import ExplicitBitVect
+
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+        # Convert centroid to ExplicitBitVect for similarity
+        centroid_bv = ExplicitBitVect(2048)
+        for i, v in enumerate(centroid):
+            if v > 0.3:
+                centroid_bv.SetBit(i)
+        sim = TanimotoSimilarity(fp, centroid_bv)
+        if sim < 0.3:
+            return False, f"Low Tanimoto similarity ({sim:.3f}) to QM9 centroid — out of distribution"
+
+    return True, ""
+
+
 def _train_homo_lumo_models() -> tuple[Any, float, float]:
     """Train RandomForest models for HOMO and LUMO prediction on ECFP4 fingerprints.
 
@@ -227,6 +283,13 @@ def _train_homo_lumo_models() -> tuple[Any, float, float]:
     model = MultiOutputRegressor(base, n_jobs=-1)
     model.fit(X, y)
 
+    # Store QM9 centroid fingerprint for domain applicability
+    PropertyOracle._qm9_centroid = _compute_qm9_centroid(qm9_data)
+    logger.info(
+        "PropertyOracle: QM9 centroid computed (%d nonzero bits approx).",
+        int(np.sum(PropertyOracle._qm9_centroid > 0.3)),
+    )
+
     gaps = y[:, 1] - y[:, 0]
     gap_min = float(gaps.min())
     gap_max = float(gaps.max())
@@ -257,9 +320,10 @@ class PropertyOracle:
     """
 
     _model: tuple[Any, float, float] | None = None
-    _CACHE: dict[str, dict[str, float]] | None = None
+    _CACHE: dict[str, dict[str, Any]] | None = None
     _lumo_rf: tuple[Any, float, float] | None = None
     _solubility_rf: tuple[Any, float, float] | None = None
+    _qm9_centroid: np.ndarray | None = None
 
     def __init__(self, model_path: str | None = None) -> None:
         """Initialise the PropertyOracle.
@@ -352,17 +416,19 @@ class PropertyOracle:
             "score_eV": round(score_eV, 2),
         }
 
-    def evaluate(self, smiles: str) -> dict[str, float]:
+    def evaluate(self, smiles: str) -> dict[str, Any]:
         """Evaluate a molecule and return predicted HOMO/LUMO properties.
 
         Results are cached by SMILES string to avoid redundant computation.
+        Also checks QM9 domain applicability.
 
         Args:
             smiles: Canonical or isomeric SMILES string.
 
         Returns:
             Dictionary with keys ``homo_eV``, ``lumo_eV``, ``gap_eV``,
-            and ``score_eV``.
+            ``score_eV``, ``domain_applicable`` (bool), and
+            ``domain_reason`` (str).
 
         Raises:
             ValueError: If SMILES is invalid.
@@ -372,10 +438,61 @@ class PropertyOracle:
 
         result = self._predict(smiles)
 
+        # Domain applicability
+        is_applicable, reason = _domain_applicable(smiles)
+        result["domain_applicable"] = is_applicable
+        result["domain_reason"] = reason
+
         if self._CACHE is None:
             self._CACHE = {}
         self._CACHE[smiles] = result
         return result
+
+    def save(self, path: str = "oracle_cache.joblib") -> None:
+        """Persist all trained models to disk with joblib.
+
+        Args:
+            path: File path for the joblib dump.
+        """
+        import joblib
+
+        payload: dict[str, Any] = {
+            "model": PropertyOracle._model,
+            "lumo_rf": PropertyOracle._lumo_rf,
+            "solubility_rf": PropertyOracle._solubility_rf,
+            "qm9_centroid": PropertyOracle._qm9_centroid,
+            "data_source": _DATA_SOURCE,
+        }
+        joblib.dump(payload, path)
+        logger.info("PropertyOracle: models saved to %s", path)
+
+    def load(self, path: str = "oracle_cache.joblib") -> bool:
+        """Load pre-trained models from a joblib cache file.
+
+        Args:
+            path: File path to the joblib dump.
+
+        Returns:
+            True if models were loaded successfully, False otherwise.
+        """
+        import joblib
+
+        try:
+            payload = joblib.load(path)
+        except (FileNotFoundError, Exception) as exc:
+            logger.debug("PropertyOracle: no cached oracle at %s (%s)", path, exc)
+            return False
+
+        PropertyOracle._model = payload.get("model")
+        PropertyOracle._lumo_rf = payload.get("lumo_rf")
+        PropertyOracle._solubility_rf = payload.get("solubility_rf")
+        PropertyOracle._qm9_centroid = payload.get("qm9_centroid")
+
+        global _DATA_SOURCE
+        _DATA_SOURCE = payload.get("data_source", "loaded from cache")
+
+        logger.info("PropertyOracle: models loaded from %s", path)
+        return True
 
     def clear_cache(self) -> None:
         """Clear the SMILES->properties cache."""

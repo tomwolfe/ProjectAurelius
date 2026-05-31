@@ -19,7 +19,7 @@ import numpy as np
 from aurelius.config import AureliusConfig, apply_global_config
 from aurelius.scoring.oracle import PropertyOracle
 from aurelius.screening.tier1 import Filter
-from aurelius.types import AureliusScore
+from aurelius.utils.dependencies import HAS_RDKIT
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +65,13 @@ class AureliusPipeline:
                 logger.warning("Tier 1 (Filter): DISABLED - %s", exc)
                 self._filter = None
 
-        # Phase 2: Oracle for property evaluation
+        # Phase 2: Oracle for property evaluation (with cache check)
         self._oracle = PropertyOracle()
+        oracle_cache = "oracle_cache.joblib"
+        if not self._oracle.load(oracle_cache):
+            logger.info("Oracle (PropertyOracle): no cache found — training from scratch.")
+        else:
+            logger.info("Oracle (PropertyOracle): loaded from cache (%s).", oracle_cache)
         logger.info("Oracle (PropertyOracle): ENABLED")
 
     def _generate_failed_run(self, smiles: str, reason: str, **kwargs: Any) -> dict[str, Any]:
@@ -143,6 +148,8 @@ class AureliusPipeline:
 
             homo_eV = oracle_result.get("homo_eV", -99.0)
             lumo_eV = oracle_result.get("lumo_eV", -99.0)
+            domain_applicable = oracle_result.get("domain_applicable", True)
+            domain_reason = oracle_result.get("domain_reason", "")
 
             t2_result = {
                 "homo_eV": homo_eV,
@@ -151,6 +158,8 @@ class AureliusPipeline:
                 "score_eV": oracle_result.get("score_eV", 0.0),
                 "lumo_score": lumo_score,
                 "solubility_score": solubility_score,
+                "domain_applicable": domain_applicable,
+                "domain_reason": domain_reason,
             }
             results["tier2"] = t2_result
             logger.info(
@@ -164,7 +173,10 @@ class AureliusPipeline:
                 solubility_score,
             )
 
-        score = self._compute_score(lumo_score, solubility_score, homo_eV, lumo_eV)
+        score = self._compute_score(
+            lumo_score, solubility_score, homo_eV, lumo_eV,
+            smiles=smiles, domain_applicable=domain_applicable,
+        )
         results["score"] = score
 
         logger.debug("Scorecard:\n%s", self._format_score(score))
@@ -177,6 +189,48 @@ class AureliusPipeline:
             logger.info("Performance: total=%.1fms | %s", total_ms, " | ".join(timing_lines))
 
         return results
+
+    @staticmethod
+    def _compute_sa_score(smiles: str) -> float:
+        """Compute synthetic accessibility score in [0, 1] (1 = easy to synthesise).
+
+        Uses RDKit's sascorer if available, otherwise falls back to a
+        fragment-complexity heuristic based on rings, stereocenters,
+        and rotatable bonds.
+
+        Returns:
+            0.0–1.0 where 1.0 = trivially synthesizable.
+        """
+        if not HAS_RDKIT:
+            return 1.0
+        from rdkit import Chem
+
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return 1.0
+
+        # Try RDKit Contrib sascorer first
+        try:
+            from rdkit.Contrib.SA_Score import sascorer  # type: ignore[import-not-found]
+
+            raw = sascorer.calculateScore(mol)
+            # sascorer returns ~1 (easy) to ~10 (hard); map to [0, 1]
+            return max(0.0, 1.0 - (raw - 1.0) / 9.0)
+        except ImportError:
+            pass
+
+        # Fallback heuristic: penalize structural complexity
+        from rdkit.Chem import rdMolDescriptors
+
+        n_rings = rdMolDescriptors.CalcNumRings(mol)
+        n_rot = rdMolDescriptors.CalcNumRotatableBonds(mol)
+        n_stereo = len(Chem.FindMolChiralCenters(mol, includeUnassigned=True))
+        n_het = rdMolDescriptors.CalcNumHeterocycles(mol)
+
+        # Heuristic: fewer rings, rotors, stereocenters, and heterocycles = easier
+        complexity = n_rings * 0.15 + n_rot * 0.05 + n_stereo * 0.2 + n_het * 0.1
+        raw = min(complexity, 5.0) / 5.0  # normalize to [0, 1]
+        return max(0.0, 1.0 - raw)
 
     @staticmethod
     def _gaussian_lumo(lumo_eV: float) -> float:
@@ -202,6 +256,8 @@ class AureliusPipeline:
         solubility_score: float,
         homo_eV: float = -99.0,
         lumo_eV: float = -99.0,
+        smiles: str | None = None,
+        domain_applicable: bool = True,
     ) -> dict[str, Any]:
         """Compute the final Aurelius Score using Gaussian penalty approach.
 
@@ -209,15 +265,18 @@ class AureliusPipeline:
           - LUMO Gaussian reward centered at -1.0 eV, sigma=0.75 (SEI formation)
           - HOMO sigmoid penalty for oxidative stability (threshold -6.0 eV)
           - Solubility as a soft constraint (multiplicative, not linear)
+          - Synthetic accessibility penalty for novel but synthesisable molecules
+          - Domain applicability penalty for out-of-QM9-distribution molecules
 
-        The final score is in [0, 100] for backward compatibility.
+        The final score is in [0, 100].
 
         Args:
-            lumo_score: Normalized LUMO score from oracle (0-100), kept for
-                backward compatibility in output dict.
+            lumo_score: Normalized LUMO score from oracle (0-100).
             solubility_score: Normalized solubility score from oracle (0-100).
             homo_eV: Predicted HOMO energy in eV.
             lumo_eV: Predicted LUMO energy in eV.
+            smiles: Optional SMILES for synthetic accessibility penalty.
+            domain_applicable: Whether molecule is within QM9 applicability domain.
 
         Returns:
             Dict with ``total_score``, ``lumo_score``, ``solubility_score``,
@@ -230,6 +289,16 @@ class AureliusPipeline:
 
         sol_factor = 0.3 + 0.7 * (solubility_score / 100.0)
         total_score = 100.0 * raw * sol_factor
+
+        # SA penalty — penalise molecules that are impossible to synthesise
+        if smiles is not None:
+            sa = self._compute_sa_score(smiles)
+            total_score *= sa
+
+        # Domain applicability penalty — low confidence for OOD molecules
+        if not domain_applicable:
+            total_score *= 0.5
+
         total_score = float(np.clip(total_score, 0.0, 100.0))
 
         is_viable = total_score >= 50.0

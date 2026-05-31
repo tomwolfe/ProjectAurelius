@@ -24,13 +24,8 @@ import numpy as np
 from aurelius.agent import MutationEngine
 from aurelius.agent.loop import DiscoveryLoop
 from aurelius.agent.reporting import (
-    generate_chemical_insights,
-    generate_discoveries_csv,
     generate_discoveries_sdf,
-    generate_discovery_results,
-    generate_manifest,
-    generate_screening_statistics,
-    write_top_discoveries,
+    generate_run_summary,
 )
 from aurelius.agent.state import CheckpointManager
 from aurelius.pipeline import AureliusPipeline
@@ -149,12 +144,7 @@ def run_screening(agent_cfg: AgentConfig, checkpoint: CheckpointManager) -> None
     discoveries = results["discoveries"]
     convergence = loop.convergence  # type: ignore[union-attr]
 
-    generate_discovery_results(all_results)
-    write_top_discoveries(discoveries)
-    generate_screening_statistics(convergence, all_results)
-    generate_chemical_insights(all_results, discoveries)
-    generate_manifest(convergence, discoveries, all_results)
-    generate_discoveries_csv(discoveries, pipeline=pipeline)
+    generate_run_summary(convergence, all_results, discoveries)
     generate_discoveries_sdf(discoveries)
     checkpoint.save()
 
@@ -168,13 +158,9 @@ def run_screening(agent_cfg: AgentConfig, checkpoint: CheckpointManager) -> None
     print(f"  Invalid discarded:  {results['total_invalid']}")
     print(f"  Wall time:          {time.time() - wall_start:.0f}s")
     print("\n  Output files:")
-    print("    - discovery_results_final.json")
-    print("    - top_discoveries.smi")
-    print("    - screening_statistics.md")
-    print("    - chemical_insights.md")
-    print("    - agent_discovery_manifest.json")
+    print("    - discoveries.sdf")
+    print("    - run_summary.json")
     print("    - agent_state.json")
-    print("    - mutation_rationale.md")
     print("    - errors.log")
     print()
 

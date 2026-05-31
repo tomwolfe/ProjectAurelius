@@ -136,8 +136,9 @@ def _mutate_atom(selfies_str: str, rng: np.random.Generator) -> str | None:
     idx = rng.integers(0, len(tokens))
     current_token = tokens[idx]
 
-    # Get all valid atom tokens except the current one
-    other_atoms = [t for t in tokens if t != current_token]
+    # Sample replacement from the full SELFIES alphabet to explore new chemistry
+    alphabet = sorted(sf.get_semantic_robust_alphabet())
+    other_atoms = [t for t in alphabet if t != current_token]
     if not other_atoms:
         return None
 
@@ -170,14 +171,15 @@ def _mutate_bond(selfies_str: str, rng: np.random.Generator) -> str | None:
         logger.debug("SELFIES split failed: %s", exc)
         return None
 
-    bond_tokens = [t for t in tokens if t in tokens]
-    if not bond_tokens:
+    if len(tokens) < 2:
         return None
 
-    idx = rng.integers(0, len(bond_tokens))
-    current = bond_tokens[idx]
+    idx = rng.integers(0, len(tokens))
+    current = tokens[idx]
 
-    other_bonds = [b for b in tokens if b != current]
+    # Sample replacement from the full SELFIES alphabet to explore new bond types
+    alphabet = sorted(sf.get_semantic_robust_alphabet())
+    other_bonds = [t for t in alphabet if t != current]
     if not other_bonds:
         return None
 
@@ -413,6 +415,13 @@ class MutationEngine:
             operation = self._rng.choice(operations)
             candidate = _apply_mutation(operation, selfies_str, self._rng)
             if candidate is not None:
+                mol = Chem.MolFromSmiles(candidate)
+                if mol is None:
+                    continue
+                try:
+                    Chem.SanitizeMol(mol)
+                except Exception:
+                    continue
                 generated.append(candidate)
 
         return generated
@@ -478,7 +487,7 @@ class MutationEngine:
         """Generate a large pool of candidate molecules from the seed pool.
 
         This method is the bridge between the mutation engine and the
-        Gaussian Process surrogate: it produces ``n_candidates`` unique
+        Random Forest surrogate: it produces ``n_candidates`` unique
         molecules that the Bayesian optimiser will later score via
         Expected Improvement.
 

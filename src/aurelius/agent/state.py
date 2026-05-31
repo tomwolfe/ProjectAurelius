@@ -466,7 +466,7 @@ class FeedbackAdapter:
         self._surrogate.fit(X, y)
 
     def update(self, X_new: np.ndarray[Any, Any], y_new: np.ndarray[Any, Any]) -> None:
-        """Retrain the GP surrogate with newly screened data.
+        """Retrain the RF surrogate with newly screened data.
 
         Incorporates any previously accumulated history from individual
         ``record()`` calls.

@@ -153,7 +153,6 @@ def _perform_upload(model_dir: str, repo_id: str, task: str, commit_message: str
         sys.exit(1)
 
     task_descriptions = {
-        "tier0": "Tier 0 MPNN Activation Energy Predictor",
         "esol": "Tier 1 ESOL Solubility Filter",
         "qm9": "Tier 1 QM9 Energy Filter",
     }
@@ -172,7 +171,7 @@ screening pipeline for battery electrolyte discovery.
 ## Training Details
 
 - **Framework:** PyTorch
-- **Dataset:** {task if task != "tier0" else "Synthetic (RDKit + Arrhenius shifts)"}
+- **Dataset:** {task}
 - **License:** MIT
 
 ## Usage

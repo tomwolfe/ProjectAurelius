@@ -1,25 +1,18 @@
-"""Tier 1: Deterministic structural-viability filter.
+"""Tier 1: Electrolyte Viability Filter.
 
-This module replaces the former MLX-NA neural-filter with a fast,
-deterministic screening step based on well-established cheminformatics
-criteria:
+This module provides a fast, deterministic screening step based on
+electrolyte-specific viability criteria for battery discovery:
 
-1. **Lipinski Rule-of-5** (Lipinski et al., 2001) — a simple heuristic
-   that flags molecules with reasonable MW, logP, H-bond donors/acceptors.
-
-2. **Synthetic complexity proxy** — number of rings, rotatable bonds,
-   and stereocenters are used as a fast proxy for synthetic accessibility.
-   Molecules with too many (>5) rings or (>10) rotatable bonds are
-   flagged as hard-to-synthesise.
+1. **MW < 300 Da** — Electrolyte solvents and additives are small molecules.
+2. **H-Bond Donors == 0** — Protic HBDs cause parasitic reactions with
+   alkali-metal anodes (Li, Na), leading to SEI instability.
+3. **Rotatable Bonds <= 6** — conformational rigidity improves SEI
+   packing and reductive stability.
+4. **At least one H-Bond Acceptor (O, N, F)** — required for Li+/Na+
+   ion solvation.
 
 Together these provide a fast, interpretable gate that eliminates
-structurally implausible or overly exotic candidates before the
-expensive Oracle evaluation step.
-
-Battery electrolytes are small, polar molecules that solvate Li+/Na+ ions
-and form a stable SEI layer.  The Lipinski rules, while originally
-designed for oral drugs, serve as a useful first-pass filter: electrolyte
-candidates are generally of low molecular weight and moderate polarity.
+chemically unsuitable candidates before the expensive Oracle step.
 
 Usage:
     from aurelius.screening.tier1 import Filter
@@ -35,23 +28,20 @@ import time
 from typing import Any
 
 from rdkit import Chem
-from rdkit.Chem import Crippen, rdMolDescriptors
+from rdkit.Chem import rdMolDescriptors
 
 
 class Filter:
-    """Deterministic structural-viability filter for battery electrolytes.
+    """Deterministic electrolyte-viability filter.
 
     No model training or weight loading occurs — all criteria are
     computed directly from the molecular graph using RDKit.
 
     Screening criteria:
-        - Lipinski Rule-of-5:
-            * MW <= 500
-            * logP <= 5.0
-            * H-bond donors <= 5
-            * H-bond acceptors <= 10
-        - Ring count <= 5 (synthetic complexity proxy)
-        - Rotatable bonds <= 10 (conformational flexibility proxy)
+        - MW < 300 Da (small-molecule electrolyte)
+        - H-Bond Donors == 0 (no protic H for reductive stability)
+        - Rotatable Bonds <= 6 (conformational rigidity for SEI)
+        - At least one H-Bond Acceptor (O, N, F) for ion solvation
 
     A molecule passes only if **all** criteria are met.
 
@@ -64,11 +54,14 @@ class Filter:
 
     __slots__ = ()
 
+    # Electrolyte-relevant heteroatoms for HBA count
+    _HBA_ELEMENTS = {7, 8, 9}  # N, O, F atomic numbers
+
     def __init__(self) -> None:
         pass
 
     def screen_molecule(self, smiles: str) -> dict[str, Any]:
-        """Screen a single molecule for structural viability.
+        """Screen a single molecule for electrolyte viability.
 
         Args:
             smiles: SMILES string of the molecule.
@@ -76,10 +69,8 @@ class Filter:
         Returns:
             Dict with keys:
                 - ``is_viable`` (bool): True if molecule passes all gates.
-                - ``lipinski_violations`` (list[str]): Reason strings for
-                  any Lipinski rule violations.
-                - ``complexity_flags`` (list[str]): Structural complexity
-                  warnings.
+                - ``electrolyte_violations`` (list[str]): Reason strings for
+                  any electrolyte rule violations.
                 - ``inference_time_ms`` (float): Wall-clock time in ms.
 
         Raises:
@@ -97,36 +88,30 @@ class Filter:
             raise ValueError(f"Cannot sanitise molecule from SMILES: {smiles}") from exc
 
         violations: list[str] = []
-        complexity_flags: list[str] = []
 
         mw = rdMolDescriptors.CalcExactMolWt(mol)
-        logp = Crippen.MolLogP(mol)
         h_donors = rdMolDescriptors.CalcNumHBD(mol)
-        h_acceptors = rdMolDescriptors.CalcNumHBA(mol)
-        n_rings = rdMolDescriptors.CalcNumRings(mol)
         n_rotatable = rdMolDescriptors.CalcNumRotatableBonds(mol)
 
-        if mw > 500:
-            violations.append(f"MW too high ({mw:.1f} > 500)")
-        if logp > 5.0:
-            violations.append(f"logP too high ({logp:.1f} > 5.0)")
-        if h_donors > 5:
-            violations.append(f"H-bond donors too high ({h_donors} > 5)")
-        if h_acceptors > 10:
-            violations.append(f"H-bond acceptors too high ({h_acceptors} > 10)")
-        if n_rings > 5:
-            complexity_flags.append(f"Too many rings ({n_rings} > 5)")
-        if n_rotatable > 10:
-            complexity_flags.append(f"Too many rotatable bonds ({n_rotatable} > 10)")
+        # Count HBA by specific heteroatoms relevant to ion solvation
+        hba_count = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() in self._HBA_ELEMENTS)
 
-        is_viable = len(violations) == 0 and len(complexity_flags) == 0
+        if mw >= 300:
+            violations.append(f"MW too high ({mw:.1f} >= 300)")
+        if h_donors > 0:
+            violations.append(f"H-bond donors present ({h_donors} > 0) — parasitic SEI reactions")
+        if n_rotatable > 6:
+            violations.append(f"Too many rotatable bonds ({n_rotatable} > 6)")
+        if hba_count < 1:
+            violations.append("No H-bond acceptors (O, N, or F) — insufficient ion solvation")
+
+        is_viable = len(violations) == 0
 
         elapsed_ms = (time.perf_counter() - start) * 1000
 
         return {
             "is_viable": is_viable,
-            "lipinski_violations": violations,
-            "complexity_flags": complexity_flags,
+            "electrolyte_violations": violations,
             "inference_time_ms": round(elapsed_ms, 3),
         }
 

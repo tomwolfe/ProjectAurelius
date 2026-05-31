@@ -74,6 +74,12 @@ class RandomForestSurrogate:
         Expected Improvement favours candidates that either have high
         predicted mean or high predictive uncertainty.
 
+        Inter-tree variance from the Random Forest's ensemble of decision
+        trees is used as a proxy for epistemic uncertainty in the EI
+        calculation.  This avoids the matrix-factorisation overhead of
+        a full Gaussian Process while providing comparable exploration
+        behaviour.
+
         Args:
             X_candidates: 2-D array of shape (n_candidates, n_features).
 

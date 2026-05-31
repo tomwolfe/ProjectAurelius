@@ -1,4 +1,4 @@
-"""Tests for Tier 1 Filter (deterministic structural-viability filter)."""
+"""Tests for Tier 1 Electrolyte Viability Filter."""
 
 from __future__ import annotations
 
@@ -18,8 +18,7 @@ class TestFilter:
         result = self.filter.screen_molecule("CC(=O)OC1=CC(=O)O1")
         assert isinstance(result, dict)
         assert "is_viable" in result
-        assert "lipinski_violations" in result
-        assert "complexity_flags" in result
+        assert "electrolyte_violations" in result
         assert "inference_time_ms" in result
 
     def test_deterministic_output_same_smiles(self):
@@ -28,7 +27,7 @@ class TestFilter:
         smiles = "CC(=O)OC1=CC(=O)O1"
         results = [self.filter.screen_molecule(smiles) for _ in range(5)]
         assert all(r["is_viable"] == results[0]["is_viable"] for r in results)
-        assert all(r["lipinski_violations"] == results[0]["lipinski_violations"] for r in results)
+        assert all(r["electrolyte_violations"] == results[0]["electrolyte_violations"] for r in results)
 
     def test_different_smiles_may_differ(self):
         if not HAS_RDKIT:
@@ -66,16 +65,24 @@ class TestFilter:
         result = Filter.is_viable_smiles("CCO")
         assert isinstance(result, bool)
 
-    def test_small_molecule_viable(self):
+    def test_ethanol_fails_hbd(self):
+        """Ethanol (CCO) has 1 H-bond donor (OH) — must fail electrolyte filter."""
         if not HAS_RDKIT:
             pytest.skip("RDKit is required")
         result = self.filter.screen_molecule("CCO")
+        assert result["is_viable"] is False
+        assert any("H-bond donors present" in v for v in result["electrolyte_violations"])
+
+    def test_dmc_passes(self):
+        """Dimethyl carbonate (COC(=O)OC) has MW=90, HBD=0, rot=2, HBA=3 — must pass."""
+        if not HAS_RDKIT:
+            pytest.skip("RDKit is required")
+        result = self.filter.screen_molecule("COC(=O)OC")
         assert result["is_viable"] is True
-        assert len(result["lipinski_violations"]) == 0
+        assert len(result["electrolyte_violations"]) == 0
 
     def test_large_molecule_not_viable(self):
         if not HAS_RDKIT:
             pytest.skip("RDKit is required")
         result = self.filter.screen_molecule("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")
-        if result["is_viable"]:
-            pytest.skip("Large molecule unexpectedly viable (may pass if MW still within bounds)")
+        assert result["is_viable"] is False

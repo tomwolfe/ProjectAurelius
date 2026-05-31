@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 import sys
 from typing import Any
 
@@ -42,7 +43,6 @@ def _init_pipeline_from_ctx(ctx: click.Context) -> None:
     matched but before the command body runs.
     """
     pipeline: AureliusPipeline = ctx.ensure_object(dict)["pipeline"]
-    config: AureliusConfig = ctx.ensure_object(dict)["config"]
     pipeline.initialize()
 
 
@@ -290,10 +290,6 @@ def train(
     config: AureliusConfig,
 ) -> None:
     """Train a model on a dataset (Tier 1 MLP for ESOL/QM9)."""
-    if dataset == "tier0":
-        click.echo("[ERROR] Tier 0 has been removed. Use --task tier1 only.", err=True)
-        sys.exit(1)
-
     _run_tier1_train(dataset, epochs, batch_size, learning_rate, csv_path)
 
 
@@ -326,7 +322,7 @@ def validate(smiles: str = "CC(=O)OC1=CC(=O)O1", pipeline: Any = None, config: A
 def status(pipeline: AureliusPipeline, config: AureliusConfig) -> None:
     """Show pipeline status and memory partition."""
     click.echo("\nAurelius v9.0 Configuration:")
-    click.echo(f"  Pipeline initialised: True")
+    click.echo("  Pipeline initialised: True")
 
 
 @cli.command("benchmark")
@@ -355,7 +351,7 @@ def benchmark(
 @click.option("--model-dir", required=True, help="Local directory containing model files to upload")
 @click.option("--repo-id", required=True, help="HuggingFace repository ID (e.g., 'user/repo-name')")
 @click.option(
-    "--task", type=click.Choice(["tier0", "esol", "qm9"]), default="tier0", help="Model task type (default: tier0)"
+    "--task", type=click.Choice(["esol", "qm9"]), default="esol", help="Model task type (default: esol)"
 )
 @click.option("--private/--public", default=True, help="Make repository private (default: private)")
 @click.option("--commit-message", default="Upload model via Aurelius CLI", help="Commit message for the upload")
