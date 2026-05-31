@@ -22,7 +22,7 @@ aurelius init                    # Initialize pipeline
 aurelius doctor                  # Validate dependencies
 aurelius screen "CC(=O)OC1=CC=CC=C1"  # Screen a molecule
 aurelius batch examples/molecules.smi --output results.json  # Batch screen
-aurelius train --dataset qm9 --epochs 300  # Train surrogate
+aurelius train                  # Retrain Oracle RF model
 aurelius agent --max-generations 50  # Run autonomous discovery loop
 ```
 
@@ -51,9 +51,6 @@ src/aurelius/
 │   └── surrogate.py        # Random Forest NWEI surrogate
 ├── cli_scripts/
 │   ├── agent.py            # Autonomous screening agent
-│   ├── download_data.py    # Download QM9 from HF Hub
-│   ├── prep_discovery.py   # Train all models for discovery
-│   ├── train_tier1.py      # Train on QM9
 │   └── validate_physics.py # Physics validation
 ├── scoring/
 │   └── oracle.py           # RF-based HOMO/LUMO oracle

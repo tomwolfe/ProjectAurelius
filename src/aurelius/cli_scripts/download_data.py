@@ -16,15 +16,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from typing import Any
-
-import numpy as np
-
-from aurelius.data.loaders import load_qm9_lumo_data
-
-__all__ = [
-    "load_qm9_lumo_data",
-]
 
 
 def parse_args() -> argparse.Namespace:
@@ -77,15 +68,12 @@ def download_qm9(output_dir: str) -> str:
     os.makedirs(output_path, exist_ok=True)
 
     try:
-        # Verified dataset: maastrichtuniversity/qm9
         ds = load_dataset("maastrichtuniversity/qm9", split="train")
     except ValueError as e:
         print(f"[download_data] ERROR: Invalid dataset ID (ValueError): {e}")
-        print("[download_data] Check that 'maastrichtuniversity/qm9' exists on HuggingFace Hub.")
         sys.exit(1)
     except ConnectionError as e:
         print(f"[download_data] ERROR: Network error: {e}")
-        print("[download_data] Check your network connection and try again.")
         sys.exit(1)
     except (ImportError, RuntimeError, OSError) as e:
         print(f"[download_data] ERROR loading QM9: {e}")
@@ -93,7 +81,6 @@ def download_qm9(output_dir: str) -> str:
 
     print(f"[download_data] Loaded {len(ds)} molecules from QM9")
 
-    # Save as CSV for offline use
     csv_path = os.path.join(output_path, "qm9.csv")
     with open(csv_path, "w") as f:
         f.write("smiles,U0\n")
@@ -102,8 +89,6 @@ def download_qm9(output_dir: str) -> str:
             f.write(f"{item['smiles']},{u0}\n")
 
     print(f"[download_data] QM9 saved to: {csv_path}")
-    print(f"[download_data] Use with: python scripts/train_tier1.py --dataset qm9 --csv-path {csv_path}")
-
     return csv_path
 
 
@@ -117,48 +102,6 @@ def main() -> None:
     download_qm9(output_dir)
 
     print("\n[download_data] Dataset download complete!")
-
-
-__all__ = [
-    "load_qm9_lumo_data",
-]
-
-
-def load_qm9_data() -> tuple[Any, Any, list[str]]:
-    """Load the QM9 dataset (Ramakrishnan et al. 2014).
-
-    The QM9 dataset contains 134,887 small molecules with DFT-computed
-    quantum mechanical properties. This function uses the atomization
-    energy (U0) property.
-
-    Fallback chain:
-    1. HuggingFace Hub (verified: maastrichtuniversity/qm9)
-    2. ValueError/ConnectionError handling with specific exceptions
-
-    Returns:
-        Tuple of (fingerprints, U0_labels, smiles_list).
-
-    Reference:
-        Ramakrishnan, R. et al. "Quantum Chemistry Structures and
-        Properties of 134 Kilo Molecules." Sci. Data 2014, 1, 140035.
-        DOI: 10.1038/sdata.2014.35
-    """
-    from aurelius.data.loaders import load_qm9_lumo_data as _load_qm9
-
-    data = _load_qm9()
-    smiles_list = [d["smiles"] for d in data]
-    u0_values = np.array([d["U0"] for d in data], dtype=np.float32)
-    # Generate fingerprints for all molecules
-    from aurelius.data.loaders import generate_ecfp4_fingerprint
-
-    X = np.zeros((len(data), 2048), dtype=np.float32)
-    for i, smi in enumerate(smiles_list):
-        X[i] = generate_ecfp4_fingerprint(smi)
-    # Normalize U0 to [0, 1]
-    u0_min, u0_max = float(np.min(u0_values)), float(np.max(u0_values))
-    u0_range = u0_max - u0_min
-    y = np.clip((u0_values - u0_min) / (u0_range + 1e-12), 0.0, 1.0)
-    return X, y, smiles_list
 
 
 if __name__ == "__main__":

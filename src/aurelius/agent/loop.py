@@ -18,6 +18,8 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
 from rdkit.DataStructs import BulkTanimotoSimilarity
+from scipy.spatial.distance import jaccard
+from sklearn.cluster import MiniBatchKMeans
 
 from aurelius.agent.state import ConvergenceChecker, FeedbackAdapter
 from aurelius.utils.chem_utils import _is_valid_mol, _safe_mol_from_smiles
@@ -425,8 +427,6 @@ class DiscoveryLoop:
         if n_viable < 2:
             return 0
 
-        from sklearn.cluster import MiniBatchKMeans
-
         X = self._featurise_molecules(viable_smiles)
         n_clusters = min(10, n_viable)
         kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42, n_init="auto")
@@ -443,8 +443,6 @@ class DiscoveryLoop:
             is_new = True
             for p in self._prev_centroids:
                 binary_p = (p[:2048] > 0.5).astype(np.uint8)
-                from scipy.spatial.distance import jaccard
-
                 dist = jaccard(binary_c, binary_p)
                 if dist < 0.4:
                     is_new = False

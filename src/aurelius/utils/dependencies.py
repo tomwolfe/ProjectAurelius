@@ -1,264 +1,37 @@
 """Centralized dependency detection for Project Aurelius.
 
-Provides a single source of truth for framework availability
-checks (PyTorch, RDKit, HuggingFace), version validation, and
-structured fallback routing.
-
-Design principles:
-    - Single point of truth: HAS_TORCH, HAS_RDKIT are defined once.
-    - Version-aware: validates minimum versions via importlib.metadata.
-    - Logging-first: logs INFO/WARNING when fallbacks activate.
-
-Usage:
-    >>> from aurelius.utils.dependencies import HAS_TORCH
-    >>> if HAS_TORCH:
-    ...     import torch
-    >>>
-    >>> from aurelius.utils.dependencies import check_framework, report_status
-    >>> status = report_status()
+Provides simple boolean availability flags for optional frameworks.
 """
 
 from __future__ import annotations
 
-import logging
-from typing import Any
+HAS_TORCH: bool = False
+HAS_RDKIT: bool = False
+HAS_HF_HUB: bool = False
+HAS_DATASETS: bool = False
 
-logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Centralized framework detection
-# ---------------------------------------------------------------------------
-
-# PyTorch detection
 try:
-    import torch as _torch  # noqa: F401
+    import torch  # noqa: F401
 
-    _HAS_TORCH = True
-    _TORCH_VERSION: str | None = None
-    try:
-        from importlib.metadata import version as _pkg_version
-
-        _TORCH_VERSION = _pkg_version("torch")
-    except Exception:
-        _TORCH_VERSION = "unknown"
+    HAS_TORCH = True
 except ImportError:
-    _HAS_TORCH = False
-    _TORCH_VERSION = None
-    _torch = None  # type: ignore[assignment, unused-ignore]
+    pass
 
-# RDKit detection
 try:
-    from rdkit import Chem as _rdkit_chem  # noqa: F401, N813
+    from rdkit import Chem  # noqa: F401
 
-    _HAS_RDKIT = True
-    _RDKIT_VERSION: str | None = None
-    try:
-        from importlib.metadata import version as _pkg_version
-
-        _RDKIT_VERSION = _pkg_version("rdkit")
-    except Exception:
-        _RDKIT_VERSION = "unknown"
+    HAS_RDKIT = True
 except ImportError:
-    _HAS_RDKIT = False
-    _RDKIT_VERSION = None
-    _rdkit_chem = None  # type: ignore[assignment, unused-ignore]
+    pass
 
-# HuggingFace Hub detection
 try:
-    __import__("huggingface_hub")  # noqa: F401
-    _HAS_HF_HUB = True
-    _HF_HUB_VERSION: str | None = None
-    try:
-        from importlib.metadata import version as _pkg_version
-
-        _HF_HUB_VERSION = _pkg_version("huggingface-hub")
-    except Exception:
-        _HF_HUB_VERSION = "unknown"
+    __import__("huggingface_hub")
+    HAS_HF_HUB = True
 except ImportError:
-    _HAS_HF_HUB = False
-    _HF_HUB_VERSION = None
+    pass
 
-# Datasets detection
 try:
-    __import__("datasets")  # noqa: F401
-    _HAS_DATASETS = True
-    _DATASETS_VERSION: str | None = None
-    try:
-        from importlib.metadata import version as _pkg_version
-
-        _DATASETS_VERSION = _pkg_version("datasets")
-    except Exception:
-        _DATASETS_VERSION = "unknown"
+    __import__("datasets")
+    HAS_DATASETS = True
 except ImportError:
-    _HAS_DATASETS = False
-    _DATASETS_VERSION = None
-
-# Minimum version requirements
-_MIN_VERSIONS: dict[str, str] = {
-    "torch": "2.3.0",
-    "rdkit": "2023.9.0",
-    "huggingface-hub": "0.20.0",
-    "datasets": "2.16.0",
-}
-
-
-def _parse_version(version_str: str) -> tuple[int, ...]:
-    """Parse a version string into a comparable tuple of integers.
-
-    Handles versions like "0.21.0", "2024.3.2", "2.12.0.dev".
-
-    Args:
-        version_str: Version string to parse.
-
-    Returns:
-        Tuple of integers for version comparison, or (0,) on failure.
-    """
-    parts: list[int] = []
-    for part in version_str.split("."):
-        num_str = ""
-        for ch in part:
-            if ch.isdigit():
-                num_str += ch
-            else:
-                break
-        parts.append(int(num_str) if num_str else 0)
-    return tuple(parts) if parts else (0,)
-
-
-def _version_gte(version: str, minimum: str) -> bool:
-    """Check if `version` is >= `minimum`."""
-    return _parse_version(version) >= _parse_version(minimum)
-
-
-# ---------------------------------------------------------------------------
-# Public boolean exports
-# ---------------------------------------------------------------------------
-
-HAS_TORCH: bool = _HAS_TORCH
-HAS_RDKIT: bool = _HAS_RDKIT
-HAS_HF_HUB: bool = _HAS_HF_HUB
-HAS_DATASETS: bool = _HAS_DATASETS
-
-# ---------------------------------------------------------------------------
-# Private helper for framework availability checks
-# ---------------------------------------------------------------------------
-
-_VERSION_MAP: dict[str, str | None] = {
-    "torch": _TORCH_VERSION,
-    "rdkit": _RDKIT_VERSION,
-    "huggingface-hub": _HF_HUB_VERSION,
-    "datasets": _DATASETS_VERSION,
-}
-
-_AVAILABILITY_MAP: dict[str, bool] = {
-    "torch": _HAS_TORCH,
-    "rdkit": _HAS_RDKIT,
-    "huggingface-hub": _HAS_HF_HUB,
-    "datasets": _HAS_DATASETS,
-}
-
-
-def _get_framework_info(name: str) -> dict[str, Any]:
-    """Return availability, version, and minimum-version info for a framework.
-
-    Args:
-        name: Framework name (e.g. ``"torch"``, ``"rdkit"``).
-
-    Returns:
-        Dict with keys ``available``, ``version``, ``meets_minimum``,
-        and ``min_version``.
-    """
-    available = _AVAILABILITY_MAP.get(name, False)
-    version = _VERSION_MAP.get(name)
-    min_ver = _MIN_VERSIONS.get(name, "0.0.0")
-    meets_minimum = False
-    if available and version and version != "unknown":
-        meets_minimum = _version_gte(version, min_ver)
-        if not meets_minimum:
-            logger.warning(
-                "Framework '%s' version %s is below minimum %s. Upgrade with: pip install --upgrade %s",
-                name,
-                version,
-                min_ver,
-                name,
-            )
-
-    return {
-        "available": available,
-        "version": version,
-        "meets_minimum": meets_minimum,
-        "min_version": min_ver,
-    }
-
-
-def check_framework(name: str) -> dict[str, Any]:
-    """Convenience function to check a single framework.
-
-    Args:
-        name: Framework name.
-
-    Returns:
-        Dict with availability and version info.
-    """
-    return _get_framework_info(name)
-
-
-def report_status() -> dict[str, dict[str, Any]]:
-    """Report the status of all frameworks.
-
-    Logs INFO for frameworks that are available and WARNING when
-    fallbacks activate.
-
-    Returns:
-        Status dict for all frameworks.
-    """
-    status: dict[str, dict[str, Any]] = {}
-    for name in _MIN_VERSIONS:
-        info = _get_framework_info(name)
-        available = info["available"]
-        version = info["version"]
-        min_ver = info["min_version"]
-        meets_minimum = info["meets_minimum"]
-
-        status[name] = {
-            "available": available,
-            "version": version,
-            "meets_minimum": meets_minimum,
-            "min_version": min_ver,
-        }
-        if available:
-            logger.info(
-                "Framework '%s' available (version %s, meets minimum %s).",
-                name,
-                version or "unknown",
-                min_ver,
-            )
-        else:
-            logger.warning(
-                "Framework '%s' is NOT available. Install with: pip install %s (or check optional dependency group).",
-                name,
-                name,
-            )
-
-    return status
-
-
-def routing_info() -> dict[str, str]:
-    """Convenience function to get routing info for all frameworks.
-
-    Returns:
-        Dict mapping framework names to routing strategy.
-    """
-    routing: dict[str, str] = {}
-    for name in _MIN_VERSIONS:
-        info = _get_framework_info(name)
-        available = info["available"]
-        meets_minimum = info["meets_minimum"]
-
-        if available and meets_minimum:
-            routing[name] = "native"
-        elif available:
-            routing[name] = "fallback"
-        else:
-            routing[name] = "unavailable"
-    return routing
+    pass

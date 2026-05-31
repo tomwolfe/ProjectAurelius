@@ -21,10 +21,7 @@ from typing import Any
 
 import click
 
-from aurelius.cli_scripts import (
-    train_tier1,
-    validate_physics,
-)
+from aurelius.cli_scripts import validate_physics
 from aurelius.config import AureliusConfig, get_config
 from aurelius.pipeline import AureliusPipeline
 from aurelius.utils.dependencies import (
@@ -93,19 +90,15 @@ def init(pipeline: AureliusPipeline, config: AureliusConfig) -> None:
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Show detailed framework versions")
 def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: AureliusConfig | None = None) -> None:
     """Validate dependencies, hardware, and configuration."""
-    from aurelius.utils.dependencies import report_status
-
-    status = report_status()
+    status = {
+        "rdkit": {"available": HAS_RDKIT},
+        "torch": {"available": HAS_TORCH},
+    }
 
     click.echo("[Frameworks]")
     for fw, info in status.items():
         icon = "OK" if info["available"] else "MISSING"
-        version_str = f" (v{info['version']})" if info["version"] else ""
-        click.echo(f"  [{icon:>7}] {fw}{version_str}")
-        if verbose and info["version"]:
-            click.echo(f"           Minimum required: {info['min_version']}")
-            if not info["meets_minimum"]:
-                click.echo("           WARNING: Version below minimum!")
+        click.echo(f"  [{icon:>7}] {fw}")
 
     click.echo("")
 
@@ -265,39 +258,13 @@ def score(
 
 
 @cli.command("train")
-@click.option("--dataset", default="qm9", help="Dataset to train on (qm9)")
-@click.option("--epochs", type=int, default=300, help="Number of training epochs")
-@click.option("--batch-size", type=int, default=32, help="Mini-batch size")
-@click.option("--learning-rate", type=float, default=0.005, help="Learning rate")
-@click.option("--csv-path", type=str, default=None, help="Path to local CSV file")
-def train(
-    dataset: str,
-    epochs: int,
-    batch_size: int,
-    learning_rate: float,
-    csv_path: str | None,
-    pipeline: AureliusPipeline,
-    config: AureliusConfig,
-) -> None:
-    """Train a model on QM9 dataset."""
-    _run_tier1_train(dataset, epochs, batch_size, learning_rate, csv_path)
+def train() -> None:
+    """Retrain the Oracle's RF model on QM9 HOMO/LUMO data."""
+    from aurelius.scoring.oracle import PropertyOracle
 
-
-def _run_tier1_train(
-    dataset: str,
-    epochs: int,
-    batch_size: int,
-    learning_rate: float,
-    csv_path: str | None,
-) -> None:
-    """Run Tier 1 model training via train_tier1.py."""
-    train_tier1.train_main(
-        dataset=dataset,
-        epochs=epochs,
-        batch_size=batch_size,
-        learning_rate=learning_rate,
-        csv_path=csv_path,
-    )
+    oracle = PropertyOracle()
+    oracle.save("oracle_cache.joblib")
+    click.echo("Oracle RF model trained and saved to oracle_cache.joblib")
 
 
 @cli.command("validate")
@@ -314,8 +281,6 @@ def validate(smiles: str = "CC(=O)OC1=CC(=O)O1", pipeline: Any = None, config: A
 def agent(
     max_generations: int,
     batch_size: int,
-    pipeline: AureliusPipeline,
-    config: AureliusConfig,
 ) -> None:
     """Run the autonomous screening agent."""
     from aurelius.agent.state import CheckpointManager

@@ -65,14 +65,22 @@ class MutationEngine:
     2. **BRICS fragmentation + reassembly** (medium probability)
     """
 
-    def __init__(self, seed_smiles: list[str], known_fps_hex: list[str] | None = None) -> None:
+    def __init__(self, seed_smiles: list[str] | None = None, known_fps_hex: list[str] | None = None) -> None:
         """Initialise the mutation engine.
 
         Args:
-            seed_smiles: List of seed SMILES strings.
+            seed_smiles: List of seed SMILES strings. If None, loads from
+                the bundled tier0_seed_smiles.json.
             known_fps_hex: Optional list of known fingerprint hex strings
                 for novelty checking.
         """
+        if seed_smiles is None:
+            import json
+            import os
+
+            json_path = os.path.join(os.path.dirname(__file__), "..", "data", "tier0_seed_smiles.json")
+            with open(json_path) as f:
+                seed_smiles = json.load(f)
         self.seed_pool: list[str] = list(set(seed_smiles))
         self.seed_fingerprints: list[Any] = []
         for smi in self.seed_pool:

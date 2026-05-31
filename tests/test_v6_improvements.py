@@ -1,8 +1,7 @@
 """Tests for Project Aurelius v9.0 improvements.
 
 Tests for:
-- Centralized dependency detection (PyTorch / RDKit / HuggingFace Hub)
-- RDKit error messages
+- Centralized dependency detection (PyTorch / RDKit)
 - CLI doctor command
 """
 
@@ -21,26 +20,6 @@ class TestDependencyManager:
         from aurelius.utils.dependencies import HAS_RDKIT
 
         assert isinstance(HAS_RDKIT, bool)
-
-    def test_check_framework_function(self):
-        from aurelius.utils.dependencies import check_framework
-
-        assert callable(check_framework)
-        info = check_framework("torch")
-        assert "available" in info
-        assert "version" in info
-
-    def test_report_status(self):
-        from aurelius.utils.dependencies import report_status
-
-        status = report_status()
-        assert isinstance(status, dict)
-
-    def test_routing_info(self):
-        from aurelius.utils.dependencies import routing_info
-
-        routing = routing_info()
-        assert isinstance(routing, dict)
 
 
 class TestDoctorCommand:
@@ -69,14 +48,3 @@ class TestDoctorCommand:
         assert result.returncode == 0
         output = result.stdout + result.stderr
         assert "Framework" in output or "Hardware" in output or "Summary" in output
-
-
-class TestRDKitErrors:
-    """Tests for RDKit error messages."""
-
-    def test_rdkit_available(self):
-        from aurelius.utils.dependencies import check_framework
-
-        result = check_framework("rdkit")
-        assert "available" in result
-        assert "min_version" in result

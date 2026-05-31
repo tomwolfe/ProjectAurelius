@@ -16,12 +16,7 @@ from aurelius.utils.chem_utils import (
     generate_ecfp4_fingerprint,
     generate_molecular_descriptors,
 )
-from aurelius.utils.dependencies import (
-    HAS_TORCH,
-    check_framework,
-    report_status,
-    routing_info,
-)
+from aurelius.utils.dependencies import HAS_TORCH
 
 __all__ = [
     "HAS_RDKIT",
@@ -34,7 +29,4 @@ __all__ = [
     "_safe_mol_from_smiles",
     "_serialize_fp",
     "_tanimoto",
-    "check_framework",
-    "report_status",
-    "routing_info",
 ]
