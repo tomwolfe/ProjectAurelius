@@ -86,46 +86,6 @@ def _load_qm9_data_for_training(
     return data
 
 
-def _train_lumo_rf() -> tuple[Any, float, float]:
-    """Train RF for LUMO prediction on ECFP4 fingerprints using real QM9 data."""
-    from sklearn.ensemble import RandomForestRegressor
-
-    qm9_data = _load_qm9_data_for_training()
-
-    X_list: list[np.ndarray] = []
-    y_list: list[float] = []
-    for smi, _homo, lumo in qm9_data:
-        mol = Chem.MolFromSmiles(smi)
-        if mol is None:
-            continue
-        try:
-            fp = generate_ecfp4_fingerprint(smi)
-        except Exception:
-            continue
-        X_list.append(fp)
-        y_list.append(lumo)
-
-    X = np.array(X_list, dtype=np.float32)
-    y = np.array(y_list, dtype=np.float32)
-
-    rf = RandomForestRegressor(
-        n_estimators=100,
-        max_depth=12,
-        min_samples_leaf=5,
-        random_state=42,
-        n_jobs=-1,
-    )
-    rf.fit(X, y)
-
-    lumo_min = float(y.min())
-    lumo_max = float(y.max())
-    logger.info(
-        "PropertyOracle: trained LUMO RF on %d QM9 molecules (range [%.4f, %.4f] eV).",
-        len(X), lumo_min, lumo_max,
-    )
-    return rf, lumo_min, lumo_max
-
-
 def _compute_qm9_centroid(qm9_data: list[tuple[str, float, float]]) -> np.ndarray:
     """Compute the mean Morgan fingerprint centroid of the QM9 training set."""
     fps: list[np.ndarray] = []
@@ -149,6 +109,11 @@ def _domain_applicable(smiles: str) -> tuple[bool, str]:
     Uses Tanimoto similarity to the QM9 centroid fingerprint to flag OOD molecules.
     A soft penalty is applied later based on this check.
 
+    NOTE: Battery electrolytes heavily feature Fluorine and Sulfur atoms which are
+    rare in QM9. The threshold (sim < 0.3) is intentionally conservative to avoid
+    blindly rejecting valid fluorinated carbonates. The penalty applied downstream
+    is a mild 10% reduction, not a hard rejection.
+
     Returns:
         (is_applicable, reason) tuple.
     """
@@ -158,20 +123,21 @@ def _domain_applicable(smiles: str) -> tuple[bool, str]:
 
     # Check Tanimoto similarity to QM9 centroid
     centroid = getattr(PropertyOracle, "_qm9_centroid", None)
-    if centroid is not None:
-        from rdkit.Chem import AllChem
-        from rdkit.DataStructs import TanimotoSimilarity
-        from rdkit.DataStructs.cDataStructs import ExplicitBitVect
+    if centroid is None:
+        return True, ""
+    from rdkit.Chem import AllChem
+    from rdkit.DataStructs import TanimotoSimilarity
+    from rdkit.DataStructs.cDataStructs import ExplicitBitVect
 
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-        # Convert centroid to ExplicitBitVect for similarity
-        centroid_bv = ExplicitBitVect(2048)
-        for i, v in enumerate(centroid):
-            if v > 0.3:
-                centroid_bv.SetBit(i)
-        sim = TanimotoSimilarity(fp, centroid_bv)
-        if sim < 0.3:
-            return False, f"Low Tanimoto similarity ({sim:.3f}) to QM9 centroid — out of distribution"
+    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+    # Convert centroid to ExplicitBitVect for similarity
+    centroid_bv = ExplicitBitVect(2048)
+    for i, v in enumerate(centroid):
+        if v > 0.3:
+            centroid_bv.SetBit(i)
+    sim = TanimotoSimilarity(fp, centroid_bv)
+    if sim < 0.3:
+        return False, f"Low Tanimoto similarity ({sim:.3f}) to QM9 centroid — out of distribution"
 
     return True, ""
 
@@ -255,7 +221,6 @@ class PropertyOracle:
 
     _model: tuple[Any, float, float] | None = None
     _CACHE: dict[str, dict[str, Any]] | None = None
-    _lumo_rf: tuple[Any, float, float] | None = None
     _qm9_centroid: np.ndarray | None = None
 
     def __init__(self, model_path: str | None = None) -> None:
@@ -273,23 +238,20 @@ class PropertyOracle:
         if PropertyOracle._model is None:
             PropertyOracle._model = _train_homo_lumo_models()
 
-    def _ensure_lumo_model(self) -> None:
-        """Load or train the LUMO RF model if not already loaded."""
-        if PropertyOracle._lumo_rf is None:
-            PropertyOracle._lumo_rf = _train_lumo_rf()
-
     def predict_normalized_lumo(self, smiles: str) -> float:
         """Predict normalized LUMO score in [0, 100] from ECFP4 fingerprints.
 
         Uses a fixed LUMO range of [-3.0, 2.0] eV corresponding to the
         span of typical organic molecules in QM9.  Higher score = more
         positive LUMO = better reductive stability.
+
+        LUMO is extracted from the MultiOutputRegressor (index 1).
         """
-        self._ensure_lumo_model()
-        rf, lumo_min, lumo_max = PropertyOracle._lumo_rf  # type: ignore[misc]
-        fp = generate_ecfp4_fingerprint(smiles).reshape(1, -1)
-        lumo = float(rf.predict(fp)[0])
-        # Use the theoretical QM9 range for meaningful battery scoring
+        self._ensure_model()
+        model, gap_min, gap_max = PropertyOracle._model  # type: ignore[misc]
+        fp = generate_ecfp4_fingerprint(smiles).reshape(1, -1).astype(np.float32)
+        pred = model.predict(fp)[0]
+        lumo = float(pred[1])
         normalized = (lumo - (-3.0)) / (2.0 - (-3.0)) * 100.0
         normalized = np.clip(normalized, 0.0, 100.0)
         return round(float(normalized), 2)
@@ -373,7 +335,6 @@ class PropertyOracle:
 
         payload: dict[str, Any] = {
             "model": PropertyOracle._model,
-            "lumo_rf": PropertyOracle._lumo_rf,
             "qm9_centroid": PropertyOracle._qm9_centroid,
             "data_source": _DATA_SOURCE,
         }
@@ -398,7 +359,6 @@ class PropertyOracle:
             return False
 
         PropertyOracle._model = payload.get("model")
-        PropertyOracle._lumo_rf = payload.get("lumo_rf")
         PropertyOracle._qm9_centroid = payload.get("qm9_centroid")
 
         global _DATA_SOURCE

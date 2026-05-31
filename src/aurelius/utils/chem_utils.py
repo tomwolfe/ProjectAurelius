@@ -158,7 +158,7 @@ def generate_ecfp4_fingerprint(smiles: str, n_bits: int = FINGERPRINT_SIZE) -> n
 
 
 def generate_molecular_descriptors(smiles: str) -> dict[str, float]:
-    """Generate simple molecular descriptors from SMILES for Tier 0 prediction.
+    """Generate simple molecular descriptors from SMILES.
 
     Produces a minimal feature vector encoding structural properties
     relevant to SEI formation activation energies. When RDKit is

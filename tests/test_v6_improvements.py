@@ -1,20 +1,10 @@
-"""Tests for Project Aurelius v9.0 improvements.
-
-Tests for:
-- Centralized dependency detection (PyTorch / RDKit)
-- CLI doctor command
-"""
+"""Tests for dependency detection and CLI doctor command."""
 
 from __future__ import annotations
 
 
 class TestDependencyManager:
     """Tests for centralized dependency detection."""
-
-    def test_has_torch_export(self):
-        from aurelius.utils.dependencies import HAS_TORCH
-
-        assert isinstance(HAS_TORCH, bool)
 
     def test_has_rdkit_export(self):
         from aurelius.utils.dependencies import HAS_RDKIT

@@ -24,10 +24,7 @@ import click
 from aurelius.cli_scripts import validate_physics
 from aurelius.config import AureliusConfig, get_config
 from aurelius.pipeline import AureliusPipeline
-from aurelius.utils.dependencies import (
-    HAS_RDKIT,
-    HAS_TORCH,
-)
+from aurelius.utils.dependencies import HAS_RDKIT
 
 
 def _init_pipeline_from_ctx(ctx: click.Context) -> None:
@@ -90,39 +87,13 @@ def init(pipeline: AureliusPipeline, config: AureliusConfig) -> None:
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Show detailed framework versions")
 def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: AureliusConfig | None = None) -> None:
     """Validate dependencies, hardware, and configuration."""
-    status = {
-        "rdkit": {"available": HAS_RDKIT},
-        "torch": {"available": HAS_TORCH},
-    }
-
     click.echo("[Frameworks]")
-    for fw, info in status.items():
-        icon = "OK" if info["available"] else "MISSING"
-        click.echo(f"  [{icon:>7}] {fw}")
+    icon = "OK" if HAS_RDKIT else "MISSING"
+    click.echo(f"  [{icon:>7}] rdkit")
 
     click.echo("")
 
     click.echo("[Hardware]")
-
-    if HAS_TORCH:
-        try:
-            import torch  # noqa: F401
-
-            if hasattr(torch.backends, "cuda") and torch.backends.cuda.is_built():  # type: ignore[no-untyped-call, unused-ignore]
-                if torch.cuda.is_available():  # type: ignore[no-untyped-call, unused-ignore]
-                    click.echo(f"  PyTorch:  CUDA available ({torch.cuda.get_device_name(0)})")  # type: ignore[no-untyped-call, unused-ignore]
-                else:
-                    click.echo("  PyTorch:  CUDA not available")
-            if torch.backends.mps.is_available():
-                click.echo("  PyTorch:  MPS (Apple Silicon) available")
-            else:
-                click.echo("  PyTorch:  MPS not available")
-            click.echo("  PyTorch:  Device will auto-select at runtime")
-        except Exception:
-            click.echo("  PyTorch:  Framework check failed")
-    else:
-        click.echo("  PyTorch:  Not installed")
-
     if HAS_RDKIT:
         click.echo("  RDKit:    Available")
     else:
@@ -131,13 +102,8 @@ def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: Aure
     click.echo("")
 
     click.echo("[Summary]")
-    issues = []
     if not HAS_RDKIT:
-        issues.append("RDKit (real model screening)")
-
-    if issues:
-        click.echo(f"  WARNING: Missing {len(issues)} framework(s): {', '.join(issues)}")
-        click.echo("  Pipeline will use fallback paths. Some features may be degraded.")
+        click.echo("  WARNING: RDKit is missing. Pipeline will not function.")
     else:
         click.echo("  All core frameworks available. System ready for full pipeline.")
 

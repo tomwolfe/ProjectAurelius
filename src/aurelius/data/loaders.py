@@ -1,14 +1,16 @@
 """Data loaders for molecular datasets.
 
 Provides a single function to load QM9 HOMO/LUMO data from the bundled
-CSV file, with no external HuggingFace dependency required.
+CSV file using pandas, with no external HuggingFace dependency required.
 """
 
 from __future__ import annotations
 
-import csv
 import logging
 import os
+
+import pandas as pd
+
 
 def load_qm9_homo_lumo_data(csv_path: str | None = None) -> list[tuple[str, float, float]]:
     """Load QM9 HOMO/LUMO data from the bundled CSV file.
@@ -29,18 +31,18 @@ def load_qm9_homo_lumo_data(csv_path: str | None = None) -> list[tuple[str, floa
     if not os.path.exists(csv_path):
         raise RuntimeError(f"QM9 data CSV not found at {csv_path}")
 
+    df = pd.read_csv(csv_path)
+    required_cols = {"smiles", "homo", "lumo"}
+    if not required_cols.issubset(df.columns):
+        raise RuntimeError(f"CSV missing required columns: {required_cols - set(df.columns)}")
+
+    df = df.dropna(subset=["smiles", "homo", "lumo"])
     data: list[tuple[str, float, float]] = []
-    with open(csv_path) as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            smi = row.get("smiles", "").strip()
-            homo_s = row.get("homo", "").strip()
-            lumo_s = row.get("lumo", "").strip()
-            if smi and homo_s and lumo_s:
-                try:
-                    data.append((smi, float(homo_s), float(lumo_s)))
-                except ValueError:
-                    continue
+    for _, row in df.iterrows():
+        try:
+            data.append((str(row["smiles"]).strip(), float(row["homo"]), float(row["lumo"])))
+        except (ValueError, TypeError):
+            continue
 
     if not data:
         raise RuntimeError(f"No valid HOMO/LUMO data found in {csv_path}")

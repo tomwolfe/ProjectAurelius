@@ -16,11 +16,8 @@ from aurelius.utils.chem_utils import (
     generate_ecfp4_fingerprint,
     generate_molecular_descriptors,
 )
-from aurelius.utils.dependencies import HAS_TORCH
-
 __all__ = [
     "HAS_RDKIT",
-    "HAS_TORCH",
     "_deserialize_fp",
     "generate_ecfp4_fingerprint",
     "generate_molecular_descriptors",

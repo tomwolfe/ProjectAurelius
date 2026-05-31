@@ -1,7 +1,4 @@
 """Pipeline configuration for Project Aurelius.
-
-Provides default configuration values for the screening pipeline.
-Memory management is delegated to PyTorch's native memory management.
 """
 
 from __future__ import annotations
@@ -15,10 +12,6 @@ logger = logging.getLogger(__name__)
 
 class AureliusConfig(BaseSettings):
     """Pipeline configuration for Project Aurelius.
-
-    Provides default values for screening pipeline parameters.
-    Does not manage hardware-specific memory allocation — that is
-    delegated to PyTorch's native memory management.
     """
 
     weight_sigma: float = 0.4

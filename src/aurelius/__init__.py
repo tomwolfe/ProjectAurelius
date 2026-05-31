@@ -1,10 +1,16 @@
-"""Project Aurelius v9.0 - Bayesian Active Learning for Novel Molecule Discovery.
+"""Project Aurelius - Bayesian Active Learning for Novel Molecule Discovery.
 
 A streamlined pipeline that combines:
 - RDKit-based structural filtering (SA score + electrolyte viability)
 - QSPR property oracles (Random Forest on ECFP4 fingerprints)
-- SMARTS+BRICS mutation engine
-- Random Forest surrogate-driven active learning
+- Bayesian active learning loop (RF surrogate, Expected Improvement acquisition)
+- Real QM9 training data (500-molecule subset)
+
+Key design decisions:
+- scikit-learn Random Forest for property prediction (lightweight, no GPU)
+- ECFP4 Morgan fingerprints (radius=2, 2048 bits) for molecular featurisation
+- Gaussian-penalty objective function for battery-relevant scoring
+- Threshold-based viability criteria (Aurelius Score >= 50 / 100)
 """
 
 from __future__ import annotations

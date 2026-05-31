@@ -41,9 +41,11 @@ def main() -> None:
         ion_type="Na+",
     )
 
-    score = results.get("score")
+    score = results.get("score") if isinstance(results, dict) else getattr(results, "score", None)
     if score:
-        print(f"\nAurelius Score v9.0: {score.total_score:.1f}/100 {'VIABLE' if score.is_viable else 'REJECTED'}")
+        total = score["total_score"] if isinstance(score, dict) else score.total_score
+        viable = score["is_viable"] if isinstance(score, dict) else score.is_viable
+        print(f"\nAurelius Score v9.0: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}")
     else:
         print("No score computed.")
         sys.exit(1)
