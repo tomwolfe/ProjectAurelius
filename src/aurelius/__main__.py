@@ -7,9 +7,8 @@ Usage:
     aurelius batch <file>            Screen molecules from SMILES file
     aurelius score <smiles>          Compute Aurelius score only
     aurelius validate <smiles>       Run physics validation
-    aurelius benchmark               Run hardware benchmark
-    aurelius status                  Show pipeline status and memory
-    aurelius hf-upload               Upload model to HuggingFace Hub
+    aurelius train                   Train the QM9 surrogate model
+    aurelius agent                   Run the autonomous screening agent
 """
 
 from __future__ import annotations
@@ -27,10 +26,8 @@ from aurelius.cli_scripts import (
     validate_physics,
 )
 from aurelius.config import AureliusConfig, get_config
-from aurelius.hub.uploader import upload_model_to_hub
 from aurelius.pipeline import AureliusPipeline
 from aurelius.utils.dependencies import (
-    HAS_HF_HUB,
     HAS_RDKIT,
     HAS_TORCH,
 )
@@ -138,17 +135,10 @@ def doctor(verbose: bool, pipeline: AureliusPipeline | None = None, config: Aure
     else:
         click.echo("  RDKit:    Not installed (real model screening required)")
 
-    if HAS_HF_HUB:
-        click.echo("  HuggingFace Hub: Available")
-    else:
-        click.echo("  HuggingFace Hub: Not installed (local training only)")
-
     click.echo("")
 
     click.echo("[Summary]")
     issues = []
-    if not HAS_TORCH:
-        issues.append("PyTorch (ML models)")
     if not HAS_RDKIT:
         issues.append("RDKit (real model screening)")
 
@@ -275,9 +265,9 @@ def score(
 
 
 @cli.command("train")
-@click.option("--dataset", default="esol", help="Dataset to train on (esol/qm9)")
-@click.option("--epochs", type=int, default=200, help="Number of training epochs")
-@click.option("--batch-size", type=int, default=16, help="Mini-batch size")
+@click.option("--dataset", default="qm9", help="Dataset to train on (qm9)")
+@click.option("--epochs", type=int, default=300, help="Number of training epochs")
+@click.option("--batch-size", type=int, default=32, help="Mini-batch size")
 @click.option("--learning-rate", type=float, default=0.005, help="Learning rate")
 @click.option("--csv-path", type=str, default=None, help="Path to local CSV file")
 def train(
@@ -289,7 +279,7 @@ def train(
     pipeline: AureliusPipeline,
     config: AureliusConfig,
 ) -> None:
-    """Train a model on a dataset (Tier 1 MLP for ESOL/QM9)."""
+    """Train a model on QM9 dataset."""
     _run_tier1_train(dataset, epochs, batch_size, learning_rate, csv_path)
 
 
@@ -316,65 +306,6 @@ def validate(smiles: str = "CC(=O)OC1=CC(=O)O1", pipeline: Any = None, config: A
     """Run physics validation on a molecule."""
     sys.argv = ["validate_physics", "--smiles", smiles]
     validate_physics.main()
-
-
-@cli.command("status")
-def status(pipeline: AureliusPipeline, config: AureliusConfig) -> None:
-    """Show pipeline status and memory partition."""
-    click.echo("\nAurelius v9.0 Configuration:")
-    click.echo("  Pipeline initialised: True")
-
-
-@cli.command("benchmark")
-@click.option(
-    "--tier",
-    type=click.Choice(["1", "2"]),
-    default=None,
-    help="Benchmark only a specific tier (1 or 2). Omit for all tiers.",
-)
-@click.option("--quick/--detailed", default=True, help="Quick mode with fewer repeats (default: enabled)")
-@click.option("--output", type=click.Path(), default=None, help="Save results to JSON file")
-def benchmark(
-    tier: str | None,
-    quick: bool,
-    output: str | None,
-    pipeline: AureliusPipeline,
-    config: AureliusConfig,
-) -> None:
-    """Run hardware benchmark and validation."""
-    from aurelius.benchmark import run_benchmark
-
-    run_benchmark(tier=tier, quick=quick, output=output)
-
-
-@cli.command("hf-upload")
-@click.option("--model-dir", required=True, help="Local directory containing model files to upload")
-@click.option("--repo-id", required=True, help="HuggingFace repository ID (e.g., 'user/repo-name')")
-@click.option(
-    "--task", type=click.Choice(["esol", "qm9"]), default="esol", help="Model task type (default: esol)"
-)
-@click.option("--private/--public", default=True, help="Make repository private (default: private)")
-@click.option("--commit-message", default="Upload model via Aurelius CLI", help="Commit message for the upload")
-@click.option("--dry-run", is_flag=True, help="Validate without uploading")
-def hf_upload(
-    model_dir: str,
-    repo_id: str,
-    task: str,
-    private: bool,
-    commit_message: str,
-    pipeline: AureliusPipeline,
-    config: AureliusConfig,
-    dry_run: bool,
-) -> None:
-    """Upload a locally trained model to HuggingFace Hub."""
-    upload_model_to_hub(
-        model_dir=model_dir,
-        repo_id=repo_id,
-        task=task,
-        private=private,
-        commit_message=commit_message,
-        dry_run=dry_run,
-    )
 
 
 @cli.command("agent")

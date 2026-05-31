@@ -1,6 +1,6 @@
 """Data loaders for molecular datasets.
 
-Provides functions to load ESOL and QM9 datasets from HuggingFace
+Provides functions to load QM9 dataset from HuggingFace
 or local fallback CSV files.
 """
 
@@ -9,22 +9,6 @@ from __future__ import annotations
 import csv
 import logging
 import os
-
-
-def load_esol_data(csv_path: str | None = None) -> list[tuple[str, float]]:
-    """Load the ESOL dataset.
-
-    Args:
-        csv_path: Optional path to a local CSV file. If None, loads from
-            HuggingFace Hub.
-
-    Returns:
-        List of (smiles, logS) tuples.
-    """
-    from datasets import load_dataset
-
-    ds = load_dataset("deepchem/esol", split="train")
-    return [(sm, float(v)) for sm, v in zip(ds["smiles"], ds["logS"], strict=True)]
 
 
 def load_qm9_lumo_data(csv_path: str | None = None) -> list[tuple[str, float]]:

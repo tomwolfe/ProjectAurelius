@@ -1,7 +1,7 @@
 """Aurelius agent package.
 
 Provides autonomous screening capabilities including:
-- SELFIES-based mutation engine for chemical generation
+- SMARTS+BRICS mutation engine for chemical generation
 - State management and checkpointing
 - Reporting and analysis
 """

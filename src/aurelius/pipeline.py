@@ -83,9 +83,7 @@ class AureliusPipeline:
         }
 
         lumo_score = self._oracle.predict_normalized_lumo(smiles) if self._oracle else 0.0
-        solubility_score = self._oracle.predict_solubility(smiles) if self._oracle else 0.0
-        # For failed runs, use a simplified score
-        total_score = 0.6 * lumo_score + 0.4 * solubility_score
+        total_score = lumo_score
         is_viable = total_score >= 50.0
 
         return {
@@ -94,7 +92,6 @@ class AureliusPipeline:
             "score": {
                 "total_score": total_score,
                 "lumo_score": lumo_score,
-                "solubility_score": solubility_score,
                 "is_viable": is_viable,
                 "rejection_reasons": [reason],
             },
@@ -136,14 +133,13 @@ class AureliusPipeline:
         # Step 2: Oracle (property evaluation)
         t2_result = None
         lumo_score = 0.0
-        solubility_score = 0.0
         homo_eV = -99.0
         lumo_eV = -99.0
+        domain_applicable = True
         if self._oracle:
             t2_start = time.perf_counter()
             oracle_result = self._oracle.evaluate(smiles)
             lumo_score = self._oracle.predict_normalized_lumo(smiles)
-            solubility_score = self._oracle.predict_solubility(smiles)
             tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
 
             homo_eV = oracle_result.get("homo_eV", -99.0)
@@ -157,24 +153,22 @@ class AureliusPipeline:
                 "gap_eV": oracle_result.get("gap_eV", 0.0),
                 "score_eV": oracle_result.get("score_eV", 0.0),
                 "lumo_score": lumo_score,
-                "solubility_score": solubility_score,
                 "domain_applicable": domain_applicable,
                 "domain_reason": domain_reason,
             }
             results["tier2"] = t2_result
             logger.info(
                 "Property Oracle Result: %s -> HOMO=%.3f LUMO=%.3f gap=%.3f "
-                "lumo_score=%.1f solubility_score=%.1f",
+                "lumo_score=%.1f",
                 smiles,
                 homo_eV,
                 lumo_eV,
                 t2_result["gap_eV"],
                 lumo_score,
-                solubility_score,
             )
 
         score = self._compute_score(
-            lumo_score, solubility_score, homo_eV, lumo_eV,
+            lumo_score, homo_eV, lumo_eV,
             smiles=smiles, domain_applicable=domain_applicable,
         )
         results["score"] = score
@@ -253,7 +247,6 @@ class AureliusPipeline:
     def _compute_score(
         self,
         lumo_score: float,
-        solubility_score: float,
         homo_eV: float = -99.0,
         lumo_eV: float = -99.0,
         smiles: str | None = None,
@@ -264,31 +257,26 @@ class AureliusPipeline:
         Scoring:
           - LUMO Gaussian reward centered at -1.0 eV, sigma=0.75 (SEI formation)
           - HOMO sigmoid penalty for oxidative stability (threshold -6.0 eV)
-          - Solubility as a soft constraint (multiplicative, not linear)
           - Synthetic accessibility penalty for novel but synthesisable molecules
-          - Domain applicability penalty for out-of-QM9-distribution molecules
+          - Soft OOD penalty for out-of-QM9-distribution molecules
 
         The final score is in [0, 100].
 
         Args:
             lumo_score: Normalized LUMO score from oracle (0-100).
-            solubility_score: Normalized solubility score from oracle (0-100).
             homo_eV: Predicted HOMO energy in eV.
             lumo_eV: Predicted LUMO energy in eV.
             smiles: Optional SMILES for synthetic accessibility penalty.
             domain_applicable: Whether molecule is within QM9 applicability domain.
 
         Returns:
-            Dict with ``total_score``, ``lumo_score``, ``solubility_score``,
+            Dict with ``total_score``, ``lumo_score``,
             ``is_viable``, and ``rejection_reasons``.
         """
         g_lumo = self._gaussian_lumo(lumo_eV)
         s_homo = self._sigmoid_homo(homo_eV)
 
-        raw = g_lumo * s_homo
-
-        sol_factor = 0.3 + 0.7 * (solubility_score / 100.0)
-        total_score = 100.0 * raw * sol_factor
+        total_score = 100.0 * g_lumo * s_homo
 
         # SA penalty — penalise molecules that are impossible to synthesise
         if smiles is not None:
@@ -307,13 +295,12 @@ class AureliusPipeline:
         if not is_viable:
             rejection_reasons.append(
                 f"Aurelius Score {total_score:.1f} below viability threshold "
-                f"(g_lumo={g_lumo:.3f}, s_homo={s_homo:.3f}, solubility={solubility_score:.1f})"
+                f"(g_lumo={g_lumo:.3f}, s_homo={s_homo:.3f})"
             )
 
         return {
             "total_score": total_score,
             "lumo_score": lumo_score,
-            "solubility_score": solubility_score,
             "is_viable": is_viable,
             "rejection_reasons": rejection_reasons,
         }

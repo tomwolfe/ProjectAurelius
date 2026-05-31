@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
-"""Train Tier 1 model on real datasets (ESOL, QM9).
+"""Train Tier 1 model on QM9 dataset.
 
-This script trains the Tier 1 MLP on experimental solubility data
-(ESOL) or quantum mechanical data (QM9) and saves the trained model
-weights for use by the Aurelius screening pipeline.
+This script trains the Tier 1 MLP on quantum mechanical data (QM9)
+and saves the trained model weights for use by the Aurelius screening
+pipeline.
 
 Usage:
-    python scripts/train_tier1.py --dataset esol --epochs 200
-    python scripts/train_tier1.py --dataset qm9 --epochs 300
-    python scripts/train_tier1.py --dataset esol --save-path ./models/tier1/esol_solubility
+    python scripts/train_tier1.py --epochs 300
 
 References:
-    ESOL: Delaney, S. J. "ESOL: Estimating Aqueous Solubility
-          Directly from Structure." J. Chem. Inf. Model. 2004, 44(6), 1947-1949.
     QM9: Ramakrishnan, R. et al. "Quantum Chemistry Structures and
           Properties of 134 Kilo Molecules." Sci. Data 2014, 1, 140035.
 """
@@ -28,41 +24,35 @@ from typing import Any
 import numpy as np
 
 # Reuse dataset loading logic from download_data to avoid duplication
-from aurelius.cli_scripts.download_data import load_esol_data, load_qm9_data
+from aurelius.cli_scripts.download_data import load_qm9_data
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train Tier 1 MLP on real datasets (ESOL, QM9)",
+        description="Train Tier 1 MLP on QM9 dataset",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Datasets:
-  esol    Delaney et al. aqueous solubility (1112 molecules)
-  qm9     Ramakrishnan et al. quantum mechanical properties (134K molecules)
-
 Examples:
-  python scripts/train_tier1.py --dataset esol --epochs 200
-  python scripts/train_tier1.py --dataset qm9 --epochs 300 --batch-size 32
-  python scripts/train_tier1.py --dataset esol --save-path ./models/tier1/esol_solubility
+  python scripts/train_tier1.py --epochs 300 --batch-size 32
         """,
     )
     parser.add_argument(
         "--dataset",
-        choices=["esol", "qm9"],
-        default="esol",
-        help="Dataset to train on (default: esol)",
+        choices=["qm9"],
+        default="qm9",
+        help="Dataset to train on",
     )
     parser.add_argument(
         "--epochs",
         type=int,
         default=200,
-        help="Number of training epochs (default: 200 for ESOL, 300 for QM9)",
+        help="Number of training epochs (default: 300)",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
         default=16,
-        help="Mini-batch size (default: 16 for ESOL, 32 for QM9)",
+        help="Mini-batch size (default: 32)",
     )
     parser.add_argument(
         "--learning-rate",
@@ -92,7 +82,7 @@ Examples:
         "--csv-path",
         type=str,
         default=None,
-        help="Path to local ESOL CSV file (bypasses HuggingFace download)",
+        help="Path to local QM9 CSV file (bypasses HuggingFace download)",
     )
     return parser.parse_args()
 
@@ -195,7 +185,7 @@ def save_model(
     Args:
         weights: Dictionary of trained weight arrays.
         save_path: Directory to save model.
-        dataset: Dataset name (esol/qm9).
+        dataset: Dataset name (qm9).
         hyperparams: Training hyperparameters.
     """
     os.makedirs(save_path, exist_ok=True)
@@ -219,22 +209,22 @@ def save_model(
 
 
 def train_main(
-    dataset: str = "esol",
-    epochs: int = 200,
-    batch_size: int = 16,
+    dataset: str = "qm9",
+    epochs: int = 300,
+    batch_size: int = 32,
     learning_rate: float = 0.005,
     csv_path: str | None = None,
     seed: int = 42,
     val_split: float = 0.15,
     save_path: str | None = None,
 ) -> dict[str, Any]:
-    """Train Tier 1 model on a dataset (esol or qm9).
+    """Train Tier 1 model on QM9 dataset.
 
     This is the programmatic entry point for training, callable
     directly from other modules without CLI argument parsing.
 
     Args:
-        dataset: Dataset to train on ("esol" or "qm9").
+        dataset: Dataset to train on ("qm9").
         epochs: Number of training epochs.
         batch_size: Mini-batch size.
         learning_rate: Learning rate for optimization.
@@ -247,18 +237,8 @@ def train_main(
     Returns:
         Dictionary with training results and metadata.
     """
-    if dataset == "esol":
-        epochs = epochs if epochs != 200 else 200
-        batch_size = batch_size if batch_size != 16 else 16
-        print(f"[train_tier1] Training on ESOL dataset ({epochs} epochs)")
-        X, y, smiles_list = load_esol_data(csv_path)
-    elif dataset == "qm9":
-        epochs = epochs if epochs != 300 else 300
-        batch_size = batch_size if batch_size != 32 else 32
-        print(f"[train_tier1] Training on QM9 dataset ({epochs} epochs)")
-        X, y, smiles_list = load_qm9_data()
-    else:
-        raise ValueError(f"Unknown dataset: {dataset}")
+    print(f"[train_tier1] Training on QM9 dataset ({epochs} epochs)")
+    X, y, smiles_list = load_qm9_data()
 
     print(f"[train_tier1] Dataset: {len(X)} molecules, {X.shape[1]} features")
 
@@ -287,7 +267,7 @@ def train_main(
         os.path.dirname(os.path.dirname(__file__)),
         "models",
         "tier1",
-        f"{dataset}_solubility",
+        f"{dataset}_tier1",
     )
     hyperparams = {
         "dataset": dataset,

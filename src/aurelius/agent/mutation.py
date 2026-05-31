@@ -1,18 +1,15 @@
 """Molecule mutation engine for battery electrolyte discovery.
 
-Generates candidate molecules from seed SMILES using three strategies
+Generates candidate molecules from seed SMILES using two strategies
 in priority order:
 
 1. **SMARTS functional-group replacement** — targeted electrolyte-relevant
    transformations (fluorination, methylation, ether/carbonate edits).
 2. **BRICS fragmentation + reassembly** — scaffold hopping by breaking
    and reconnecting fragments at retrosynthetically sensible bonds.
-3. **SELFIES token mutation** — broad, unbiased exploration (low-probability
-   fallback when the first two strategies produce too few candidates).
 
 Requirements:
-    - RDKit for SMARTS, BRICS, and SELFIES-based mutation
-    - ``selfies`` package (pip install selfies, optional fallback)
+    - RDKit for SMARTS and BRICS
 """
 
 from __future__ import annotations
@@ -54,62 +51,6 @@ ELECTROLYTE_SMARTS: list[tuple[str, str]] = [
 
 
 # ---------------------------------------------------------------------------
-# SELFIES helpers (demoted fallback)
-# ---------------------------------------------------------------------------
-
-
-def _import_selfies() -> Any:
-    """Import selfies, raising ImportError with a helpful message if missing."""
-    try:
-        import selfies as sf
-    except ImportError as exc:
-        raise ImportError(
-            "SELFIES-based mutation requires the selfies package. "
-            "Install with: pip install selfies"
-        ) from exc
-    return sf
-
-
-def _selfies_to_smiles(selfies_str: str) -> str | None:
-    """Decode a SELFIES string to SMILES, validating the molecule."""
-    try:
-        import selfies as sf
-
-        smi = sf.decoder(selfies_str)
-        if smi is None:
-            return None
-        mol = Chem.MolFromSmiles(smi)
-        if mol is None:
-            return None
-        return smi
-    except Exception:
-        return None
-
-
-def _selfies_token_mutate(
-    selfies_str: str,
-    rng: np.random.Generator,
-) -> str | None:
-    """Replace one random token in a SELFIES string with another from the alphabet."""
-    try:
-        import selfies as sf
-
-        tokens = list(sf.split(selfies_str))
-    except Exception:
-        return None
-
-    if len(tokens) < 2:
-        return None
-
-    alphabet = sorted(sf.get_semantic_robust_alphabet())
-    idx = rng.integers(0, len(tokens))
-    new_token = rng.choice([t for t in alphabet if t != tokens[idx]])
-
-    new_selfies = selfies_str.replace(tokens[idx], new_token, 1)
-    return _selfies_to_smiles(new_selfies)
-
-
-# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -117,12 +58,11 @@ def _selfies_token_mutate(
 class MutationEngine:
     """Multi-strategy molecule mutation engine for battery electrolytes.
 
-    Generates candidate molecules from seed SMILES using three strategies
+    Generates candidate molecules from seed SMILES using two strategies
     in priority order:
 
     1. **SMARTS functional-group replacement** (high probability)
     2. **BRICS fragmentation + reassembly** (medium probability)
-    3. **SELFIES token mutation** (low-probability fallback)
     """
 
     def __init__(self, seed_smiles: list[str], known_fps_hex: list[str] | None = None) -> None:
@@ -282,61 +222,15 @@ class MutationEngine:
         return list(set(generated))
 
     # ------------------------------------------------------------------
-    # Strategy 3: SELFIES token mutation (low-probability fallback)
-    # ------------------------------------------------------------------
-
-    def _selfies_mutate(self, smiles: str, batch_size: int = 10) -> list[str]:
-        """Apply random SELFIES token mutation as a broad exploration fallback.
-
-        Demoted to low probability — generates chemically noisy variants
-        but can occasionally find unexpected scaffolds.
-
-        Args:
-            smiles: Seed SMILES string.
-            batch_size: Maximum number of variants to return.
-
-        Returns:
-            List of candidate SMILES strings.
-        """
-        try:
-            import selfies as sf
-
-            selfies_str = sf.encoder(smiles)
-        except Exception:
-            return []
-
-        generated: list[str] = []
-        for _ in range(batch_size):
-            candidate = _selfies_token_mutate(selfies_str, self._rng)
-            if candidate is None:
-                continue
-            mol = _safe_mol_from_smiles(candidate)
-            if mol is None:
-                continue
-            try:
-                Chem.SanitizeMol(mol)
-            except Exception:
-                continue
-            if not _is_valid_mol(mol):
-                continue
-            if not self._novelty_check(mol):
-                continue
-            if candidate != smiles:
-                generated.append(candidate)
-
-        return generated
-
-    # ------------------------------------------------------------------
     # Public mutation API
     # ------------------------------------------------------------------
 
     def mutate(self, smiles: str, batch_size: int = 50) -> list[str]:
         """Generate up to batch_size mutated variants of a seed molecule.
 
-        Applies the three mutation strategies in priority order:
+        Applies the two mutation strategies in priority order:
         1. SMARTS functional-group replacement
         2. BRICS fragmentation + reassembly
-        3. SELFIES token mutation (fallback)
 
         Args:
             smiles: SMILES string of the seed molecule.
@@ -358,23 +252,13 @@ class MutationEngine:
                 brics_results = self._brics_from_pool(mol)
                 candidates.update(brics_results)
 
-        # Strategy 3: SELFIES fallback (only if still short of target)
-        if len(candidates) < batch_size // 4:
-            selfies_results = self._selfies_mutate(smiles, batch_size // 4)
-            candidates.update(selfies_results)
-            logger.debug(
-                "SELFIES fallback activated for %s (SMARTS+BRICS produced %d candidates)",
-                smiles,
-                len(candidates),
-            )
-
         result_list = list(candidates)
         if len(result_list) > batch_size:
             indices = self._rng.choice(len(result_list), size=batch_size, replace=False)
             result_list = [result_list[i] for i in indices]
 
         logger.info(
-            "Mutation of %s: %d candidates (%d SMARTS, %d BRICS+fallback)",
+            "Mutation of %s: %d candidates (%d SMARTS, %d BRICS)",
             smiles,
             len(result_list),
             len(smarts_results),
@@ -405,8 +289,8 @@ class MutationEngine:
     ) -> list[str]:
         """Generate a large pool of candidate molecules from the seed pool.
 
-        Mutates each seed molecule through the three-strategy pipeline
-        (SMARTS → BRICS → SELFIES) and returns a deduplicated pool for
+        Mutates each seed molecule through the two-strategy pipeline
+        (SMARTS → BRICS) and returns a deduplicated pool for
         the Bayesian optimisation loop.
 
         Args:

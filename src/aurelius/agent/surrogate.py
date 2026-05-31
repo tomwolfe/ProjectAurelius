@@ -137,6 +137,10 @@ class RandomForestSurrogate:
         max_sim = tanimoto.max(axis=1)
         max_tanimoto_dist = 1.0 - max_sim
 
+        # Guard against degenerate zero-vector fingerprints: no novelty bonus
+        zero_vector = sum_cand.ravel() == 0
+        max_tanimoto_dist[zero_vector] = 0.0
+
         # Novelty-weighted EI
         nwei = ei * (1.0 + self._alpha * max_tanimoto_dist)
 

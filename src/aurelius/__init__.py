@@ -1,9 +1,9 @@
 """Project Aurelius v9.0 - Bayesian Active Learning for Novel Molecule Discovery.
 
 A streamlined pipeline that combines:
-- RDKit-based structural filtering (SA score + Lipinski)
+- RDKit-based structural filtering (SA score + electrolyte viability)
 - QSPR property oracles (Random Forest on ECFP4 fingerprints)
-- SELFIES-based mutation engine
+- SMARTS+BRICS mutation engine
 - Random Forest surrogate-driven active learning
 """
 

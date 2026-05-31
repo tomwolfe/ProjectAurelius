@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
-"""Download and prepare datasets for Aurelius Tier 1 training.
+"""Download and prepare QM9 dataset for Aurelius training.
 
-Fetches real molecular datasets from Hugging Face Hub for training
-the Tier 1 screening model with scientifically valid data.
+Fetches QM9 quantum mechanical dataset from Hugging Face Hub.
 
 Usage:
-    python scripts/download_data.py --dataset esol
-    python scripts/download_data.py --dataset qm9
-    python scripts/download_data.py --dataset all --output ./data/
+    python scripts/download_data.py
 
 References:
-    ESOL: Delaney, S. J. "ESOL: Estimating Aqueous Solubility
-          Directly from Structure." J. Chem. Inf. Model. 2004.
     QM9: Ramakrishnan, R. et al. "QM9: 134 Kilo Molecules."
           Sci. Data 2014.
 """
@@ -25,34 +20,21 @@ from typing import Any
 
 import numpy as np
 
-from aurelius.data.loaders import load_esol_data, load_qm9_lumo_data
+from aurelius.data.loaders import load_qm9_lumo_data
 
 __all__ = [
-    "load_esol_data",
     "load_qm9_lumo_data",
 ]
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Download molecular datasets for Aurelius Tier 1 training",
+        description="Download QM9 dataset for Aurelius training",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Datasets:
-  esol    Delaney et al. aqueous solubility (1112 molecules)
-  qm9     Ramakrishnan et al. quantum properties (134K molecules)
-  all     Download all available datasets
-
 Examples:
-    python scripts/download_data.py --dataset esol
-    python scripts/download_data.py --dataset all --output ./data/
+    python scripts/download_data.py
         """,
-    )
-    parser.add_argument(
-        "--dataset",
-        choices=["esol", "qm9", "all"],
-        default="all",
-        help="Dataset to download (default: all)",
     )
     parser.add_argument(
         "--output",
@@ -66,62 +48,6 @@ Examples:
         help="Export datasets as CSV files for offline use",
     )
     return parser.parse_args()
-
-
-def download_esol(output_dir: str) -> str:
-    """Download the ESOL dataset (Delaney et al. 2004).
-
-    The ESOL dataset contains 1112 molecules with experimentally
-    measured aqueous solubility (logS in mol/L).
-
-    Uses verified HuggingFace repository: deepchem/esol
-
-    Args:
-        output_dir: Directory to save the dataset.
-
-    Returns:
-        Path to the downloaded dataset.
-
-    Reference:
-        Delaney, S. J. "ESOL: Estimating Aqueous Solubility
-        Directly from Structure." J. Chem. Inf. Model. 2004,
-        44(6), 1947-1949. DOI: 10.1021/ci034236x
-    """
-    print("[download_data] Downloading ESOL dataset...")
-
-    from datasets import load_dataset
-
-    output_path = os.path.join(output_dir, "esol")
-    os.makedirs(output_path, exist_ok=True)
-
-    try:
-        # Verified dataset: deepchem/esol
-        ds = load_dataset("deepchem/esol", split="train")
-    except ValueError as e:
-        print(f"[download_data] ERROR: Invalid dataset ID (ValueError): {e}")
-        print("[download_data] Check that 'deepchem/esol' exists on HuggingFace Hub.")
-        sys.exit(1)
-    except ConnectionError as e:
-        print(f"[download_data] ERROR: Network error: {e}")
-        print("[download_data] Check your network connection and try again.")
-        sys.exit(1)
-    except (ImportError, RuntimeError, OSError) as e:
-        print(f"[download_data] ERROR loading ESOL: {e}")
-        sys.exit(1)
-
-    print(f"[download_data] Loaded {len(ds)} molecules from ESOL")
-
-    # Save as CSV for offline use
-    csv_path = os.path.join(output_path, "esol.csv")
-    with open(csv_path, "w") as f:
-        f.write("smiles,logS\n")
-        for item in ds:
-            f.write(f"{item['smiles']},{item['logS']}\n")
-
-    print(f"[download_data] ESOL saved to: {csv_path}")
-    print(f"[download_data] Use with: python scripts/train_tier1.py --dataset esol --csv-path {csv_path}")
-
-    return csv_path
 
 
 def download_qm9(output_dir: str) -> str:
@@ -188,22 +114,12 @@ def main() -> None:
     os.makedirs(output_dir, exist_ok=True)
     print(f"[download_data] Output directory: {output_dir}")
 
-    datasets_to_download = ["esol", "qm9"] if args.dataset == "all" else [args.dataset]
-
-    for dataset in datasets_to_download:
-        if dataset == "esol":
-            download_esol(output_dir)
-        elif dataset == "qm9":
-            download_qm9(output_dir)
+    download_qm9(output_dir)
 
     print("\n[download_data] Dataset download complete!")
-    print(
-        f"[download_data] Train with: python scripts/train_tier1.py --dataset {datasets_to_download[0]} --csv-path {output_dir}/{datasets_to_download[0]}/{datasets_to_download[0]}.csv"
-    )
 
 
 __all__ = [
-    "load_esol_data",
     "load_qm9_lumo_data",
 ]
 

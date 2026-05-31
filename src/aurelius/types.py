@@ -40,13 +40,12 @@ class AureliusScore:
     ``total_score`` is computed via Gaussian penalty approach:
       - LUMO rewarded via Gaussian centered at -1.0 eV, sigma=0.5
       - HOMO penalised via sigmoid when above -6.0 eV
-      - Solubility applied as a soft multiplicative constraint
+      - SA score penalty for synthetic accessibility
 
     where all component scores are normalized to [0, 100].
     """
 
     lumo_score: float
-    solubility_score: float
     total_score: float
     is_viable: bool
     rejection_reasons: list[str]

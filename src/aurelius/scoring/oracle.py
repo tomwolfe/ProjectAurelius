@@ -22,7 +22,6 @@ Usage:
 
 from __future__ import annotations
 
-import csv
 import logging
 import os
 from typing import Any
@@ -44,24 +43,6 @@ def get_data_source() -> str:
     if _DATA_SOURCE is None:
         return "oracle not yet initialized"
     return _DATA_SOURCE
-
-
-def _load_esol_data() -> list[tuple[str, float]]:
-    """Load ESOL logS data from the bundled fallback CSV."""
-    csv_path = os.path.join(os.path.dirname(__file__), "..", "data", "esol_fallback.csv")
-    csv_path = os.path.abspath(csv_path)
-    data: list[tuple[str, float]] = []
-    with open(csv_path) as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            smi = row.get("smiles", "").strip()
-            logS = row.get("logS", "").strip()
-            if smi and logS:
-                try:
-                    data.append((smi, float(logS)))
-                except ValueError:
-                    continue
-    return data
 
 
 def _load_qm9_data_for_training(
@@ -146,50 +127,6 @@ def _train_lumo_rf() -> tuple[Any, float, float]:
     return rf, lumo_min, lumo_max
 
 
-def _train_solubility_rf() -> tuple[Any, float, float]:
-    """Train RF for logS (solubility) prediction on ECFP4 fingerprints."""
-    from sklearn.ensemble import RandomForestRegressor
-
-    data = _load_esol_data()
-
-    X_list: list[np.ndarray] = []
-    y_list: list[float] = []
-    for smi, logS in data:
-        mol = Chem.MolFromSmiles(smi)
-        if mol is None:
-            continue
-        try:
-            fp = generate_ecfp4_fingerprint(smi)
-        except Exception:
-            continue
-        X_list.append(fp)
-        y_list.append(logS)
-
-    X = np.array(X_list, dtype=np.float32)
-    y = np.array(y_list, dtype=np.float32)
-
-    rf = RandomForestRegressor(
-        n_estimators=100,
-        max_depth=12,
-        min_samples_leaf=5,
-        random_state=42,
-        n_jobs=-1,
-    )
-    rf.fit(X, y)
-
-    logS_min = float(y.min())
-    logS_max = float(y.max())
-    logger.info(
-        "PropertyOracle: trained solubility RF on %d molecules (range [%.4f, %.4f]).",
-        len(X), logS_min, logS_max,
-    )
-    return rf, logS_min, logS_max
-
-
-# QM9 only contains elements up to F (atomic numbers 1, 6, 7, 8, 9)
-_QM9_ELEMENTS: set[int] = {1, 6, 7, 8, 9}  # H, C, N, O, F
-
-
 def _compute_qm9_centroid(qm9_data: list[tuple[str, float, float]]) -> np.ndarray:
     """Compute the mean Morgan fingerprint centroid of the QM9 training set."""
     fps: list[np.ndarray] = []
@@ -208,7 +145,10 @@ def _compute_qm9_centroid(qm9_data: list[tuple[str, float, float]]) -> np.ndarra
 
 
 def _domain_applicable(smiles: str) -> tuple[bool, str]:
-    """Check if a molecule falls within the QM9 applicability domain.
+    """Check if a molecule is Out-Of-Distribution relative to the QM9 training set.
+
+    Uses Tanimoto similarity to the QM9 centroid fingerprint to flag OOD molecules.
+    A soft penalty is applied later based on this check.
 
     Returns:
         (is_applicable, reason) tuple.
@@ -216,11 +156,6 @@ def _domain_applicable(smiles: str) -> tuple[bool, str]:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return False, "Invalid SMILES"
-
-    # Check atom types
-    for a in mol.GetAtoms():
-        if a.GetAtomicNum() not in _QM9_ELEMENTS:
-            return False, f"Contains out-of-domain atom ({a.GetSymbol()}) — QM9 only supports C,H,N,O,F"
 
     # Check Tanimoto similarity to QM9 centroid
     centroid = getattr(PropertyOracle, "_qm9_centroid", None)
@@ -322,7 +257,6 @@ class PropertyOracle:
     _model: tuple[Any, float, float] | None = None
     _CACHE: dict[str, dict[str, Any]] | None = None
     _lumo_rf: tuple[Any, float, float] | None = None
-    _solubility_rf: tuple[Any, float, float] | None = None
     _qm9_centroid: np.ndarray | None = None
 
     def __init__(self, model_path: str | None = None) -> None:
@@ -345,11 +279,6 @@ class PropertyOracle:
         if PropertyOracle._lumo_rf is None:
             PropertyOracle._lumo_rf = _train_lumo_rf()
 
-    def _ensure_solubility_model(self) -> None:
-        """Load or train the solubility RF model if not already loaded."""
-        if PropertyOracle._solubility_rf is None:
-            PropertyOracle._solubility_rf = _train_solubility_rf()
-
     def predict_normalized_lumo(self, smiles: str) -> float:
         """Predict normalized LUMO score in [0, 100] from ECFP4 fingerprints.
 
@@ -365,19 +294,6 @@ class PropertyOracle:
         normalized = (lumo - (-3.0)) / (2.0 - (-3.0)) * 100.0
         normalized = np.clip(normalized, 0.0, 100.0)
         return round(float(normalized), 2)
-
-    def predict_solubility(self, smiles: str) -> float:
-        """Predict normalized solubility score in [0, 100] from ECFP4 fingerprints.
-
-        Higher score = more soluble (better for electrolyte formulation).
-        """
-        self._ensure_solubility_model()
-        rf, logS_min, logS_max = PropertyOracle._solubility_rf
-        fp = generate_ecfp4_fingerprint(smiles).reshape(1, -1)
-        logS = float(rf.predict(fp)[0])
-        rng = logS_max - logS_min
-        normalized = (logS - logS_min) / rng * 100.0 if rng > 0 else 50.0
-        return round(float(np.clip(normalized, 0.0, 100.0)), 2)
 
     def _predict(self, smiles: str) -> dict[str, float]:
         """Run model inference and return HOMO/LUMO energies.
@@ -459,7 +375,6 @@ class PropertyOracle:
         payload: dict[str, Any] = {
             "model": PropertyOracle._model,
             "lumo_rf": PropertyOracle._lumo_rf,
-            "solubility_rf": PropertyOracle._solubility_rf,
             "qm9_centroid": PropertyOracle._qm9_centroid,
             "data_source": _DATA_SOURCE,
         }
@@ -485,7 +400,6 @@ class PropertyOracle:
 
         PropertyOracle._model = payload.get("model")
         PropertyOracle._lumo_rf = payload.get("lumo_rf")
-        PropertyOracle._solubility_rf = payload.get("solubility_rf")
         PropertyOracle._qm9_centroid = payload.get("qm9_centroid")
 
         global _DATA_SOURCE

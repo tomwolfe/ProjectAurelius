@@ -5,7 +5,7 @@ Ensures all ML components are trained and ready before the autonomous
 screening agent runs.  Checks for existence of trained model weights
 and, if missing, triggers automated training using existing modules:
 
-    Tier 1 (ESOL/QM9 MLP)                → models/tier1/esol_solubility/
+    Tier 1 (QM9 MLP)                     → models/tier1/qm9_tier1/
 
 Validation: after training, loads the saved models and runs a
 deterministic inference check on Ethylene Carbonate (O=C1OCCO1) to
@@ -13,7 +13,6 @@ verify integrity.
 
 Usage:
     python scripts/prep_discovery.py
-    python scripts/prep_discovery.py --dataset esol --epochs 200
     python scripts/prep_discovery.py --tier1-epochs 200
 """
 
@@ -45,9 +44,9 @@ def _ensure_rdkit() -> None:
 
 
 def _prepare_tier1(
-    dataset: str = "esol",
-    epochs: int = 200,
-    batch_size: int = 16,
+    dataset: str = "qm9",
+    epochs: int = 300,
+    batch_size: int = 32,
     learning_rate: float = 0.005,
     csv_path: str | None = None,
     seed: int = 42,
@@ -57,7 +56,7 @@ def _prepare_tier1(
     """Train and save Tier 1 model, then run a deterministic inference check.
 
     Args:
-        dataset: Dataset name ("esol" or "qm9").
+        dataset: Dataset name ("qm9").
         epochs: Number of training epochs.
         batch_size: Mini-batch size.
         learning_rate: Learning rate for optimization.
@@ -78,7 +77,7 @@ def _prepare_tier1(
         os.path.dirname(os.path.dirname(__file__)),
         "models",
         "tier1",
-        f"{dataset}_solubility",
+        f"{dataset}_tier1",
     )
 
     log.info("Preparing Tier 1 model (dataset=%s, epochs=%d …)", dataset, epochs)
@@ -148,10 +147,10 @@ def _train_tier_main(
 
 
 def prep_discovery(
-    tier1_epochs: int = 200,
-    batch_size: int = 16,
+    tier1_epochs: int = 300,
+    batch_size: int = 32,
     learning_rate: float = 0.005,
-    dataset: str = "esol",
+    dataset: str = "qm9",
     csv_path: str | None = None,
 ) -> None:
     """Run the full preparation pipeline.
@@ -160,12 +159,12 @@ def prep_discovery(
         tier1_epochs: Epochs for Tier 1 MLP training.
         batch_size: Mini-batch size for both tiers.
         learning_rate: Learning rate for Tier 1.
-        dataset: Dataset name for Tier 1 ("esol" or "qm9").
+        dataset: Dataset name for Tier 1 ("qm9").
         csv_path: Path to local CSV file.
     """
     base_dir = Path(__file__).resolve().parent.parent
 
-    tier1_path = base_dir / "models" / "tier1" / "esol_solubility"
+    tier1_path = base_dir / "models" / "tier1" / "qm9_tier1"
 
     tier1_ready = tier1_path.exists() and tier1_path.is_dir()
 
@@ -214,9 +213,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--dataset",
-        choices=["esol", "qm9"],
-        default="esol",
-        help="Dataset for Tier 1 training (default: esol)",
+        choices=["qm9"],
+        default="qm9",
+        help="Dataset for Tier 1 training",
     )
     parser.add_argument(
         "--csv-path",

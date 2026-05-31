@@ -125,8 +125,4 @@ def test_predict_normalized_lumo_range(oracle: PropertyOracle) -> None:
     assert 0.0 <= score <= 100.0, f"Score {score} out of [0, 100] range"
 
 
-def test_predict_solubility_range(oracle: PropertyOracle) -> None:
-    """Verify solubility score is in [0, 100]."""
-    smiles = "CC(=O)OC1=CC=CC=C1"
-    score = oracle.predict_solubility(smiles)
-    assert 0.0 <= score <= 100.0, f"Score {score} out of [0, 100] range"
+
