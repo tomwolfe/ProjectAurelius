@@ -15,16 +15,16 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from rdkit import Chem
 from rdkit.DataStructs import BulkTanimotoSimilarity
 from scipy.spatial.distance import jaccard
 from sklearn.cluster import MiniBatchKMeans
 
 from aurelius.agent.state import ConvergenceChecker, FeedbackAdapter
+from aurelius.constants import DISCOVERY_THRESHOLD
 from aurelius.types import MoleculeContext
 
 log = logging.getLogger(__name__)
@@ -34,8 +34,8 @@ log = logging.getLogger(__name__)
 class ScreeningResult:
     """Result from a single molecule screening.
 
-    Contains only the unified ``total_score`` and oracle-derived
-    properties — all legacy component scores have been removed.
+    Contains the unified ``total_score`` and multi-objective sub-scores
+    for downstream analysis and SDF export.
     """
 
     smiles: str
@@ -44,6 +44,12 @@ class ScreeningResult:
     rejection_reasons: list[str]
     fingerprint: np.ndarray[Any, Any] | None = None
     novelty_to_seed: float | None = None
+    homo_eV: float | None = None
+    lumo_eV: float | None = None
+    dielectric_proxy: float | None = None
+    viscosity_proxy: float | None = None
+    sa_score: float | None = None
+    sub_scores: dict[str, float] | None = None
 
 
 class DiscoveryLoop:
@@ -184,12 +190,9 @@ class DiscoveryLoop:
                     sims = BulkTanimotoSimilarity(rdkit_fp, seed_fps)
                     novelty = 1.0 - max(sims) if sims else None
 
-                is_discovery = (
-                    total_score >= 65.0
-                    and score_data.get("is_viable", False)
-                    and len(score_data.get("rejection_reasons", [])) == 0
-                )
-
+                # Multi-objective sub-scores from pipeline result
+                t2 = result.get("tier2", {}) or {}
+                sub_scores = score_data.get("sub_scores", {})
                 screening_result = ScreeningResult(
                     smiles=smi,
                     total_score=total_score,
@@ -197,6 +200,18 @@ class DiscoveryLoop:
                     rejection_reasons=score_data.get("rejection_reasons", []),
                     fingerprint=fv,
                     novelty_to_seed=novelty,
+                    homo_eV=t2.get("homo_eV"),
+                    lumo_eV=t2.get("lumo_eV"),
+                    dielectric_proxy=t2.get("dielectric_proxy"),
+                    viscosity_proxy=t2.get("viscosity_proxy"),
+                    sa_score=score_data.get("sa_score"),
+                    sub_scores=sub_scores,
+                )
+
+                is_discovery = (
+                    total_score >= DISCOVERY_THRESHOLD
+                    and score_data.get("is_viable", False)
+                    and len(score_data.get("rejection_reasons", [])) == 0
                 )
 
                 if is_discovery:
@@ -208,6 +223,12 @@ class DiscoveryLoop:
                         rejection_reasons=score_data.get("rejection_reasons", []),
                         fingerprint=fv,
                         novelty_to_seed=novelty,
+                        homo_eV=t2.get("homo_eV"),
+                        lumo_eV=t2.get("lumo_eV"),
+                        dielectric_proxy=t2.get("dielectric_proxy"),
+                        viscosity_proxy=t2.get("viscosity_proxy"),
+                        sa_score=score_data.get("sa_score"),
+                        sub_scores=sub_scores,
                     )
                     batch_discoveries.append(discovery_entry)
                     self.discoveries.append(discovery_entry)

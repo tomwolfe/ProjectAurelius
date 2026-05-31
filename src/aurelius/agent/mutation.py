@@ -169,6 +169,8 @@ class MutationEngine:
                 self.known_fps.append(_deserialize_fp(h))
             except Exception:
                 continue
+        # Pre-load known commercial electrolytes for global novelty checking
+        self._load_known_electrolytes()
         self._rng = np.random.default_rng(42)
         # Pre-decoded SMARTS reactions
         self._smarts_rxns: list[tuple[Any, str]] = []
@@ -178,6 +180,43 @@ class MutationEngine:
                 self._smarts_rxns.append((rxn, name))
             except Exception:
                 logger.debug("Failed to parse SMARTS '%s' (%s)", smarts, name)
+
+    def _load_known_electrolytes(self) -> None:
+        """Load known commercial electrolytes into the fingerprint database.
+
+        Loads the static list from ``src/aurelius/data/known_electrolytes.json``
+        and adds each molecule's fingerprint to ``known_fps`` with a higher
+        similarity threshold (Tanimoto > 0.85 = too similar).
+        """
+        import json
+        import os
+
+        json_path = os.path.join(
+            os.path.dirname(__file__), "..", "data", "known_electrolytes.json"
+        )
+        try:
+            with open(json_path) as f:
+                smiles_list = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return
+
+        existing_smis = {
+            Chem.MolToSmiles(Chem.MolFromSmiles(s))
+            for s in self.seed_pool
+            if Chem.MolFromSmiles(s) is not None
+        }
+        for smi in smiles_list:
+            mol = _safe_mol_from_smiles(smi)
+            if mol is not None:
+                canon = Chem.MolToSmiles(mol)
+                if canon not in existing_smis:
+                    self.known_fps.append(
+                        AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+                    )
+        logger.info(
+            "Loaded %d known electrolyte fingerprints for global novelty checking.",
+            len(self.known_fps),
+        )
 
     def fingerprint_db_size(self) -> int:
         """Return the number of known fingerprints in the database."""
@@ -293,10 +332,7 @@ class MutationEngine:
         n_arom = rdMolDescriptors.CalcNumAromaticRings(mol)
         if n_arom > 2:
             return False
-        for atom in mol.GetAtoms():
-            if atom.GetAtomicNum() in (8, 16, 9, 15):
-                return True
-        return False
+        return any(atom.GetAtomicNum() in (8, 16, 9, 15) for atom in mol.GetAtoms())
 
     def _brics_from_pool(self, mol: Any) -> list[str]:
         """BRICS decomposition + electrolyte-fragment-guided reassembly.

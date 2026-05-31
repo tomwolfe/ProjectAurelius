@@ -6,7 +6,7 @@ to eliminate circular imports between modules.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -71,7 +71,7 @@ class MoleculeContext:
         """Get or compute 2053-dim feature vector (lazy)."""
         if self.feature_vector is None:
             import numpy as np
-            from rdkit.Chem import AllChem, Descriptors
+            from rdkit.Chem import Descriptors
 
             fp = self.get_ecfp4()
             arr = np.zeros(2053, dtype=np.float32)

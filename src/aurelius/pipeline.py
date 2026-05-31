@@ -2,10 +2,10 @@
 
 Coordinates a streamlined two-step discovery pipeline:
   1. **Filter** — Quick structural validity (Tier 1) check with LogP and MW gates.
-  2. **Oracle** — Evaluate HOMO/LUMO frontier orbital energies via hybrid
-     RF (in-domain) + fragment-additivity (OOD) model.
+  2. **Oracle** — Multi-objective property evaluation via fragment-additivity
+     (HOMO, LUMO, Dielectric proxy, Viscosity proxy, SA Score).
 
-The results are then fed back to the RF surrogate for Bayesian optimisation.
+The multi-objective composite score weights five objectives for electrolyte fitness.
 All stages accept a pre-parsed RDKit Mol object to avoid redundant parsing.
 """
 
@@ -18,8 +18,27 @@ from typing import Any
 
 import numpy as np
 from rdkit import Chem
+from rdkit.Contrib.SA_Score import sascorer
 
 from aurelius.config import AureliusConfig, apply_global_config
+from aurelius.constants import (
+    DIELECTRIC_SIGMOID_STEEPNESS,
+    DIELECTRIC_TARGET,
+    HOMO_SIGMOID_STEEPNESS,
+    HOMO_THRESHOLD,
+    LUMO_SIGMA,
+    LUMO_TARGET,
+    SA_SIGMOID_STEEPNESS,
+    SA_THRESHOLD,
+    SCORE_WEIGHT_DIELECTRIC,
+    SCORE_WEIGHT_HOMO,
+    SCORE_WEIGHT_LUMO,
+    SCORE_WEIGHT_SA,
+    SCORE_WEIGHT_VISCOSITY,
+    VIABILITY_THRESHOLD,
+    VISCOSITY_SIGMOID_STEEPNESS,
+    VISCOSITY_THRESHOLD,
+)
 from aurelius.scoring.oracle import PropertyOracle
 from aurelius.screening.tier1 import Filter
 from aurelius.types import MoleculeContext
@@ -41,36 +60,13 @@ _HYDROLYTICALLY_UNSTABLE_SMARTS: list[tuple[str, str, float]] = [
     ("[#6][CX3](=[OX1])[OX2][CX3](=[OX1])[#6]", "geminal_diester", 0.2),
 ]
 
-# ---------------------------------------------------------------------------
-# Electrolyte Synthesizability SMARTS patterns
-# ---------------------------------------------------------------------------
-# Patterns that make electrolyte synthesis easier (rewarded) or harder (penalized).
-_ELECTROLYTE_SYNTH_BONUS_SMARTS: list[str] = [
-    "[CX4]([OX2])([OX2])[OX2]",  # orthoester — symmetric
-    "O=C([OX2])[OX2]",           # carbonate/ester — symmetric (favored)
-    "S(=O)(=O)",                 # sulfone — well-established chemistry
-    "[CX4]OC([CX4])[CX4]",      # ether — simple Williamson
-    "[CX4]F",                    # alkyl fluoride — common
-    "[CX4](F)F",                 # difluoromethyl
-    "[CX4](F)(F)F",              # trifluoromethyl
-]
-
-_ELECTROLYTE_SYNTH_PENALTY_SMARTS: list[str] = [
-    "[CX4]([F])([F])([F])([F])",  # perfluorinated quaternary carbon
-    "[CX3]1[CX3]=[CX3][CX3]=[CX3]1",  # highly conjugated rings
-    "[#16][#16]",  # disulfide
-    "[#7](-[#8])=[#6]",  # nitro/oxime — unstable
-    "[CX3](=[OX1])[OX2][OX2]",  # peracid
-    "[CX3]1[CX3]=[CX3][CX3]=[CX3][CX3]=[CX3]1",  # large conjugated rings
-]
-
 
 class AureliusPipeline:
     """Full Aurelius screening pipeline orchestrator.
 
     Coordinates the Filter -> Oracle pipeline and computes
-    the final Aurelius Score. All stages accept a pre-parsed
-    MoleculeContext to avoid redundant RDKit Mol object creation.
+    the multi-objective composite Aurelius Score. All stages accept a
+    pre-parsed MoleculeContext to avoid redundant RDKit Mol object creation.
     """
 
     def __init__(
@@ -107,11 +103,11 @@ class AureliusPipeline:
                 logger.warning("Tier 1 (Filter): DISABLED - %s", exc)
                 self._filter = None
 
-        # Phase 2: Oracle for property evaluation (with cache check)
+        # Phase 2: Oracle for property evaluation (pure GC — no training needed)
         self._oracle = PropertyOracle()
         oracle_cache = "oracle_cache.joblib"
         if not self._oracle.load(oracle_cache):
-            logger.info("Oracle (PropertyOracle): no cache found — training from scratch.")
+            logger.info("Oracle (PropertyOracle): no cache found — using GC model directly.")
         else:
             logger.info("Oracle (PropertyOracle): loaded from cache (%s).", oracle_cache)
         logger.info("Oracle (PropertyOracle): ENABLED")
@@ -172,9 +168,10 @@ class AureliusPipeline:
             smiles = ctx.smiles
         else:
             smiles = smiles_or_ctx
-            ctx = self._parse_once(smiles)
-            if ctx is None:
+            parsed = self._parse_once(smiles)
+            if parsed is None:
                 return self._generate_failed_run(smiles, "Invalid SMILES — parsing failed")
+            ctx = parsed
 
         logger.info("Processing: %s", smiles)
         pipeline_start = time.perf_counter()
@@ -204,8 +201,8 @@ class AureliusPipeline:
         t2_result = None
         homo_eV = -99.0
         lumo_eV = -99.0
-        domain_applicable = True
-        domain_penalty = 1.0
+        dielectric_proxy = 0.0
+        viscosity_proxy = 99.0
         if self._oracle:
             t2_start = time.perf_counter()
             oracle_result = self._oracle.evaluate(smiles, mol=ctx.mol)
@@ -213,34 +210,34 @@ class AureliusPipeline:
 
             homo_eV = oracle_result.get("homo_eV", -99.0)
             lumo_eV = oracle_result.get("lumo_eV", -99.0)
-            domain_applicable = oracle_result.get("domain_applicable", True)
-            domain_reason = oracle_result.get("domain_reason", "")
-            domain_penalty = oracle_result.get("domain_penalty", 1.0)
+            dielectric_proxy = oracle_result.get("dielectric_proxy", 0.0)
+            viscosity_proxy = oracle_result.get("viscosity_proxy", 99.0)
 
             t2_result = {
                 "homo_eV": homo_eV,
                 "lumo_eV": lumo_eV,
                 "gap_eV": oracle_result.get("gap_eV", 0.0),
-                "score_eV": oracle_result.get("score_eV", 0.0),
-                "domain_applicable": domain_applicable,
-                "domain_reason": domain_reason,
-                "domain_penalty": domain_penalty,
+                "dielectric_proxy": dielectric_proxy,
+                "viscosity_proxy": viscosity_proxy,
+                "domain_applicable": oracle_result.get("domain_applicable", True),
+                "domain_reason": oracle_result.get("domain_reason", ""),
             }
             results["tier2"] = t2_result
             logger.info(
-                "Property Oracle Result: %s -> HOMO=%.3f LUMO=%.3f gap=%.3f",
+                "Oracle Result: %s -> HOMO=%.3f LUMO=%.3f Dielectric=%.3f Viscosity=%.3f",
                 smiles,
                 homo_eV,
                 lumo_eV,
-                t2_result["gap_eV"],
+                dielectric_proxy,
+                viscosity_proxy,
             )
 
         # Step 3: Score computation (uses pre-parsed Mol)
         score = self._compute_score(
             homo_eV, lumo_eV,
+            dielectric_proxy=dielectric_proxy,
+            viscosity_proxy=viscosity_proxy,
             smiles=smiles, mol=ctx.mol,
-            domain_applicable=domain_applicable,
-            domain_penalty=domain_penalty,
         )
         results["score"] = score
 
@@ -271,118 +268,119 @@ class AureliusPipeline:
         return max(penalty, 0.5)
 
     @staticmethod
-    def _compute_electrolyte_sa_score(mol: Chem.Mol) -> float:
-        """Compute electrolyte synthesizability score in [0, 1] (1 = easy).
-
-        Rewards symmetric carbonates, ethers, sulfones, and common electrolyte
-        motifs that are well-established in electrolyte synthesis. Penalizes
-        exotic structural complexity that would be difficult to synthesize.
-
-        Unlike the generic SA score (which penalizes all complexity),
-        this heuristic actively rewards electrolyte-relevant symmetry
-        (e.g., symmetric carbonates > asymmetric ones).
-        """
-        if mol is None:
-            return 1.0
-
-        from rdkit.Chem import rdMolDescriptors
-
-        score = 0.5  # neutral baseline
-
-        # Rewards: simple, electrolyte-relevant motifs
-        for smarts in _ELECTROLYTE_SYNTH_BONUS_SMARTS:
-            pattern = Chem.MolFromSmarts(smarts)
-            if pattern is not None and mol.HasSubstructMatch(pattern):
-                score += 0.08
-
-        # Penalties: difficult or unstable structural features
-        for smarts in _ELECTROLYTE_SYNTH_PENALTY_SMARTS:
-            pattern = Chem.MolFromSmarts(smarts)
-            if pattern is not None and mol.HasSubstructMatch(pattern):
-                score -= 0.15
-
-        # Size penalty: molecules > 250 Da get progressively harder
-        mw = rdMolDescriptors.CalcExactMolWt(mol)
-        if mw > 250:
-            score -= 0.1 * min(1.0, (mw - 250) / 100)
-
-        # Stereocenter penalty: complex stereochemistry is hard to control
-        from rdkit.Chem import FindMolChiralCenters
-        n_stereo = len(FindMolChiralCenters(mol, includeUnassigned=True))
-        score -= n_stereo * 0.1
-
-        # Ring penalty: >2 rings increase synthetic difficulty
-        n_rings = rdMolDescriptors.CalcNumRings(mol)
-        if n_rings > 2:
-            score -= 0.1 * (n_rings - 2)
-
-        return float(np.clip(score, 0.0, 1.0))
-
-    @staticmethod
     def _gaussian_lumo(lumo_eV: float) -> float:
         """Gaussian reward for LUMO in the electrochemical stability window.
 
         Centered at -1.0 eV with sigma=0.75, rewarding LUMO ∈ [-1.75, -0.25] eV
         which covers the typical SEI formation window for Li/Na electrolytes.
         """
-        return float(np.exp(-0.5 * ((lumo_eV + 1.0) / 0.75) ** 2))
+        return float(np.exp(-0.5 * ((lumo_eV - LUMO_TARGET) / LUMO_SIGMA) ** 2))
 
     @staticmethod
     def _sigmoid_homo(homo_eV: float) -> float:
-        """Sigmoid penalty for HOMO above -6.0 eV.
+        """Sigmoid penalty for HOMO above threshold.
 
-        When HOMO < -6.0 eV (oxidative stability), score -> 1.0.
-        When HOMO > -6.0 eV, score falls to 0.0 with steepness k=5.
+        When HOMO < HOMO_THRESHOLD (oxidative stability), score -> 1.0.
+        When HOMO > HOMO_THRESHOLD, score falls to 0.0.
         """
-        return float(1.0 / (1.0 + np.exp(5.0 * (homo_eV + 6.0))))
+        return float(1.0 / (1.0 + np.exp(HOMO_SIGMOID_STEEPNESS * (homo_eV - HOMO_THRESHOLD))))
+
+    @staticmethod
+    def _sigmoid_dielectric(dielectric_proxy: float) -> float:
+        """Sigmoid reward for high dielectric constant (salt dissolution capability).
+
+        Returns a value in [0, 1] where higher dielectric -> higher reward.
+        """
+        return float(1.0 / (1.0 + np.exp(-DIELECTRIC_SIGMOID_STEEPNESS * (dielectric_proxy - DIELECTRIC_TARGET))))
+
+    @staticmethod
+    def _sigmoid_viscosity(viscosity_proxy: float) -> float:
+        """Sigmoid penalty for high viscosity (poor ion mobility).
+
+        Returns a value in [0, 1] where higher viscosity -> lower score.
+        """
+        return float(1.0 / (1.0 + np.exp(VISCOSITY_SIGMOID_STEEPNESS * (viscosity_proxy - VISCOSITY_THRESHOLD))))
+
+    @staticmethod
+    def _sigmoid_sa(sa_score: float) -> float:
+        """Sigmoid penalty for difficult synthetic accessibility.
+
+        Returns a value in [0, 1] where harder synthesis -> lower score.
+        """
+        return float(1.0 / (1.0 + np.exp(SA_SIGMOID_STEEPNESS * (sa_score - SA_THRESHOLD))))
 
     def _compute_score(
         self,
         homo_eV: float = -99.0,
         lumo_eV: float = -99.0,
+        dielectric_proxy: float = 0.0,
+        viscosity_proxy: float = 99.0,
         smiles: str | None = None,
         mol: Chem.Mol | None = None,
-        domain_applicable: bool = True,
-        domain_penalty: float = 1.0,
     ) -> dict[str, Any]:
-        """Compute the final Aurelius Score.
+        """Compute the multi-objective composite Aurelius Score.
 
-        Scoring:
-          - LUMO Gaussian reward centered at -1.0 eV, sigma=0.75 (SEI formation)
-          - HOMO sigmoid penalty for oxidative stability (threshold -6.0 eV)
-          - Electrolyte synthesizability score (replaces generic SA score)
-          - Hydrolytic instability penalty (SMARTS-based)
-          - Domain applicability flag (RF vs GC, no longer a score penalty)
+        Five weighted objectives:
+          - **LUMO reward** (30%): Gaussian centered at LUMO_TARGET eV (SEI formation)
+          - **HOMO penalty** (20%): Sigmoid penalizing HOMO > HOMO_THRESHOLD eV (oxidative stability)
+          - **Dielectric reward** (25%): Sigmoid rewarding high dielectric (salt dissolution)
+          - **Viscosity penalty** (15%): Sigmoid penalizing high viscosity (ion mobility)
+          - **SA penalty** (10%): Sigmoid penalizing poor synthetic accessibility
 
-        The final score is in [0, 100].
+        Each resolved sub-score is in [0, 1]. The weighted sum is mapped to [0, 100].
 
         Args:
             homo_eV: Predicted HOMO energy in eV.
             lumo_eV: Predicted LUMO energy in eV.
+            dielectric_proxy: Predicted dielectric constant proxy.
+            viscosity_proxy: Predicted viscosity proxy.
             smiles: Optional SMILES for context.
             mol: Pre-parsed RDKit Mol object for substructure checks.
-            domain_applicable: Whether RF model was used (True) or GC (False).
-            domain_penalty: Always 1.0 with hybrid oracle (GC handles OOD).
 
         Returns:
-            Dict with ``total_score``, ``is_viable``, and ``rejection_reasons``.
+            Dict with ``total_score``, ``is_viable``, ``sub_scores``,
+            and ``rejection_reasons``.
         """
+        sub_scores: dict[str, float] = {}
+
         g_lumo = self._gaussian_lumo(lumo_eV)
         s_homo = self._sigmoid_homo(homo_eV)
+        sub_scores["lumo_reward"] = round(g_lumo, 4)
+        sub_scores["homo_penalty"] = round(s_homo, 4)
 
-        total_score = 100.0 * g_lumo * s_homo
+        s_dielectric = self._sigmoid_dielectric(dielectric_proxy)
+        sub_scores["dielectric_reward"] = round(s_dielectric, 4)
 
-        # Electrolyte synthesizability penalty/reward
+        s_viscosity = self._sigmoid_viscosity(viscosity_proxy)
+        sub_scores["viscosity_penalty"] = round(s_viscosity, 4)
+
+        # Compute SA score from RDKit sascorer (replaces custom heuristic)
+        sa_score: float = 5.0  # neutral default
         if mol is not None:
-            synth = self._compute_electrolyte_sa_score(mol)
-            total_score *= synth
+            try:
+                sa_score = float(sascorer.calculateScore(mol))
+            except Exception:
+                sa_score = 5.0
         elif smiles is not None:
             m = Chem.MolFromSmiles(smiles)
             if m is not None:
-                synth = self._compute_electrolyte_sa_score(m)
-                total_score *= synth
+                try:
+                    sa_score = float(sascorer.calculateScore(m))
+                except Exception:
+                    sa_score = 5.0
+        s_sa = self._sigmoid_sa(sa_score)
+        sub_scores["sa_penalty"] = round(s_sa, 4)
 
-        # Hydrolytic instability penalty
+        # Weighted composite
+        total_score = 100.0 * (
+            SCORE_WEIGHT_LUMO * g_lumo
+            + SCORE_WEIGHT_HOMO * s_homo
+            + SCORE_WEIGHT_DIELECTRIC * s_dielectric
+            + SCORE_WEIGHT_VISCOSITY * s_viscosity
+            + SCORE_WEIGHT_SA * s_sa
+        )
+
+        # Hydrolytic instability penalty (multiplicative, applied after weighting)
         if mol is not None:
             hydro_penalty = self._check_hydrolytic_instability(mol)
             total_score *= hydro_penalty
@@ -394,18 +392,30 @@ class AureliusPipeline:
 
         total_score = float(np.clip(total_score, 0.0, 100.0))
 
-        is_viable = total_score >= 50.0
+        is_viable = total_score >= VIABILITY_THRESHOLD
 
         rejection_reasons: list[str] = []
         if not is_viable:
+            reasons = []
+            if g_lumo < 0.3:
+                reasons.append(f"LUMO={lumo_eV:.3f}eV (poor SEI formation)")
+            if s_homo < 0.3:
+                reasons.append(f"HOMO={homo_eV:.3f}eV (oxidative instability)")
+            if s_dielectric < 0.3:
+                reasons.append(f"dielectric_proxy={dielectric_proxy:.3f} (poor salt dissolution)")
+            if s_viscosity < 0.3:
+                reasons.append(f"viscosity_proxy={viscosity_proxy:.3f} (poor ion mobility)")
+            if s_sa < 0.3:
+                reasons.append(f"SA score={sa_score:.2f} (hard to synthesize)")
             rejection_reasons.append(
-                f"Aurelius Score {total_score:.1f} below viability threshold "
-                f"(g_lumo={g_lumo:.3f}, s_homo={s_homo:.3f})"
+                f"Aurelius Score {total_score:.1f} below threshold: {'; '.join(reasons)}"
             )
 
         return {
             "total_score": total_score,
             "is_viable": is_viable,
+            "sub_scores": sub_scores,
+            "sa_score": round(sa_score, 4),
             "rejection_reasons": rejection_reasons,
         }
 

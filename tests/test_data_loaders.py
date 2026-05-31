@@ -6,8 +6,6 @@ and returns properly typed molecular data.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from aurelius.data.loaders import load_qm9_homo_lumo_data

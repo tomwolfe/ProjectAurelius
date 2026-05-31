@@ -62,6 +62,7 @@ data/
 !src/aurelius/data/synthetic_training_data.csv
 !src/aurelius/data/tier0_seed_smiles.json
 !src/aurelius/data/qm9_subset.csv
+!src/aurelius/data/known_electrolytes.json
 
 # Outputs and research archives
 outputs/

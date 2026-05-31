@@ -16,6 +16,7 @@ from aurelius.utils.chem_utils import (
     generate_ecfp4_fingerprint,
     generate_molecular_descriptors,
 )
+
 __all__ = [
     "HAS_RDKIT",
     "_deserialize_fp",
