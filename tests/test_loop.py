@@ -45,7 +45,7 @@ class TestDiscoveryLoopActiveLearning:
         assert result["total_screened"] > 0
 
     def test_feedback_records_fingerprints_not_smiles(self):
-        """FeedbackAdapter.record() must append fingerprint arrays, not SMILES."""
+        """LoopState.record() must append fingerprint arrays, not SMILES."""
         fp = np.zeros((2053,), dtype=np.float32)
         fp[5] = 1.0
 

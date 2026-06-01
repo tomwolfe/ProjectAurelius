@@ -19,17 +19,16 @@ from typing import Any
 import numpy as np
 from rdkit.DataStructs import TanimotoSimilarity
 from scipy.stats import norm
-from sklearn.decomposition import TruncatedSVD
 from sklearn.ensemble import RandomForestRegressor
 
 
 class RandomForestSurrogate:
-    """Random Forest surrogate with true Expected Improvement acquisition.
+    """Random Forest surrogate with Expected Improvement acquisition.
 
-    The RF provides both mean (μ) and variance (σ²) natively — the standard
-    deviation of predictions across all trees in the ensemble.  This enables
-    the standard analytical Expected Improvement formula, which rigorously
-    balances exploration (high σ) and exploitation (high μ).
+    The RF provides both mean (μ) and variance (σ²) — the standard deviation
+    of predictions across all trees in the ensemble. The surrogate uses the
+    full feature vector without dimensionality reduction, as tree-based models
+    handle high-dimensional binary fingerprints natively.
 
     Usage:
         surrogate = RandomForestSurrogate(xi=0.01)
@@ -41,7 +40,6 @@ class RandomForestSurrogate:
     def __init__(self, random_state: int = 42, xi: float = 0.01) -> None:
         self._X: np.ndarray[Any, Any] | None = None
         self._y: np.ndarray[Any, Any] | None = None
-        self._svd: TruncatedSVD | None = None
         self._rf: RandomForestRegressor | None = None
         self._random_state = random_state
         self._xi = xi
@@ -51,14 +49,9 @@ class RandomForestSurrogate:
         if len(y) < 2:
             raise ValueError("At least 2 samples are required to fit the Random Forest surrogate.")
 
-        # Dimensionality reduction: TruncatedSVD converts sparse 2053-dim
-        # fingerprints to dense principal components for the RF.
-        # Using TruncatedSVD (not PCA) because it handles sparse data natively.
-        n_features = X.shape[1]
-        n_components = min(150, n_features, max(2, X.shape[0] - 1))
-        self._svd = TruncatedSVD(n_components=n_components, random_state=self._random_state)
-        X_reduced = self._svd.fit_transform(X)
-
+        # The RF is fitted directly on the (N, n_features) feature matrix.
+        # Tree-based models handle sparse/high-dimensional binary features
+        # natively, so no dimensionality reduction is needed.
         self._rf = RandomForestRegressor(
             n_estimators=100,
             max_depth=12,
@@ -66,7 +59,7 @@ class RandomForestSurrogate:
             random_state=self._random_state,
             n_jobs=1,
         )
-        self._rf.fit(X_reduced, y)
+        self._rf.fit(X, y)
 
         self._X = X
         self._y = y
@@ -97,11 +90,10 @@ class RandomForestSurrogate:
                 "RandomForestSurrogate must be fitted before scoring candidates. "
                 "Call .fit(X, y) with training data first."
             )
-        if self._svd is None or self._rf is None:
+        if self._rf is None:
             raise RuntimeError("Random Forest surrogate is not trained.")
 
-        X_reduced = self._svd.transform(X_candidates)
-        tree_preds = np.array([tree.predict(X_reduced) for tree in self._rf.estimators_])
+        tree_preds = np.array([tree.predict(X_candidates) for tree in self._rf.estimators_])
         mu = np.mean(tree_preds, axis=0)
         sigma = np.std(tree_preds, axis=0, ddof=1)
 

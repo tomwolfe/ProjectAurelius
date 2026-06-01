@@ -155,8 +155,8 @@ class TestRandomForestSurrogate:
         sorted_indices = np.argsort(ei_all)[::-1][:3]
         assert indices == sorted_indices.tolist()
 
-    def test_svd_pipeline_fit_and_predict(self):
-        """SVD + RF pipeline should train and produce finite EI scores."""
+    def test_rf_direct_fit_and_predict(self):
+        """RF trained directly on (N, 2053) features should produce finite EI scores."""
         rng = np.random.default_rng(42)
         X = rng.random((20, 2053))
         y = rng.random(20) * 100

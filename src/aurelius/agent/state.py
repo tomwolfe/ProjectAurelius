@@ -249,14 +249,6 @@ class LoopState:
         self.save()
 
 
-# Backward-compatible aliases
-FeedbackAdapter = LoopState
-ConvergenceChecker = LoopState
-CheckpointManager = LoopState
-
 __all__ = [
     "LoopState",
-    "FeedbackAdapter",
-    "ConvergenceChecker",
-    "CheckpointManager",
 ]

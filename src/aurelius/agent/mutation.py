@@ -17,7 +17,6 @@ from typing import Any
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import BRICS, AllChem, rdMolDescriptors
-from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from aurelius.constants import ELECTROLYTE_MIN_HETEROATOM_RATIO
 from aurelius.types import MoleculeContext
@@ -199,13 +198,15 @@ class MutationEngine:
             except Exception:
                 continue
 
-        # Murcko scaffold databases for novelty checking
-        self._seed_scaffolds: set[str] = set()
-        self._known_scaffolds: set[str] = set()
+        # Canonical SMILES sets for exact duplicate prevention
+        self._seed_smiles: set[str] = set()
+        self._known_smiles: set[str] = set()
         for ctx in self.seed_contexts:
-            scaff = self._get_murcko_scaffold(ctx.mol)
-            if scaff:
-                self._seed_scaffolds.add(scaff)
+            try:
+                canon = Chem.MolToSmiles(ctx.mol)
+                self._seed_smiles.add(canon)
+            except Exception:
+                continue
 
         self._load_known_electrolytes()
         self._rng = np.random.default_rng(42)
@@ -245,9 +246,7 @@ class MutationEngine:
                 canon = Chem.MolToSmiles(ctx.mol)
                 if canon not in existing_smis:
                     self.known_fps.append(ctx.get_ecfp4())
-                    scaff = self._get_murcko_scaffold(ctx.mol)
-                    if scaff:
-                        self._known_scaffolds.add(scaff)
+                    self._known_smiles.add(canon)
 
         logger.info(
             "Loaded %d known electrolyte fingerprints for global novelty checking.",
@@ -263,42 +262,37 @@ class MutationEngine:
         if ctx is not None:
             self.known_fps.append(ctx.get_ecfp4())
 
-    @staticmethod
-    def _get_murcko_scaffold(mol: Chem.Mol) -> str | None:
-        """Extract the Murcko scaffold SMILES from a molecule.
-
-        Returns None for acyclic molecules or on failure.
-        """
-        try:
-            return MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
-        except Exception:
-            return None
-
     def _novelty_check(self, ctx: MoleculeContext) -> bool:
-        """Return True if molecule is novel (Murcko scaffold + Tanimoto).
+        """Return True if molecule is novel (exact SMILES + Tanimoto).
 
-        A molecule is only considered novel if BOTH:
-          1. Its Murcko scaffold is not found in the seed pool or known
-             electrolyte database.
-          2. Its ECFP4 Tanimoto similarity is < 0.85 against all known
-             electrolyte fingerprints.
+        A molecule is considered novel if:
+          1. Its canonical SMILES is not an exact match for any seed or
+             known electrolyte (prevents exact rediscovery).
+          2. Its ECFP4 Tanimoto similarity is < 0.85 against all seed
+             molecules (encourages local exploration of known cores with
+             new functional groups).
 
-        This prevents trivial rediscovery of known solvents (DMC, FEC, EC)
-        that have different side chains but the same core scaffold.
+        This allows the engine to discover novel functionalizations of
+        known electrolyte cores (e.g., fluorinated carbonates, alkylated
+        sulfones) while preventing trivial rediscovery of exact knowns.
         """
-        # Murcko scaffold check (primary): reject if scaffold is known
-        scaffold = self._get_murcko_scaffold(ctx.mol)
-        if scaffold:
-            all_known_scaffolds = self._seed_scaffolds | self._known_scaffolds
-            if scaffold in all_known_scaffolds:
-                return False
+        # Exact canonical SMILES match (prevents rediscovering exact seeds/knowns)
+        try:
+            canon = Chem.MolToSmiles(ctx.mol)
+        except Exception:
+            return False
+        if canon in self._seed_smiles:
+            return False
+        if canon in self._known_smiles:
+            return False
 
-        # Tanimoto check (secondary): reject if too similar to known
+        # Tanimoto check against seed pool only (allows functionalization of known cores)
         fp = ctx.get_ecfp4()
-        if not self.known_fps:
-            return True
         from rdkit.DataStructs import TanimotoSimilarity
-        return all(TanimotoSimilarity(fp, known) < 0.85 for known in self.known_fps)
+        seed_fps = [c.get_ecfp4() for c in self.seed_contexts]
+        if not seed_fps:
+            return True
+        return all(TanimotoSimilarity(fp, s) < 0.85 for s in seed_fps)
 
     # ------------------------------------------------------------------
     # Strategy 1: SMARTS functional-group replacement
