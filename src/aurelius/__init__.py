@@ -22,7 +22,6 @@ from importlib import metadata
 __version__: str = metadata.version("aurelius")
 
 from aurelius.agent.loop import DiscoveryLoop
-from aurelius.types import ScreeningResult
 from aurelius.agent.mutation import MutationEngine
 from aurelius.agent.reporting import (
     generate_discoveries_sdf,
@@ -35,7 +34,7 @@ from aurelius.agent.state import (
 )
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.oracle import PropertyOracle
-from aurelius.types import MoleculeContext
+from aurelius.types import MoleculeContext, ScreeningResult
 
 __all__ = [
     "__version__",

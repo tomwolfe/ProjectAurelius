@@ -15,7 +15,6 @@ import contextlib
 import logging
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -233,6 +232,7 @@ class DiscoveryLoop:
                     lumo_eV=t2.get("lumo_eV"),
                     dielectric_proxy=t2.get("dielectric_proxy"),
                     viscosity_proxy=t2.get("viscosity_proxy"),
+                    li_solvation_proxy=t2.get("li_solvation_proxy"),
                     sa_score=score_data.get("sa_score"),
                     sub_scores=sub_scores,
                 )
@@ -256,6 +256,7 @@ class DiscoveryLoop:
                         lumo_eV=t2.get("lumo_eV"),
                         dielectric_proxy=t2.get("dielectric_proxy"),
                         viscosity_proxy=t2.get("viscosity_proxy"),
+                        li_solvation_proxy=t2.get("li_solvation_proxy"),
                         sa_score=score_data.get("sa_score"),
                         sub_scores=sub_scores,
                     )
@@ -376,8 +377,8 @@ class DiscoveryLoop:
         X_pool = self._featurise_from_contexts(valid_contexts)
 
         if self._surrogate is not None:
-            ei_scores = self._surrogate.expected_improvement(X_pool)
-            top_indices: list[int] = np.argsort(ei_scores)[::-1][: self.batch_size].tolist()
+            nws_scores = self._surrogate.novelty_weighted_score(X_pool)
+            top_indices: list[int] = np.argsort(nws_scores)[::-1][: self.batch_size].tolist()
         else:
             n = min(self.batch_size, len(valid_contexts))
             indices = np.random.default_rng(42).choice(len(valid_contexts), size=n, replace=False)

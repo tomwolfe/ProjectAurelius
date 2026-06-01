@@ -28,6 +28,8 @@ from aurelius.constants import (
     DIELECTRIC_TARGET,
     HOMO_SIGMOID_STEEPNESS,
     HOMO_THRESHOLD,
+    LI_SOLVATION_SIGMA,
+    LI_SOLVATION_TARGET,
     LUMO_SIGMA,
     LUMO_TARGET,
     SA_SIGMOID_STEEPNESS,
@@ -35,6 +37,7 @@ from aurelius.constants import (
     SCORE_WEIGHT_AL_CORROSION,
     SCORE_WEIGHT_DIELECTRIC,
     SCORE_WEIGHT_HOMO,
+    SCORE_WEIGHT_LI_SOLVATION,
     SCORE_WEIGHT_LUMO,
     SCORE_WEIGHT_SA,
     SCORE_WEIGHT_VISCOSITY,
@@ -174,6 +177,7 @@ class AureliusPipeline:
             lumo_eV = oracle_result.get("lumo_eV", -99.0)
             dielectric_proxy = oracle_result.get("dielectric_proxy", 0.0)
             viscosity_proxy = oracle_result.get("viscosity_proxy", 99.0)
+            li_solvation_proxy = oracle_result.get("li_solvation_proxy", 0.0)
 
             t2_result = {
                 "homo_eV": homo_eV,
@@ -181,19 +185,21 @@ class AureliusPipeline:
                 "gap_eV": oracle_result.get("gap_eV", 0.0),
                 "dielectric_proxy": dielectric_proxy,
                 "viscosity_proxy": viscosity_proxy,
+                "li_solvation_proxy": li_solvation_proxy,
                 "domain_applicable": oracle_result.get("domain_applicable", True),
                 "domain_reason": oracle_result.get("domain_reason", ""),
             }
             results["tier2"] = t2_result
             logger.info(
-                "Oracle Result: %s -> HOMO=%.3f LUMO=%.3f Dielectric=%.3f Viscosity=%.3f",
-                smiles, homo_eV, lumo_eV, dielectric_proxy, viscosity_proxy,
+                "Oracle Result: %s -> HOMO=%.3f LUMO=%.3f Dielectric=%.3f Viscosity=%.3f LiSolv=%.3f",
+                smiles, homo_eV, lumo_eV, dielectric_proxy, viscosity_proxy, li_solvation_proxy,
             )
 
         score = self._compute_score(
             homo_eV, lumo_eV,
             dielectric_proxy=dielectric_proxy,
             viscosity_proxy=viscosity_proxy,
+            li_solvation_proxy=li_solvation_proxy,
             ctx=ctx,
         )
         results["score"] = score
@@ -239,8 +245,6 @@ class AureliusPipeline:
         Note: LUMO threshold check is done in _compute_score; this function
         only checks the structural criteria.
         """
-        from rdkit.Chem import rdMolDescriptors
-
         # Count fluorine atoms
         n_f = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 9)
 
@@ -266,6 +270,10 @@ class AureliusPipeline:
         return float(np.exp(-0.5 * ((lumo_eV - LUMO_TARGET) / LUMO_SIGMA) ** 2))
 
     @staticmethod
+    def _gaussian_li_solvation(li_solvation_proxy: float) -> float:
+        return float(np.exp(-0.5 * ((li_solvation_proxy - LI_SOLVATION_TARGET) / LI_SOLVATION_SIGMA) ** 2))
+
+    @staticmethod
     def _sigmoid_homo(homo_eV: float) -> float:
         return float(1.0 / (1.0 + np.exp(HOMO_SIGMOID_STEEPNESS * (homo_eV - HOMO_THRESHOLD))))
 
@@ -287,23 +295,26 @@ class AureliusPipeline:
         lumo_eV: float = -99.0,
         dielectric_proxy: float = 0.0,
         viscosity_proxy: float = 99.0,
+        li_solvation_proxy: float = 0.0,
         ctx: MoleculeContext | None = None,
     ) -> dict[str, Any]:
         """Compute the multi-objective composite Aurelius Score.
 
-        Six weighted objectives:
-          - LUMO reward (25%): Gaussian centered at LUMO_TARGET
-          - HOMO penalty (20%): Sigmoid penalizing HOMO > threshold
-          - Dielectric reward (20%): Sigmoid rewarding high dielectric
-          - Viscosity penalty (15%): Sigmoid penalizing high viscosity
-          - SA penalty (10%): Sigmoid penalizing poor synthetic accessibility
-          - Al corrosion penalty (10%): Penalty for high-LUMO fluorinated molecules
+        Seven weighted objectives:
+          - LUMO reward (20%): Gaussian centered at LUMO_TARGET
+          - HOMO penalty (15%): Sigmoid penalizing HOMO > threshold
+          - Dielectric reward (15%): Sigmoid rewarding high dielectric
+          - Viscosity penalty (12%): Sigmoid penalizing high viscosity
+          - Li+ Solvation reward (18%): Gaussian rewarding moderate binding
+          - SA penalty (8%): Sigmoid penalizing poor synthetic accessibility
+          - Al corrosion penalty (12%): Penalty for high-LUMO fluorinated molecules
 
         Args:
             homo_eV: Predicted HOMO energy.
             lumo_eV: Predicted LUMO energy.
             dielectric_proxy: Predicted dielectric proxy.
             viscosity_proxy: Predicted viscosity proxy.
+            li_solvation_proxy: Predicted Li+ solvation proxy.
             ctx: Pre-parsed MoleculeContext for substructure checks.
 
         Returns:
@@ -315,11 +326,13 @@ class AureliusPipeline:
         s_homo = self._sigmoid_homo(homo_eV)
         s_dielectric = self._sigmoid_dielectric(dielectric_proxy)
         s_viscosity = self._sigmoid_viscosity(viscosity_proxy)
+        g_li_solvation = self._gaussian_li_solvation(li_solvation_proxy)
 
         sub_scores["lumo_reward"] = round(g_lumo, 4)
         sub_scores["homo_penalty"] = round(s_homo, 4)
         sub_scores["dielectric_reward"] = round(s_dielectric, 4)
         sub_scores["viscosity_penalty"] = round(s_viscosity, 4)
+        sub_scores["li_solvation_reward"] = round(g_li_solvation, 4)
 
         # SA score from RDKit sascorer
         sa_score: float = 5.0
@@ -343,7 +356,9 @@ class AureliusPipeline:
             + SCORE_WEIGHT_HOMO * s_homo
             + SCORE_WEIGHT_DIELECTRIC * s_dielectric
             + SCORE_WEIGHT_VISCOSITY * s_viscosity
+            + SCORE_WEIGHT_LI_SOLVATION * g_li_solvation
             + SCORE_WEIGHT_SA * s_sa
+            + SCORE_WEIGHT_AL_CORROSION * (1.0 - al_corrosion_penalty)
         )
 
         # Hydrolytic instability penalty (multiplicative)
@@ -367,6 +382,8 @@ class AureliusPipeline:
                 reasons.append(f"dielectric_proxy={dielectric_proxy:.3f} (poor salt dissolution)")
             if s_viscosity < 0.3:
                 reasons.append(f"viscosity_proxy={viscosity_proxy:.3f} (poor ion mobility)")
+            if g_li_solvation < 0.3:
+                reasons.append(f"li_solvation_proxy={li_solvation_proxy:.3f} (poor Li+ binding)")
             if s_sa < 0.3:
                 reasons.append(f"SA score={sa_score:.2f} (hard to synthesize)")
             if al_corrosion_penalty < 1.0 and lumo_eV > AL_CORROSION_LUMO_THRESHOLD:

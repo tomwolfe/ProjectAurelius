@@ -52,6 +52,37 @@ ELECTROLYTE_SMARTS: list[tuple[str, str]] = [
     ("[C:1]>>[C:1]CC", "Ethylation"),
 ]
 
+# ---------------------------------------------------------------------------
+# Electrochemical Stability SMARTS — filter during mutation to save compute
+# ---------------------------------------------------------------------------
+# Physical basis: these motifs decompose at anode/cathode potentials:
+#   - Peroxides: O-O bond homolysis at < 1 V vs Li/Li+
+#   - Acetals: hydrolytic instability in acidic LiPF6 electrolyte
+#   - Hemiacetals: same instability as acetals
+#   - Epoxides / aziridines: strained 3-rings open at anode potential
+#   - geminal diols: unstable toward dehydration
+
+_ELECTROCHEMICALLY_UNSTABLE_SMARTS: list[tuple[str, str]] = [
+    ("[OX2][OX2]",            "peroxide"),
+    ("[CX4H1]([OX2H0])([OX2H0])",  "acetal"),
+    ("[CX4H1]([OX2H0])([OH])",     "hemiacetal"),
+    ("[OX2]1[OX2][OX2]1",     "trioxirane"),
+    ("[CH2]1[CH2][CH2]1",     "cyclopropane"),
+    ("[CH2]1[CH2][CH2][CH2]1", "cyclobutane"),
+]
+
+# Hydrolytically unstable patterns (mirrors pipeline.py — checked here too
+# to reject unstable candidates before compute-heavy scoring)
+_HYDROLYTICALLY_UNSTABLE_SMARTS: list[tuple[str, str]] = [
+    ("[CX3](=[OX1])[OX2][CX3](=[OX1])[OX2]", "anhydride"),
+    ("[CX3](=[OX1])[OX2][CX2]#[N]",           "acyl_cyanide"),
+    ("[SX4](=[OX1])(=[OX1])[OX2][CX3](=[OX1])", "sulfonate_ester"),
+    ("[PX4](=[OX1])([OX2][CX4])[OX2][CX4]",   "phosphate_ester"),
+    ("[Si]([OX2])[OX2]",                      "silyl_ether"),
+    ("[CX3](=[OX1])[OX2][CX2]=[CX2]",         "enol_ester"),
+    ("[#6][CX3](=[OX1])[OX2][CX3](=[OX1])[#6]", "geminal_diester"),
+]
+
 ELECTROLYTE_FRAGMENT_POOL: list[str] = [
     "COC(=O)OC",
     "CCOC(=O)OCC",
@@ -246,6 +277,8 @@ class MutationEngine:
           - Limited aromatic character (drug-like molecules tend to be highly aromatic)
           - A minimum ratio of heteroatoms (O, F) to total heavy atoms
             to prevent BRICS from generating drug-like garbage
+          - No electrochemically unstable motifs (peroxides, acetals, strained rings)
+          - No hydrolytically unstable motifs (anhydrides, silyl ethers, etc.)
 
         Args:
             ctx: Pre-parsed MoleculeContext.
@@ -263,7 +296,6 @@ class MutationEngine:
             return False
 
         # Tightened filter: require minimum heteroatom-to-carbon ratio for BRICS products
-        n_carbon = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 6)
         n_total_heavy = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() > 1)
 
         if n_total_heavy > 0:
@@ -273,6 +305,26 @@ class MutationEngine:
             ratio = o_f_count / n_total_heavy
             if ratio < ELECTROLYTE_MIN_HETEROATOM_RATIO:
                 return False
+
+        # Electrochemical stability: reject molecules with unstable motifs
+        for smarts, _name in _ELECTROCHEMICALLY_UNSTABLE_SMARTS:
+            pattern = Chem.MolFromSmarts(smarts)
+            if pattern is not None and ctx.mol.HasSubstructMatch(pattern):
+                return False
+
+        # Hydrolytic stability: reject molecules with hydrolytically unstable motifs
+        for smarts, _name in _HYDROLYTICALLY_UNSTABLE_SMARTS:
+            pattern = Chem.MolFromSmarts(smarts)
+            if pattern is not None and ctx.mol.HasSubstructMatch(pattern):
+                return False
+
+        # Strained ring filter: reject molecules with 3- or 4-membered rings
+        # (epoxides, azetidines, cyclopropanes — decompose at electrode potentials)
+        ring_info = ctx.mol.GetRingInfo()
+        if ring_info is not None and ring_info.NumRings() > 0:
+            for ring in ring_info.BondRings():
+                if len(ring) <= 4:
+                    return False
 
         return True
 

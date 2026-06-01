@@ -99,6 +99,7 @@ def generate_run_summary(
                 "lumo_eV": d.lumo_eV,
                 "dielectric_proxy": d.dielectric_proxy,
                 "viscosity_proxy": d.viscosity_proxy,
+                "li_solvation_proxy": d.li_solvation_proxy,
                 "sa_score": d.sa_score,
                 "sub_scores": d.sub_scores,
                 "is_viable": d.is_viable,
@@ -158,6 +159,8 @@ def generate_discoveries_sdf(
             mol.SetProp("dielectric_proxy", f"{r.dielectric_proxy:.4f}")
         if r.viscosity_proxy is not None:
             mol.SetProp("viscosity_proxy", f"{r.viscosity_proxy:.4f}")
+        if r.li_solvation_proxy is not None:
+            mol.SetProp("li_solvation_proxy", f"{r.li_solvation_proxy:.4f}")
         if r.sa_score is not None:
             mol.SetProp("sa_score", f"{r.sa_score:.4f}")
         if r.novelty_to_seed is not None:

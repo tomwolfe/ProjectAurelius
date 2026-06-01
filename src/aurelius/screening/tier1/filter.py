@@ -29,7 +29,6 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from rdkit import Chem
 from rdkit.Chem import Descriptors, rdMolDescriptors
 
 from aurelius.types import MoleculeContext

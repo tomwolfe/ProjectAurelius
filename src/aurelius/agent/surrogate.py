@@ -1,9 +1,14 @@
-"""Random Forest surrogate model for distance-weighted candidate acquisition.
+"""Random Forest surrogate model for novelty-weighted candidate acquisition.
 
-The acquisition function ranks candidates by predicted score, weighted by
-Tanimoto-distance to the nearest training point. This is mathematically
-transparent: the RF provides a point estimate, and chemical novelty
-(measured via ECFP4 Tanimoto distance) provides the exploration bonus.
+The acquisition function (``novelty_weighted_score``) ranks candidates by
+predicted score, weighted by Tanimoto-distance to the nearest training point.
+This is mathematically transparent: the RF provides a point estimate, and
+chemical novelty (measured via ECFP4 Tanimoto distance) provides the
+exploration bonus.
+
+Note: previously named ``expected_improvement`` — renamed to reflect that
+this computes ``mean * (1 + alpha * tanimoto_distance)``, not true Expected
+Improvement (which requires predictive variance).
 """
 
 from __future__ import annotations
@@ -78,7 +83,7 @@ def global_novelty_penalty(
 
 
 class RandomForestSurrogate:
-    """Random Forest surrogate for distance-weighted acquisition.
+    """Random Forest surrogate for novelty-weighted acquisition.
 
     The acquisition function is:
 
@@ -122,11 +127,15 @@ class RandomForestSurrogate:
                 bv.SetBit(int(idx))
             self._train_bitvects.append(bv)
 
-    def expected_improvement(self, X_candidates: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
-        """Compute distance-weighted acquisition values for candidates.
+    def novelty_weighted_score(self, X_candidates: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+        """Compute novelty-weighted acquisition values for candidates.
 
         Returns ``predicted_mean * (1 + alpha * Tanimoto_distance_to_nearest_train)``,
         with a global-novelty penalty applied.
+
+        Note: This is NOT Expected Improvement — true EI requires predictive
+        variance (std across RF tree predictions). This is a heuristic
+        acquisition that rewards novelty via Tanimoto distance.
         """
         if self._X is None or self._y is None:
             raise RuntimeError(
@@ -166,6 +175,6 @@ class RandomForestSurrogate:
         X_candidates: np.ndarray[Any, Any],
         top_n: int = 10,
     ) -> list[int]:
-        nwei = self.expected_improvement(X_candidates)
-        top_indices = np.argsort(nwei)[::-1][:top_n]
+        nws = self.novelty_weighted_score(X_candidates)
+        top_indices = np.argsort(nws)[::-1][:top_n]
         return top_indices.tolist()

@@ -92,22 +92,26 @@ SA_SIGMOID_STEEPNESS: float = 2.0
 # and salt dissociation), HOMO and Viscosity are secondary constraints, and
 # SA is a soft filter.
 
-SCORE_WEIGHT_LUMO: float = 0.25
+SCORE_WEIGHT_LUMO: float = 0.20
 """Weight for LUMO SEI-formation reward."""
 
-SCORE_WEIGHT_HOMO: float = 0.20
+SCORE_WEIGHT_HOMO: float = 0.15
 """Weight for HOMO oxidative-stability penalty."""
 
-SCORE_WEIGHT_DIELECTRIC: float = 0.20
+SCORE_WEIGHT_DIELECTRIC: float = 0.15
 """Weight for dielectric-constant (salt dissolution) reward."""
 
-SCORE_WEIGHT_VISCOSITY: float = 0.15
+SCORE_WEIGHT_VISCOSITY: float = 0.12
 """Weight for viscosity (ion mobility) penalty."""
 
-SCORE_WEIGHT_SA: float = 0.10
+SCORE_WEIGHT_LI_SOLVATION: float = 0.18
+"""Weight for Li+ solvation energy proxy — penalises binding that is too tight
+(poor transference number) or too weak (poor conductivity)."""
+
+SCORE_WEIGHT_SA: float = 0.08
 """Weight for synthetic accessibility penalty."""
 
-SCORE_WEIGHT_AL_CORROSION: float = 0.10
+SCORE_WEIGHT_AL_CORROSION: float = 0.12
 """Weight for aluminium corrosion penalty (high-LUMO fluorinated molecules)."""
 
 # ---------------------------------------------------------------------------
@@ -177,6 +181,28 @@ AL_CORROSION_MIN_FLUORINE: int = 2
 
 AL_CORROSION_PENALTY_FACTOR: float = 0.7
 """Multiplicative penalty applied when Al corrosion criteria are met."""
+
+# ---------------------------------------------------------------------------
+# Li+ Solvation Energy Proxy — Fragment-Additivity Target
+# ---------------------------------------------------------------------------
+# Physical basis: Li+ solvation energy (binding strength) is the single most
+# important property for battery electrolyte conductivity. A molecule that
+# binds Li+ too tightly yields a poor transference number (Li+ stays bound
+# to the solvent). A molecule that binds too weakly cannot dissociate Li
+# salts into free charge carriers.
+#
+# The GC proxy yields a unitless value. The ideal range corresponds to
+# moderate binding: strong enough to dissociate LiPF6 (~3.0-4.5 eV binding),
+# weak enough for acceptable transference.
+#
+# Target values from: J. Phys. Chem. B 2015, 119, 1315; Phys. Chem. Chem.
+# Phys. 2018, 20, 12972.
+
+LI_SOLVATION_TARGET: float = 3.5
+"""Target Li+ solvation proxy value (moderate binding — Goldilocks zone)."""
+
+LI_SOLVATION_SIGMA: float = 1.0
+"""Gaussian width for Li+ solvation reward. sigma=1.0 rewards proxy in [2.5, 4.5]."""
 
 # ---------------------------------------------------------------------------
 # Electrolyte-Like Filter Thresholds (Mutation Engine)
