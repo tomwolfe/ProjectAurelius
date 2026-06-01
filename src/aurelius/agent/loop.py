@@ -373,8 +373,10 @@ class DiscoveryLoop:
         X_pool = self._featurise_from_contexts(valid_contexts)
 
         if self._surrogate is not None:
-            ei_scores = self._surrogate.expected_improvement(X_pool)
-            top_indices: list[int] = np.argsort(ei_scores)[::-1][: self.batch_size].tolist()
+            fps = [ctx.get_ecfp4() for ctx in valid_contexts]
+            top_indices: list[int] = self._surrogate.score_candidates(
+                X_pool, fingerprints=fps, top_n=self.batch_size
+            )
         else:
             n = min(self.batch_size, len(valid_contexts))
             indices = np.random.default_rng(42).choice(len(valid_contexts), size=n, replace=False)

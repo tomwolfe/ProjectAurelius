@@ -251,12 +251,12 @@ class MutationEngine:
             self.known_fps.append(ctx.get_ecfp4())
 
     def _novelty_check(self, ctx: MoleculeContext) -> bool:
-        """Return True if molecule is novel (Tanimoto < 0.75 vs all known)."""
+        """Return True if molecule is novel (Tanimoto < 0.85 vs all known)."""
         fp = ctx.get_ecfp4()
         if not self.known_fps:
             return True
         from rdkit.DataStructs import TanimotoSimilarity
-        return all(TanimotoSimilarity(fp, known) < 0.75 for known in self.known_fps)
+        return all(TanimotoSimilarity(fp, known) < 0.85 for known in self.known_fps)
 
     # ------------------------------------------------------------------
     # Strategy 1: SMARTS functional-group replacement
@@ -352,6 +352,13 @@ class MutationEngine:
             ratio = o_f_count / n_total_heavy
             if ratio < ELECTROLYTE_MIN_HETEROATOM_RATIO:
                 return False
+
+        # Halogen spam filter: reject molecules where fluorine > 60% of heavy atoms.
+        # Prevents mutation engine from replacing every hydrogen with fluorine
+        # to artificially inflate scores (e.g., "CF" spam).
+        n_f = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 9)
+        if n_total_heavy > 0 and n_f / n_total_heavy > 0.6:
+            return False
 
         # Electrochemical stability: reject molecules with unstable motifs
         for smarts, _name in _ELECTROCHEMICALLY_UNSTABLE_SMARTS:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from scipy.stats import norm
 
 from aurelius.agent.surrogate import RandomForestSurrogate
 
@@ -110,11 +109,6 @@ class TestRandomForestSurrogate:
         surrogate._y_best = 10.0  # override
 
         # Seed EI formula with approximate mu=8, sigma=2
-        mu = 8.0
-        sigma = 2.0
-        Z = (mu - 10.0) / sigma
-        expected_ei = (mu - 10.0) * norm.cdf(Z) + sigma * norm.pdf(Z)
-
         candidate = np.array([[0.5, 0.5, 0.5]])
         # We can't force the RF to predict specific mu/sigma, so instead
         # verify the EI implementation matches the formula for arbitrary values
@@ -160,3 +154,61 @@ class TestRandomForestSurrogate:
         ei_all = surrogate.expected_improvement(candidates)
         sorted_indices = np.argsort(ei_all)[::-1][:3]
         assert indices == sorted_indices.tolist()
+
+    def test_svd_pipeline_fit_and_predict(self):
+        """SVD + RF pipeline should train and produce finite EI scores."""
+        rng = np.random.default_rng(42)
+        X = rng.random((20, 2053))
+        y = rng.random(20) * 100
+
+        surrogate = RandomForestSurrogate()
+        surrogate.fit(X, y)
+
+        candidates = rng.random((10, 2053))
+        ei = surrogate.expected_improvement(candidates)
+        assert len(ei) == 10
+        assert np.all(np.isfinite(ei))
+        assert np.all(ei >= 0.0)
+
+    def test_batch_diversity_returns_valid_indices(self):
+        """Diversity-penalized score_candidates should return valid indices."""
+        rng = np.random.default_rng(42)
+        X = rng.random((20, 2053))
+        y = rng.random(20) * 100
+
+        from rdkit import Chem
+        from rdkit.Chem import AllChem
+
+        surrogate = RandomForestSurrogate()
+        surrogate.fit(X, y)
+
+        # Create two distinct fingerprint types
+        fps = []
+        for i in range(20):
+            smi = "CCO" if i < 10 else "c1ccccc1"
+            fp = AllChem.GetMorganFingerprintAsBitVect(
+                Chem.MolFromSmiles(smi), radius=2, nBits=2048
+            )
+            fps.append(fp)
+
+        indices = surrogate.score_candidates(X, fingerprints=fps, top_n=5)
+        assert len(indices) == 5
+        assert all(0 <= i < 20 for i in indices)
+        assert len(set(indices)) == 5  # All unique
+
+    def test_batch_diversity_without_fingerprints_falls_back(self):
+        """score_candidates without fingerprints should fall back to pure EI ranking."""
+        rng = np.random.default_rng(42)
+        X = rng.random((20, 2053))
+        y = rng.random(20) * 100
+
+        surrogate = RandomForestSurrogate()
+        surrogate.fit(X, y)
+
+        candidates = rng.random((15, 2053))
+        indices = surrogate.score_candidates(candidates, top_n=3)
+        assert len(indices) == 3
+
+        ei = surrogate.expected_improvement(candidates)
+        expected = np.argsort(ei)[::-1][:3].tolist()
+        assert indices == expected

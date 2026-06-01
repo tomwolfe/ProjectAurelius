@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import math
 import os
 import subprocess
 import tempfile
@@ -107,6 +108,32 @@ _GC_BASE_DIELECTRIC: float = 1.9
 _GC_BASE_VISCOSITY: float = 0.1
 _GC_BASE_LI_SOLVATION: float = 1.0
 
+# Saturation parameter for GC fragment additivity.
+# Uses Michaelis-Menten style: contrib = max_contrib * (1 - exp(-k * count))
+# k is chosen so that the first occurrence contributes ~50% of max_contrib,
+# and additional occurrences give diminishing returns — reflecting the
+# physical reality that property contributions saturate (first carbonate
+# group drastically changes polarity; the fifth does not).
+_GC_SATURATION_K: float = 0.693  # ln(2), half-max at count=1
+
+
+def _saturate_contrib(count: int, max_contrib: float) -> float:
+    """Michaelis-Menten style saturation for fragment additivity.
+
+    Contribution follows: max_contrib * (1 - exp(-k * count)).
+    The first occurrence contributes ~50% of max_contrib; subsequent
+    occurrences contribute diminishing amounts, asymptotically approaching
+    max_contrib.
+
+    Args:
+        count: Number of occurrences of the fragment.
+        max_contrib: Asymptotic maximum contribution from this fragment type.
+
+    Returns:
+        Saturated contribution value.
+    """
+    return max_contrib * (1.0 - math.exp(-_GC_SATURATION_K * count))
+
 
 def _count_fragments(mol: Chem.Mol) -> dict[str, int]:
     """Count occurrences of each fragment SMARTS pattern in a molecule."""
@@ -130,7 +157,7 @@ def predict_dielectric_proxy(ctx: MoleculeContext) -> float:
     value = _GC_BASE_DIELECTRIC
     for _smarts, _name, dd, _dv, _ls in _GC_FRAGMENTS:
         n = counts.get(_name, 0)
-        value += n * dd
+        value += _saturate_contrib(n, dd * 2.0)
 
     tpsa = ctx.tpsa
     value += tpsa * 0.02
@@ -155,7 +182,7 @@ def predict_viscosity_proxy(ctx: MoleculeContext) -> float:
     value = _GC_BASE_VISCOSITY
     for _smarts, _name, _dd, dv, _ls in _GC_FRAGMENTS:
         n = counts.get(_name, 0)
-        value += n * dv
+        value += _saturate_contrib(n, dv * 2.0)
 
     mw = ctx.mw
     value += (mw - 30.0) * 0.005
@@ -186,7 +213,7 @@ def predict_li_solvation_proxy(ctx: MoleculeContext) -> float:
     value = _GC_BASE_LI_SOLVATION
     for _smarts, _name, _dd, _dv, ls in _GC_FRAGMENTS:
         n = counts.get(_name, 0)
-        value += n * ls
+        value += _saturate_contrib(n, ls * 2.0)
 
     mw = ctx.mw
     value += max(0.0, (mw - 50.0)) * 0.002

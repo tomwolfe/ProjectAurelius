@@ -18,7 +18,9 @@ import pytest
 from aurelius.scoring.oracle import (
     PropertyOracle,
     QuantumOracle,
+    _count_fragments,
     get_data_source,
+    predict_dielectric_proxy,
     predict_tom_orbitals,
 )
 from aurelius.types import MoleculeContext
@@ -239,6 +241,32 @@ def test_predict_tom_orbitals_returns_plausible() -> None:
     assert -12.0 <= homo <= -3.0, f"HOMO {homo} out of range"
     assert -5.0 <= lumo <= 5.0, f"LUMO {lumo} out of range"
     assert lumo > homo, f"LUMO {lumo} <= HOMO {homo}"
+
+
+def test_fragment_saturation_prevents_stacking(oracle: PropertyOracle) -> None:
+    """Verify that stacking 5 ester groups does NOT linearly multiply the dielectric proxy.
+
+    The saturation function (1 - exp(-k * count)) ensures diminishing returns:
+    5 esters should contribute less than 2x the dielectric of 1 ester.
+    """
+    # 1 ester group: ethyl acetate
+    single = predict_dielectric_proxy(_ctx("CC(=O)OCC"))
+
+    # 5 ester groups: molecule with 5 ester linkages in a chain
+    five = predict_dielectric_proxy(
+        _ctx("CC(=O)OCC(=O)OCC(=O)OCC(=O)OCC(=O)OC")
+    )
+
+    # Verify that the test molecules actually have 1 and >=3 ester groups
+    counts_single = _count_fragments(_ctx("CC(=O)OCC").mol)
+    counts_five = _count_fragments(_ctx("CC(=O)OCC(=O)OCC(=O)OCC(=O)OCC(=O)OC").mol)
+    assert counts_single.get("ester", 0) == 1, f"Expected 1 ester, got {counts_single.get('ester', 0)}"
+    assert counts_five.get("ester", 0) >= 3, f"Expected >=3 esters, got {counts_five.get('ester', 0)}"
+
+    # Critical assertion: saturation means 5 esters << 5x single ester
+    assert five < 2.0 * single, (
+        f"Saturation failed: 5 esters (diel={five:.3f}) should be < 2x 1 ester (diel={single:.3f}, 2x={2*single:.3f})"
+    )
 
 
 def test_tom_fluorine_correction() -> None:

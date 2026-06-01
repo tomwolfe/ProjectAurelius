@@ -17,7 +17,9 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from rdkit.DataStructs import TanimotoSimilarity
 from scipy.stats import norm
+from sklearn.decomposition import TruncatedSVD
 from sklearn.ensemble import RandomForestRegressor
 
 
@@ -39,6 +41,7 @@ class RandomForestSurrogate:
     def __init__(self, random_state: int = 42, xi: float = 0.01) -> None:
         self._X: np.ndarray[Any, Any] | None = None
         self._y: np.ndarray[Any, Any] | None = None
+        self._svd: TruncatedSVD | None = None
         self._rf: RandomForestRegressor | None = None
         self._random_state = random_state
         self._xi = xi
@@ -48,6 +51,14 @@ class RandomForestSurrogate:
         if len(y) < 2:
             raise ValueError("At least 2 samples are required to fit the Random Forest surrogate.")
 
+        # Dimensionality reduction: TruncatedSVD converts sparse 2053-dim
+        # fingerprints to dense principal components for the RF.
+        # Using TruncatedSVD (not PCA) because it handles sparse data natively.
+        n_features = X.shape[1]
+        n_components = min(150, n_features, max(2, X.shape[0] - 1))
+        self._svd = TruncatedSVD(n_components=n_components, random_state=self._random_state)
+        X_reduced = self._svd.fit_transform(X)
+
         self._rf = RandomForestRegressor(
             n_estimators=100,
             max_depth=12,
@@ -55,7 +66,7 @@ class RandomForestSurrogate:
             random_state=self._random_state,
             n_jobs=1,
         )
-        self._rf.fit(X, y)
+        self._rf.fit(X_reduced, y)
 
         self._X = X
         self._y = y
@@ -86,10 +97,11 @@ class RandomForestSurrogate:
                 "RandomForestSurrogate must be fitted before scoring candidates. "
                 "Call .fit(X, y) with training data first."
             )
-        if self._rf is None:
+        if self._svd is None or self._rf is None:
             raise RuntimeError("Random Forest surrogate is not trained.")
 
-        tree_preds = np.array([tree.predict(X_candidates) for tree in self._rf.estimators_])
+        X_reduced = self._svd.transform(X_candidates)
+        tree_preds = np.array([tree.predict(X_reduced) for tree in self._rf.estimators_])
         mu = np.mean(tree_preds, axis=0)
         sigma = np.std(tree_preds, axis=0, ddof=1)
 
@@ -109,8 +121,58 @@ class RandomForestSurrogate:
     def score_candidates(
         self,
         X_candidates: np.ndarray[Any, Any],
+        fingerprints: list[Any] | None = None,
         top_n: int = 10,
+        diversity_lambda: float = 0.5,
     ) -> list[int]:
+        """Select top candidates with optional diversity-penalized batch selection.
+
+        Uses greedy diversity penalization: select first candidate by max EI,
+        then for each subsequent candidate apply ``Score = EI * (1 - lambda * max_tanimoto_to_selected)``.
+        This ensures the batch covers diverse chemical space rather than collapsing
+        on nearly identical top-EI structures.
+
+        Args:
+            X_candidates: Feature matrix of shape (n_candidates, n_features).
+            fingerprints: List of RDKit ECFP4 fingerprints for Tanimoto calculation.
+                If None, falls back to pure EI ranking.
+            top_n: Number of candidates to select.
+            diversity_lambda: Strength of diversity penalty (0 = no penalty, 1 = max penalty).
+
+        Returns:
+            List of selected candidate indices (length <= top_n).
+        """
         ei = self.expected_improvement(X_candidates)
-        top_indices = np.argsort(ei)[::-1][:top_n]
-        return top_indices.tolist()
+
+        if fingerprints is None or len(fingerprints) == 0:
+            top_indices = np.argsort(ei)[::-1][:top_n]
+            return top_indices.tolist()
+
+        # Greedy diversity-penalized selection
+        n = len(ei)
+        selected: list[int] = []
+        remaining = list(range(n))
+
+        for _ in range(min(top_n, n)):
+            if not remaining:
+                break
+
+            if not selected:
+                best_idx = remaining[int(np.argmax(ei[remaining]))]
+            else:
+                best_score = -float("inf")
+                best_idx = -1
+                for i in remaining:
+                    max_sim = max(
+                        TanimotoSimilarity(fingerprints[i], fingerprints[j])
+                        for j in selected
+                    )
+                    score = ei[i] * (1.0 - diversity_lambda * max_sim)
+                    if score > best_score:
+                        best_score = score
+                        best_idx = i
+
+            selected.append(best_idx)
+            remaining.remove(best_idx)
+
+        return selected
