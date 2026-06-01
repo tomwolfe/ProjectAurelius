@@ -22,9 +22,9 @@ This architecture justifies the Bayesian Active Learning loop (the oracle is non
 | Filter | RDKit | Electrolyte viability (MW, HBD, RotB, SA score) |
 | Oracle | Quantum + GC | HOMO/LUMO from xTB/TOM; bulk from fragment-additivity |
 | Mutation | SMARTS + BRICS | Targeted electrolyte edits + scaffold hopping |
-| Surrogate | Random Forest | NWEI acquisition for Bayesian candidate selection |
+ | Selection | Tournament Selection | Tanimoto-guided evolutionary diversity pressure |
 
-The composite Aurelius Score is computed via Gaussian LUMO reward (SEI formation window), sigmoid HOMO penalty (oxidative stability threshold), and SA score penalty.
+The composite Aurelius Score is computed via Gaussian LUMO reward (SEI formation window), sigmoid HOMO penalty (oxidative stability threshold), sigmoid dielectric/viscosity/Li-solvation rewards, and SA score penalty. Tournament selection with a Tanimoto diversity penalty steers each generation away from chemical saturation.
 
 ## Quick Start
 
@@ -82,7 +82,7 @@ src/aurelius/
 │   ├── mutation.py         # SMARTS+BRICS mutation engine
 │   ├── reporting.py        # SDF + JSON report generation
 │   ├── state.py            # Checkpoint, convergence, feedback
-│   └── surrogate.py        # Random Forest NWEI surrogate
+│   └── selection.py        # Tournament selection + diversity penalty
 ├── scoring/
 │   └── oracle.py           # Hybrid Quantum + GC oracle
 ├── screening/

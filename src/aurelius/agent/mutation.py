@@ -581,12 +581,14 @@ class MutationEngine:
     # Public mutation API
     # ------------------------------------------------------------------
 
-    def mutate(self, smiles: str, batch_size: int = 50) -> list[str]:
+    def mutate(self, smiles: str, batch_size: int = 50, force_exploration: bool = False) -> list[str]:
         """Generate up to batch_size mutated variants of a seed molecule.
 
         Args:
             smiles: SMILES string of the seed molecule.
             batch_size: Maximum number of variants to return.
+            force_exploration: If True, skip local SMARTS edits and rely solely
+                on global BRICS scaffold-hopping to escape local optima.
 
         Returns:
             List of candidate SMILES strings.
@@ -597,10 +599,11 @@ class MutationEngine:
 
         candidates: set[str] = set()
 
-        smarts_results = self._apply_smarts_reactions(ctx)
-        candidates.update(smarts_results)
+        if not force_exploration:
+            smarts_results = self._apply_smarts_reactions(ctx)
+            candidates.update(smarts_results)
 
-        if len(candidates) < batch_size:
+        if not candidates or len(candidates) < batch_size:
             brics_results = self._brics_from_pool(ctx)
             candidates.update(brics_results)
 
@@ -609,18 +612,29 @@ class MutationEngine:
             indices = self._rng.choice(len(result_list), size=batch_size, replace=False)
             result_list = [result_list[i] for i in indices]
 
+        smarts_count = len(candidates & set(self._apply_smarts_reactions(ctx))) if not force_exploration else 0
         logger.info(
-            "Mutation of %s: %d candidates (%d SMARTS, %d BRICS)",
-            smiles, len(result_list), len(smarts_results),
-            len(result_list) - len(smarts_results),
+            "Mutation of %s: %d candidates (%d SMARTS, %d BRICS) [force_exploration=%s]",
+            smiles, len(result_list), smarts_count,
+            len(result_list) - smarts_count, force_exploration,
         )
         return result_list
 
-    def mutate_batch(self, batch_smiles: list[str], batch_size: int = 50) -> list[str]:
-        """Mutate a batch of seed molecules, returning all variants."""
+    def mutate_batch(self, batch_smiles: list[str], batch_size: int = 50, force_exploration: bool = False) -> list[str]:
+        """Mutate a batch of seed molecules, returning all variants.
+
+        Args:
+            batch_smiles: List of seed SMILES strings.
+            batch_size: Maximum number of variants per seed.
+            force_exploration: If True, skip SMARTS edits and use BRICS only
+                (used to escape scaffold stagnation).
+
+        Returns:
+            List of unique candidate SMILES strings.
+        """
         all_variants: list[str] = []
         for smi in batch_smiles:
-            variants = self.mutate(smi, batch_size)
+            variants = self.mutate(smi, batch_size, force_exploration=force_exploration)
             all_variants.extend(variants)
         return list(set(all_variants))
 

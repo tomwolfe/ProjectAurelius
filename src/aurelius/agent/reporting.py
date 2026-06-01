@@ -140,14 +140,16 @@ def generate_discoveries_sdf(
     log = logging.getLogger("aurelius_agent")
 
     from rdkit import Chem
+    from aurelius.types import MoleculeContext
 
     top = sorted(discoveries, key=lambda r: -r.total_score)[:50]
 
     writer = Chem.SDWriter(str(path))
     for r in top:
-        mol = Chem.MolFromSmiles(r.smiles)
-        if mol is None:
+        ctx = MoleculeContext.from_smiles(r.smiles)
+        if ctx is None:
             continue
+        mol = ctx.mol
         mol.SetProp("SMILES", r.smiles)
         mol.SetProp("total_score", f"{r.total_score:.2f}")
         if r.homo_eV is not None:
@@ -196,6 +198,7 @@ def generate_xtb_input(
     log = logging.getLogger("aurelius_agent")
     from rdkit import Chem
     from rdkit.Chem import AllChem
+    from aurelius.types import MoleculeContext
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -204,9 +207,10 @@ def generate_xtb_input(
     xyz_paths: list[str] = []
 
     for rank, r in enumerate(top, start=1):
-        mol = Chem.MolFromSmiles(r.smiles)
-        if mol is None:
+        ctx = MoleculeContext.from_smiles(r.smiles)
+        if ctx is None:
             continue
+        mol = ctx.mol
 
         try:
             mol_h = Chem.AddHs(mol)

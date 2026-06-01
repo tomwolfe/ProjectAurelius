@@ -93,23 +93,6 @@ class LoopState:
         """Record a screening result (kept for result tracking)."""
         pass
 
-    def get_adaptation_strategy(self) -> dict[str, Any]:
-        strategy: dict[str, Any] = {
-            "total_screened": self.total_screened,
-        }
-        if self._all_scores:
-            avg_score = float(np.mean(self._all_scores))
-            strategy["average_score"] = avg_score
-            if avg_score < 50.0:
-                strategy["recommendation"] = "Increase exploration diversity — current scores are low"
-            elif avg_score < 65.0:
-                strategy["recommendation"] = "Focus on high-score candidates from the mutation pool"
-            else:
-                strategy["recommendation"] = "Continue current mutation strategy"
-        else:
-            strategy["recommendation"] = "Insufficient data for adaptation recommendations"
-        return strategy
-
     # ------------------------------------------------------------------
     # Convergence
     # ------------------------------------------------------------------

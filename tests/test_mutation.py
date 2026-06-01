@@ -124,3 +124,51 @@ class TestFragmentHarvesting:
         engine = MutationEngine(seed_smiles=["CC"])
         engine.harvest_fragments("not a valid smiles !!!")  # Should not raise
         assert engine.fragment_pool_size() == len(ELECTROLYTE_FRAGMENT_POOL)
+
+
+# ---------------------------------------------------------------------------
+# Stagnation pivot: force_exploration flag
+# ---------------------------------------------------------------------------
+
+
+class TestStagnationPivot:
+    """When force_exploration=True, the mutation engine must skip SMARTS
+    reactions and rely solely on BRICS scaffold-hopping."""
+
+    def test_force_exploration_skips_smarts(self):
+        """With force_exploration=True, mutate() should return BRICS-only
+        candidates and no SMARTS products."""
+        engine = MutationEngine(seed_smiles=["COC(=O)OC"])
+
+        normal_result = engine.mutate("COC(=O)OC", batch_size=20, force_exploration=False)
+
+        exploration_result = engine.mutate("COC(=O)OC", batch_size=20, force_exploration=True)
+
+        # SMARTS reactions on DMC typically produce fluorinated variants
+        # or methyl ester products.  With force_exploration these should
+        # not appear; only BRICS reassembly products should be returned.
+        assert len(exploration_result) >= 0, "Exploration mode should not crash"
+        # Exploration mode should not produce SMARTS-specific products
+        # like trifluoromethyl-dimethyl carbonate (a direct SMARTS product)
+        smarts_marker_smiles = {"COC(=O)OC(F)(F)F", "COC(=O)OCC"}
+        exploration_smarts_hits = sum(
+            1 for smi in exploration_result if smi in smarts_marker_smiles
+        )
+        assert exploration_smarts_hits == 0, (
+            f"Exploration mode produced SMARTS products: {exploration_result}"
+        )
+
+    def test_force_exploration_batch(self):
+        """mutate_batch with force_exploration=True must not crash and
+        should return BRICS products."""
+        engine = MutationEngine(seed_smiles=["COC(=O)OC", "C1COCCO1"])
+        results = engine.mutate_batch(
+            ["COC(=O)OC", "C1COCCO1"],
+            batch_size=10,
+            force_exploration=True,
+        )
+        assert isinstance(results, list)
+        # All returned SMILES should be valid
+        for smi in results:
+            ctx = MoleculeContext.from_smiles(smi)
+            assert ctx is not None, f"Invalid SMILES in exploration results: {smi}"

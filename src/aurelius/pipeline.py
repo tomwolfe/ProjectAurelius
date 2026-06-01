@@ -65,7 +65,9 @@ class Objective:
 
     Each objective defines how a raw property value is converted to a
     sub-score via a Gaussian or Sigmoid function, then weighted in the
-    final composite.
+    final composite.  The ``failure_reason_template`` is used to generate
+    human-readable rejection reasons dynamically (e.g. "LUMO={value:.3f}eV
+    (poor SEI formation)").
     """
 
     name: str
@@ -76,6 +78,7 @@ class Objective:
     sigma: float | None = None
     steepness: float | None = None
     higher_is_better: bool = True
+    failure_reason_template: str = "{name}={value:.3f} (below threshold)"
 
     def __call__(self, value: float) -> float:
         if self.function == "gaussian":
@@ -94,17 +97,23 @@ class Objective:
 # Declarative scoring configuration: add/remove objectives here without
 # touching boilerplate math.
 _OBJECTIVES: list[Objective] = [
-    Objective("lumo_reward", "lumo_eV", SCORE_WEIGHT_LUMO, "gaussian", LUMO_TARGET, sigma=LUMO_SIGMA),
+    Objective("lumo_reward", "lumo_eV", SCORE_WEIGHT_LUMO, "gaussian", LUMO_TARGET, sigma=LUMO_SIGMA,
+              failure_reason_template="LUMO={value:.3f}eV (poor SEI formation)"),
     Objective("homo_penalty", "homo_eV", SCORE_WEIGHT_HOMO, "sigmoid", HOMO_THRESHOLD,
-              steepness=HOMO_SIGMOID_STEEPNESS, higher_is_better=False),
+              steepness=HOMO_SIGMOID_STEEPNESS, higher_is_better=False,
+              failure_reason_template="HOMO={value:.3f}eV (oxidative instability)"),
     Objective("dielectric_reward", "dielectric_proxy", SCORE_WEIGHT_DIELECTRIC, "sigmoid", DIELECTRIC_TARGET,
-              steepness=DIELECTRIC_SIGMOID_STEEPNESS),
+              steepness=DIELECTRIC_SIGMOID_STEEPNESS,
+              failure_reason_template="dielectric_proxy={value:.3f} (poor salt dissolution)"),
     Objective("viscosity_penalty", "viscosity_proxy", SCORE_WEIGHT_VISCOSITY, "sigmoid", VISCOSITY_THRESHOLD,
-              steepness=VISCOSITY_SIGMOID_STEEPNESS, higher_is_better=False),
+              steepness=VISCOSITY_SIGMOID_STEEPNESS, higher_is_better=False,
+              failure_reason_template="viscosity_proxy={value:.3f} (poor ion mobility)"),
     Objective("li_solvation_reward", "li_solvation_proxy", SCORE_WEIGHT_LI_SOLVATION, "gaussian", LI_SOLVATION_TARGET,
-              sigma=LI_SOLVATION_SIGMA),
+              sigma=LI_SOLVATION_SIGMA,
+              failure_reason_template="li_solvation_proxy={value:.3f} (poor Li+ binding)"),
     Objective("sa_penalty", "sa_score", SCORE_WEIGHT_SA, "sigmoid", SA_THRESHOLD,
-              steepness=SA_SIGMOID_STEEPNESS, higher_is_better=False),
+              steepness=SA_SIGMOID_STEEPNESS, higher_is_better=False,
+              failure_reason_template="SA score={value:.2f} (hard to synthesize)"),
 ]
 
 
@@ -377,26 +386,15 @@ class AureliusPipeline:
 
         is_viable = total_score >= VIABILITY_THRESHOLD
 
-        # Build rejection reasons
+        # Build rejection reasons (declarative — no hardcoded if/elif chain)
         rejection_reasons: list[str] = []
         if not is_viable:
             reasons = []
             for obj in _OBJECTIVES:
                 s = sub_scores.get(obj.name, 0.0)
                 if s < 0.3:
-                    label = obj.name.replace("_reward", "").replace("_penalty", "")
-                    if obj.name == "lumo_reward":
-                        reasons.append(f"LUMO={lumo_eV:.3f}eV (poor SEI formation)")
-                    elif obj.name == "homo_penalty":
-                        reasons.append(f"HOMO={homo_eV:.3f}eV (oxidative instability)")
-                    elif obj.name == "dielectric_reward":
-                        reasons.append(f"dielectric_proxy={dielectric_proxy:.3f} (poor salt dissolution)")
-                    elif obj.name == "viscosity_penalty":
-                        reasons.append(f"viscosity_proxy={viscosity_proxy:.3f} (poor ion mobility)")
-                    elif obj.name == "li_solvation_reward":
-                        reasons.append(f"li_solvation_proxy={li_solvation_proxy:.3f} (poor Li+ binding)")
-                    elif obj.name == "sa_penalty":
-                        reasons.append(f"SA score={sa_score:.2f} (hard to synthesize)")
+                    value = raw_values.get(obj.property_key, sa_score if obj.name == "sa_penalty" else 0.0)
+                    reasons.append(obj.failure_reason_template.format(value=value))
             if al_corrosion_penalty < 1.0 and lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
                 reasons.append("Al corrosion risk (high-LUMO fluorinated molecule)")
             rejection_reasons.append(

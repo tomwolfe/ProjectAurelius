@@ -156,7 +156,10 @@ class DiscoveryLoop:
                 log.info("Time cap reached (%.0fs). Exiting loop.", elapsed)
                 break
 
-            candidates = self._generate_candidates(generation)
+            force_exploration = self.state.has_scaffold_stagnation(3)
+            if force_exploration:
+                log.info("Generation %d: Scaffold stagnation detected — pivoting to BRICS-only exploration.", generation)
+            candidates = self._generate_candidates(generation, force_exploration=force_exploration)
             valid_contexts, invalid_count = self._filter_candidates(candidates)
 
             if not valid_contexts:
@@ -192,9 +195,9 @@ class DiscoveryLoop:
             "total_invalid": self.total_invalid,
         }
 
-    def _generate_candidates(self, generation: int) -> list[str]:
+    def _generate_candidates(self, generation: int, force_exploration: bool = False) -> list[str]:
         top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
-        return list(self.engine.mutate_batch(top_seeds, self.batch_size * 3))
+        return list(self.engine.mutate_batch(top_seeds, self.batch_size * 3, force_exploration=force_exploration))
 
     def _top_seeds_from_results(self) -> list[str]:
         scored = [(r.total_score, r.smiles) for r in self.all_results if r.total_score > 0]
