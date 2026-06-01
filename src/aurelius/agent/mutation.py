@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import BRICS, AllChem, rdMolDescriptors
+from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from aurelius.constants import ELECTROLYTE_MIN_HETEROATOM_RATIO
 from aurelius.types import MoleculeContext
@@ -197,6 +198,15 @@ class MutationEngine:
                 self.known_fps.append(_deserialize_fp(h))
             except Exception:
                 continue
+
+        # Murcko scaffold databases for novelty checking
+        self._seed_scaffolds: set[str] = set()
+        self._known_scaffolds: set[str] = set()
+        for ctx in self.seed_contexts:
+            scaff = self._get_murcko_scaffold(ctx.mol)
+            if scaff:
+                self._seed_scaffolds.add(scaff)
+
         self._load_known_electrolytes()
         self._rng = np.random.default_rng(42)
         self._smarts_rxns: list[tuple[Any, str]] = []
@@ -235,6 +245,9 @@ class MutationEngine:
                 canon = Chem.MolToSmiles(ctx.mol)
                 if canon not in existing_smis:
                     self.known_fps.append(ctx.get_ecfp4())
+                    scaff = self._get_murcko_scaffold(ctx.mol)
+                    if scaff:
+                        self._known_scaffolds.add(scaff)
 
         logger.info(
             "Loaded %d known electrolyte fingerprints for global novelty checking.",
@@ -250,8 +263,37 @@ class MutationEngine:
         if ctx is not None:
             self.known_fps.append(ctx.get_ecfp4())
 
+    @staticmethod
+    def _get_murcko_scaffold(mol: Chem.Mol) -> str | None:
+        """Extract the Murcko scaffold SMILES from a molecule.
+
+        Returns None for acyclic molecules or on failure.
+        """
+        try:
+            return MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+        except Exception:
+            return None
+
     def _novelty_check(self, ctx: MoleculeContext) -> bool:
-        """Return True if molecule is novel (Tanimoto < 0.85 vs all known)."""
+        """Return True if molecule is novel (Murcko scaffold + Tanimoto).
+
+        A molecule is only considered novel if BOTH:
+          1. Its Murcko scaffold is not found in the seed pool or known
+             electrolyte database.
+          2. Its ECFP4 Tanimoto similarity is < 0.85 against all known
+             electrolyte fingerprints.
+
+        This prevents trivial rediscovery of known solvents (DMC, FEC, EC)
+        that have different side chains but the same core scaffold.
+        """
+        # Murcko scaffold check (primary): reject if scaffold is known
+        scaffold = self._get_murcko_scaffold(ctx.mol)
+        if scaffold:
+            all_known_scaffolds = self._seed_scaffolds | self._known_scaffolds
+            if scaffold in all_known_scaffolds:
+                return False
+
+        # Tanimoto check (secondary): reject if too similar to known
         fp = ctx.get_ecfp4()
         if not self.known_fps:
             return True

@@ -101,7 +101,13 @@ _GC_FRAGMENTS: list[tuple[str, str, float, float, float]] = [
     ("[C](F)(F)F",             "trifluoromethyl",    0.5,  0.2, -0.3),
     ("[C](F)(F)",              "difluoromethylene",  0.3,  0.1, -0.2),
     ("[BX3]([OX2])",           "boronate",           2.0,  0.7,  1.0),
+    ("[BX4]([OX2])([OX2])([OX2])[OX2]", "borate",    3.0,  0.6,  1.5),
     ("[S]([CX4])[CX4]",        "thioether",          1.0,  0.2,  0.3),
+    ("[F][CX4][OX2][CX4]",     "fluorinated_ether",  1.0,  0.0, -0.2),
+    ("[PX4](=N)([OX2])([OX2])[OX2]", "phosphazene",  3.5,  0.4,  0.8),
+    ("[OX2][CX4][CX4][OX2]",   "glyme_chelating",    2.0,  0.1,  1.8),
+    ("[SX4](=O)(=O)[NX3][SX4](=O)(=O)", "sulfonimide", 5.0,  0.5,  0.5),
+    ("[CX3](=O)[OX2]C(F)(F)F",  "fluorinated_carbonate", 3.0,  0.3, -0.1),
 ]
 
 _GC_BASE_DIELECTRIC: float = 1.9

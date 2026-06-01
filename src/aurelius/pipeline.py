@@ -4,7 +4,9 @@ Coordinates a streamlined two-step discovery pipeline:
   1. Filter — Quick structural validity (Tier 1) check with LogP and MW gates.
   2. Oracle — Multi-objective property evaluation via hybrid RF/GC + F/P/S
      correction (HOMO, LUMO, Dielectric proxy, Viscosity proxy, SA Score).
-  3. Score — Multi-objective composite score with Al corrosion penalty.
+  3.    Score — Declarative multi-objective composite with Al corrosion penalty.
+     Each objective is defined as an ``Objective`` dataclass (Gaussian or
+     Sigmoid), making the scoring logic purely data-driven.
 
 All stages accept a pre-parsed MoleculeContext to enforce single-point parsing.
 """
@@ -14,11 +16,11 @@ from __future__ import annotations
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Contrib.SA_Score import sascorer
 
 from aurelius.constants import (
     AL_CORROSION_LUMO_THRESHOLD,
@@ -48,8 +50,59 @@ from aurelius.constants import (
 from aurelius.scoring.oracle import PropertyOracle
 from aurelius.screening.tier1 import Filter
 from aurelius.types import MoleculeContext
+from aurelius.utils.chem_utils import electrolyte_synthetic_accessibility
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Objective:
+    """A single scoring objective with a mathematical transformation.
+
+    Each objective defines how a raw property value is converted to a
+    sub-score via a Gaussian or Sigmoid function, then weighted in the
+    final composite.
+    """
+
+    name: str
+    property_key: str
+    weight: float
+    function: str  # 'gaussian' or 'sigmoid'
+    target: float
+    sigma: float | None = None
+    steepness: float | None = None
+    higher_is_better: bool = True
+
+    def __call__(self, value: float) -> float:
+        if self.function == "gaussian":
+            if self.sigma is None or self.sigma <= 0.0:
+                raise ValueError(f"Gaussian objective '{self.name}' requires sigma > 0")
+            return float(np.exp(-0.5 * ((value - self.target) / self.sigma) ** 2))
+        if self.function == "sigmoid":
+            if self.steepness is None:
+                raise ValueError(f"Sigmoid objective '{self.name}' requires steepness")
+            if self.higher_is_better:
+                return float(1.0 / (1.0 + np.exp(-self.steepness * (value - self.target))))
+            return float(1.0 / (1.0 + np.exp(self.steepness * (value - self.target))))
+        raise ValueError(f"Unknown objective function: '{self.function}'")
+
+
+# Declarative scoring configuration: add/remove objectives here without
+# touching boilerplate math.
+_OBJECTIVES: list[Objective] = [
+    Objective("lumo_reward", "lumo_eV", SCORE_WEIGHT_LUMO, "gaussian", LUMO_TARGET, sigma=LUMO_SIGMA),
+    Objective("homo_penalty", "homo_eV", SCORE_WEIGHT_HOMO, "sigmoid", HOMO_THRESHOLD,
+              steepness=HOMO_SIGMOID_STEEPNESS, higher_is_better=False),
+    Objective("dielectric_reward", "dielectric_proxy", SCORE_WEIGHT_DIELECTRIC, "sigmoid", DIELECTRIC_TARGET,
+              steepness=DIELECTRIC_SIGMOID_STEEPNESS),
+    Objective("viscosity_penalty", "viscosity_proxy", SCORE_WEIGHT_VISCOSITY, "sigmoid", VISCOSITY_THRESHOLD,
+              steepness=VISCOSITY_SIGMOID_STEEPNESS, higher_is_better=False),
+    Objective("li_solvation_reward", "li_solvation_proxy", SCORE_WEIGHT_LI_SOLVATION, "gaussian", LI_SOLVATION_TARGET,
+              sigma=LI_SOLVATION_SIGMA),
+    Objective("sa_penalty", "sa_score", SCORE_WEIGHT_SA, "sigmoid", SA_THRESHOLD,
+              steepness=SA_SIGMOID_STEEPNESS, higher_is_better=False),
+]
+
 
 # Hydrolytically unstable SMARTS patterns
 _HYDROLYTICALLY_UNSTABLE_SMARTS: list[tuple[str, str, float]] = [
@@ -265,30 +318,6 @@ class AureliusPipeline:
             return AL_CORROSION_PENALTY_FACTOR
         return 1.0
 
-    @staticmethod
-    def _gaussian_lumo(lumo_eV: float) -> float:
-        return float(np.exp(-0.5 * ((lumo_eV - LUMO_TARGET) / LUMO_SIGMA) ** 2))
-
-    @staticmethod
-    def _gaussian_li_solvation(li_solvation_proxy: float) -> float:
-        return float(np.exp(-0.5 * ((li_solvation_proxy - LI_SOLVATION_TARGET) / LI_SOLVATION_SIGMA) ** 2))
-
-    @staticmethod
-    def _sigmoid_homo(homo_eV: float) -> float:
-        return float(1.0 / (1.0 + np.exp(HOMO_SIGMOID_STEEPNESS * (homo_eV - HOMO_THRESHOLD))))
-
-    @staticmethod
-    def _sigmoid_dielectric(dielectric_proxy: float) -> float:
-        return float(1.0 / (1.0 + np.exp(-DIELECTRIC_SIGMOID_STEEPNESS * (dielectric_proxy - DIELECTRIC_TARGET))))
-
-    @staticmethod
-    def _sigmoid_viscosity(viscosity_proxy: float) -> float:
-        return float(1.0 / (1.0 + np.exp(VISCOSITY_SIGMOID_STEEPNESS * (viscosity_proxy - VISCOSITY_THRESHOLD))))
-
-    @staticmethod
-    def _sigmoid_sa(sa_score: float) -> float:
-        return float(1.0 / (1.0 + np.exp(SA_SIGMOID_STEEPNESS * (sa_score - SA_THRESHOLD))))
-
     def _compute_score(
         self,
         homo_eV: float = -99.0,
@@ -300,14 +329,9 @@ class AureliusPipeline:
     ) -> dict[str, Any]:
         """Compute the multi-objective composite Aurelius Score.
 
-        Seven weighted objectives:
-          - LUMO reward (20%): Gaussian centered at LUMO_TARGET
-          - HOMO penalty (15%): Sigmoid penalizing HOMO > threshold
-          - Dielectric reward (15%): Sigmoid rewarding high dielectric
-          - Viscosity penalty (12%): Sigmoid penalizing high viscosity
-          - Li+ Solvation reward (18%): Gaussian rewarding moderate binding
-          - SA penalty (8%): Sigmoid penalizing poor synthetic accessibility
-          - Al corrosion penalty (12%): Penalty for high-LUMO fluorinated molecules
+        Iterates over the declarative ``_OBJECTIVES`` list, applies
+        each objective's mathematical transform to the corresponding
+        property value, and aggregates into a weighted composite.
 
         Args:
             homo_eV: Predicted HOMO energy.
@@ -320,48 +344,45 @@ class AureliusPipeline:
         Returns:
             Dict with total_score, is_viable, sub_scores, rejection_reasons.
         """
+        raw_values: dict[str, float] = {
+            "lumo_eV": lumo_eV,
+            "homo_eV": homo_eV,
+            "dielectric_proxy": dielectric_proxy,
+            "viscosity_proxy": viscosity_proxy,
+            "li_solvation_proxy": li_solvation_proxy,
+        }
+
         sub_scores: dict[str, float] = {}
+        total_score = 0.0
 
-        g_lumo = self._gaussian_lumo(lumo_eV)
-        s_homo = self._sigmoid_homo(homo_eV)
-        s_dielectric = self._sigmoid_dielectric(dielectric_proxy)
-        s_viscosity = self._sigmoid_viscosity(viscosity_proxy)
-        g_li_solvation = self._gaussian_li_solvation(li_solvation_proxy)
-
-        sub_scores["lumo_reward"] = round(g_lumo, 4)
-        sub_scores["homo_penalty"] = round(s_homo, 4)
-        sub_scores["dielectric_reward"] = round(s_dielectric, 4)
-        sub_scores["viscosity_penalty"] = round(s_viscosity, 4)
-        sub_scores["li_solvation_reward"] = round(g_li_solvation, 4)
-
-        # SA score from RDKit sascorer
+        # Compute custom SA score once
         sa_score: float = 5.0
         if ctx is not None:
             try:
-                sa_score = float(sascorer.calculateScore(ctx.mol))
+                sa_score = electrolyte_synthetic_accessibility(ctx)
             except Exception:
                 sa_score = 5.0
-        s_sa = self._sigmoid_sa(sa_score)
-        sub_scores["sa_penalty"] = round(s_sa, 4)
+
+        for obj in _OBJECTIVES:
+            if obj.name == "sa_penalty":
+                score = obj(sa_score)
+                raw_values["sa_score"] = sa_score
+            else:
+                score = obj(raw_values[obj.property_key])
+
+            sub_scores[obj.name] = round(score, 4)
+            total_score += obj.weight * score
 
         # Al corrosion penalty
         al_corrosion_penalty = 1.0
         if ctx is not None and lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
             al_corrosion_penalty = self._check_al_corrosion_risk(ctx.mol)
         sub_scores["al_corrosion_penalty"] = round(al_corrosion_penalty, 4)
+        total_score += SCORE_WEIGHT_AL_CORROSION * (1.0 - al_corrosion_penalty)
 
-        # Weighted composite
-        total_score = 100.0 * (
-            SCORE_WEIGHT_LUMO * g_lumo
-            + SCORE_WEIGHT_HOMO * s_homo
-            + SCORE_WEIGHT_DIELECTRIC * s_dielectric
-            + SCORE_WEIGHT_VISCOSITY * s_viscosity
-            + SCORE_WEIGHT_LI_SOLVATION * g_li_solvation
-            + SCORE_WEIGHT_SA * s_sa
-            + SCORE_WEIGHT_AL_CORROSION * (1.0 - al_corrosion_penalty)
-        )
+        total_score *= 100.0
 
-        # Hydrolytic instability penalty (multiplicative)
+        # Multiplicative penalties
         if ctx is not None:
             hydro_penalty = self._check_hydrolytic_instability(ctx.mol)
             total_score *= hydro_penalty
@@ -371,21 +392,26 @@ class AureliusPipeline:
 
         is_viable = total_score >= VIABILITY_THRESHOLD
 
+        # Build rejection reasons
         rejection_reasons: list[str] = []
         if not is_viable:
             reasons = []
-            if g_lumo < 0.3:
-                reasons.append(f"LUMO={lumo_eV:.3f}eV (poor SEI formation)")
-            if s_homo < 0.3:
-                reasons.append(f"HOMO={homo_eV:.3f}eV (oxidative instability)")
-            if s_dielectric < 0.3:
-                reasons.append(f"dielectric_proxy={dielectric_proxy:.3f} (poor salt dissolution)")
-            if s_viscosity < 0.3:
-                reasons.append(f"viscosity_proxy={viscosity_proxy:.3f} (poor ion mobility)")
-            if g_li_solvation < 0.3:
-                reasons.append(f"li_solvation_proxy={li_solvation_proxy:.3f} (poor Li+ binding)")
-            if s_sa < 0.3:
-                reasons.append(f"SA score={sa_score:.2f} (hard to synthesize)")
+            for obj in _OBJECTIVES:
+                s = sub_scores.get(obj.name, 0.0)
+                if s < 0.3:
+                    label = obj.name.replace("_reward", "").replace("_penalty", "")
+                    if obj.name == "lumo_reward":
+                        reasons.append(f"LUMO={lumo_eV:.3f}eV (poor SEI formation)")
+                    elif obj.name == "homo_penalty":
+                        reasons.append(f"HOMO={homo_eV:.3f}eV (oxidative instability)")
+                    elif obj.name == "dielectric_reward":
+                        reasons.append(f"dielectric_proxy={dielectric_proxy:.3f} (poor salt dissolution)")
+                    elif obj.name == "viscosity_penalty":
+                        reasons.append(f"viscosity_proxy={viscosity_proxy:.3f} (poor ion mobility)")
+                    elif obj.name == "li_solvation_reward":
+                        reasons.append(f"li_solvation_proxy={li_solvation_proxy:.3f} (poor Li+ binding)")
+                    elif obj.name == "sa_penalty":
+                        reasons.append(f"SA score={sa_score:.2f} (hard to synthesize)")
             if al_corrosion_penalty < 1.0 and lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
                 reasons.append("Al corrosion risk (high-LUMO fluorinated molecule)")
             rejection_reasons.append(

@@ -76,8 +76,11 @@ VISCOSITY_SIGMOID_STEEPNESS: float = 2.0
 # ---------------------------------------------------------------------------
 # SA Score (Synthetic Accessibility) Thresholds
 # ---------------------------------------------------------------------------
-# RDKit SA score ranges from 1 (easy) to 10 (very hard). For electrolyte
-# molecules, scores below 4 are readily synthesizable.
+# The custom electrolyte_synthetic_accessibility score ranges from 1 (easy)
+# to 10 (very hard). Unlike RDKit's ChEMBL-trained SA score, it rewards
+# common electrolyte motifs (carbonates, sulfones, nitriles, fluorinated
+# groups) and penalises ring strain, stereocenters, and unstable bonds.
+# For electrolyte molecules, scores below 4 are readily synthesizable.
 
 SA_THRESHOLD: float = 4.0
 """SA score threshold below which molecules are considered readily synthesizable."""
