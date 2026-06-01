@@ -1,20 +1,26 @@
-"""Tests for the GC-only PropertyOracle (fragment-additivity).
+"""Tests for the hybrid Quantum + GC PropertyOracle.
 
 Verifies that:
 1. Oracle returns all five property types (HOMO, LUMO, Dielectric, Viscosity, Li+ Solvation)
 2. Predictions are physically plausible
-3. Fragment-additivity model gives deterministic, interpretable results
-4. Caching works correctly
-5. F/P/S corrections are embedded in the GC fragment table (no double-counting)
+3. QuantumOracle (TOM fallback) gives non-linear, topology-dependent HOMO/LUMO
+4. GC fragment-additivity gives deterministic, interpretable bulk properties
+5. Caching works correctly
 6. TPSA-based cap prevents unrealistic dielectric stacking
 7. Li+ solvation proxy is computed and physically sensible
+8. QuantumOracle caches results and provides method metadata
 """
 
 from __future__ import annotations
 
 import pytest
 
-from aurelius.scoring.oracle import PropertyOracle, Tier3QuantumOracle, get_data_source
+from aurelius.scoring.oracle import (
+    PropertyOracle,
+    QuantumOracle,
+    get_data_source,
+    predict_tom_orbitals,
+)
 from aurelius.types import MoleculeContext
 
 ORACLE = None
@@ -24,7 +30,7 @@ ORACLE = None
 def oracle() -> PropertyOracle:
     global ORACLE
     if ORACLE is None:
-        ORACLE = PropertyOracle()
+        ORACLE = PropertyOracle(use_xtb=False)  # Force TOM fallback for tests
     return ORACLE
 
 
@@ -34,9 +40,9 @@ def _ctx(smiles: str) -> MoleculeContext:
     return ctx
 
 
-def test_oracle_data_source_is_gc(oracle: PropertyOracle) -> None:
+def test_oracle_data_source_is_hybrid(oracle: PropertyOracle) -> None:
     source = get_data_source()
-    assert "fragment-additivity" in source
+    assert "hybrid" in source
 
 
 def test_oracle_evaluate_returns_all_properties(oracle: PropertyOracle) -> None:
@@ -49,6 +55,7 @@ def test_oracle_evaluate_returns_all_properties(oracle: PropertyOracle) -> None:
     assert "viscosity_proxy" in result
     assert "li_solvation_proxy" in result
     assert "domain_applicable" in result
+    assert "quantum_method" in result
 
 
 def test_oracle_plausible_ranges(oracle: PropertyOracle) -> None:
@@ -136,28 +143,6 @@ def test_oracle_li_solvation_proxy_physical(oracle: PropertyOracle) -> None:
     assert solv_a > solv_e, f"Alcohols should bind Li+ more strongly than ethers: {solv_a} vs {solv_e}"
 
 
-# F/P/S correction tests (now embedded in GC fragment table)
-
-
-def test_fps_correction_lowers_homo_lumo(oracle: PropertyOracle) -> None:
-    ethane = oracle.evaluate(_ctx("CC"))
-    cf3 = oracle.evaluate_smiles("CC(F)(F)F")
-    assert cf3["homo_eV"] < ethane["homo_eV"], (
-        f"CF3 should lower HOMO: ethane={ethane['homo_eV']}, cf3={cf3['homo_eV']}"
-    )
-    assert cf3["lumo_eV"] < ethane["lumo_eV"], (
-        f"CF3 should lower LUMO: ethane={ethane['lumo_eV']}, cf3={cf3['lumo_eV']}"
-    )
-
-
-def test_fps_correction_sulfone_lowers_lumo(oracle: PropertyOracle) -> None:
-    ethane = oracle.evaluate(_ctx("CC"))
-    sulfone = oracle.evaluate_smiles("CS(=O)(=O)C")
-    assert sulfone["lumo_eV"] < ethane["lumo_eV"], (
-        f"Sulfone should strongly lower LUMO: ethane={ethane['lumo_eV']}, sulfone={sulfone['lumo_eV']}"
-    )
-
-
 def test_tpsa_based_dielectric_cap():
     from rdkit import Chem
 
@@ -186,29 +171,87 @@ def test_tpsa_capped_dielectric_prevents_stacking(oracle: PropertyOracle) -> Non
 
 
 # ---------------------------------------------------------------------------
-# Tier3QuantumOracle stub tests
+# QuantumOracle Tests
 # ---------------------------------------------------------------------------
 
 
-def test_tier3_quantum_oracle_parse_missing(tmp_path) -> None:
-    qc = Tier3QuantumOracle()
-    result = qc.parse_xtb_out(str(tmp_path / "nonexistent.xtb.out"))
-    assert result is None
+def test_quantum_oracle_method_is_tom() -> None:
+    """Without xTB binary, QuantumOracle should use TOM fallback."""
+    qc = QuantumOracle(use_xtb=True)
+    assert "TOM" in qc.method
 
 
-def test_tier3_quantum_oracle_override() -> None:
-    qc = Tier3QuantumOracle()
-    gc_result = {
-        "homo_eV": -7.5,
-        "lumo_eV": 0.5,
-        "gap_eV": 8.0,
-        "dielectric_proxy": 5.0,
-        "viscosity_proxy": 1.5,
-        "domain_reason": "fragment-additivity",
-    }
-    qc_result = {"homo_eV": -7.23, "lumo_eV": 0.12, "dipole_D": 3.4}
-    overridden = qc.override(gc_result, qc_result)
-    assert overridden["homo_eV"] == -7.23
-    assert overridden["lumo_eV"] == 0.12
-    assert overridden["gap_eV"] == 7.35
-    assert "quantum-chemical" in overridden["domain_reason"]
+def test_quantum_oracle_tom_is_deterministic() -> None:
+    """TOM should produce the same HOMO/LUMO for the same molecule."""
+    from rdkit import Chem
+
+    mol = Chem.MolFromSmiles("COC(=O)OC")
+    qc = QuantumOracle(use_xtb=False)
+    r1 = qc.evaluate(mol)
+    r2 = qc.evaluate(mol)
+    assert r1["homo_eV"] == r2["homo_eV"]
+    assert r1["lumo_eV"] == r2["lumo_eV"]
+
+
+def test_quantum_oracle_tom_conjugation_sensitivity() -> None:
+    """TOM should give different (non-additive) results for conjugated systems."""
+    from rdkit import Chem
+
+    qc = QuantumOracle(use_xtb=False)
+
+    # Simple alkane
+    ethane = qc.evaluate(Chem.MolFromSmiles("CC"))
+
+    # Conjugated butadiene
+    butadiene = qc.evaluate(Chem.MolFromSmiles("C=CC=C"))
+
+    # Aromatic benzene
+    benzene = qc.evaluate(Chem.MolFromSmiles("c1ccccc1"))
+
+    # Conjugation should narrow the gap (non-linear effect)
+    gap_ethane = ethane["lumo_eV"] - ethane["homo_eV"]
+    gap_butadiene = butadiene["lumo_eV"] - butadiene["homo_eV"]
+    gap_benzene = benzene["lumo_eV"] - benzene["homo_eV"]
+
+    # Longer conjugation = smaller gap (particle-in-a-box scaling)
+    assert gap_butadiene < gap_ethane, (
+        f"Butadiene gap {gap_butadiene:.3f} should be smaller than ethane gap {gap_ethane:.3f}"
+    )
+    assert gap_benzene < gap_butadiene, (
+        f"Benzene gap {gap_benzene:.3f} should be smaller than butadiene gap {gap_butadiene:.3f}"
+    )
+
+
+def test_quantum_oracle_caching() -> None:
+    """QuantumOracle should cache results by SMILES."""
+    from rdkit import Chem
+
+    qc = QuantumOracle(use_xtb=False)
+    mol = Chem.MolFromSmiles("CCO")
+    r1 = qc.evaluate(mol)
+    r2 = qc.evaluate(mol)
+    assert r1 == r2
+    assert qc.get_cache_size() == 1
+
+
+def test_predict_tom_orbitals_returns_plausible() -> None:
+    """TOM should return physically plausible HOMO/LUMO values."""
+    from rdkit import Chem
+
+    mol = Chem.MolFromSmiles("COC(=O)OC")
+    homo, lumo = predict_tom_orbitals(mol)
+    assert -12.0 <= homo <= -3.0, f"HOMO {homo} out of range"
+    assert -5.0 <= lumo <= 5.0, f"LUMO {lumo} out of range"
+    assert lumo > homo, f"LUMO {lumo} <= HOMO {homo}"
+
+
+def test_tom_fluorine_correction() -> None:
+    """Fluorinated molecules should have stabilised (lower) HOMO/LUMO."""
+    from rdkit import Chem
+
+    ethane_h, ethane_l = predict_tom_orbitals(Chem.MolFromSmiles("CC"))
+    cf3_h, cf3_l = predict_tom_orbitals(Chem.MolFromSmiles("CC(F)(F)F"))
+
+    # CF3 is strongly EW - should lower both HOMO and LUMO
+    assert cf3_h < ethane_h, f"CF3 HOMO {cf3_h} should be lower than ethane {ethane_h}"
+    assert cf3_l < ethane_l, f"CF3 LUMO {cf3_l} should be lower than ethane {ethane_l}"

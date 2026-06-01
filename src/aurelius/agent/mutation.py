@@ -116,6 +116,50 @@ ELECTROLYTE_FRAGMENT_POOL: list[str] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Anti-gaming topology helpers
+# ---------------------------------------------------------------------------
+
+
+def _find_max_conjugated_path(mol: Chem.Mol) -> int:
+    """Find the longest conjugated π-system in a molecule (atom count).
+
+    Prevents the mutation engine from creating infinitely conjugated
+    structures that would "game" additive property models.
+    """
+    visited: set[int] = set()
+    max_path = [0]
+
+    def _conjugated(a: Chem.Atom, b: Chem.Atom) -> bool:
+        bond = mol.GetBondBetweenAtoms(a.GetIdx(), b.GetIdx())
+        if bond is None:
+            return False
+        if bond.GetIsConjugated():
+            return True
+        bt = bond.GetBondType()
+        if bt in (Chem.BondType.DOUBLE, Chem.BondType.TRIPLE, Chem.BondType.AROMATIC):
+            return True
+        return a.GetIsAromatic() or b.GetIsAromatic()
+
+    def _dfs(idx: int, length: int) -> None:
+        visited.add(idx)
+        max_path[0] = max(max_path[0], length)
+        atom = mol.GetAtomWithIdx(idx)
+        for nb in atom.GetNeighbors():
+            n_idx = nb.GetIdx()
+            if n_idx not in visited and _conjugated(atom, nb):
+                _dfs(n_idx, length + 1)
+        visited.discard(idx)
+
+    for atom in mol.GetAtoms():
+        _dfs(atom.GetIdx(), 1)
+
+    return max_path[0]
+
+
+# ---------------------------------------------------------------------------
+
+
 class MutationEngine:
     """Multi-strategy molecule mutation engine for battery electrolytes.
 
@@ -279,6 +323,9 @@ class MutationEngine:
             to prevent BRICS from generating drug-like garbage
           - No electrochemically unstable motifs (peroxides, acetals, strained rings)
           - No hydrolytically unstable motifs (anhydrides, silyl ethers, etc.)
+          - [Anti-gaming] Limited conjugated system size (prevents infinitely conjugated
+            "Frankenstein" molecules the mutation engine might optimise for)
+          - [Anti-gaming] Minimum sp³ carbon fraction (ensures 3D structural complexity)
 
         Args:
             ctx: Pre-parsed MoleculeContext.
@@ -325,6 +372,26 @@ class MutationEngine:
             for ring in ring_info.BondRings():
                 if len(ring) <= 4:
                     return False
+            if ring_info.NumRings() > 3:
+                return False
+
+        # Anti-gaming: maximum conjugation path length
+        # Prevents the mutation engine from creating infinitely conjugated
+        # "Frankenstein" molecules that score well in a purely additive model.
+        mol = ctx.mol
+        max_conj = _find_max_conjugated_path(mol)
+        if max_conj > 16:
+            return False
+
+        # Anti-gaming: minimum sp³ carbon fraction
+        # Electrolytes should have 3D structural complexity, not flat
+        # aromatic sheets. Reject molecules with < 20% sp³ carbons.
+        n_sp3 = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6 and a.GetHybridization() == Chem.HybridizationType.SP3)
+        n_c_total = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6)
+        if n_c_total >= 4:
+            sp3_frac = n_sp3 / n_c_total
+            if sp3_frac < 0.20:
+                return False
 
         return True
 

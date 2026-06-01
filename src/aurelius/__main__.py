@@ -1,13 +1,13 @@
-"""Project Aurelius v9.0 - CLI Entry Point.
+"""Project Aurelius v10.0 - Hybrid Quantum/ML Discovery CLI.
 
 Usage:
     aurelius init                    Initialize pipeline
     aurelius doctor                  Validate dependencies and hardware
+    aurelius doctor-xtb              Check xTB quantum backend availability
     aurelius screen <smiles>         Screen a single molecule
     aurelius batch <file>            Screen molecules from SMILES file
     aurelius score <smiles>          Compute Aurelius score only
-    aurelius evaluate <smiles>       Run ML Oracle evaluation
-    aurelius train                   Train the QM9 surrogate model
+    aurelius evaluate <smiles>       Run full pipeline evaluation
     aurelius agent                   Run the autonomous screening agent
 """
 
@@ -31,11 +31,12 @@ def _make_pipeline() -> AureliusPipeline:
 
 
 @click.group()
-@click.version_option(version="9.0.0", prog_name="Aurelius")
+@click.version_option(version="10.0.0", prog_name="Aurelius")
 def cli() -> None:
-    """Project Aurelius v9.0 - The Bayesian Discovery Release.
+    """Project Aurelius v10.0 - The Hybrid Quantum Discovery Release.
 
     Computational chemistry screening pipeline for battery electrolyte discovery.
+    Hybrid quantum + fragment-additivity oracle for physically valid screening.
     """
     pass
 
@@ -147,19 +148,15 @@ def score(
         click.echo(f"\nAurelius Score v9.0: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
 
 
-@cli.command("train")
-@click.option("--model-path", default="models/oracle_rf.joblib", show_default=True,
-              help="Path to save the trained RF model (.joblib)")
-def train(model_path: str) -> None:
-    """Retrain the Oracle's RF model on QM9 HOMO/LUMO data.
+@cli.command("doctor-xtb")
+def doctor_xtb() -> None:
+    """Check if the xTB quantum chemistry backend is available."""
+    from aurelius.scoring.oracle import has_xtb
 
-    Featurises ~500 QM9 molecules with ECFP4 + RDKit descriptors (2053-dim)
-    and trains a multi-output RandomForestRegressor for HOMO/LUMO prediction.
-    """
-    from aurelius.scoring.oracle import train_oracle_rf
-
-    path = train_oracle_rf(save_path=model_path)
-    click.echo(f"RF model trained and saved to {path}")
+    if has_xtb():
+        click.echo("[OK] xTB binary found on PATH — quantum oracle ENABLED.")
+    else:
+        click.echo("[INFO] xTB binary not found on PATH — TOM fallback active.")
 
 
 @cli.command("evaluate")

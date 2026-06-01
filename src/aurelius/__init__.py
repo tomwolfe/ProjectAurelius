@@ -1,14 +1,15 @@
-"""Project Aurelius - Bayesian Active Learning for Novel Molecule Discovery.
+"""Project Aurelius - Hybrid Quantum/ML Active Learning for Molecule Discovery.
 
-A streamlined pipeline that combines:
+A physically-grounded pipeline that combines:
 - RDKit-based structural filtering (electrolyte viability + LogP + MW gates)
-- Hybrid property oracle (RF on ECFP4 + fragment-additivity for S/P/F)
-- Bayesian active learning loop (RF surrogate, Expected Improvement acquisition)
-- QM9 + fragment-additivity training data
+- Hybrid property oracle: Quantum (xTB/TOM) for HOMO/LUMO + GC for bulk props
+- Bayesian active learning loop (RF surrogate, NWEI acquisition)
+- SMARTS/BRICS mutation engine with anti-gaming topology constraints
 
 Key design decisions:
-- scikit-learn Random Forest for in-domain prediction (lightweight, no GPU)
-- Fragment-additivity corrections for electrolyte-specific motifs (S, P, F)
+- **Hybrid physics**: Frontier orbitals via quantum chemistry (xTB/TOM);
+  bulk properties (dielectric, viscosity, Li+ solvation) via GC fragment-additivity
+- scikit-learn Random Forest for the surrogate (lightweight, no GPU)
 - ECFP4 Morgan fingerprints (radius=2, 2048 bits) for molecular featurisation
 - Gaussian-penalty objective function for battery-relevant scoring
 - Threshold-based viability criteria (Aurelius Score >= 50 / 100)

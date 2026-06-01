@@ -43,7 +43,7 @@ aurelius = "aurelius.__main__:cli"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"aurelius.data" = ["tier0_seed_smiles.json", "qm9_subset.csv"]
+"aurelius.data" = ["tier0_seed_smiles.json"]
 "aurelius.screening.tier1" = ["*.py"]
 "aurelius.cli_scripts" = ["*.py"]
 
