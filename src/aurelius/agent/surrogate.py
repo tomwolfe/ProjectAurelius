@@ -44,6 +44,8 @@ class RandomForestSurrogate:
         self._random_state = random_state
         self._xi = xi
         self._y_best: float = -float("inf")
+        self._diversity_lambda: float = 0.5
+        self._recent_variances: list[float] = []
 
     def fit(self, X: np.ndarray[Any, Any], y: np.ndarray[Any, Any]) -> None:
         if len(y) < 2:
@@ -110,12 +112,42 @@ class RandomForestSurrogate:
 
         return ei
 
+    def update_variance(self, batch_y: list[float]) -> None:
+        """Record a batch of scores and adapt diversity lambda based on variance.
+
+        Low variance indicates mode collapse (all candidates similar), which
+        triggers increased diversity pressure to force exploration.
+        """
+        if len(batch_y) < 2:
+            return
+        var = float(np.var(batch_y, ddof=1))
+        self._recent_variances.append(var)
+        if len(self._recent_variances) > 5:
+            self._recent_variances.pop(0)
+
+        recent = self._recent_variances[-3:]
+        mean_var = float(np.mean(recent)) if recent else 0.0
+        if mean_var < 50.0:
+            self._diversity_lambda = 0.7
+        elif mean_var < 150.0:
+            self._diversity_lambda = 0.5
+        else:
+            self._diversity_lambda = 0.3
+
+    @property
+    def diversity_lambda(self) -> float:
+        return self._diversity_lambda
+
+    @diversity_lambda.setter
+    def diversity_lambda(self, value: float) -> None:
+        self._diversity_lambda = float(np.clip(value, 0.0, 1.0))
+
     def score_candidates(
         self,
         X_candidates: np.ndarray[Any, Any],
         fingerprints: list[Any] | None = None,
         top_n: int = 10,
-        diversity_lambda: float = 0.5,
+        diversity_lambda: float | None = None,
     ) -> list[int]:
         """Select top candidates with optional diversity-penalized batch selection.
 
@@ -135,6 +167,9 @@ class RandomForestSurrogate:
             List of selected candidate indices (length <= top_n).
         """
         ei = self.expected_improvement(X_candidates)
+
+        if diversity_lambda is None:
+            diversity_lambda = self._diversity_lambda
 
         if fingerprints is None or len(fingerprints) == 0:
             top_indices = np.argsort(ei)[::-1][:top_n]

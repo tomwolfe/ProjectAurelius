@@ -30,6 +30,11 @@ from aurelius.constants import DISCOVERY_THRESHOLD
 from aurelius.pipeline import AureliusPipeline
 from aurelius.types import MoleculeContext, ScreeningResult
 
+try:
+    from rdkit.Chem.Scaffolds import MurckoScaffold
+except ImportError:
+    MurckoScaffold = None  # type: ignore[assignment]
+
 log = logging.getLogger(__name__)
 
 
@@ -149,6 +154,8 @@ class DiscoveryLoop:
         self._surrogate: RandomForestSurrogate | None = None
         self.screened_smiles: set[str] = set()
         self._prev_centroids: np.ndarray[Any, Any] | None = None
+        self._exploration_boost_active: bool = False
+        self._exploration_boost_generations: int = 0
 
     def execute(self) -> dict[str, Any]:
         wall_start = time.time()
@@ -271,6 +278,40 @@ class DiscoveryLoop:
                     self._surrogate = RandomForestSurrogate()
                 self._surrogate.fit(X, y)
 
+            # Adaptive diversity: report batch variance to surrogate
+            if self._surrogate is not None and batch_scores:
+                self._surrogate.update_variance(batch_scores)
+
+            # Scaffold tracking: extract Murcko scaffolds and check for stagnation
+            batch_scaffolds: list[str] = []
+            if MurckoScaffold is not None:
+                for ctx in batch_contexts:
+                    try:
+                        scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
+                        if scaffold:
+                            batch_scaffolds.append(scaffold)
+                    except Exception:
+                        continue
+            if batch_scaffolds:
+                self.state.record_scaffolds(batch_scaffolds)
+
+            # Exploration boost: if scaffold stagnation detected, increase xi
+            if self.state.has_scaffold_stagnation(n_batches=3):
+                if not self._exploration_boost_active:
+                    log.info("  ** Exploration boost triggered: scaffold stagnation detected **")
+                    self._exploration_boost_active = True
+                    self._exploration_boost_generations = 0
+                    if self._surrogate is not None:
+                        self._surrogate._xi = 0.10  # Increase xi from 0.01 to 0.10
+            else:
+                if self._exploration_boost_active:
+                    self._exploration_boost_generations += 1
+                    if self._exploration_boost_generations >= 3:
+                        self._exploration_boost_active = False
+                        if self._surrogate is not None:
+                            self._surrogate._xi = 0.01  # Reset xi
+                        log.info("  Exploration boost deactivated after 3 generations")
+
             new_seeds = [
                 ctx.smiles for ctx, sc in zip(batch_contexts, batch_scores, strict=False)
                 if sc >= 65.0
@@ -374,8 +415,15 @@ class DiscoveryLoop:
 
         if self._surrogate is not None:
             fps = [ctx.get_ecfp4() for ctx in valid_contexts]
+
+            diversity_lambda = self._surrogate.diversity_lambda
+            if self._exploration_boost_active:
+                diversity_lambda = min(diversity_lambda + 0.2, 1.0)
+                log.info("  Exploration boost active: diversity_lambda=%.2f", diversity_lambda)
+
             top_indices: list[int] = self._surrogate.score_candidates(
-                X_pool, fingerprints=fps, top_n=self.batch_size
+                X_pool, fingerprints=fps, top_n=self.batch_size,
+                diversity_lambda=diversity_lambda,
             )
         else:
             n = min(self.batch_size, len(valid_contexts))

@@ -26,10 +26,13 @@ from aurelius.constants import (
     AL_CORROSION_LUMO_THRESHOLD,
     AL_CORROSION_MIN_FLUORINE,
     AL_CORROSION_PENALTY_FACTOR,
+    CF3_PATTERN as _CF3_PATTERN,
+    CARBONYL_F_PATTERN as _CARBONYL_F_PATTERN,
     DIELECTRIC_SIGMOID_STEEPNESS,
     DIELECTRIC_TARGET,
     HOMO_SIGMOID_STEEPNESS,
     HOMO_THRESHOLD,
+    HYDROLYTICALLY_UNSTABLE_PATTERNS as _HYDRO_PATTERNS,
     LI_SOLVATION_SIGMA,
     LI_SOLVATION_TARGET,
     LUMO_SIGMA,
@@ -43,6 +46,7 @@ from aurelius.constants import (
     SCORE_WEIGHT_LUMO,
     SCORE_WEIGHT_SA,
     SCORE_WEIGHT_VISCOSITY,
+    SULFONYL_F_PATTERN as _SULFONYL_F_PATTERN,
     VIABILITY_THRESHOLD,
     VISCOSITY_SIGMOID_STEEPNESS,
     VISCOSITY_THRESHOLD,
@@ -101,18 +105,6 @@ _OBJECTIVES: list[Objective] = [
               sigma=LI_SOLVATION_SIGMA),
     Objective("sa_penalty", "sa_score", SCORE_WEIGHT_SA, "sigmoid", SA_THRESHOLD,
               steepness=SA_SIGMOID_STEEPNESS, higher_is_better=False),
-]
-
-
-# Hydrolytically unstable SMARTS patterns
-_HYDROLYTICALLY_UNSTABLE_SMARTS: list[tuple[str, str, float]] = [
-    ("[CX3](=[OX1])[OX2][CX3](=[OX1])[OX2]", "anhydride", 0.3),
-    ("[CX3](=[OX1])[OX2][CX2]#[N]", "acyl_cyanide", 0.4),
-    ("[SX4](=[OX1])(=[OX1])[OX2][CX3](=[OX1])", "sulfonate_ester", 0.2),
-    ("[PX4](=[OX1])([OX2][CX4])[OX2][CX4]", "phosphate_ester", 0.15),
-    ("[Si]([OX2])[OX2]", "silyl_ether", 0.3),
-    ("[CX3](=[OX1])[OX2][CX2]=[CX2]", "enol_ester", 0.35),
-    ("[#6][CX3](=[OX1])[OX2][CX3](=[OX1])[#6]", "geminal_diester", 0.2),
 ]
 
 
@@ -275,8 +267,7 @@ class AureliusPipeline:
         Returns a multiplier in [0.5, 1.0].
         """
         penalty = 1.0
-        for smarts, name, severity in _HYDROLYTICALLY_UNSTABLE_SMARTS:
-            pattern = Chem.MolFromSmarts(smarts)
+        for pattern, name, severity in _HYDRO_PATTERNS:
             if pattern is not None and mol.HasSubstructMatch(pattern):
                 penalty *= (1.0 - severity)
                 logger.debug("Hydrolytic instability detected: %s (penalty %.2f)", name, severity)
@@ -302,17 +293,11 @@ class AureliusPipeline:
         n_f = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 9)
 
         # Count CF3 groups
-        cf3 = Chem.MolFromSmarts("[C](F)(F)F")
-        n_cf3 = len(mol.GetSubstructMatches(cf3)) if cf3 is not None else 0
+        n_cf3 = len(mol.GetSubstructMatches(_CF3_PATTERN))
 
         # Count fluorine adjacent to carbonyl or sulfonyl
-        f_adjacent_ewg = Chem.MolFromSmarts("[CX3](=O)[CH2][F]")
-        n_f_ewg = 0
-        if f_adjacent_ewg is not None:
-            n_f_ewg = len(mol.GetSubstructMatches(f_adjacent_ewg))
-        f_sulfonyl = Chem.MolFromSmarts("[SX4](=O)(=O)[F]")
-        if f_sulfonyl is not None:
-            n_f_ewg += len(mol.GetSubstructMatches(f_sulfonyl))
+        n_f_ewg = len(mol.GetSubstructMatches(_CARBONYL_F_PATTERN))
+        n_f_ewg += len(mol.GetSubstructMatches(_SULFONYL_F_PATTERN))
 
         if n_f >= AL_CORROSION_MIN_FLUORINE and (n_cf3 >= 1 or n_f_ewg >= 1):
             return AL_CORROSION_PENALTY_FACTOR

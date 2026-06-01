@@ -18,7 +18,11 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import BRICS, AllChem, rdMolDescriptors
 
-from aurelius.constants import ELECTROLYTE_MIN_HETEROATOM_RATIO
+from aurelius.constants import (
+    ELECTROCHEMICALLY_UNSTABLE_PATTERNS as _EC_UNSTABLE_PATTERNS,
+    ELECTROLYTE_MIN_HETEROATOM_RATIO,
+    HYDROLYTICALLY_UNSTABLE_PATTERNS as _HYDRO_UNSTABLE_PATTERNS,
+)
 from aurelius.types import MoleculeContext
 from aurelius.utils.chem_utils import _deserialize_fp
 
@@ -61,27 +65,6 @@ ELECTROLYTE_SMARTS: list[tuple[str, str]] = [
 #   - Hemiacetals: same instability as acetals
 #   - Epoxides / aziridines: strained 3-rings open at anode potential
 #   - geminal diols: unstable toward dehydration
-
-_ELECTROCHEMICALLY_UNSTABLE_SMARTS: list[tuple[str, str]] = [
-    ("[OX2][OX2]",            "peroxide"),
-    ("[CX4H1]([OX2H0])([OX2H0])",  "acetal"),
-    ("[CX4H1]([OX2H0])([OH])",     "hemiacetal"),
-    ("[OX2]1[OX2][OX2]1",     "trioxirane"),
-    ("[CH2]1[CH2][CH2]1",     "cyclopropane"),
-    ("[CH2]1[CH2][CH2][CH2]1", "cyclobutane"),
-]
-
-# Hydrolytically unstable patterns (mirrors pipeline.py — checked here too
-# to reject unstable candidates before compute-heavy scoring)
-_HYDROLYTICALLY_UNSTABLE_SMARTS: list[tuple[str, str]] = [
-    ("[CX3](=[OX1])[OX2][CX3](=[OX1])[OX2]", "anhydride"),
-    ("[CX3](=[OX1])[OX2][CX2]#[N]",           "acyl_cyanide"),
-    ("[SX4](=[OX1])(=[OX1])[OX2][CX3](=[OX1])", "sulfonate_ester"),
-    ("[PX4](=[OX1])([OX2][CX4])[OX2][CX4]",   "phosphate_ester"),
-    ("[Si]([OX2])[OX2]",                      "silyl_ether"),
-    ("[CX3](=[OX1])[OX2][CX2]=[CX2]",         "enol_ester"),
-    ("[#6][CX3](=[OX1])[OX2][CX3](=[OX1])[#6]", "geminal_diester"),
-]
 
 ELECTROLYTE_FRAGMENT_POOL: list[str] = [
     "COC(=O)OC",
@@ -396,15 +379,20 @@ class MutationEngine:
         if n_total_heavy > 0 and n_f / n_total_heavy > 0.6:
             return False
 
+        n_cl = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 17)
+        n_br = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 35)
+        n_halogen = n_f + n_cl + n_br
+        if n_total_heavy > 0 and n_halogen / n_total_heavy > 0.6:
+            return False
+
         # Electrochemical stability: reject molecules with unstable motifs
-        for smarts, _name in _ELECTROCHEMICALLY_UNSTABLE_SMARTS:
-            pattern = Chem.MolFromSmarts(smarts)
+        for pattern, _name in _EC_UNSTABLE_PATTERNS:
             if pattern is not None and ctx.mol.HasSubstructMatch(pattern):
                 return False
 
         # Hydrolytic stability: reject molecules with hydrolytically unstable motifs
-        for smarts, _name in _HYDROLYTICALLY_UNSTABLE_SMARTS:
-            pattern = Chem.MolFromSmarts(smarts)
+        # _HYDRO_UNSTABLE_PATTERNS stores (pattern, name, severity); ignore severity
+        for pattern, _name, _severity in _HYDRO_UNSTABLE_PATTERNS:
             if pattern is not None and ctx.mol.HasSubstructMatch(pattern):
                 return False
 
@@ -435,6 +423,22 @@ class MutationEngine:
             sp3_frac = n_sp3 / n_c_total
             if sp3_frac < 0.20:
                 return False
+
+        # Valence sanity check: reject molecules with impossible valence states
+        # that slip through RDKit's default sanitisation for edge cases.
+        _max_valence: dict[int, int] = {6: 4, 7: 3, 8: 2, 9: 1, 15: 5, 16: 6, 17: 1, 35: 1}
+        for atom in mol.GetAtoms():
+            z = atom.GetAtomicNum()
+            if z in _max_valence and atom.GetExplicitValence() > _max_valence[z]:
+                return False
+
+        # Anti-gaming: TPSA/MW polarity ratio
+        # Prevents gaming by adding long non-polar aliphatic chains that
+        # artificially inflate MW without contributing to solvation.
+        mw = ctx.mw
+        tpsa = ctx.tpsa
+        if mw > 200 and tpsa / mw < 0.05:
+            return False
 
         return True
 

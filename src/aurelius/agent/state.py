@@ -53,6 +53,10 @@ class LoopState:
     generations: int = 0
     seed_pool_size: int = 0
 
+    # --- Scaffold tracking ---
+    scaffolds_per_batch: list[list[str]] = field(default_factory=list)
+    """Murcko scaffolds discovered in each batch, for stagnation detection."""
+
     # --- Checkpointing (formerly CheckpointManager) ---
     batch: int = 0
     best_score: float = 0.0
@@ -163,6 +167,33 @@ class LoopState:
         if len(self._all_scores) < 2:
             return 0.0
         return float(np.var(self._all_scores, ddof=1))
+
+    # ------------------------------------------------------------------
+    # Scaffold tracking (novelty / exploration)
+    # ------------------------------------------------------------------
+
+    def record_scaffolds(self, scaffolds: list[str]) -> None:
+        """Record the Murcko scaffolds found in the latest batch."""
+        self.scaffolds_per_batch.append(list(set(scaffolds)))
+
+    def has_scaffold_stagnation(self, n_batches: int = 3) -> bool:
+        """Check if the same scaffold core appears in the last n_batches.
+
+        If the same scaffold family keeps appearing, the search has
+        mode-collapsed and needs an exploration boost.
+        """
+        if len(self.scaffolds_per_batch) < n_batches:
+            return False
+        recent = self.scaffolds_per_batch[-n_batches:]
+        all_scaffolds: list[str] = []
+        for batch in recent:
+            all_scaffolds.extend(batch)
+        if not all_scaffolds:
+            return False
+        from collections import Counter
+        counts = Counter(all_scaffolds)
+        most_common_count = counts.most_common(1)[0][1]
+        return most_common_count >= n_batches
 
     # ------------------------------------------------------------------
     # Checkpointing (formerly CheckpointManager)

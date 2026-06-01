@@ -13,6 +13,17 @@ from typing import Any
 import numpy as np
 from rdkit import Chem
 
+from aurelius.constants import (
+    PEROXIDE_PATTERN as _PEROXIDE_PATTERN,
+    ALDEHYDE_PATTERN as _ALDEHYDE_PATTERN,
+    ANHYDRIDE_PATTERN as _ANHYDRIDE_PATTERN,
+    CARBONATE_PATTERN as _CARBONATE_PATTERN,
+    ETHER_PATTERN as _ETHER_PATTERN,
+    SULFONE_SA_PATTERN as _SULFONE_SA_PATTERN,
+    NITRILE_PATTERN as _NITRILE_PATTERN,
+    EPOXIDE_PATTERN as _EPOXIDE_PATTERN,
+)
+
 # ---------------------------------------------------------------------------
 # Fingerprint serialization / deserialization (used by MutationEngine)
 # ---------------------------------------------------------------------------
@@ -110,40 +121,34 @@ def electrolyte_synthetic_accessibility(ctx: Any) -> float:
     score += 0.5 * n_stereo
 
     # Peroxides: highly unstable, extremely hard to formulate
-    peroxide = Chem.MolFromSmarts("[OX2][OX2]")
-    if peroxide is not None and mol.HasSubstructMatch(peroxide):
-        score += 3.0
+    if _PEROXIDE_PATTERN is not None and mol.HasSubstructMatch(_PEROXIDE_PATTERN):
+        n_peroxide = len(mol.GetSubstructMatches(_PEROXIDE_PATTERN))
+        score += 3.0 * min(n_peroxide, 3)
 
     # Aldehydes: reactive, prone to oxidation
-    aldehyde = Chem.MolFromSmarts("[CH](=O)")
-    if aldehyde is not None and mol.HasSubstructMatch(aldehyde):
+    if _ALDEHYDE_PATTERN is not None and mol.HasSubstructMatch(_ALDEHYDE_PATTERN):
         score += 1.0
 
     # Acid chlorides, anhydrides — highly reactive
-    anhydride = Chem.MolFromSmarts("[CX3](=[OX1])[OX2][CX3](=[OX1])")
-    if anhydride is not None and mol.HasSubstructMatch(anhydride):
+    if _ANHYDRIDE_PATTERN is not None and mol.HasSubstructMatch(_ANHYDRIDE_PATTERN):
         score += 2.0
 
     # --- Rewards (easier to synthesise — common electrolyte precursors) ---
 
     # Carbonates: workhorse electrolyte solvents
-    carbonate = Chem.MolFromSmarts("O=C([OX2])[OX2]")
-    if carbonate is not None and mol.HasSubstructMatch(carbonate):
+    if _CARBONATE_PATTERN is not None and mol.HasSubstructMatch(_CARBONATE_PATTERN):
         score -= 0.5
 
     # Ethers: common co-solvents
-    ether = Chem.MolFromSmarts("[OD2]([CX4])[CX4]")
-    if ether is not None and mol.HasSubstructMatch(ether):
+    if _ETHER_PATTERN is not None and mol.HasSubstructMatch(_ETHER_PATTERN):
         score -= 0.3
 
     # Sulfones: high-voltage electrolyte components
-    sulfone = Chem.MolFromSmarts("S(=O)(=O)[CX4]")
-    if sulfone is not None and mol.HasSubstructMatch(sulfone):
+    if _SULFONE_SA_PATTERN is not None and mol.HasSubstructMatch(_SULFONE_SA_PATTERN):
         score -= 0.3
 
     # Nitriles: common electrolyte additives
-    nitrile = Chem.MolFromSmarts("[C]#[N]")
-    if nitrile is not None and mol.HasSubstructMatch(nitrile):
+    if _NITRILE_PATTERN is not None and mol.HasSubstructMatch(_NITRILE_PATTERN):
         score -= 0.2
 
     # Fluorinated groups: ubiquitous in modern electrolytes
@@ -151,9 +156,28 @@ def electrolyte_synthetic_accessibility(ctx: Any) -> float:
     score -= 0.15 * min(f_count, 4)
 
     # Epoxides: useful industrial precursors for ring-opening polymerisation
-    epoxide = Chem.MolFromSmarts("[OX2]1[CX4][CX4]1")
-    if epoxide is not None and mol.HasSubstructMatch(epoxide):
+    if _EPOXIDE_PATTERN is not None and mol.HasSubstructMatch(_EPOXIDE_PATTERN):
         score -= 0.5
+
+    # Poly-peroxide penalty: more than one peroxide -> extremely unstable
+    n_peroxide = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 8 and a.GetDegree() == 2
+                     and any(n.GetAtomicNum() == 8 for n in a.GetNeighbors()))
+    if n_peroxide >= 2:
+        score += 2.0
+
+    # Hypervalent halogen penalty: reject excessively substituted halogens
+    for atom in mol.GetAtoms():
+        z = atom.GetAtomicNum()
+        if z in (9, 17, 35) and atom.GetExplicitValence() > 1:
+            score += 3.0
+            break
+
+    # Long alkyl chain penalty: penalise molecules with very long non-polar tails
+    n_c = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6)
+    tpsa = ctx.tpsa
+    if n_c > 12 and tpsa < 40:
+        excess = (n_c - 12) * 0.2
+        score += min(excess, 2.0)
 
     return float(np.clip(score, 1.0, 10.0))
 

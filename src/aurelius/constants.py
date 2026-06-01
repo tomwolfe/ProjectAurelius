@@ -6,6 +6,8 @@ the physical justification for each value.
 
 from __future__ import annotations
 
+from rdkit import Chem
+
 FINGERPRINT_SIZE: int = 2048
 
 # ---------------------------------------------------------------------------
@@ -213,3 +215,48 @@ LI_SOLVATION_SIGMA: float = 1.0
 
 ELECTROLYTE_MIN_HETEROATOM_RATIO: float = 0.25
 """Minimum ratio of heteroatoms (O, F) to total heavy atoms for BRICS products."""
+
+# ---------------------------------------------------------------------------
+# Pre-compiled SMARTS patterns — compiled once at module load time
+# ---------------------------------------------------------------------------
+# These replace string-based SMARTS definitions that were previously
+# recompiled inside per-molecule loops (massive performance bottleneck).
+# Each pattern is compiled exactly once, at import time.
+
+# Shared hydrolytically unstable motifs (used by pipeline.py, mutation.py)
+# Format: (pattern, name, severity)
+HYDROLYTICALLY_UNSTABLE_PATTERNS: list[tuple[Chem.Mol, str, float]] = [
+    (Chem.MolFromSmarts("[CX3](=[OX1])[OX2][CX3](=[OX1])[OX2]"), "anhydride", 0.3),
+    (Chem.MolFromSmarts("[CX3](=[OX1])[OX2][CX2]#[N]"), "acyl_cyanide", 0.4),
+    (Chem.MolFromSmarts("[SX4](=[OX1])(=[OX1])[OX2][CX3](=[OX1])"), "sulfonate_ester", 0.2),
+    (Chem.MolFromSmarts("[PX4](=[OX1])([OX2][CX4])[OX2][CX4]"), "phosphate_ester", 0.15),
+    (Chem.MolFromSmarts("[Si]([OX2])[OX2]"), "silyl_ether", 0.3),
+    (Chem.MolFromSmarts("[CX3](=[OX1])[OX2][CX2]=[CX2]"), "enol_ester", 0.35),
+    (Chem.MolFromSmarts("[#6][CX3](=[OX1])[OX2][CX3](=[OX1])[#6]"), "geminal_diester", 0.2),
+]
+
+# Electrochemically unstable motifs (used by mutation.py)
+ELECTROCHEMICALLY_UNSTABLE_PATTERNS: list[tuple[Chem.Mol, str]] = [
+    (Chem.MolFromSmarts("[OX2][OX2]"), "peroxide"),
+    (Chem.MolFromSmarts("[CX4H1]([OX2H0])([OX2H0])"), "acetal"),
+    (Chem.MolFromSmarts("[CX4H1]([OX2H0])([OH])"), "hemiacetal"),
+    (Chem.MolFromSmarts("[OX2]1[OX2][OX2]1"), "trioxirane"),
+    (Chem.MolFromSmarts("[CH2]1[CH2][CH2]1"), "cyclopropane"),
+    (Chem.MolFromSmarts("[CH2]1[CH2][CH2][CH2]1"), "cyclobutane"),
+]
+
+# Individual pre-compiled patterns for chem_utils.py SA score
+PEROXIDE_PATTERN: Chem.Mol = Chem.MolFromSmarts("[OX2][OX2]")
+ALDEHYDE_PATTERN: Chem.Mol = Chem.MolFromSmarts("[CH](=O)")
+ANHYDRIDE_PATTERN: Chem.Mol = Chem.MolFromSmarts("[CX3](=[OX1])[OX2][CX3](=[OX1])")
+CARBONATE_PATTERN: Chem.Mol = Chem.MolFromSmarts("O=C([OX2])[OX2]")
+ETHER_PATTERN: Chem.Mol = Chem.MolFromSmarts("[OD2]([CX4])[CX4]")
+SULFONE_SA_PATTERN: Chem.Mol = Chem.MolFromSmarts("S(=O)(=O)[CX4]")
+NITRILE_PATTERN: Chem.Mol = Chem.MolFromSmarts("[C]#[N]")
+EPOXIDE_PATTERN: Chem.Mol = Chem.MolFromSmarts("[OX2]1[CX4][CX4]1")
+
+# TOM / Al-corrosion shared patterns (used by oracle.py, pipeline.py)
+SULFONE_PATTERN: Chem.Mol = Chem.MolFromSmarts("S(=O)(=O)")
+CF3_PATTERN: Chem.Mol = Chem.MolFromSmarts("[C](F)(F)F")
+CARBONYL_F_PATTERN: Chem.Mol = Chem.MolFromSmarts("[CX3](=O)[CH2][F]")
+SULFONYL_F_PATTERN: Chem.Mol = Chem.MolFromSmarts("[SX4](=O)(=O)[F]")

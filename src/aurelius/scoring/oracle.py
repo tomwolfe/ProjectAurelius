@@ -51,7 +51,7 @@ from typing import Any
 
 from rdkit import Chem
 
-from aurelius.constants import MAX_DIELECTRIC_PER_TPSA
+from aurelius.constants import MAX_DIELECTRIC_PER_TPSA, SULFONE_PATTERN as _SULFONE_PATTERN, CF3_PATTERN as _CF3_PATTERN
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
@@ -68,46 +68,48 @@ def get_data_source() -> str:
 # Fragment-Additivity (Group-Contribution) Models — Bulk Properties Only
 # ---------------------------------------------------------------------------
 
-# (smarts, name, dielectric_contrib, viscosity_contrib, li_solvation_contrib)
+# (pattern, name, dielectric_contrib, viscosity_contrib, li_solvation_contrib)
+# Patterns are pre-compiled at module load time to avoid recompilation
+# inside the per-molecule _count_fragments hot loop.
 # Li+ solvation contributions are based on donor-number and chelation ability:
 #   - Carbonates bind moderately-strongly (high donor number ~16)
 #   - Ethers bind moderately (glyme family chelates Li+)
 #   - Nitriles bind moderately (acetonitrile donor number ~14)
 #   - Fluorinated groups reduce binding (electron withdrawal lowers donor strength)
 #   - Alcohols bind too strongly (high donor number, poor transference)
-_GC_FRAGMENTS: list[tuple[str, str, float, float, float]] = [
-    ("[CX3](=O)[OX2H0]",       "ester",              2.5,  0.6,  0.8),
-    ("[CX3](=O)[OH]",          "carboxylic_acid",    4.0,  1.0,  1.8),
-    ("[CX3](=O)[NX3]",         "amide",              5.0,  0.8,  1.2),
-    ("[CX3](=O)[CX3]",         "ketone",             3.0,  0.5,  0.6),
-    ("[CH](=O)",               "aldehyde",           2.5,  0.3,  0.3),
-    ("O=C([OX2])[OX2]",        "carbonate",          5.0,  0.7,  1.5),
-    ("[OD2]([CX4])[CX4]",      "ether",              1.5, -0.3,  0.5),
-    ("[OH][CX4]",              "alcohol",            4.5,  1.2,  2.0),
-    ("[NX3;H2][CX4]",          "primary_amine",      3.5,  0.5,  1.0),
-    ("[NX3;H1]([CX4])[CX4]",   "secondary_amine",    2.5,  0.4,  0.8),
-    ("[NX3;H0]([CX4])([CX4])[CX4]", "tertiary_amine", 1.5,  0.3,  0.5),
-    ("[C]#[N]",                "nitrile",            8.0,  0.4,  1.2),
-    ("[CX3]=[CX3]",            "alkene",             0.5,  0.1,  0.1),
-    ("[CX2]#[CX2]",            "alkyne",             1.0,  0.2,  0.2),
-    ("[c]",                    "aromatic_carbon",    0.5,  0.5,  0.1),
-    ("[F]",                    "fluorine",           0.0,  0.1, -0.5),
-    ("[Cl]",                   "chlorine",           0.5,  0.2, -0.3),
-    ("[Br]",                   "bromine",            0.5,  0.3, -0.2),
-    ("S(=O)(=O)[CX4]",         "sulfone",            5.0,  0.5,  1.0),
-    ("S(=O)(=O)[OX2]",         "sulfonate",          5.5,  0.6,  1.2),
-    ("S(=O)(=O)F",             "sulfonyl_fluoride",  4.0,  0.4,  0.5),
-    ("[PX4](=O)([OX2])([OX2])[OX2]", "phosphate",    4.0,  0.8,  1.5),
-    ("[C](F)(F)F",             "trifluoromethyl",    0.5,  0.2, -0.3),
-    ("[C](F)(F)",              "difluoromethylene",  0.3,  0.1, -0.2),
-    ("[BX3]([OX2])",           "boronate",           2.0,  0.7,  1.0),
-    ("[BX4]([OX2])([OX2])([OX2])[OX2]", "borate",    3.0,  0.6,  1.5),
-    ("[S]([CX4])[CX4]",        "thioether",          1.0,  0.2,  0.3),
-    ("[F][CX4][OX2][CX4]",     "fluorinated_ether",  1.0,  0.0, -0.2),
-    ("[PX4](=N)([OX2])([OX2])[OX2]", "phosphazene",  3.5,  0.4,  0.8),
-    ("[OX2][CX4][CX4][OX2]",   "glyme_chelating",    2.0,  0.1,  1.8),
-    ("[SX4](=O)(=O)[NX3][SX4](=O)(=O)", "sulfonimide", 5.0,  0.5,  0.5),
-    ("[CX3](=O)[OX2]C(F)(F)F",  "fluorinated_carbonate", 3.0,  0.3, -0.1),
+_GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
+    (Chem.MolFromSmarts("[CX3](=O)[OX2H0]"),       "ester",              2.5,  0.6,  0.8),
+    (Chem.MolFromSmarts("[CX3](=O)[OH]"),          "carboxylic_acid",    4.0,  1.0,  1.8),
+    (Chem.MolFromSmarts("[CX3](=O)[NX3]"),         "amide",              5.0,  0.8,  1.2),
+    (Chem.MolFromSmarts("[CX3](=O)[CX3]"),         "ketone",             3.0,  0.5,  0.6),
+    (Chem.MolFromSmarts("[CH](=O)"),               "aldehyde",           2.5,  0.3,  0.3),
+    (Chem.MolFromSmarts("O=C([OX2])[OX2]"),        "carbonate",          5.0,  0.7,  1.5),
+    (Chem.MolFromSmarts("[OD2]([CX4])[CX4]"),      "ether",              1.5, -0.3,  0.5),
+    (Chem.MolFromSmarts("[OH][CX4]"),              "alcohol",            4.5,  1.2,  2.0),
+    (Chem.MolFromSmarts("[NX3;H2][CX4]"),          "primary_amine",      3.5,  0.5,  1.0),
+    (Chem.MolFromSmarts("[NX3;H1]([CX4])[CX4]"),   "secondary_amine",    2.5,  0.4,  0.8),
+    (Chem.MolFromSmarts("[NX3;H0]([CX4])([CX4])[CX4]"), "tertiary_amine", 1.5,  0.3,  0.5),
+    (Chem.MolFromSmarts("[C]#[N]"),                "nitrile",            8.0,  0.4,  1.2),
+    (Chem.MolFromSmarts("[CX3]=[CX3]"),            "alkene",             0.5,  0.1,  0.1),
+    (Chem.MolFromSmarts("[CX2]#[CX2]"),            "alkyne",             1.0,  0.2,  0.2),
+    (Chem.MolFromSmarts("[c]"),                    "aromatic_carbon",    0.5,  0.5,  0.1),
+    (Chem.MolFromSmarts("[F]"),                    "fluorine",           0.0,  0.1, -0.5),
+    (Chem.MolFromSmarts("[Cl]"),                   "chlorine",           0.5,  0.2, -0.3),
+    (Chem.MolFromSmarts("[Br]"),                   "bromine",            0.5,  0.3, -0.2),
+    (Chem.MolFromSmarts("S(=O)(=O)[CX4]"),         "sulfone",            5.0,  0.5,  1.0),
+    (Chem.MolFromSmarts("S(=O)(=O)[OX2]"),         "sulfonate",          5.5,  0.6,  1.2),
+    (Chem.MolFromSmarts("S(=O)(=O)F"),             "sulfonyl_fluoride",  4.0,  0.4,  0.5),
+    (Chem.MolFromSmarts("[PX4](=O)([OX2])([OX2])[OX2]"), "phosphate",    4.0,  0.8,  1.5),
+    (Chem.MolFromSmarts("[C](F)(F)F"),             "trifluoromethyl",    0.5,  0.2, -0.3),
+    (Chem.MolFromSmarts("[C](F)(F)"),              "difluoromethylene",  0.3,  0.1, -0.2),
+    (Chem.MolFromSmarts("[BX3]([OX2])"),           "boronate",           2.0,  0.7,  1.0),
+    (Chem.MolFromSmarts("[BX4]([OX2])([OX2])([OX2])[OX2]"), "borate",    3.0,  0.6,  1.5),
+    (Chem.MolFromSmarts("[S]([CX4])[CX4]"),        "thioether",          1.0,  0.2,  0.3),
+    (Chem.MolFromSmarts("[F][CX4][OX2][CX4]"),     "fluorinated_ether",  1.0,  0.0, -0.2),
+    (Chem.MolFromSmarts("[PX4](=N)([OX2])([OX2])[OX2]"), "phosphazene",  3.5,  0.4,  0.8),
+    (Chem.MolFromSmarts("[OX2][CX4][CX4][OX2]"),   "glyme_chelating",    2.0,  0.1,  1.8),
+    (Chem.MolFromSmarts("[SX4](=O)(=O)[NX3][SX4](=O)(=O)"), "sulfonimide", 5.0,  0.5,  0.5),
+    (Chem.MolFromSmarts("[CX3](=O)[OX2]C(F)(F)F"),  "fluorinated_carbonate", 3.0,  0.3, -0.1),
 ]
 
 _GC_BASE_DIELECTRIC: float = 1.9
@@ -142,10 +144,10 @@ def _saturate_contrib(count: int, max_contrib: float) -> float:
 
 
 def _count_fragments(mol: Chem.Mol) -> dict[str, int]:
-    """Count occurrences of each fragment SMARTS pattern in a molecule."""
+    """Count occurrences of each pre-compiled fragment pattern in a molecule."""
     counts: dict[str, int] = {}
-    for _smarts, name, _dd, _dv, _ls in _GC_FRAGMENTS:
-        matches = mol.GetSubstructMatches(Chem.MolFromSmarts(_smarts))
+    for pattern, name, _dd, _dv, _ls in _GC_FRAGMENTS:
+        matches = mol.GetSubstructMatches(pattern)
         counts[name] = len(matches)
     return counts
 
@@ -532,17 +534,13 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     lumo += f_shift
 
     # Sulfone/Phosphate correction (strong EW)
-    sulfone = Chem.MolFromSmarts("S(=O)(=O)")
-    if sulfone is not None:
-        n_sulfone = len(mol.GetSubstructMatches(sulfone))
-        homo += -0.25 * n_sulfone
-        lumo += -0.40 * n_sulfone
+    n_sulfone = len(mol.GetSubstructMatches(_SULFONE_PATTERN))
+    homo += -0.25 * n_sulfone
+    lumo += -0.40 * n_sulfone
 
-    cf3 = Chem.MolFromSmarts("[C](F)(F)F")
-    if cf3 is not None:
-        n_cf3 = len(mol.GetSubstructMatches(cf3))
-        homo += -0.20 * n_cf3
-        lumo += -0.15 * n_cf3
+    n_cf3 = len(mol.GetSubstructMatches(_CF3_PATTERN))
+    homo += -0.20 * n_cf3
+    lumo += -0.15 * n_cf3
 
     return homo, lumo
 
