@@ -1,4 +1,4 @@
-"""Project Aurelius v10.0 - Hybrid Quantum/ML Discovery CLI.
+"""Project Aurelius v10.0 - Evolutionary Algorithm Discovery CLI.
 
 Usage:
     aurelius init                    Initialize pipeline
@@ -33,7 +33,7 @@ def _make_pipeline() -> AureliusPipeline:
 @click.group()
 @click.version_option(version="10.0.0", prog_name="Aurelius")
 def cli() -> None:
-    """Project Aurelius v10.0 - The Hybrid Quantum Discovery Release.
+    """Project Aurelius v10.0 - Evolutionary Algorithm Discovery Release.
 
     Computational chemistry screening pipeline for battery electrolyte discovery.
     Hybrid quantum + fragment-additivity oracle for physically valid screening.

@@ -18,9 +18,9 @@ A **two-tier hybrid model** that uses the right physics for each property:
          non-linear empirical model based on π-conjugation length,
          heteroatom perturbation, and topology
 
-  This hybrid architecture justifies the Bayesian Active Learning loop
-  (the oracle is non-linear and computationally expensive), while
-  keeping bulk-property prediction lightweight and transparent.
+  This hybrid architecture keeps the pipeline physically grounded:
+  the oracle is non-linear and topology-dependent for frontier orbitals,
+  while bulk-property prediction remains lightweight and transparent.
 
   Properties predicted:
     - HOMO energy (eV)          — QuantumOracle (xTB/TOM)
@@ -634,8 +634,8 @@ class PropertyOracle:
       - Viscosity proxy: GC fragment-additivity + MW + rotatable bonds
       - Li+ Solvation proxy: GC fragment-additivity
 
-    This hybrid model justifies the Bayesian active learning loop (the
-    oracle is non-linear and moderately expensive) while keeping bulk
+    This hybrid model keeps the pipeline physically grounded (the
+    oracle is non-linear and topology-dependent) while keeping bulk
     property prediction lightweight and interpretable.
     """
 

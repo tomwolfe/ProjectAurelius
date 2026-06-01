@@ -174,16 +174,18 @@ class MutationEngine:
                 self.seed_contexts.append(ctx)
                 self.seed_fingerprints.append(ctx.get_ecfp4())
 
-        self.known_fps: list[Any] = []
+        # Static commercial electrolyte fingerprints (loaded once from JSON)
+        self._commercial_fps: list[Any] = []
         for h in known_fps_hex or []:
             try:
-                self.known_fps.append(_deserialize_fp(h))
+                self._commercial_fps.append(_deserialize_fp(h))
             except Exception:
                 continue
 
-        # Canonical SMILES sets for exact duplicate prevention
+        # Canonical SMILES sets for O(1) exact duplicate prevention
         self._seed_smiles: set[str] = set()
         self._known_smiles: set[str] = set()
+        self._generated_smiles: set[str] = set()
         for ctx in self.seed_contexts:
             try:
                 canon = Chem.MolToSmiles(ctx.mol)
@@ -230,22 +232,26 @@ class MutationEngine:
             if ctx is not None:
                 canon = Chem.MolToSmiles(ctx.mol)
                 if canon not in existing_smis:
-                    self.known_fps.append(ctx.get_ecfp4())
+                    self._commercial_fps.append(ctx.get_ecfp4())
                     self._known_smiles.add(canon)
 
         logger.info(
             "Loaded %d known electrolyte fingerprints for global novelty checking.",
-            len(self.known_fps),
+            len(self._commercial_fps),
         )
 
-    def fingerprint_db_size(self) -> int:
-        return len(self.known_fps)
+    def commercial_db_size(self) -> int:
+        return len(self._commercial_fps)
 
     def add_to_db(self, smiles: str) -> None:
-        """Add a SMILES molecule to the known fingerprint database."""
+        """Add a generated SMILES to the exact-duplicate set (O(1) lookup)."""
         ctx = MoleculeContext.from_smiles(smiles)
         if ctx is not None:
-            self.known_fps.append(ctx.get_ecfp4())
+            try:
+                canon = Chem.MolToSmiles(ctx.mol)
+                self._generated_smiles.add(canon)
+            except Exception:
+                pass
 
     def harvest_fragments(self, smiles: str) -> None:
         """Extract BRICS fragments from a high-scoring molecule for future reassembly.
@@ -282,23 +288,20 @@ class MutationEngine:
         return len(ELECTROLYTE_FRAGMENT_POOL) + len(self._harvested_fragments)
 
     def _novelty_check(self, ctx: MoleculeContext) -> bool:
-        """Return True if molecule is novel (exact match only; allows local exploration of seeds).
+        """Return True if molecule is novel.
 
         A molecule is considered novel if:
-          1. Its canonical SMILES is not an exact match for any seed or
-             known electrolyte (prevents exact rediscovery).
+          1. Its canonical SMILES is not an exact match for any seed,
+             known electrolyte, or previously generated molecule (O(1) set lookup).
           2. Its ECFP4 Tanimoto similarity is < 0.85 against all *known
-             commercial electrolytes* (prevents trivial rediscovery of
-             existing patents).
+             commercial electrolytes* only (static, small list).
 
-        The Tanimoto check against the *seed pool* has been intentionally
-        removed.  Adding a single fluorine or methyl group to a known core
-        (e.g. Ethylene Carbonate → Fluoroethylene Carbonate) yields a
-        Tanimoto > 0.9.  Rejecting such molecules blocks the most common
-        and successful electrolyte discovery strategy.  Exact SMILES
-        matching still prevents rediscovery of the exact seed.
+        The Tanimoto check against generated molecules has been intentionally
+        removed — exact SMILES matching (O(1)) handles intra-run dedup.
+        This prevents the O(N) performance crawl that occurred when every
+        generated molecule was appended to the fingerprint database.
         """
-        # Exact canonical SMILES match (prevents rediscovering exact seeds/knowns)
+        # O(1) canonical SMILES exact match (seeds, knowns, generated)
         try:
             canon = Chem.MolToSmiles(ctx.mol)
         except Exception:
@@ -307,14 +310,15 @@ class MutationEngine:
             return False
         if canon in self._known_smiles:
             return False
+        if canon in self._generated_smiles:
+            return False
 
         # Tanimoto check against *known commercial electrolytes only*
-        # to prevent trivial patent rediscovery while allowing local
-        # functionalisation of seed cores.
+        # (static list, never grows — no O(N) bottleneck)
         fp = ctx.get_ecfp4()
-        if self.known_fps:
+        if self._commercial_fps:
             from rdkit.DataStructs import BulkTanimotoSimilarity
-            sims = BulkTanimotoSimilarity(fp, self.known_fps)
+            sims = BulkTanimotoSimilarity(fp, self._commercial_fps)
             if any(s >= 0.85 for s in sims):
                 return False
 

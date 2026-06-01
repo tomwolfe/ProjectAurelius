@@ -1,13 +1,12 @@
 """Evolutionary Tournament Selection with Tanimoto diversity penalty.
 
-Replaces the over-engineered Random Forest + Expected Improvement surrogate
-with a direct, interpretable selection strategy:
+Direct, interpretable selection strategy:
 
-1. Evaluate candidates using the actual Oracle (no surrogate needed).
+1. Evaluate candidates directly using the Oracle.
 2. Select top performers via tournament selection.
 3. Apply a Tanimoto-based diversity penalty to prevent batch collapse.
 
-This approach is simpler, faster, and works naturally for both cheap (TOM+GC)
+This approach is simple, fast, and works naturally for both cheap (TOM+GC)
 and expensive (xTB) oracles — just adjust ``batch_size``.
 """
 

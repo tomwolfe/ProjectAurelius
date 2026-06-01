@@ -59,10 +59,8 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
     engine = MutationEngine()
     state = LoopState(output_dir=output_dir)
 
-    for h in getattr(state, "known_fps_hex", []):
-        with contextlib.suppress(Exception):
-            from aurelius.utils.chem_utils import _deserialize_fp
-            engine.known_fps.append(_deserialize_fp(h))
+    # Commercial fingerprints are loaded statically from known_electrolytes.json
+    # during MutationEngine.__init__; no need to restore from checkpoint.
 
     resumed = state.total_screened > 0
     if resumed:

@@ -97,27 +97,29 @@ SA_SIGMOID_STEEPNESS: float = 2.0
 # and salt dissociation), HOMO and Viscosity are secondary constraints, and
 # SA is a soft filter.
 
-SCORE_WEIGHT_LUMO: float = 0.20
+SCORE_WEIGHT_LUMO: float = 0.23
 """Weight for LUMO SEI-formation reward."""
 
-SCORE_WEIGHT_HOMO: float = 0.15
+SCORE_WEIGHT_HOMO: float = 0.17
 """Weight for HOMO oxidative-stability penalty."""
 
-SCORE_WEIGHT_DIELECTRIC: float = 0.15
+SCORE_WEIGHT_DIELECTRIC: float = 0.17
 """Weight for dielectric-constant (salt dissolution) reward."""
 
-SCORE_WEIGHT_VISCOSITY: float = 0.12
+SCORE_WEIGHT_VISCOSITY: float = 0.14
 """Weight for viscosity (ion mobility) penalty."""
 
-SCORE_WEIGHT_LI_SOLVATION: float = 0.18
+SCORE_WEIGHT_LI_SOLVATION: float = 0.20
 """Weight for Li+ solvation energy proxy — penalises binding that is too tight
 (poor transference number) or too weak (poor conductivity)."""
 
-SCORE_WEIGHT_SA: float = 0.08
-"""Weight for synthetic accessibility penalty."""
+SCORE_WEIGHT_SA: float = 0.09
+"""Weight for synthetic accessibility penalty.
 
-SCORE_WEIGHT_AL_CORROSION: float = 0.12
-"""Weight for aluminium corrosion penalty (high-LUMO fluorinated molecules)."""
+Note: Al corrosion penalty is applied as a strict multiplicative factor
+at the end of scoring (like hydrolytic instability), not as an additive
+weight. This avoids the double-dipping bug where corrosion risk was
+accidentally rewarded by the additive term."""
 
 # ---------------------------------------------------------------------------
 # Viability Threshold

@@ -2,7 +2,7 @@
 
 **Novel molecule discovery for battery electrolytes.**
 
-A physically-grounded Bayesian active-learning pipeline with a **hybrid quantum + fragment-additivity oracle**. Frontier orbitals (HOMO/LUMO) are predicted via quantum chemistry (xTB/GFN2-xTB preferred, Topological Orbital Model fallback) — bulk properties (dielectric, viscosity, Li+ solvation) via interpretable group-contribution fragment-additivity.
+A physically-grounded Evolutionary Algorithm pipeline with a **hybrid quantum + fragment-additivity oracle**. Frontier orbitals (HOMO/LUMO) are predicted via quantum chemistry (xTB/GFN2-xTB preferred, Topological Orbital Model fallback) — bulk properties (dielectric, viscosity, Li+ solvation) via interpretable group-contribution fragment-additivity.
 
 ## Why Hybrid?
 
@@ -13,7 +13,7 @@ A physically-grounded Bayesian active-learning pipeline with a **hybrid quantum 
 | Viscosity | GC fragment-additivity + MW + RotB | Transport properties correlate with group contributions. |
 | Li+ Solvation | GC fragment-additivity | Donor-number additivity is physically valid. |
 
-This architecture justifies the Bayesian Active Learning loop (the oracle is non-linear and moderately expensive) while keeping bulk property prediction lightweight and transparent.
+The hybrid oracle (non-linear quantum HOMO/LUMO + additive GC bulk properties) keeps the pipeline physically grounded while maintaining interpretability.
 
 ## Overview
 
@@ -78,7 +78,7 @@ The mutation engine includes topological safeguards:
 ```
 src/aurelius/
 ├── agent/
-│   ├── loop.py             # DiscoveryLoop (Bayesian active learning)
+│   ├── loop.py             # DiscoveryLoop (Evolutionary Algorithm)
 │   ├── mutation.py         # SMARTS+BRICS mutation engine
 │   ├── reporting.py        # SDF + JSON report generation
 │   ├── state.py            # Checkpoint, convergence, feedback

@@ -2,7 +2,7 @@
 
 Coordinates a streamlined two-step discovery pipeline:
   1. Filter — Quick structural validity (Tier 1) check with LogP and MW gates.
-  2. Oracle — Multi-objective property evaluation via hybrid RF/GC + F/P/S
+  2. Oracle — Multi-objective property evaluation via hybrid quantum/GC
      correction (HOMO, LUMO, Dielectric proxy, Viscosity proxy, SA Score).
   3.    Score — Declarative multi-objective composite with Al corrosion penalty.
      Each objective is defined as an ``Objective`` dataclass (Gaussian or
@@ -39,7 +39,6 @@ from aurelius.constants import (
     LUMO_TARGET,
     SA_SIGMOID_STEEPNESS,
     SA_THRESHOLD,
-    SCORE_WEIGHT_AL_CORROSION,
     SCORE_WEIGHT_DIELECTRIC,
     SCORE_WEIGHT_HOMO,
     SCORE_WEIGHT_LI_SOLVATION,
@@ -367,19 +366,15 @@ class AureliusPipeline:
             sub_scores[obj.name] = round(score, 4)
             total_score += obj.weight * score
 
-        # Al corrosion penalty
-        al_corrosion_penalty = 1.0
-        if ctx is not None and lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
-            al_corrosion_penalty = self._check_al_corrosion_risk(ctx.mol)
-        sub_scores["al_corrosion_penalty"] = round(al_corrosion_penalty, 4)
-        total_score += SCORE_WEIGHT_AL_CORROSION * (1.0 - al_corrosion_penalty)
-
         total_score *= 100.0
 
-        # Multiplicative penalties
+        # Multiplicative penalties for structural violations (applied once)
+        al_corrosion_penalty = 1.0
         if ctx is not None:
             hydro_penalty = self._check_hydrolytic_instability(ctx.mol)
             total_score *= hydro_penalty
+            if lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
+                al_corrosion_penalty = self._check_al_corrosion_risk(ctx.mol)
             total_score *= al_corrosion_penalty
 
         total_score = float(np.clip(total_score, 0.0, 100.0))
@@ -395,7 +390,7 @@ class AureliusPipeline:
                 if s < 0.3:
                     value = raw_values.get(obj.property_key, sa_score if obj.name == "sa_penalty" else 0.0)
                     reasons.append(obj.failure_reason_template.format(value=value))
-            if al_corrosion_penalty < 1.0 and lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
+            if al_corrosion_penalty < 1.0:
                 reasons.append("Al corrosion risk (high-LUMO fluorinated molecule)")
             rejection_reasons.append(
                 f"Aurelius Score {total_score:.1f} below threshold: {'; '.join(reasons)}"
