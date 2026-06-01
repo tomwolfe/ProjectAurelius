@@ -673,10 +673,9 @@ class PropertyOracle:
     property prediction lightweight and interpretable.
     """
 
-    _CACHE: dict[str, dict[str, Any]] | None = None
-
     def __init__(self, use_xtb: bool = True) -> None:
         self._quantum = QuantumOracle(use_xtb=use_xtb)
+        self._cache: dict[str, dict[str, Any]] = {}
 
     @property
     def quantum_method(self) -> str:
@@ -709,8 +708,8 @@ class PropertyOracle:
             )
 
         smiles = ctx.smiles
-        if self._CACHE is not None and smiles in self._CACHE:
-            return self._CACHE[smiles]
+        if smiles in self._cache:
+            return self._cache[smiles]
 
         # Quantum: HOMO/LUMO (non-linear, topology-aware)
         quantum_result = self._quantum.evaluate(ctx.mol)
@@ -735,9 +734,7 @@ class PropertyOracle:
             "quantum_method": self._quantum.method,
         }
 
-        if self._CACHE is None:
-            self._CACHE = {}
-        self._CACHE[smiles] = result
+        self._cache[smiles] = result
         return result
 
     def evaluate_smiles(self, smiles: str) -> dict[str, Any]:
@@ -758,7 +755,7 @@ class PropertyOracle:
         """Persist the cache to disk with joblib."""
         import joblib
         payload: dict[str, Any] = {
-            "cache": self._CACHE,
+            "cache": self._cache,
             "data_source": _DATA_SOURCE,
         }
         joblib.dump(payload, path)
@@ -777,12 +774,13 @@ class PropertyOracle:
             logger.debug("PropertyOracle: no cached oracle at %s (%s)", path, exc)
             return False
 
-        self._CACHE = payload.get("cache")
+        loaded_cache = payload.get("cache")
+        if loaded_cache is not None:
+            self._cache.update(loaded_cache)
         logger.info("PropertyOracle: cache loaded from %s", path)
         return True
 
     def clear_cache(self) -> None:
         """Clear the SMILES->properties cache."""
-        if self._CACHE is not None:
-            self._CACHE.clear()
+        self._cache.clear()
         self._quantum.clear_cache()

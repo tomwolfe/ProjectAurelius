@@ -32,6 +32,10 @@ try:
 except ImportError:
     MurckoScaffold = None
 
+# Maximum number of dynamically harvested fragments to keep.
+# Prevents memory bloat and combinatorial explosion over many generations.
+_MAX_HARVESTED_FRAGMENTS = 200
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -144,6 +148,22 @@ def _find_max_conjugated_path(mol: Chem.Mol) -> int:
         _dfs(atom.GetIdx(), 1)
 
     return max_path[0]
+
+
+def _get_brics_types(frag: Chem.Mol) -> set[int]:
+    """Extract BRICS dummy-atom isotope types from a fragment.
+
+    BRICS decomposition produces fragments with dummy atoms labelled by
+    isotope (1–5).  For two fragments to be joined by BRICSBuild they
+    must share at least one common dummy-atom type.
+    """
+    types: set[int] = set()
+    for atom in frag.GetAtoms():
+        if atom.GetAtomicNum() == 0:
+            iso = atom.GetIsotope()
+            if iso:
+                types.add(iso)
+    return types
 
 
 # ---------------------------------------------------------------------------
@@ -333,7 +353,9 @@ class MutationEngine:
 
         self._load_known_electrolytes()
         # Dynamic fragment pool: harvested from high-scoring discoveries
+        # Capped at _MAX_HARVESTED_FRAGMENTS to prevent memory bloat
         self._harvested_fragments: list[str] = []
+        self._harvested_fragment_set: set[str] = set()
         self._rng = np.random.default_rng(42)
         self._smarts_rxns: list[tuple[Any, str]] = []
         for smarts, name in ELECTROLYTE_SMARTS:
@@ -397,6 +419,10 @@ class MutationEngine:
         This enables the fragment pool to dynamically evolve based on what
         the engine is actually discovering, unlocking novel scaffold discovery
         rather than relying purely on the static ``ELECTROLYTE_FRAGMENT_POOL``.
+
+        The pool is capped at ``_MAX_HARVESTED_FRAGMENTS`` (200) to prevent
+        memory bloat and combinatorial explosion over many generations.
+        When the cap is reached, the oldest fragments are evicted.
         """
         ctx = MoleculeContext.from_smiles(smiles)
         if ctx is None:
@@ -404,7 +430,7 @@ class MutationEngine:
         try:
             frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
             for frag_smi in frag_smiles:
-                if frag_smi in self._harvested_fragments:
+                if frag_smi in self._harvested_fragment_set:
                     continue
                 if frag_smi in ELECTROLYTE_FRAGMENT_POOL:
                     continue
@@ -418,6 +444,10 @@ class MutationEngine:
                 if hbd > 0:
                     continue
                 self._harvested_fragments.append(frag_smi)
+                self._harvested_fragment_set.add(frag_smi)
+                if len(self._harvested_fragments) > _MAX_HARVESTED_FRAGMENTS:
+                    oldest = self._harvested_fragments.pop(0)
+                    self._harvested_fragment_set.discard(oldest)
         except Exception:
             logger.debug("Failed to harvest fragments from %s", smiles, exc_info=True)
 
@@ -517,7 +547,7 @@ class MutationEngine:
     # Strategy 2: BRICS fragmentation + reassembly
     # ------------------------------------------------------------------
 
-    def _load_brics_fragments(self) -> list[Chem.Mol]:
+    def _load_brics_fragments(self, exploration_bias: bool = False) -> list[Chem.Mol]:
         """Load BRICS-decomposed fragments from the electrolyte pool.
 
         Pre-decomposes each pool molecule into BRICS fragments with dummy
@@ -525,9 +555,23 @@ class MutationEngine:
         This is essential for generating novel scaffolds — full molecules
         passed to BRICSBuild produce no products unless they already have
         broken BRICS bonds.
+
+        When ``exploration_bias`` is True, harvested novel fragments are
+        repeated in the pool to increase their selection probability,
+        biasing reassembly toward scaffold novelty.
         """
         brics_frags: list[Chem.Mol] = []
-        source_smiles: list[str] = list(ELECTROLYTE_FRAGMENT_POOL) + self._harvested_fragments
+        source_smiles: list[str] = list(ELECTROLYTE_FRAGMENT_POOL)
+
+        # When in exploration mode, oversample harvested fragments to
+        # bias BRICS reassembly toward novel scaffold discovery.
+        if exploration_bias and self._harvested_fragments:
+            repeat = max(1, len(ELECTROLYTE_FRAGMENT_POOL) // max(len(self._harvested_fragments), 1))
+            for _ in range(repeat):
+                source_smiles.extend(self._harvested_fragments)
+
+        source_smiles.extend(self._harvested_fragments)
+
         for smi in source_smiles:
             ctx = MoleculeContext.from_smiles(smi)
             if ctx is None:
@@ -553,12 +597,46 @@ class MutationEngine:
                 return False
         return True
 
-    def _brics_from_pool(self, ctx: MoleculeContext) -> list[str]:
+    @staticmethod
+    def _find_complementary_pairs(fragments: list[Chem.Mol]) -> list[tuple[int, int]]:
+        """Find fragment pairs with complementary BRICS dummy-atom types.
+
+        BRICSBuild connects fragments by matching dummy-atom isotope types.
+        Random pairing almost always fails; this method finds all valid
+        pairs upfront so that every BRICSBuild call has a chance of success.
+        """
+        frag_types: list[frozenset[int]] = []
+        for frag in fragments:
+            types = _get_brics_types(frag)
+            frag_types.append(frozenset(types))
+
+        pairs: list[tuple[int, int]] = []
+        for i in range(len(fragments)):
+            if not frag_types[i]:
+                continue
+            for j in range(i + 1, len(fragments)):
+                if frag_types[i] & frag_types[j]:
+                    pairs.append((i, j))
+
+        # Fall back to all pairs if nothing matched (e.g. all seed fragments
+        # that haven't been BRICS-decomposed yet)
+        if not pairs and len(fragments) >= 2:
+            pairs = [(i, j) for i in range(len(fragments)) for j in range(i + 1, len(fragments))]
+        return pairs
+
+    def _brics_from_pool(self, ctx: MoleculeContext, force_exploration: bool = False) -> list[str]:
         """BRICS decomposition + electrolyte-fragment-guided reassembly.
 
         Pre-decomposes both the seed molecule and the electrolyte pool into
         BRICS fragments (with dummy atom connection points), then reassembles
         them via BRICSBuild to generate novel scaffolds.
+
+        Uses smart pairing based on complementary BRICS dummy-atom types
+        instead of blind random sampling, dramatically increasing the yield
+        of valid reassembly products.
+
+        When ``force_exploration`` is True, harvested novel fragments are
+        oversampled to bias toward scaffold novelty.
         """
         generated: list[str] = []
 
@@ -570,17 +648,23 @@ class MutationEngine:
                 if m is not None:
                     seed_frags.append(m)
 
-            pool_frags = self._load_brics_fragments()
+            pool_frags = self._load_brics_fragments(exploration_bias=force_exploration)
             all_frags = seed_frags + pool_frags
 
             if len(all_frags) < 2:
                 return generated
 
+            # Build valid complementary pairs for BRICS reassembly
+            valid_pairs = self._find_complementary_pairs(all_frags)
+            if not valid_pairs:
+                return generated
+
             for _ in range(500):
                 rng = np.random.default_rng(self._rng.integers(0, 2**31))
-                idx = rng.choice(len(all_frags), size=2, replace=False)
+                pair_idx = rng.integers(0, len(valid_pairs))
+                i, j = valid_pairs[pair_idx]
                 try:
-                    for r_mol in BRICS.BRICSBuild([all_frags[i] for i in idx]):
+                    for r_mol in BRICS.BRICSBuild([all_frags[i], all_frags[j]]):
                         if r_mol is None:
                             continue
                         try:
@@ -630,7 +714,7 @@ class MutationEngine:
             candidates.update(smarts_results)
 
         if not candidates or len(candidates) < batch_size:
-            brics_results = self._brics_from_pool(ctx)
+            brics_results = self._brics_from_pool(ctx, force_exploration=force_exploration)
             candidates.update(brics_results)
 
         result_list = list(candidates)
@@ -638,11 +722,11 @@ class MutationEngine:
             indices = self._rng.choice(len(result_list), size=batch_size, replace=False)
             result_list = [result_list[i] for i in indices]
 
-        smarts_count = len(candidates & set(self._apply_smarts_reactions(ctx))) if not force_exploration else 0
+        brics_count = sum(1 for s in result_list if s not in (smarts_results if not force_exploration else set()))
         logger.info(
             "Mutation of %s: %d candidates (%d SMARTS, %d BRICS) [force_exploration=%s]",
-            smiles, len(result_list), smarts_count,
-            len(result_list) - smarts_count, force_exploration,
+            smiles, len(result_list), len(result_list) - brics_count,
+            brics_count, force_exploration,
         )
         return result_list
 

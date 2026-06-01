@@ -154,10 +154,11 @@ class TestNovelScaffoldDiscovery:
                     continue
 
         novelty_ratio = len(novel_scaffolds) / max(len(candidates), 1)
-        assert novelty_ratio > 0.15, (
+        assert novelty_ratio > 0.20, (
             f"Mutation engine is trapped in local minima. "
             f"Only {novelty_ratio:.1%} scaffold novelty "
             f"({len(novel_scaffolds)} novel / {len(candidates)} total)."
+            " BRICS is not scaffold-hopping effectively."
         )
 
     def test_mutation_engine_has_scaffold_tracking(self):

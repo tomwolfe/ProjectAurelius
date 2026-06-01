@@ -50,10 +50,8 @@ class TestDiscoveryLoop:
         )
 
         state = _make_loop_state()
-        state.record(result)
 
-        assert len(state._all_scores) == 0  # record() is no-op in new state
-        # scores are tracked via record_batch now
+        assert len(state._all_scores) == 0  # scores are tracked via record_batch now
 
     def test_seed_pool_evolves_with_high_scores(self):
         """High-scoring molecules should feed back into the seed pool."""

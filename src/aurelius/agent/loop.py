@@ -300,7 +300,6 @@ class DiscoveryLoop:
                 log.info("  ** DISCOVERY ** %s (score=%.1f)", smi, total_score)
 
             self.all_results.append(screening_result)
-            self.state.record(screening_result)
 
         if not result_contexts:
             return [], []

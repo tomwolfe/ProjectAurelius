@@ -86,14 +86,6 @@ class LoopState:
         self._load()
 
     # ------------------------------------------------------------------
-    # History recording
-    # ------------------------------------------------------------------
-
-    def record(self, result: ScreeningResult) -> None:
-        """Record a screening result (kept for result tracking)."""
-        pass
-
-    # ------------------------------------------------------------------
     # Convergence
     # ------------------------------------------------------------------
 
@@ -191,23 +183,6 @@ class LoopState:
         self.discoveries.append(discovery)
         self.discoveries.sort(key=lambda d: d.get("total_score", 0), reverse=True)
         self.discoveries = self.discoveries[:_MAX_DISCOVERIES]
-
-    def update_stats(
-        self,
-        batch_smiles: list[str],
-        batch_scores: list[float],
-        viable_count: int,
-        invalid_count: int,
-    ) -> None:
-        self.batch += 1
-        self.total_screened += len(batch_smiles)
-        self.total_generated += len(batch_smiles)
-        self.invalid_discarded += invalid_count
-        self.viable_count += viable_count
-        if batch_scores:
-            best = max(batch_scores)
-            if best > self.best_score:
-                self.best_score = best
 
     def clear(self) -> None:
         self.batch_means.clear()
