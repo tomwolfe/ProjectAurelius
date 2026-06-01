@@ -62,5 +62,5 @@ def test_discovery_loop_smoke(tmp_path) -> None:
     for r in result["all_results"]:
         assert 0.0 <= r.total_score <= 100.0, f"Score {r.total_score} out of [0, 100]"
 
-    assert loop.total_screened >= 1
+    assert loop.state.total_screened >= 1
     assert isinstance(result["discoveries"], list)

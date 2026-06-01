@@ -152,8 +152,38 @@ def _count_fragments(mol: Chem.Mol) -> dict[str, int]:
     return counts
 
 
+# Non-linear cross-term corrections for dielectric proxy.
+# Real electrolyte dielectric constants exhibit synergistic/antagonistic
+# effects when multiple functional groups coexist (e.g., carbonate-ether
+# hybrids have non-linear dielectric response beyond simple additivity).
+# Format: (fragment_a, fragment_b, dielectric_boost, description)
+_CROSS_TERMS: list[tuple[str, str, float, str]] = [
+    ("carbonate", "ether", 0.8, "carbonate-ether synergy (glyme-carbonate hybrids)"),
+    ("nitrile", "ether", 0.3, "nitrile-ether synergy"),
+    ("carbonate", "fluorine", -0.5, "fluorinated carbonate suppression"),
+    ("sulfone", "ether", 0.4, "sulfone-ether synergy"),
+    ("carbonate", "nitrile", -0.3, "carbonate-nitrile antagonism"),
+    ("alcohol", "carbonate", -0.4, "alcohol-carbonate H-bond competition"),
+    ("sulfone", "carbonate", -0.3, "sulfone-carbonate polarity competition"),
+]
+
+
+def _compute_dielectric_cross_terms(counts: dict[str, int]) -> float:
+    """Compute non-linear cross-term contributions to dielectric proxy.
+
+    Applies boosts/penalties when specific fragment pairs coexist in a
+    molecule, capturing non-linear interactions missed by pure additivity.
+    """
+    correction = 0.0
+    for frag_a, frag_b, boost, _desc in _CROSS_TERMS:
+        if counts.get(frag_a, 0) > 0 and counts.get(frag_b, 0) > 0:
+            correction += boost
+    return correction
+
+
 def predict_dielectric_proxy(ctx: MoleculeContext) -> float:
-    """Predict a dielectric constant proxy via fragment-additivity + TPSA cap.
+    """Predict a dielectric constant proxy via fragment-additivity + TPSA cap
+    + non-linear cross-term corrections.
 
     Uses pre-computed TPSA from ``MoleculeContext.tpsa`` (lazy-cached).
 
@@ -166,6 +196,10 @@ def predict_dielectric_proxy(ctx: MoleculeContext) -> float:
     for _smarts, _name, dd, _dv, _ls in _GC_FRAGMENTS:
         n = counts.get(_name, 0)
         value += _saturate_contrib(n, dd * 2.0)
+
+    # Non-linear cross-term correction (captures synergistic/antagonistic
+    # interactions between functional groups that linear additivity misses)
+    value += _compute_dielectric_cross_terms(counts)
 
     tpsa = ctx.tpsa
     value += tpsa * 0.02

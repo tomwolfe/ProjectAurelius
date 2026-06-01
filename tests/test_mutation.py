@@ -28,7 +28,8 @@ class TestNoveltyCheck:
 
     def test_local_functionalization_allowed(self):
         """A molecule that differs from its seed by one functional group must
-        be accepted as novel (exact SMILES match is the only seed gate).
+        be accepted as novel when scaffold check is disabled (exact SMILES match
+        is the only seed gate).
 
         Seed:  COC(=O)OC   (dimethyl carbonate)
         Variant: COC(=O)OCC (ethyl methyl carbonate) — methyl → ethyl.
@@ -36,7 +37,7 @@ class TestNoveltyCheck:
         engine = MutationEngine(seed_smiles=["COC(=O)OC"])
         emc = MoleculeContext.from_smiles("COC(=O)OCC")
         assert emc is not None
-        assert engine._novelty_check(emc) is True, (
+        assert engine._novelty_check(emc, check_scaffold=False) is True, (
             "Ethyl methyl carbonate (EMC) differs from DMC seed and must be novel."
         )
 

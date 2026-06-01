@@ -138,9 +138,6 @@ class DiscoveryLoop:
         self.batch_size = batch_size
         self.max_wall_time = max_wall_time
 
-        self.total_screened = 0
-        self.total_viable = 0
-        self.total_invalid = 0
         self.all_results: list[ScreeningResult] = []
         self.discoveries: list[ScreeningResult] = []
         self.screened_smiles: set[str] = set()
@@ -188,9 +185,9 @@ class DiscoveryLoop:
         return {
             "all_results": self.all_results,
             "discoveries": self.discoveries,
-            "total_screened": self.total_screened,
-            "total_viable": self.total_viable,
-            "total_invalid": self.total_invalid,
+            "total_screened": self.state.total_screened,
+            "total_viable": self.state.viable_count,
+            "total_invalid": self.state.invalid_discarded,
         }
 
     def _generate_candidates(self, generation: int, force_exploration: bool = False) -> list[str]:
@@ -363,9 +360,6 @@ class DiscoveryLoop:
             self.state.record_scaffolds(batch_scaffolds)
 
         self.state.record_batch(batch_scores, batch_viable)
-
-        self.total_screened += len(batch_contexts)
-        self.total_viable += batch_viable
 
         mean_div = compute_pairwise_diversity(batch_contexts)
         log.info(

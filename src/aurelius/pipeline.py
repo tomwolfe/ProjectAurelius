@@ -4,9 +4,8 @@ Coordinates a streamlined two-step discovery pipeline:
   1. Filter — Quick structural validity (Tier 1) check with LogP and MW gates.
   2. Oracle — Multi-objective property evaluation via hybrid quantum/GC
      correction (HOMO, LUMO, Dielectric proxy, Viscosity proxy, SA Score).
-  3.    Score — Declarative multi-objective composite with Al corrosion penalty.
-     Each objective is defined as an ``Objective`` dataclass (Gaussian or
-     Sigmoid), making the scoring logic purely data-driven.
+  3. Score — Multi-objective composite with Al corrosion penalty.
+     Each objective is a callable that transforms a raw value to a sub-score.
 
 All stages accept a pre-parsed MoleculeContext to enforce single-point parsing.
 """
@@ -15,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
@@ -28,16 +28,11 @@ from aurelius.constants import (
     AL_CORROSION_PENALTY_FACTOR,
     CF3_PATTERN as _CF3_PATTERN,
     CARBONYL_F_PATTERN as _CARBONYL_F_PATTERN,
-    DIELECTRIC_SIGMOID_STEEPNESS,
     DIELECTRIC_TARGET,
-    HOMO_SIGMOID_STEEPNESS,
     HOMO_THRESHOLD,
     HYDROLYTICALLY_UNSTABLE_PATTERNS as _HYDRO_PATTERNS,
-    LI_SOLVATION_SIGMA,
     LI_SOLVATION_TARGET,
-    LUMO_SIGMA,
     LUMO_TARGET,
-    SA_SIGMOID_STEEPNESS,
     SA_THRESHOLD,
     SCORE_WEIGHT_DIELECTRIC,
     SCORE_WEIGHT_HOMO,
@@ -47,7 +42,6 @@ from aurelius.constants import (
     SCORE_WEIGHT_VISCOSITY,
     SULFONYL_F_PATTERN as _SULFONYL_F_PATTERN,
     VIABILITY_THRESHOLD,
-    VISCOSITY_SIGMOID_STEEPNESS,
     VISCOSITY_THRESHOLD,
 )
 from aurelius.scoring.oracle import PropertyOracle
@@ -58,60 +52,52 @@ from aurelius.utils.chem_utils import electrolyte_synthetic_accessibility
 logger = logging.getLogger(__name__)
 
 
+def _gaussian(value: float, target: float, sigma: float) -> float:
+    return float(np.exp(-0.5 * ((value - target) / sigma) ** 2))
+
+
+def _sigmoid(value: float, target: float, steepness: float, higher_is_better: bool = True) -> float:
+    if higher_is_better:
+        return float(1.0 / (1.0 + np.exp(-steepness * (value - target))))
+    return float(1.0 / (1.0 + np.exp(steepness * (value - target))))
+
+
 @dataclass
 class Objective:
-    """A single scoring objective with a mathematical transformation.
+    """A single scoring objective with a direct callable function.
 
     Each objective defines how a raw property value is converted to a
-    sub-score via a Gaussian or Sigmoid function, then weighted in the
-    final composite.  The ``failure_reason_template`` is used to generate
-    human-readable rejection reasons dynamically (e.g. "LUMO={value:.3f}eV
-    (poor SEI formation)").
+    sub-score via a callable function, then weighted in the final composite.
     """
 
     name: str
     property_key: str
     weight: float
-    function: str  # 'gaussian' or 'sigmoid'
-    target: float
-    sigma: float | None = None
-    steepness: float | None = None
-    higher_is_better: bool = True
+    function: Callable[[float], float]
     failure_reason_template: str = "{name}={value:.3f} (below threshold)"
 
     def __call__(self, value: float) -> float:
-        if self.function == "gaussian":
-            if self.sigma is None or self.sigma <= 0.0:
-                raise ValueError(f"Gaussian objective '{self.name}' requires sigma > 0")
-            return float(np.exp(-0.5 * ((value - self.target) / self.sigma) ** 2))
-        if self.function == "sigmoid":
-            if self.steepness is None:
-                raise ValueError(f"Sigmoid objective '{self.name}' requires steepness")
-            if self.higher_is_better:
-                return float(1.0 / (1.0 + np.exp(-self.steepness * (value - self.target))))
-            return float(1.0 / (1.0 + np.exp(self.steepness * (value - self.target))))
-        raise ValueError(f"Unknown objective function: '{self.function}'")
+        return self.function(value)
 
 
-# Declarative scoring configuration: add/remove objectives here without
-# touching boilerplate math.
 _OBJECTIVES: list[Objective] = [
-    Objective("lumo_reward", "lumo_eV", SCORE_WEIGHT_LUMO, "gaussian", LUMO_TARGET, sigma=LUMO_SIGMA,
+    Objective("lumo_reward", "lumo_eV", SCORE_WEIGHT_LUMO,
+              lambda v: _gaussian(v, LUMO_TARGET, 0.75),
               failure_reason_template="LUMO={value:.3f}eV (poor SEI formation)"),
-    Objective("homo_penalty", "homo_eV", SCORE_WEIGHT_HOMO, "sigmoid", HOMO_THRESHOLD,
-              steepness=HOMO_SIGMOID_STEEPNESS, higher_is_better=False,
+    Objective("homo_penalty", "homo_eV", SCORE_WEIGHT_HOMO,
+              lambda v: _sigmoid(v, HOMO_THRESHOLD, 5.0, False),
               failure_reason_template="HOMO={value:.3f}eV (oxidative instability)"),
-    Objective("dielectric_reward", "dielectric_proxy", SCORE_WEIGHT_DIELECTRIC, "sigmoid", DIELECTRIC_TARGET,
-              steepness=DIELECTRIC_SIGMOID_STEEPNESS,
+    Objective("dielectric_reward", "dielectric_proxy", SCORE_WEIGHT_DIELECTRIC,
+              lambda v: _sigmoid(v, DIELECTRIC_TARGET, 1.5),
               failure_reason_template="dielectric_proxy={value:.3f} (poor salt dissolution)"),
-    Objective("viscosity_penalty", "viscosity_proxy", SCORE_WEIGHT_VISCOSITY, "sigmoid", VISCOSITY_THRESHOLD,
-              steepness=VISCOSITY_SIGMOID_STEEPNESS, higher_is_better=False,
+    Objective("viscosity_penalty", "viscosity_proxy", SCORE_WEIGHT_VISCOSITY,
+              lambda v: _sigmoid(v, VISCOSITY_THRESHOLD, 2.0, False),
               failure_reason_template="viscosity_proxy={value:.3f} (poor ion mobility)"),
-    Objective("li_solvation_reward", "li_solvation_proxy", SCORE_WEIGHT_LI_SOLVATION, "gaussian", LI_SOLVATION_TARGET,
-              sigma=LI_SOLVATION_SIGMA,
+    Objective("li_solvation_reward", "li_solvation_proxy", SCORE_WEIGHT_LI_SOLVATION,
+              lambda v: _gaussian(v, LI_SOLVATION_TARGET, 1.0),
               failure_reason_template="li_solvation_proxy={value:.3f} (poor Li+ binding)"),
-    Objective("sa_penalty", "sa_score", SCORE_WEIGHT_SA, "sigmoid", SA_THRESHOLD,
-              steepness=SA_SIGMOID_STEEPNESS, higher_is_better=False,
+    Objective("sa_penalty", "sa_score", SCORE_WEIGHT_SA,
+              lambda v: _sigmoid(v, SA_THRESHOLD, 2.0, False),
               failure_reason_template="SA score={value:.2f} (hard to synthesize)"),
 ]
 
@@ -355,14 +341,10 @@ class AureliusPipeline:
                 sa_score = electrolyte_synthetic_accessibility(ctx)
             except Exception:
                 sa_score = 5.0
+        raw_values["sa_score"] = sa_score
 
         for obj in _OBJECTIVES:
-            if obj.name == "sa_penalty":
-                score = obj(sa_score)
-                raw_values["sa_score"] = sa_score
-            else:
-                score = obj(raw_values[obj.property_key])
-
+            score = obj(raw_values[obj.property_key])
             sub_scores[obj.name] = round(score, 4)
             total_score += obj.weight * score
 
@@ -388,7 +370,7 @@ class AureliusPipeline:
             for obj in _OBJECTIVES:
                 s = sub_scores.get(obj.name, 0.0)
                 if s < 0.3:
-                    value = raw_values.get(obj.property_key, sa_score if obj.name == "sa_penalty" else 0.0)
+                    value = raw_values.get(obj.property_key, 0.0)
                     reasons.append(obj.failure_reason_template.format(value=value))
             if al_corrosion_penalty < 1.0:
                 reasons.append("Al corrosion risk (high-LUMO fluorinated molecule)")

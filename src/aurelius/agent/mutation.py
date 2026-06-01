@@ -12,6 +12,7 @@ in priority order:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -25,6 +26,11 @@ from aurelius.constants import (
 )
 from aurelius.types import MoleculeContext
 from aurelius.utils.chem_utils import _deserialize_fp
+
+try:
+    from rdkit.Chem.Scaffolds import MurckoScaffold
+except ImportError:
+    MurckoScaffold = None
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +147,133 @@ def _find_max_conjugated_path(mol: Chem.Mol) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Data-driven electrolyte-likeness validators
+# ---------------------------------------------------------------------------
+# Each validator is a (name, predicate) tuple. The predicate receives a
+# MoleculeContext and returns True if the check passes (electrolyte-like).
+# This replaces a 60-line wall of sequential if-blocks with a declarative,
+# composable rule set that is easy to audit, extend, or prune.
+# ---------------------------------------------------------------------------
+
+_ELECTROLYTE_CHECKS: list[tuple[str, Callable[[MoleculeContext], bool]]] = []
+
+
+def _register(fn: Callable[[MoleculeContext], bool]) -> Callable[[MoleculeContext], bool]:
+    _ELECTROLYTE_CHECKS.append((fn.__name__, fn))
+    return fn
+
+
+@_register
+def aromatic_ring_limit(ctx: MoleculeContext) -> bool:
+    return rdMolDescriptors.CalcNumAromaticRings(ctx.mol) <= 2
+
+
+@_register
+def has_heteroatom(ctx: MoleculeContext) -> bool:
+    hetero_atoms = {8, 9, 15, 16}
+    return sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() in hetero_atoms) >= 1
+
+
+@_register
+def heteroatom_ratio_min(ctx: MoleculeContext) -> bool:
+    n_total = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() > 1)
+    if n_total == 0:
+        return True
+    o_f = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() in (8, 9))
+    return o_f / n_total >= ELECTROLYTE_MIN_HETEROATOM_RATIO
+
+
+@_register
+def halogen_ratio_limit(ctx: MoleculeContext) -> bool:
+    n_total = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() > 1)
+    if n_total == 0:
+        return True
+    n_f = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 9)
+    n_cl = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 17)
+    n_br = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 35)
+    n_halogen = n_f + n_cl + n_br
+    n_heavy_halogen = n_cl + n_br
+    if n_halogen / n_total > 0.9:
+        return False
+    if n_heavy_halogen / n_total > 0.5:
+        return False
+    if n_halogen > n_total * 0.6:
+        n_o = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 8)
+        n_n = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 7)
+        if n_o + n_n == 0:
+            return False
+    return True
+
+
+@_register
+def electrochemically_stable(ctx: MoleculeContext) -> bool:
+    for pattern, _name in _EC_UNSTABLE_PATTERNS:
+        if pattern is not None and ctx.mol.HasSubstructMatch(pattern):
+            return False
+    return True
+
+
+@_register
+def hydrolytically_stable(ctx: MoleculeContext) -> bool:
+    for pattern, _name, _severity in _HYDRO_UNSTABLE_PATTERNS:
+        if pattern is not None and ctx.mol.HasSubstructMatch(pattern):
+            return False
+    return True
+
+
+@_register
+def ring_strain_limit(ctx: MoleculeContext) -> bool:
+    ring_info = ctx.mol.GetRingInfo()
+    if ring_info is not None and ring_info.NumRings() > 0:
+        for ring in ring_info.BondRings():
+            if len(ring) <= 4:
+                return False
+        if ring_info.NumRings() > 3:
+            return False
+    return True
+
+
+@_register
+def conjugation_limit(ctx: MoleculeContext) -> bool:
+    return _find_max_conjugated_path(ctx.mol) <= 16
+
+
+@_register
+def sp3_fraction_min(ctx: MoleculeContext) -> bool:
+    n_sp3 = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 6 and a.GetHybridization() == Chem.HybridizationType.SP3)
+    n_c = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 6)
+    if n_c >= 4:
+        return n_sp3 / n_c >= 0.20
+    return True
+
+
+@_register
+def valence_sanity(ctx: MoleculeContext) -> bool:
+    max_valence: dict[int, int] = {6: 4, 7: 3, 8: 2, 9: 1, 15: 5, 16: 6, 17: 1, 35: 1}
+    for atom in ctx.mol.GetAtoms():
+        z = atom.GetAtomicNum()
+        if z in max_valence and atom.GetExplicitValence() > max_valence[z]:
+            return False
+    return True
+
+
+@_register
+def polarity_ratio_min(ctx: MoleculeContext) -> bool:
+    mw = ctx.mw
+    tpsa = ctx.tpsa
+    if mw > 200 and tpsa / mw < 0.05:
+        return False
+    return True
+
+
+def _is_electrolyte_like(ctx: MoleculeContext) -> bool:
+    for name, check in _ELECTROLYTE_CHECKS:
+        if not check(ctx):
+            return False
+    return True
+
+
+# ---------------------------------------------------------------------------
 
 
 class MutationEngine:
@@ -186,10 +319,15 @@ class MutationEngine:
         self._seed_smiles: set[str] = set()
         self._known_smiles: set[str] = set()
         self._generated_smiles: set[str] = set()
+        self._seed_scaffolds: set[str] = set()
         for ctx in self.seed_contexts:
             try:
                 canon = Chem.MolToSmiles(ctx.mol)
                 self._seed_smiles.add(canon)
+                if MurckoScaffold is not None:
+                    scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
+                    if scaffold:
+                        self._seed_scaffolds.add(scaffold)
             except Exception:
                 continue
 
@@ -287,7 +425,7 @@ class MutationEngine:
         """Total fragments available for BRICS reassembly (static + harvested)."""
         return len(ELECTROLYTE_FRAGMENT_POOL) + len(self._harvested_fragments)
 
-    def _novelty_check(self, ctx: MoleculeContext) -> bool:
+    def _novelty_check(self, ctx: MoleculeContext, check_scaffold: bool = True) -> bool:
         """Return True if molecule is novel.
 
         A molecule is considered novel if:
@@ -295,6 +433,8 @@ class MutationEngine:
              known electrolyte, or previously generated molecule (O(1) set lookup).
           2. Its ECFP4 Tanimoto similarity is < 0.85 against all *known
              commercial electrolytes* only (static, small list).
+          3. Optionally, its Murcko scaffold is not in the seed scaffold set
+             (prevents rediscovery of known structural cores).
 
         The Tanimoto check against generated molecules has been intentionally
         removed — exact SMILES matching (O(1)) handles intra-run dedup.
@@ -312,6 +452,15 @@ class MutationEngine:
             return False
         if canon in self._generated_smiles:
             return False
+
+        # Murcko scaffold novelty check
+        if check_scaffold and MurckoScaffold is not None and self._seed_scaffolds:
+            try:
+                scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
+                if scaffold and scaffold in self._seed_scaffolds:
+                    return False
+            except Exception:
+                pass
 
         # Tanimoto check against *known commercial electrolytes only*
         # (static list, never grows — no O(N) bottleneck)
@@ -368,203 +517,76 @@ class MutationEngine:
     # Strategy 2: BRICS fragmentation + reassembly
     # ------------------------------------------------------------------
 
-    def _load_electrolyte_fragments(self) -> list[MoleculeContext]:
-        """Load the electrolyte fragment pool (static + dynamically harvested)."""
-        fragments: list[MoleculeContext] = []
-        for smi in ELECTROLYTE_FRAGMENT_POOL:
+    def _load_brics_fragments(self) -> list[Chem.Mol]:
+        """Load BRICS-decomposed fragments from the electrolyte pool.
+
+        Pre-decomposes each pool molecule into BRICS fragments with dummy
+        atoms so they can be directly used by BRICS.BRICSBuild for reassembly.
+        This is essential for generating novel scaffolds — full molecules
+        passed to BRICSBuild produce no products unless they already have
+        broken BRICS bonds.
+        """
+        brics_frags: list[Chem.Mol] = []
+        source_smiles: list[str] = list(ELECTROLYTE_FRAGMENT_POOL) + self._harvested_fragments
+        for smi in source_smiles:
             ctx = MoleculeContext.from_smiles(smi)
-            if ctx is not None:
-                fragments.append(ctx)
-        # Append dynamically harvested fragments from high-scoring discoveries
-        for smi in self._harvested_fragments:
-            ctx = MoleculeContext.from_smiles(smi)
-            if ctx is not None:
-                fragments.append(ctx)
-        return fragments
+            if ctx is None:
+                continue
+            mw = rdMolDescriptors.CalcExactMolWt(ctx.mol)
+            hbd = rdMolDescriptors.CalcNumHBD(ctx.mol)
+            if mw > 250 or hbd > 0:
+                continue
+            try:
+                frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
+                for fs in frag_smiles:
+                    frag_mol = Chem.MolFromSmiles(fs)
+                    if frag_mol is not None:
+                        brics_frags.append(frag_mol)
+            except Exception:
+                continue
+        return brics_frags
 
     @staticmethod
     def _is_electrolyte_like(ctx: MoleculeContext) -> bool:
-        """Check if a molecule resembles an electrolyte rather than a drug-like compound.
-
-        Battery electrolytes should have:
-          - At least one heteroatom (O, S, F, P) for ion solvation
-          - Limited aromatic character (drug-like molecules tend to be highly aromatic)
-          - A minimum ratio of heteroatoms (O, F) to total heavy atoms
-            to prevent BRICS from generating drug-like garbage
-          - No electrochemically unstable motifs (peroxides, acetals, strained rings)
-          - No hydrolytically unstable motifs (anhydrides, silyl ethers, etc.)
-          - [Anti-gaming] Limited conjugated system size (prevents infinitely conjugated
-            "Frankenstein" molecules the mutation engine might optimise for)
-          - [Anti-gaming] Minimum sp³ carbon fraction (ensures 3D structural complexity)
-
-        Args:
-            ctx: Pre-parsed MoleculeContext.
-
-        Returns:
-            True if the molecule is electrolyte-like.
-        """
-        n_arom = rdMolDescriptors.CalcNumAromaticRings(ctx.mol)
-        if n_arom > 2:
-            return False
-
-        hetero_atoms = {8, 9, 15, 16}
-        n_hetero = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() in hetero_atoms)
-        if n_hetero < 1:
-            return False
-
-        # Tightened filter: require minimum heteroatom-to-carbon ratio for BRICS products
-        n_total_heavy = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() > 1)
-
-        if n_total_heavy > 0:
-            o_f_count = sum(
-                1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() in (8, 9)
-            )
-            ratio = o_f_count / n_total_heavy
-            if ratio < ELECTROLYTE_MIN_HETEROATOM_RATIO:
+        for _name, check in _ELECTROLYTE_CHECKS:
+            if not check(ctx):
                 return False
-
-        # Halogen content check: reject molecules where halogens dominate
-        # without providing solvation capability. Many effective battery
-        # electrolytes (fluorinated carbonates, sulfonimides, fluorinated
-        # ethers) are heavily fluorinated, so a blanket >60% F rejection
-        # is chemically inaccurate.
-        n_f = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 9)
-        n_cl = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 17)
-        n_br = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 35)
-        n_halogen = n_f + n_cl + n_br
-
-        if n_total_heavy > 0:
-            halogen_ratio = n_halogen / n_total_heavy
-            # Extreme case: >90% halogen = perhalogenated, no electrolyte character
-            if halogen_ratio > 0.9:
-                return False
-            # Heavy halogen (Cl, Br) spam: these are rare in electrolyte design
-            n_heavy_halogen = n_cl + n_br
-            if n_total_heavy > 0 and n_heavy_halogen / n_total_heavy > 0.5:
-                return False
-            # High fluorine with insufficient solvation sites: reject only if
-            # fluorine dominates AND there are no O or N atoms for Li+ solvation.
-            # This allows heavily fluorinated ethers, carbonates, and
-            # sulfonimides (which have O/N for solvation) while still
-            # rejecting perfluorocarbon chains (e.g. "CF" spam).
-            n_o = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 8)
-            n_n = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 7)
-            if n_halogen > n_total_heavy * 0.6 and (n_o + n_n) == 0:
-                return False
-
-        # Electrochemical stability: reject molecules with unstable motifs
-        for pattern, _name in _EC_UNSTABLE_PATTERNS:
-            if pattern is not None and ctx.mol.HasSubstructMatch(pattern):
-                return False
-
-        # Hydrolytic stability: reject molecules with hydrolytically unstable motifs
-        # _HYDRO_UNSTABLE_PATTERNS stores (pattern, name, severity); ignore severity
-        for pattern, _name, _severity in _HYDRO_UNSTABLE_PATTERNS:
-            if pattern is not None and ctx.mol.HasSubstructMatch(pattern):
-                return False
-
-        # Strained ring filter: reject molecules with 3- or 4-membered rings
-        # (epoxides, azetidines, cyclopropanes — decompose at electrode potentials)
-        ring_info = ctx.mol.GetRingInfo()
-        if ring_info is not None and ring_info.NumRings() > 0:
-            for ring in ring_info.BondRings():
-                if len(ring) <= 4:
-                    return False
-            if ring_info.NumRings() > 3:
-                return False
-
-        # Anti-gaming: maximum conjugation path length
-        # Prevents the mutation engine from creating infinitely conjugated
-        # "Frankenstein" molecules that score well in a purely additive model.
-        mol = ctx.mol
-        max_conj = _find_max_conjugated_path(mol)
-        if max_conj > 16:
-            return False
-
-        # Anti-gaming: minimum sp³ carbon fraction
-        # Electrolytes should have 3D structural complexity, not flat
-        # aromatic sheets. Reject molecules with < 20% sp³ carbons.
-        n_sp3 = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6 and a.GetHybridization() == Chem.HybridizationType.SP3)
-        n_c_total = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6)
-        if n_c_total >= 4:
-            sp3_frac = n_sp3 / n_c_total
-            if sp3_frac < 0.20:
-                return False
-
-        # Valence sanity check: reject molecules with impossible valence states
-        # that slip through RDKit's default sanitisation for edge cases.
-        _max_valence: dict[int, int] = {6: 4, 7: 3, 8: 2, 9: 1, 15: 5, 16: 6, 17: 1, 35: 1}
-        for atom in mol.GetAtoms():
-            z = atom.GetAtomicNum()
-            if z in _max_valence and atom.GetExplicitValence() > _max_valence[z]:
-                return False
-
-        # Anti-gaming: TPSA/MW polarity ratio
-        # Prevents gaming by adding long non-polar aliphatic chains that
-        # artificially inflate MW without contributing to solvation.
-        mw = ctx.mw
-        tpsa = ctx.tpsa
-        if mw > 200 and tpsa / mw < 0.05:
-            return False
-
         return True
 
     def _brics_from_pool(self, ctx: MoleculeContext) -> list[str]:
-        """BRICS decomposition + electrolyte-fragment-guided reassembly."""
+        """BRICS decomposition + electrolyte-fragment-guided reassembly.
+
+        Pre-decomposes both the seed molecule and the electrolyte pool into
+        BRICS fragments (with dummy atom connection points), then reassembles
+        them via BRICSBuild to generate novel scaffolds.
+        """
         generated: list[str] = []
 
         try:
-            frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
-            frag_ctxs = [
-                MoleculeContext.from_smiles(s) for s in frag_smiles
-                if MoleculeContext.from_smiles(s) is not None
-            ]
-            frag_ctxs = [c for c in frag_ctxs if c is not None]
+            seed_frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
+            seed_frags: list[Chem.Mol] = []
+            for fs in seed_frag_smiles:
+                m = Chem.MolFromSmiles(fs)
+                if m is not None:
+                    seed_frags.append(m)
 
-            electrolyte_ctxs = self._load_electrolyte_fragments()
-            all_frags = frag_ctxs + electrolyte_ctxs
+            pool_frags = self._load_brics_fragments()
+            all_frags = seed_frags + pool_frags
 
             if len(all_frags) < 2:
                 return generated
 
-            filtered: list[MoleculeContext] = []
-            for f_ctx in all_frags:
-                f_mw = rdMolDescriptors.CalcExactMolWt(f_ctx.mol)
-                f_hbd = rdMolDescriptors.CalcNumHBD(f_ctx.mol)
-                if f_mw > 250:
-                    continue
-                if f_hbd > 0:
-                    continue
-                filtered.append(f_ctx)
-            if len(filtered) < 2:
-                return generated
-            all_frags = filtered
-
-            n_seed = len(frag_ctxs)
-            n_electrolyte = len(electrolyte_ctxs)
-
-            for _ in range(40):
+            for _ in range(500):
                 rng = np.random.default_rng(self._rng.integers(0, 2**31))
-                if n_electrolyte > 0 and rng.random() < 0.7:
-                    idx1 = n_seed + rng.integers(0, n_electrolyte) if n_electrolyte > 0 else 0
-                    idx2 = rng.integers(0, len(all_frags))
-                    if idx1 == idx2:
-                        idx2 = (idx2 + 1) % len(all_frags)
-                    idx = [idx1, idx2]
-                else:
-                    idx = rng.choice(len(all_frags), size=min(2, len(all_frags)), replace=False)
-
+                idx = rng.choice(len(all_frags), size=2, replace=False)
                 try:
-                    for r_mol in BRICS.BRICSBuild([all_frags[i].mol for i in idx]):
+                    for r_mol in BRICS.BRICSBuild([all_frags[i] for i in idx]):
                         if r_mol is None:
                             continue
                         try:
                             Chem.SanitizeMol(r_mol)
-                            s = Chem.MolToSmiles(r_mol, isomericSmiles=True)
-                            product_ctx = MoleculeContext(
-                                smiles=s,
-                                mol=r_mol,
-                            )
+                            s = Chem.MolToSmiles(r_mol)
+                            product_ctx = MoleculeContext(smiles=s, mol=r_mol)
                             if (
                                 product_ctx.is_valid_electrolyte_mol()
                                 and self._novelty_check(product_ctx)
