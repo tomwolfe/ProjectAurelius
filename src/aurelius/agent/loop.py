@@ -44,6 +44,7 @@ class AgentConfig:
 
     max_generations: int = 50
     batch_size: int = 50
+    fast_mode: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +89,7 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
         state=state,
         max_generations=agent_cfg.max_generations,
         batch_size=agent_cfg.batch_size,
+        fast_mode=agent_cfg.fast_mode,
     )
     results = loop.execute()
 
@@ -138,6 +140,7 @@ class DiscoveryLoop:
         max_generations: int = 50,
         batch_size: int = 50,
         max_wall_time: float = 43200.0,
+        fast_mode: bool = False,
     ) -> None:
         self.pipeline = pipeline
         self.engine = engine
@@ -145,6 +148,7 @@ class DiscoveryLoop:
         self.max_generations = max_generations
         self.batch_size = batch_size
         self.max_wall_time = max_wall_time
+        self.fast_mode = fast_mode
 
         self.total_screened = 0
         self.total_viable = 0
@@ -176,12 +180,17 @@ class DiscoveryLoop:
                 log.info("Generation %d: No valid candidates. Skipping.", generation)
                 continue
 
-            selected_indices, batch_contexts = self._select_candidates_for_screening(
-                valid_contexts, generation
-            )
+            if self.fast_mode:
+                # Fast mode: bypass surrogate, screen all valid candidates directly
+                selected_indices = list(range(len(valid_contexts)))
+                batch_contexts = valid_contexts
+            else:
+                selected_indices, batch_contexts = self._select_candidates_for_screening(
+                    valid_contexts, generation
+                )
 
             log.info(
-                "Generation %d: Screening %d candidates (%d invalid discarded, %d selected via BO)",
+                "Generation %d: Screening %d candidates (%d invalid discarded, %d selected)",
                 generation,
                 len(valid_contexts),
                 invalid_count,
@@ -271,16 +280,17 @@ class DiscoveryLoop:
                 self.all_results.append(screening_result)
                 self.state.record(screening_result)
 
-            # Fit the surrogate from accumulated (X, y) history
-            X, y = self.state.get_history()
-            if len(y) >= 2:
-                if self._surrogate is None:
-                    self._surrogate = RandomForestSurrogate()
-                self._surrogate.fit(X, y)
+            # Fit the surrogate from accumulated (X, y) history (skipped in fast mode)
+            if not self.fast_mode:
+                X, y = self.state.get_history()
+                if len(y) >= 2:
+                    if self._surrogate is None:
+                        self._surrogate = RandomForestSurrogate()
+                    self._surrogate.fit(X, y)
 
-            # Adaptive diversity: report batch variance to surrogate
-            if self._surrogate is not None and batch_scores:
-                self._surrogate.update_variance(batch_scores)
+                # Adaptive diversity: report batch variance to surrogate
+                if self._surrogate is not None and batch_scores:
+                    self._surrogate.update_variance(batch_scores)
 
             # Scaffold tracking: extract Murcko scaffolds and check for stagnation
             batch_scaffolds: list[str] = []
@@ -295,23 +305,25 @@ class DiscoveryLoop:
             if batch_scaffolds:
                 self.state.record_scaffolds(batch_scaffolds)
 
-            # Exploration boost: if scaffold stagnation detected, increase xi
-            if self.state.has_scaffold_stagnation(n_batches=3):
-                if not self._exploration_boost_active:
-                    log.info("  ** Exploration boost triggered: scaffold stagnation detected **")
-                    self._exploration_boost_active = True
-                    self._exploration_boost_generations = 0
-                    if self._surrogate is not None:
-                        self._surrogate._xi = 0.10  # Increase xi from 0.01 to 0.10
-            else:
-                if self._exploration_boost_active:
-                    self._exploration_boost_generations += 1
-                    if self._exploration_boost_generations >= 3:
-                        self._exploration_boost_active = False
+            # Exploration boost: scaffold stagnation → increase xi (not in fast mode)
+            if not self.fast_mode:
+                if self.state.has_scaffold_stagnation(n_batches=3):
+                    if not self._exploration_boost_active:
+                        log.info("  ** Exploration boost triggered: scaffold stagnation detected **")
+                        self._exploration_boost_active = True
+                        self._exploration_boost_generations = 0
                         if self._surrogate is not None:
-                            self._surrogate._xi = 0.01  # Reset xi
-                        log.info("  Exploration boost deactivated after 3 generations")
+                            self._surrogate._xi = 0.10
+                else:
+                    if self._exploration_boost_active:
+                        self._exploration_boost_generations += 1
+                        if self._exploration_boost_generations >= 3:
+                            self._exploration_boost_active = False
+                            if self._surrogate is not None:
+                                self._surrogate._xi = 0.01
+                            log.info("  Exploration boost deactivated after 3 generations")
 
+            # --- Seed pool evolution (feed high-scoring molecules back as seeds) ---
             new_seeds = [
                 ctx.smiles for ctx, sc in zip(batch_contexts, batch_scores, strict=False)
                 if sc >= 65.0
@@ -324,6 +336,12 @@ class DiscoveryLoop:
                         existing.add(smi)
                 if len(self.engine.seed_pool) > 200:
                     self.engine.seed_pool = self.engine.seed_pool[-200:]
+
+            # --- Dynamic fragment evolution (harvest BRICS fragments from high-scoring molecules) ---
+            for ctx, sc in zip(batch_contexts, batch_scores, strict=False):
+                if sc >= 65.0:
+                    self.engine.harvest_fragments(ctx.smiles)
+
             self.state.seed_pool_size = len(self.engine.seed_pool)
 
             new_clusters = self._count_new_clusters_from_contexts(valid_contexts)

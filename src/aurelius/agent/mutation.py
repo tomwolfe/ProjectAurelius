@@ -192,6 +192,8 @@ class MutationEngine:
                 continue
 
         self._load_known_electrolytes()
+        # Dynamic fragment pool: harvested from high-scoring discoveries
+        self._harvested_fragments: list[str] = []
         self._rng = np.random.default_rng(42)
         self._smarts_rxns: list[tuple[Any, str]] = []
         for smarts, name in ELECTROLYTE_SMARTS:
@@ -245,19 +247,56 @@ class MutationEngine:
         if ctx is not None:
             self.known_fps.append(ctx.get_ecfp4())
 
+    def harvest_fragments(self, smiles: str) -> None:
+        """Extract BRICS fragments from a high-scoring molecule for future reassembly.
+
+        This enables the fragment pool to dynamically evolve based on what
+        the engine is actually discovering, unlocking novel scaffold discovery
+        rather than relying purely on the static ``ELECTROLYTE_FRAGMENT_POOL``.
+        """
+        ctx = MoleculeContext.from_smiles(smiles)
+        if ctx is None:
+            return
+        try:
+            frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
+            for frag_smi in frag_smiles:
+                if frag_smi in self._harvested_fragments:
+                    continue
+                if frag_smi in ELECTROLYTE_FRAGMENT_POOL:
+                    continue
+                f_ctx = MoleculeContext.from_smiles(frag_smi)
+                if f_ctx is None:
+                    continue
+                mw = rdMolDescriptors.CalcExactMolWt(f_ctx.mol)
+                hbd = rdMolDescriptors.CalcNumHBD(f_ctx.mol)
+                if mw > 250:
+                    continue
+                if hbd > 0:
+                    continue
+                self._harvested_fragments.append(frag_smi)
+        except Exception:
+            logger.debug("Failed to harvest fragments from %s", smiles, exc_info=True)
+
+    def fragment_pool_size(self) -> int:
+        """Total fragments available for BRICS reassembly (static + harvested)."""
+        return len(ELECTROLYTE_FRAGMENT_POOL) + len(self._harvested_fragments)
+
     def _novelty_check(self, ctx: MoleculeContext) -> bool:
-        """Return True if molecule is novel (exact SMILES + Tanimoto).
+        """Return True if molecule is novel (exact match only; allows local exploration of seeds).
 
         A molecule is considered novel if:
           1. Its canonical SMILES is not an exact match for any seed or
              known electrolyte (prevents exact rediscovery).
-          2. Its ECFP4 Tanimoto similarity is < 0.85 against all seed
-             molecules (encourages local exploration of known cores with
-             new functional groups).
+          2. Its ECFP4 Tanimoto similarity is < 0.85 against all *known
+             commercial electrolytes* (prevents trivial rediscovery of
+             existing patents).
 
-        This allows the engine to discover novel functionalizations of
-        known electrolyte cores (e.g., fluorinated carbonates, alkylated
-        sulfones) while preventing trivial rediscovery of exact knowns.
+        The Tanimoto check against the *seed pool* has been intentionally
+        removed.  Adding a single fluorine or methyl group to a known core
+        (e.g. Ethylene Carbonate → Fluoroethylene Carbonate) yields a
+        Tanimoto > 0.9.  Rejecting such molecules blocks the most common
+        and successful electrolyte discovery strategy.  Exact SMILES
+        matching still prevents rediscovery of the exact seed.
         """
         # Exact canonical SMILES match (prevents rediscovering exact seeds/knowns)
         try:
@@ -269,13 +308,17 @@ class MutationEngine:
         if canon in self._known_smiles:
             return False
 
-        # Tanimoto check against seed pool only (allows functionalization of known cores)
+        # Tanimoto check against *known commercial electrolytes only*
+        # to prevent trivial patent rediscovery while allowing local
+        # functionalisation of seed cores.
         fp = ctx.get_ecfp4()
-        from rdkit.DataStructs import TanimotoSimilarity
-        seed_fps = [c.get_ecfp4() for c in self.seed_contexts]
-        if not seed_fps:
-            return True
-        return all(TanimotoSimilarity(fp, s) < 0.85 for s in seed_fps)
+        if self.known_fps:
+            from rdkit.DataStructs import BulkTanimotoSimilarity
+            sims = BulkTanimotoSimilarity(fp, self.known_fps)
+            if any(s >= 0.85 for s in sims):
+                return False
+
+        return True
 
     # ------------------------------------------------------------------
     # Strategy 1: SMARTS functional-group replacement
@@ -321,11 +364,15 @@ class MutationEngine:
     # Strategy 2: BRICS fragmentation + reassembly
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _load_electrolyte_fragments() -> list[MoleculeContext]:
-        """Load the electrolyte fragment pool as MoleculeContext objects."""
+    def _load_electrolyte_fragments(self) -> list[MoleculeContext]:
+        """Load the electrolyte fragment pool (static + dynamically harvested)."""
         fragments: list[MoleculeContext] = []
         for smi in ELECTROLYTE_FRAGMENT_POOL:
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is not None:
+                fragments.append(ctx)
+        # Append dynamically harvested fragments from high-scoring discoveries
+        for smi in self._harvested_fragments:
             ctx = MoleculeContext.from_smiles(smi)
             if ctx is not None:
                 fragments.append(ctx)
