@@ -80,8 +80,8 @@ def generate_run_summary(
         "convergence": {
             "score_plateau": plateau,
             "structural_saturation": saturation,
-            "new_clusters_last_batch": state.new_clusters_per_batch[-1]
-            if state.new_clusters_per_batch
+            "new_scaffolds_last_batch": len(state.scaffolds_per_batch[-1])
+            if state.scaffolds_per_batch
             else 0,
             "summary": (
                 f"After {state.total_screened} molecules across "
@@ -90,7 +90,7 @@ def generate_run_summary(
                 f"Criteria: {', '.join(reasons)}."
             ),
         },
-        "new_clusters_per_batch": state.new_clusters_per_batch,
+        "new_scaffolds_per_batch": [len(s) for s in state.scaffolds_per_batch],
         "discoveries": [
             {
                 "smiles": d.smiles,

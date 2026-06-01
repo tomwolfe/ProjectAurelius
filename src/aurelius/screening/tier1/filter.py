@@ -29,8 +29,6 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from rdkit.Chem import Descriptors, rdMolDescriptors
-
 from aurelius.types import MoleculeContext
 
 
@@ -71,10 +69,10 @@ class Filter:
         start = time.perf_counter()
         violations: list[str] = []
 
-        mw = rdMolDescriptors.CalcExactMolWt(ctx.mol)
-        h_donors = rdMolDescriptors.CalcNumHBD(ctx.mol)
-        n_rotatable = rdMolDescriptors.CalcNumRotatableBonds(ctx.mol)
-        logp = Descriptors.MolLogP(ctx.mol)
+        mw = ctx.mw
+        h_donors = ctx.hbd
+        n_rotatable = ctx.rotatable_bonds
+        logp = ctx.logp
 
         hba_count = sum(
             1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() in self._HBA_ELEMENTS

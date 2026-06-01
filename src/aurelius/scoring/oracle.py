@@ -45,6 +45,7 @@ import contextlib
 import logging
 import math
 import os
+import re
 import subprocess
 import tempfile
 from typing import Any
@@ -397,35 +398,23 @@ def _run_xtb(xyz_content: str, workdir: str | None = None) -> dict[str, float] |
     return _parse_xtb_output(output)
 
 
+_XTB_HOMO_RE = re.compile(r"HOMO\s*:\s*([-+]?\d+\.?\d*)\s*eV")
+_XTB_LUMO_RE = re.compile(r"LUMO\s*:\s*([-+]?\d+\.?\d*)\s*eV")
+
+
 def _parse_xtb_output(output: str) -> dict[str, float] | None:
     """Parse xTB output text for HOMO, LUMO, and dipole moment."""
-    homo: float | None = None
-    lumo: float | None = None
-    dipole: float | None = None
+    homo_match = _XTB_HOMO_RE.search(output)
+    lumo_match = _XTB_LUMO_RE.search(output)
 
-    for line in output.splitlines():
-        stripped = line.strip()
-        # Match lines like:  HOMO:       -6.23478 eV
-        if "HOMO" in stripped and "eV" in stripped and ":" in stripped:
-            parts = stripped.split()
-            for i, p in enumerate(parts):
-                if p == "HOMO" and parts[i + 1] == ":" and i + 2 < len(parts):
-                    with contextlib.suppress(ValueError):
-                        homo = float(parts[i + 2])
-        # Match lines like:  LUMO:        0.84527 eV
-        if "LUMO" in stripped and "eV" in stripped and ":" in stripped:
-            parts = stripped.split()
-            for i, p in enumerate(parts):
-                if p == "LUMO" and parts[i + 1] == ":" and i + 2 < len(parts):
-                    with contextlib.suppress(ValueError):
-                        lumo = float(parts[i + 2])
-
-    if homo is not None and lumo is not None:
+    if homo_match and lumo_match:
+        homo = float(homo_match.group(1))
+        lumo = float(lumo_match.group(1))
         logger.info("QuantumOracle (xTB): HOMO=%.3f eV, LUMO=%.3f eV", homo, lumo)
         return {
             "homo_eV": homo,
             "lumo_eV": lumo,
-            "dipole_D": dipole or 0.0,
+            "dipole_D": 0.0,
         }
 
     logger.debug("Could not parse HOMO/LUMO from xTB output")

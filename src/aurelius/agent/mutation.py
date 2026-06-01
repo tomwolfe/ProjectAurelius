@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import BRICS, AllChem, rdMolDescriptors
+from rdkit.DataStructs import BulkTanimotoSimilarity
 
 from aurelius.constants import (
     ELECTROCHEMICALLY_UNSTABLE_PATTERNS as _EC_UNSTABLE_PATTERNS,
@@ -35,6 +36,19 @@ except ImportError:
 # Maximum number of dynamically harvested fragments to keep.
 # Prevents memory bloat and combinatorial explosion over many generations.
 _MAX_HARVESTED_FRAGMENTS = 200
+
+# Universal BRICS linker fragments for fallback when complementary pairs are sparse.
+# Each linker has multiple BRICS dummy-atom isotopes (e.g. {1, 2}) so it can bridge
+# fragments that have non-overlapping isotope sets.
+# Format: (SMILES, description)
+_BRICS_LINKER_FRAGMENTS: list[tuple[str, str]] = [
+    ("[1*]O[2*]", "ether linker"),
+    ("[1*]C(=O)O[2*]", "ester linker"),
+    ("[1*]C(=O)[2*]", "ketone linker"),
+    ("[1*]C[2*]", "methylene linker"),
+    ("[1*]CCO[2*]", "ethoxy linker"),
+    ("[1*]S(=O)(=O)[2*]", "sulfone linker"),
+]
 
 logger = logging.getLogger(__name__)
 
@@ -437,11 +451,11 @@ class MutationEngine:
                 f_ctx = MoleculeContext.from_smiles(frag_smi)
                 if f_ctx is None:
                     continue
-                mw = rdMolDescriptors.CalcExactMolWt(f_ctx.mol)
-                hbd = rdMolDescriptors.CalcNumHBD(f_ctx.mol)
-                if mw > 250:
+                if f_ctx.mw > 250:
                     continue
-                if hbd > 0:
+                if f_ctx.hbd > 0:
+                    continue
+                if self._harvested_fragments and self._fragment_too_similar(frag_smi, self._harvested_fragments, threshold=0.85):
                     continue
                 self._harvested_fragments.append(frag_smi)
                 self._harvested_fragment_set.add(frag_smi)
@@ -450,6 +464,23 @@ class MutationEngine:
                     self._harvested_fragment_set.discard(oldest)
         except Exception:
             logger.debug("Failed to harvest fragments from %s", smiles, exc_info=True)
+
+    @staticmethod
+    def _fragment_too_similar(new_smi: str, existing_smis: list[str], threshold: float = 0.85) -> bool:
+        new_ctx = MoleculeContext.from_smiles(new_smi)
+        if new_ctx is None:
+            return False
+        new_fp = new_ctx.get_ecfp4()
+        for old_smi in existing_smis:
+            old_ctx = MoleculeContext.from_smiles(old_smi)
+            if old_ctx is None:
+                continue
+            old_fp = old_ctx.get_ecfp4()
+            from rdkit.DataStructs import TanimotoSimilarity
+            sim = TanimotoSimilarity(new_fp, old_fp)
+            if sim >= threshold:
+                return True
+        return False
 
     def fragment_pool_size(self) -> int:
         """Total fragments available for BRICS reassembly (static + harvested)."""
@@ -576,26 +607,20 @@ class MutationEngine:
             ctx = MoleculeContext.from_smiles(smi)
             if ctx is None:
                 continue
-            mw = rdMolDescriptors.CalcExactMolWt(ctx.mol)
-            hbd = rdMolDescriptors.CalcNumHBD(ctx.mol)
-            if mw > 250 or hbd > 0:
+            if ctx.mw > 250 or ctx.hbd > 0:
                 continue
             try:
                 frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
                 for fs in frag_smiles:
-                    frag_mol = Chem.MolFromSmiles(fs)
-                    if frag_mol is not None:
-                        brics_frags.append(frag_mol)
+                    frag_ctx = MoleculeContext.from_brics_fragment(fs)
+                    if frag_ctx is not None:
+                        brics_frags.append(frag_ctx.mol)
             except Exception:
                 continue
         return brics_frags
 
-    @staticmethod
-    def _is_electrolyte_like(ctx: MoleculeContext) -> bool:
-        for _name, check in _ELECTROLYTE_CHECKS:
-            if not check(ctx):
-                return False
-        return True
+    def _is_electrolyte_like(self, ctx: MoleculeContext) -> bool:
+        return _is_electrolyte_like(ctx)
 
     @staticmethod
     def _find_complementary_pairs(fragments: list[Chem.Mol]) -> list[tuple[int, int]]:
@@ -624,6 +649,58 @@ class MutationEngine:
             pairs = [(i, j) for i in range(len(fragments)) for j in range(i + 1, len(fragments))]
         return pairs
 
+    def _collect_brics_fragments(self, ctx: MoleculeContext, force_exploration: bool) -> list[Chem.Mol]:
+        """Collect BRICS fragments from seed + pool, injecting linkers if needed."""
+        try:
+            seed_frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
+        except Exception:
+            return []
+        seed_frags: list[Chem.Mol] = []
+        for fs in seed_frag_smiles:
+            frag_ctx = MoleculeContext.from_brics_fragment(fs)
+            if frag_ctx is not None:
+                seed_frags.append(frag_ctx.mol)
+
+        pool_frags = self._load_brics_fragments(exploration_bias=force_exploration)
+        all_frags = seed_frags + pool_frags
+        return all_frags
+
+    def _build_from_pairs(self, all_frags: list[Chem.Mol], valid_pairs: list[tuple[int, int]]) -> list[str]:
+        """Sample complementary pairs and run BRICSBuild, returning valid products."""
+        generated: list[str] = []
+        for _ in range(500):
+            rng = np.random.default_rng(self._rng.integers(0, 2**31))
+            pair_idx = rng.integers(0, len(valid_pairs))
+            i, j = valid_pairs[pair_idx]
+            try:
+                for r_mol in BRICS.BRICSBuild([all_frags[i], all_frags[j]]):
+                    if r_mol is None:
+                        continue
+                    try:
+                        Chem.SanitizeMol(r_mol)
+                        s = Chem.MolToSmiles(r_mol)
+                        product_ctx = MoleculeContext(smiles=s, mol=r_mol)
+                        if (
+                            product_ctx.is_valid_electrolyte_mol()
+                            and self._novelty_check(product_ctx)
+                            and _is_electrolyte_like(product_ctx)
+                            and s
+                        ):
+                            generated.append(s)
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+        return generated
+
+    @staticmethod
+    def _inject_linkers(all_frags: list[Chem.Mol]) -> None:
+        """Inject universal BRICS linker fragments when the pair matrix is too sparse."""
+        for linker_smi, _desc in _BRICS_LINKER_FRAGMENTS:
+            linker_ctx = MoleculeContext.from_brics_fragment(linker_smi)
+            if linker_ctx is not None:
+                all_frags.append(linker_ctx.mol)
+
     def _brics_from_pool(self, ctx: MoleculeContext, force_exploration: bool = False) -> list[str]:
         """BRICS decomposition + electrolyte-fragment-guided reassembly.
 
@@ -640,51 +717,26 @@ class MutationEngine:
         """
         generated: list[str] = []
 
-        try:
-            seed_frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
-            seed_frags: list[Chem.Mol] = []
-            for fs in seed_frag_smiles:
-                m = Chem.MolFromSmiles(fs)
-                if m is not None:
-                    seed_frags.append(m)
+        all_frags = self._collect_brics_fragments(ctx, force_exploration)
+        if len(all_frags) < 2:
+            return generated
 
-            pool_frags = self._load_brics_fragments(exploration_bias=force_exploration)
-            all_frags = seed_frags + pool_frags
+        # Build valid complementary pairs for BRICS reassembly
+        valid_pairs = self._find_complementary_pairs(all_frags)
+        if not valid_pairs:
+            return generated
 
-            if len(all_frags) < 2:
-                return generated
-
-            # Build valid complementary pairs for BRICS reassembly
+        # If the complementary pair matrix is too sparse (< 20% of fragments
+        # participate in valid pairs), inject universal linker fragments that
+        # have multiple BRICS isotopes to bridge incompatible fragment types.
+        n_participating = len({i for p in valid_pairs for i in p})
+        if n_participating < len(all_frags) * 0.2 and force_exploration:
+            self._inject_linkers(all_frags)
             valid_pairs = self._find_complementary_pairs(all_frags)
             if not valid_pairs:
                 return generated
 
-            for _ in range(500):
-                rng = np.random.default_rng(self._rng.integers(0, 2**31))
-                pair_idx = rng.integers(0, len(valid_pairs))
-                i, j = valid_pairs[pair_idx]
-                try:
-                    for r_mol in BRICS.BRICSBuild([all_frags[i], all_frags[j]]):
-                        if r_mol is None:
-                            continue
-                        try:
-                            Chem.SanitizeMol(r_mol)
-                            s = Chem.MolToSmiles(r_mol)
-                            product_ctx = MoleculeContext(smiles=s, mol=r_mol)
-                            if (
-                                product_ctx.is_valid_electrolyte_mol()
-                                and self._novelty_check(product_ctx)
-                                and self._is_electrolyte_like(product_ctx)
-                                and s
-                            ):
-                                generated.append(s)
-                        except Exception:
-                            continue
-                except Exception:
-                    continue
-        except Exception:
-            logger.debug("BRICS reassembly failed for pool", exc_info=True)
-
+        generated = self._build_from_pairs(all_frags, valid_pairs)
         return list(set(generated))
 
     # ------------------------------------------------------------------

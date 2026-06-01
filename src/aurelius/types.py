@@ -71,6 +71,13 @@ class MoleculeContext:
             return None
         return cls(smiles=smiles, mol=mol)
 
+    @classmethod
+    def from_brics_fragment(cls, smiles: str) -> MoleculeContext | None:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return None
+        return cls(smiles=smiles, mol=mol)
+
     def get_ecfp4(self) -> Any:
         if self.fingerprint_ecfp4 is None:
             self.fingerprint_ecfp4 = AllChem.GetMorganFingerprintAsBitVect(
@@ -97,6 +104,14 @@ class MoleculeContext:
     @cached_property
     def rotatable_bonds(self) -> int:
         return Descriptors.NumRotatableBonds(self.mol)
+
+    @cached_property
+    def hbd(self) -> int:
+        return Descriptors.NumHDonors(self.mol)
+
+    @cached_property
+    def hba(self) -> int:
+        return Descriptors.NumHAcceptors(self.mol)
 
     def get_feature_vector(self) -> np.ndarray[Any, Any]:
         """Get or compute 2053-dim feature vector (lazy).
