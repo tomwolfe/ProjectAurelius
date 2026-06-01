@@ -20,13 +20,12 @@ class TestDiscoveryLoopActiveLearning:
         """RF surrogate must be retrained with new observations after each batch."""
         mock_pipeline = _make_mock_pipeline()
         mock_engine = _make_mock_engine()
-        checkpoint_path = tmp_path / "checkpoint.json"
-        checkpoint = _make_checkpoint_manager(str(checkpoint_path))
+        state = _make_loop_state(str(tmp_path / "checkpoint.json"))
 
         loop = DiscoveryLoop(
             pipeline=mock_pipeline,
             engine=mock_engine,
-            checkpoint=checkpoint,
+            state=state,
             max_generations=1,
             batch_size=3,
         )
@@ -58,27 +57,27 @@ class TestDiscoveryLoopActiveLearning:
             fingerprint=fp,
         )
 
-        adapter = _make_feedback_adapter()
+        adapter = _make_loop_state()
         adapter.record(result)
 
-        assert len(adapter._X_history) == 1
-        assert isinstance(adapter._X_history[0], np.ndarray)
-        assert adapter._X_history[0].shape == (2053,)
-        assert adapter._X_history[0][5] == 1.0
+        assert len(adapter.X_history) == 1
+        assert isinstance(adapter.X_history[0], np.ndarray)
+        assert adapter.X_history[0].shape == (2053,)
+        assert adapter.X_history[0][5] == 1.0
 
-        assert len(adapter._y_history) == 1
-        assert adapter._y_history[0] == 85.0
+        assert len(adapter.y_history) == 1
+        assert adapter.y_history[0] == 85.0
 
     def test_loop_retrains_surrogate_with_fingerprint_data(self):
         """After screening, the surrogate's fit() must be called with proper arrays."""
         mock_pipeline = _make_mock_pipeline()
         mock_engine = _make_mock_engine()
-        checkpoint = _make_checkpoint_manager("/tmp/test_checkpoint.json")
+        state = _make_loop_state("/tmp/test_checkpoint.json")
 
         loop = DiscoveryLoop(
             pipeline=mock_pipeline,
             engine=mock_engine,
-            checkpoint=checkpoint,
+            state=state,
             max_generations=1,
             batch_size=5,
         )
@@ -101,12 +100,12 @@ class TestDiscoveryLoopActiveLearning:
         """High-scoring molecules should feed back into the seed pool."""
         mock_pipeline = _make_mock_pipeline()
         mock_engine = _make_mock_engine()
-        checkpoint = _make_checkpoint_manager("/tmp/test_checkpoint_seed.json")
+        state = _make_loop_state("/tmp/test_checkpoint_seed.json")
 
         loop = DiscoveryLoop(
             pipeline=mock_pipeline,
             engine=mock_engine,
-            checkpoint=checkpoint,
+            state=state,
             max_generations=1,
             batch_size=3,
         )
@@ -116,18 +115,18 @@ class TestDiscoveryLoopActiveLearning:
         for smi in mock_engine.mutate_batch.return_value:
             assert smi in loop.engine.seed_pool
 
-        assert loop.convergence.seed_pool_size == len(loop.engine.seed_pool)
+        assert loop.state.seed_pool_size == len(loop.engine.seed_pool)
 
     def test_first_batch_random_selection(self):
         """First batch should select candidates randomly when surrogate is unfitted."""
         mock_pipeline = _make_mock_pipeline()
         mock_engine = _make_mock_engine()
-        checkpoint = _make_checkpoint_manager("/tmp/test_checkpoint2.json")
+        state = _make_loop_state("/tmp/test_checkpoint2.json")
 
         loop = DiscoveryLoop(
             pipeline=mock_pipeline,
             engine=mock_engine,
-            checkpoint=checkpoint,
+            state=state,
             max_generations=1,
             batch_size=3,
         )
@@ -179,13 +178,7 @@ def _make_mock_engine():
     return mock
 
 
-def _make_checkpoint_manager(path: str):
-    """Create a checkpoint manager at the given path."""
-    from aurelius.agent.state import CheckpointManager
-    return CheckpointManager(path=path)
-
-
-def _make_feedback_adapter():
-    """Create a feedback adapter with a fitted RF surrogate."""
-    from aurelius.agent.state import FeedbackAdapter
-    return FeedbackAdapter()
+def _make_loop_state(path: str = "/tmp/test_state.json"):
+    """Create a LoopState at the given path."""
+    from aurelius.agent.state import LoopState
+    return LoopState(path=path)

@@ -13,7 +13,7 @@ import pytest
 
 from aurelius.agent.loop import DiscoveryLoop
 from aurelius.agent.mutation import MutationEngine
-from aurelius.agent.state import CheckpointManager
+from aurelius.agent.state import LoopState
 from aurelius.pipeline import AureliusPipeline
 from aurelius.types import MoleculeContext
 
@@ -45,12 +45,12 @@ def test_discovery_loop_smoke(tmp_path) -> None:
     assert "domain_applicable" in result
 
     engine = MutationEngine(seed_smiles=seed_smiles)
-    checkpoint = CheckpointManager(path=str(tmp_path / "checkpoint.json"))
+    state = LoopState(path=str(tmp_path / "state.json"))
 
     loop = DiscoveryLoop(
         pipeline=pipeline,
         engine=engine,
-        checkpoint=checkpoint,
+        state=state,
         max_generations=2,
         batch_size=5,
         max_wall_time=120.0,

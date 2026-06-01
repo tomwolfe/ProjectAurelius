@@ -24,7 +24,7 @@ from sklearn.cluster import MiniBatchKMeans
 
 from aurelius.agent.mutation import MutationEngine
 from aurelius.agent.reporting import generate_discoveries_sdf, generate_run_summary
-from aurelius.agent.state import CheckpointManager, ConvergenceChecker, FeedbackAdapter
+from aurelius.agent.state import LoopState
 from aurelius.agent.surrogate import RandomForestSurrogate
 from aurelius.constants import DISCOVERY_THRESHOLD
 from aurelius.pipeline import AureliusPipeline
@@ -56,19 +56,18 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
     output_dir = None  # could be lifted to AgentConfig in future
 
     engine = MutationEngine()
-    checkpoint = CheckpointManager(output_dir=output_dir)
+    state = LoopState(output_dir=output_dir)
 
-    state = checkpoint.load()
-    for h in state.get("known_fps_hex", []):
+    for h in getattr(state, "known_fps_hex", []):
         with contextlib.suppress(Exception):
             from aurelius.utils.chem_utils import _deserialize_fp
             engine.known_fps.append(_deserialize_fp(h))
 
-    resumed = state["screened_count"] > 0
+    resumed = state.total_screened > 0
     if resumed:
         log.info(
             "Resuming from checkpoint: batch=%d, screened=%d, best_score=%.1f",
-            state.get("batch", 0), state.get("screened_count", 0), state.get("best_score", 0.0),
+            state.batch, state.total_screened, state.best_score,
         )
     else:
         log.info("Fresh start. No checkpoint found.")
@@ -81,7 +80,7 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
     loop = DiscoveryLoop(
         pipeline=pipeline,
         engine=engine,
-        checkpoint=checkpoint,
+        state=state,
         max_generations=agent_cfg.max_generations,
         batch_size=agent_cfg.batch_size,
     )
@@ -89,19 +88,18 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
 
     all_results = results["all_results"]
     discoveries = results["discoveries"]
-    convergence = loop.convergence
 
-    generate_run_summary(convergence, all_results, discoveries)
+    generate_run_summary(loop.state, all_results, discoveries)
     generate_discoveries_sdf(discoveries)
-    checkpoint.save()
+    state.save()
 
     log.info("=" * 60)
     log.info("  SCREENING COMPLETE")
     log.info("=" * 60)
     log.info("  Total screened:     %d", results["total_screened"])
-    log.info("  Generations run:    %d", convergence.generations)
+    log.info("  Generations run:    %d", state.generations)
     log.info("  Viable discoveries: %d", results["total_viable"])
-    log.info("  Best score:         %.1f", checkpoint.state["best_score"])
+    log.info("  Best score:         %.1f", state.best_score)
     log.info("  Invalid discarded:  %d", results["total_invalid"])
     log.info("  Wall time:          %.0fs", time.time() - wall_start)
 
@@ -131,14 +129,14 @@ class DiscoveryLoop:
         self,
         pipeline: Any,
         engine: Any,
-        checkpoint: Any,
+        state: Any,
         max_generations: int = 50,
         batch_size: int = 50,
         max_wall_time: float = 43200.0,
     ) -> None:
         self.pipeline = pipeline
         self.engine = engine
-        self.checkpoint = checkpoint
+        self.state = state
         self.max_generations = max_generations
         self.batch_size = batch_size
         self.max_wall_time = max_wall_time
@@ -148,8 +146,6 @@ class DiscoveryLoop:
         self.total_invalid = 0
         self.all_results: list[ScreeningResult] = []
         self.discoveries: list[ScreeningResult] = []
-        self.convergence = ConvergenceChecker()
-        self.feedback = FeedbackAdapter()
         self._surrogate: RandomForestSurrogate | None = None
         self.screened_smiles: set[str] = set()
         self._prev_centroids: np.ndarray[Any, Any] | None = None
@@ -262,14 +258,14 @@ class DiscoveryLoop:
                     )
                     batch_discoveries.append(discovery_entry)
                     self.discoveries.append(discovery_entry)
-                    self.checkpoint.add_discovery(discovery_entry)
+                    self.state.add_discovery(discovery_entry)
                     log.info("  ** DISCOVERY ** %s (score=%.1f)", smi, total_score)
 
                 self.all_results.append(screening_result)
-                self.feedback.record(screening_result)
+                self.state.record(screening_result)
 
             # Fit the surrogate from accumulated (X, y) history
-            X, y = self.feedback.get_history()
+            X, y = self.state.get_history()
             if len(y) >= 2:
                 if self._surrogate is None:
                     self._surrogate = RandomForestSurrogate()
@@ -287,11 +283,11 @@ class DiscoveryLoop:
                         existing.add(smi)
                 if len(self.engine.seed_pool) > 200:
                     self.engine.seed_pool = self.engine.seed_pool[-200:]
-            self.convergence.seed_pool_size = len(self.engine.seed_pool)
+            self.state.seed_pool_size = len(self.engine.seed_pool)
 
             new_clusters = self._count_new_clusters_from_contexts(valid_contexts)
-            self.convergence.record_batch(batch_scores, batch_viable, new_clusters)
-            self.checkpoint.update_stats(
+            self.state.record_batch(batch_scores, batch_viable, new_clusters)
+            self.state.update_stats(
                 [c.smiles for c in batch_contexts],
                 batch_scores, batch_viable, invalid_count,
             )
@@ -311,16 +307,16 @@ class DiscoveryLoop:
                 max(batch_scores) if batch_scores else 0,
             )
 
-            strategy = self.feedback.get_adaptation_strategy()
+            strategy = self.state.get_adaptation_strategy()
             if generation % 5 == 0:
                 log.info("  [Feedback] Strategy: %s", strategy.get("recommendation", ""))
 
-            should_stop, reason = self.convergence.should_terminate()
+            should_stop, reason = self.state.should_terminate()
             if should_stop:
                 log.info("Convergence reached: %s", reason)
                 break
 
-            self.checkpoint.save()
+            self.state.save()
 
         return {
             "all_results": self.all_results,
@@ -377,8 +373,8 @@ class DiscoveryLoop:
         X_pool = self._featurise_from_contexts(valid_contexts)
 
         if self._surrogate is not None:
-            nws_scores = self._surrogate.novelty_weighted_score(X_pool)
-            top_indices: list[int] = np.argsort(nws_scores)[::-1][: self.batch_size].tolist()
+            ei_scores = self._surrogate.expected_improvement(X_pool)
+            top_indices: list[int] = np.argsort(ei_scores)[::-1][: self.batch_size].tolist()
         else:
             n = min(self.batch_size, len(valid_contexts))
             indices = np.random.default_rng(42).choice(len(valid_contexts), size=n, replace=False)

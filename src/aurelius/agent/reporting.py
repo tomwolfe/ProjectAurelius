@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 
-from aurelius.agent.state import ConvergenceChecker
+from aurelius.agent.state import LoopState
 from aurelius.types import ScreeningResult
 
 
@@ -29,7 +29,7 @@ def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str
 
 
 def generate_run_summary(
-    convergence: ConvergenceChecker,
+    state: LoopState,
     all_results: list[ScreeningResult],
     discoveries: list[ScreeningResult],
     path: str = "run_summary.json",
@@ -41,7 +41,7 @@ def generate_run_summary(
     chemical insights markdown, CSV, SMI, etc.) with one structured JSON.
 
     Args:
-        convergence: ConvergenceChecker instance.
+        state: LoopState instance.
         all_results: All screening results.
         discoveries: Discovery list (score >= 65).
         path: Output JSON path.
@@ -52,8 +52,8 @@ def generate_run_summary(
     path = _resolve_output_path(path, output_dir)
     scores = [r.total_score for r in all_results]
 
-    plateau = convergence.check_score_plateau()
-    saturation = convergence.check_structural_saturation()
+    plateau = state.check_score_plateau()
+    saturation = state.check_structural_saturation()
 
     reasons = []
     if plateau:
@@ -67,11 +67,11 @@ def generate_run_summary(
         "generated_at": datetime.now(UTC).isoformat(),
         "pipeline": "Project Aurelius v10.0 — Multi-Objective Electrolyte Discovery Engine",
         "search_statistics": {
-            "total_screened": convergence.total_screened,
-            "generations_run": convergence.generations,
-            "viable_count": convergence.viable_count,
-            "seed_pool_size": convergence.seed_pool_size,
-            "final_score_variance": convergence.final_score_variance(),
+            "total_screened": state.total_screened,
+            "generations_run": state.generations,
+            "viable_count": state.viable_count,
+            "seed_pool_size": state.seed_pool_size,
+            "final_score_variance": state.final_score_variance(),
             "mean_score": float(np.mean(scores)) if scores else 0.0,
             "std_score": float(np.std(scores)) if scores else 0.0,
             "min_score": float(np.min(scores)) if scores else 0.0,
@@ -80,17 +80,17 @@ def generate_run_summary(
         "convergence": {
             "score_plateau": plateau,
             "structural_saturation": saturation,
-            "new_clusters_last_batch": convergence.new_clusters_per_batch[-1]
-            if convergence.new_clusters_per_batch
+            "new_clusters_last_batch": state.new_clusters_per_batch[-1]
+            if state.new_clusters_per_batch
             else 0,
             "summary": (
-                f"After {convergence.total_screened} molecules across "
-                f"{convergence.generations} generations: "
-                f"{convergence.viable_count} viable discoveries found. "
+                f"After {state.total_screened} molecules across "
+                f"{state.generations} generations: "
+                f"{state.viable_count} viable discoveries found. "
                 f"Criteria: {', '.join(reasons)}."
             ),
         },
-        "new_clusters_per_batch": convergence.new_clusters_per_batch,
+        "new_clusters_per_batch": state.new_clusters_per_batch,
         "discoveries": [
             {
                 "smiles": d.smiles,

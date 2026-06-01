@@ -117,20 +117,22 @@ def _count_fragments(mol: Chem.Mol) -> dict[str, int]:
     return counts
 
 
-def predict_dielectric_proxy(mol: Chem.Mol) -> float:
+def predict_dielectric_proxy(ctx: MoleculeContext) -> float:
     """Predict a dielectric constant proxy via fragment-additivity + TPSA cap.
+
+    Uses pre-computed TPSA from ``MoleculeContext.tpsa`` (lazy-cached).
 
     Returns:
         Unitless dielectric proxy (typically 1–15 for electrolyte solvents).
     """
+    mol = ctx.mol
     counts = _count_fragments(mol)
     value = _GC_BASE_DIELECTRIC
     for _smarts, _name, dd, _dv, _ls in _GC_FRAGMENTS:
         n = counts.get(_name, 0)
         value += n * dd
 
-    from rdkit.Chem import rdMolDescriptors
-    tpsa = rdMolDescriptors.CalcTPSA(mol)
+    tpsa = ctx.tpsa
     value += tpsa * 0.02
 
     max_diel = _GC_BASE_DIELECTRIC + tpsa * MAX_DIELECTRIC_PER_TPSA
@@ -139,27 +141,30 @@ def predict_dielectric_proxy(mol: Chem.Mol) -> float:
     return max(1.0, value)
 
 
-def predict_viscosity_proxy(mol: Chem.Mol) -> float:
+def predict_viscosity_proxy(ctx: MoleculeContext) -> float:
     """Predict a viscosity proxy via fragment-additivity.
+
+    Uses pre-computed molecular weight and rotatable bond count from
+    ``MoleculeContext`` (lazy-cached).
 
     Returns:
         Unitless viscosity proxy (typically 0.5–5.0 for electrolyte solvents).
     """
+    mol = ctx.mol
     counts = _count_fragments(mol)
     value = _GC_BASE_VISCOSITY
     for _smarts, _name, _dd, dv, _ls in _GC_FRAGMENTS:
         n = counts.get(_name, 0)
         value += n * dv
 
-    from rdkit.Chem import rdMolDescriptors
-    mw = rdMolDescriptors.CalcExactMolWt(mol)
+    mw = ctx.mw
     value += (mw - 30.0) * 0.005
-    n_rot = rdMolDescriptors.CalcNumRotatableBonds(mol)
+    n_rot = ctx.rotatable_bonds
     value += n_rot * 0.15
     return max(0.1, value)
 
 
-def predict_li_solvation_proxy(mol: Chem.Mol) -> float:
+def predict_li_solvation_proxy(ctx: MoleculeContext) -> float:
     """Predict a Li+ solvation energy proxy via fragment-additivity.
 
     Li+ solvation strength is modelled as a linear combination of
@@ -168,20 +173,22 @@ def predict_li_solvation_proxy(mol: Chem.Mol) -> float:
       - Chelation: polydentate ethers (glymes) bind Li+ more strongly
         than monodentate analogues
 
+    Uses pre-computed molecular weight from ``MoleculeContext.mw`` (lazy-cached).
+
     Returns:
         Unitless Li+ solvation proxy (typically 1.0–6.0).
             ~1.0–2.5 : weak binding (poor salt dissociation)
             ~2.5–4.5 : moderate binding (Goldilocks zone)
             ~4.5–6.0+ : strong binding (poor transference number)
     """
+    mol = ctx.mol
     counts = _count_fragments(mol)
     value = _GC_BASE_LI_SOLVATION
     for _smarts, _name, _dd, _dv, ls in _GC_FRAGMENTS:
         n = counts.get(_name, 0)
         value += n * ls
 
-    from rdkit.Chem import rdMolDescriptors
-    mw = rdMolDescriptors.CalcExactMolWt(mol)
+    mw = ctx.mw
     value += max(0.0, (mw - 50.0)) * 0.002
     return max(0.5, value)
 
@@ -647,9 +654,9 @@ class PropertyOracle:
         gap = lumo - homo
 
         # GC: bulk properties (fragment-additivity)
-        dielectric = predict_dielectric_proxy(ctx.mol)
-        viscosity = predict_viscosity_proxy(ctx.mol)
-        li_solvation = predict_li_solvation_proxy(ctx.mol)
+        dielectric = predict_dielectric_proxy(ctx)
+        viscosity = predict_viscosity_proxy(ctx)
+        li_solvation = predict_li_solvation_proxy(ctx)
 
         result: dict[str, Any] = {
             "homo_eV": round(homo, 4),

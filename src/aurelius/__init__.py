@@ -28,11 +28,7 @@ from aurelius.agent.reporting import (
     generate_discoveries_sdf,
     generate_run_summary,
 )
-from aurelius.agent.state import (
-    CheckpointManager,
-    ConvergenceChecker,
-    FeedbackAdapter,
-)
+from aurelius.agent.state import LoopState
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.oracle import PropertyOracle
 from aurelius.types import MoleculeContext, ScreeningResult
@@ -40,10 +36,8 @@ from aurelius.types import MoleculeContext, ScreeningResult
 __all__ = [
     "__version__",
     "AureliusPipeline",
-    "CheckpointManager",
-    "ConvergenceChecker",
     "DiscoveryLoop",
-    "FeedbackAdapter",
+    "LoopState",
     "MoleculeContext",
     "MutationEngine",
     "PropertyOracle",

@@ -11,6 +11,7 @@ class or the mutation engine's fragment pool.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Any
 
 import numpy as np
@@ -77,6 +78,26 @@ class MoleculeContext:
             )
         return self.fingerprint_ecfp4
 
+    @cached_property
+    def mw(self) -> float:
+        return float(Descriptors.ExactMolWt(self.mol))
+
+    @cached_property
+    def logp(self) -> float:
+        return float(Descriptors.MolLogP(self.mol))
+
+    @cached_property
+    def tpsa(self) -> float:
+        return float(Descriptors.TPSA(self.mol))
+
+    @cached_property
+    def ring_count(self) -> int:
+        return Descriptors.RingCount(self.mol)
+
+    @cached_property
+    def rotatable_bonds(self) -> int:
+        return Descriptors.NumRotatableBonds(self.mol)
+
     def get_feature_vector(self) -> np.ndarray[Any, Any]:
         """Get or compute 2053-dim feature vector (lazy).
 
@@ -93,17 +114,16 @@ class MoleculeContext:
             arr = np.zeros(2053, dtype=np.float32)
             for idx in fp.GetOnBits():
                 arr[idx] = 1.0
-            arr[2048] = Descriptors.ExactMolWt(self.mol)
-            arr[2049] = Descriptors.MolLogP(self.mol)
-            arr[2050] = Descriptors.TPSA(self.mol)
-            arr[2051] = Descriptors.RingCount(self.mol)
-            arr[2052] = Descriptors.NumRotatableBonds(self.mol)
+            arr[2048] = self.mw
+            arr[2049] = self.logp
+            arr[2050] = self.tpsa
+            arr[2051] = self.ring_count
+            arr[2052] = self.rotatable_bonds
             self.feature_vector = arr
         return self.feature_vector
 
     def is_valid_electrolyte_mol(self) -> bool:
-        mw = Descriptors.ExactMolWt(self.mol)
-        if mw < 30.0 or mw > 1000.0:
+        if self.mw < 30.0 or self.mw > 1000.0:
             return False
         h_acceptors = Descriptors.NumHAcceptors(self.mol)
         return h_acceptors >= 1
@@ -115,12 +135,6 @@ class MoleculeContext:
             if z in counts:
                 counts[z] += 1
         return counts
-
-    def get_tpsa(self) -> float:
-        return float(Descriptors.TPSA(self.mol))
-
-    def get_mw(self) -> float:
-        return float(Descriptors.ExactMolWt(self.mol))
 
 
 __all__ = [

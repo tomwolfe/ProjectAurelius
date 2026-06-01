@@ -144,26 +144,22 @@ def test_oracle_li_solvation_proxy_physical(oracle: PropertyOracle) -> None:
 
 
 def test_tpsa_based_dielectric_cap():
-    from rdkit import Chem
-
     from aurelius.scoring.oracle import predict_dielectric_proxy
 
-    small_polar = predict_dielectric_proxy(Chem.MolFromSmiles("COCCOC"))
+    small_polar = predict_dielectric_proxy(_ctx("COCCOC"))
     many_carbonates = predict_dielectric_proxy(
-        Chem.MolFromSmiles("O=C(OCCCCCCCCCCCCCCCC)OC(=O)OCCCCCCCCCCCCCCCC")
+        _ctx("O=C(OCCCCCCCCCCCCCCCC)OC(=O)OCCCCCCCCCCCCCCCC")
     )
     assert many_carbonates < 25.0, "TPSA cap should prevent unrealistically high dielectric"
     assert small_polar >= 1.0
 
 
 def test_tpsa_capped_dielectric_prevents_stacking(oracle: PropertyOracle) -> None:
-    from rdkit import Chem
-
     from aurelius.scoring.oracle import predict_dielectric_proxy
 
-    single_diel = predict_dielectric_proxy(Chem.MolFromSmiles("O=C(OCC)OC"))
+    single_diel = predict_dielectric_proxy(_ctx("O=C(OCC)OC"))
     stacked_diel = predict_dielectric_proxy(
-        Chem.MolFromSmiles("O=C(OCCCCCCCCCCCCCCCCCCCCC)OC")
+        _ctx("O=C(OCCCCCCCCCCCCCCCCCCCCC)OC")
     )
     assert stacked_diel <= single_diel * 2.0 + 2.0, (
         "TPSA cap should prevent linear stacking of dielectric contribution"
