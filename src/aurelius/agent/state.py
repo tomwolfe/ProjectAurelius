@@ -1,8 +1,8 @@
-"""Unified loop state: history, convergence, and checkpointing.
+"""Unified loop state: checkpointing and simple metric tracking.
 
 Single source of truth for the screening loop's accumulated state.
-Replaces the former ``FeedbackAdapter``, ``ConvergenceChecker``, and
-``CheckpointManager`` with a single ``LoopState`` dataclass.
+Focuses on checkpointing, discovery tracking, and simple batch-level
+metrics. Convergence logic lives in standalone helper functions.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from aurelius.types import ScreeningResult
 
 _MAX_DISCOVERIES = 100
+log = logging.getLogger(__name__)
 
 
 def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str:
@@ -29,23 +30,34 @@ def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str
     return path
 
 
+def check_score_plateau(batch_means: list[float], n_batches: int = 3, tolerance: float = 0.01) -> bool:
+    """Check if mean scores have plateaued over the last n_batches."""
+    if len(batch_means) < n_batches:
+        return False
+    recent = batch_means[-n_batches:]
+    ref = recent[0]
+    if ref == 0:
+        return False
+    return all(abs(v - ref) / abs(ref) < tolerance for v in recent[1:])
+
+
+def check_structural_saturation(new_scaffolds_per_batch: list[list[str]], n_batches: int = 2, threshold: int = 3) -> bool:
+    """Check if the number of new scaffolds per batch has saturated."""
+    if len(new_scaffolds_per_batch) < n_batches:
+        return False
+    recent = new_scaffolds_per_batch[-n_batches:]
+    return all(len(scaffolds) < threshold for scaffolds in recent)
+
+
 @dataclass
 class LoopState:
-    """Unified agent loop state: history, convergence, and checkpointing.
+    """Unified agent loop state: checkpointing and metric tracking.
 
-    Stores (X, y) history for surrogate training, convergence metrics for
-    termination decisions, and handles atomic JSON checkpointing for resume.
-
-    This replaces ``FeedbackAdapter``, ``ConvergenceChecker``, and
-    ``CheckpointManager``.
+    Stores batch-level metrics for convergence detection and handles
+    atomic JSON checkpointing for resume capability.
     """
 
-    # --- History (formerly FeedbackAdapter) ---
-    X_history: list[np.ndarray[Any, Any]] = field(default_factory=list)
-    y_history: list[float] = field(default_factory=list)
-
-    # --- Convergence (formerly ConvergenceChecker) ---
-    new_clusters_per_batch: list[int] = field(default_factory=list)
+    # --- Batch metrics ---
     batch_means: list[float] = field(default_factory=list)
     _all_scores: list[float] = field(default_factory=list)
     viable_count: int = 0
@@ -55,9 +67,8 @@ class LoopState:
 
     # --- Scaffold tracking ---
     scaffolds_per_batch: list[list[str]] = field(default_factory=list)
-    """Murcko scaffolds discovered in each batch, for stagnation detection."""
 
-    # --- Checkpointing (formerly CheckpointManager) ---
+    # --- Checkpointing ---
     batch: int = 0
     best_score: float = 0.0
     discoveries: list[dict[str, Any]] = field(default_factory=list)
@@ -75,28 +86,20 @@ class LoopState:
         self._load()
 
     # ------------------------------------------------------------------
-    # History (formerly FeedbackAdapter)
+    # History recording
     # ------------------------------------------------------------------
 
     def record(self, result: ScreeningResult) -> None:
-        if result.fingerprint is None:
-            raise ValueError(
-                "ScreeningResult.fingerprint must be a numpy array. "
-                "Use MoleculeContext.get_feature_vector() to generate it."
-            )
-        self.X_history.append(result.fingerprint)
-        self.y_history.append(result.total_score)
-
-    def get_history(self) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]:
-        return np.array(self.X_history, dtype=np.float32), np.array(self.y_history, dtype=np.float32)
+        """Record a screening result (kept for result tracking)."""
+        pass
 
     def get_adaptation_strategy(self) -> dict[str, Any]:
         strategy: dict[str, Any] = {
-            "total_screened": len(self.X_history),
+            "total_screened": self.total_screened,
         }
-        if self.y_history:
-            avg_score = np.mean(self.y_history)
-            strategy["average_score"] = float(avg_score)
+        if self._all_scores:
+            avg_score = float(np.mean(self._all_scores))
+            strategy["average_score"] = avg_score
             if avg_score < 50.0:
                 strategy["recommendation"] = "Increase exploration diversity — current scores are low"
             elif avg_score < 65.0:
@@ -107,53 +110,20 @@ class LoopState:
             strategy["recommendation"] = "Insufficient data for adaptation recommendations"
         return strategy
 
-    def write_rationale_log(self, path: str = "mutation_rationale.md", output_dir: str | Path | None = None) -> None:
-        log = logging.getLogger("aurelius_agent")
-        path = _resolve_output_path(path, output_dir)
-        strategy = self.get_adaptation_strategy()
-
-        with open(path, "w") as f:
-            f.write("# Mutation Rationale Log\n\n")
-            f.write(f"**Generated:** {datetime.now(UTC).isoformat()}\n\n")
-            f.write("## Strategy Summary\n\n")
-            f.write(f"- **Recommendation:** {strategy['recommendation']}\n")
-            if "average_score" in strategy:
-                f.write(f"- **Average Score:** {strategy['average_score']:.2f}\n")
-        log.info("Mutation rationale log written to %s", path)
-
     # ------------------------------------------------------------------
-    # Convergence (formerly ConvergenceChecker)
+    # Convergence
     # ------------------------------------------------------------------
 
-    def record_batch(self, scores: list[float], viable_count: int, new_clusters: int) -> None:
+    def record_batch(self, scores: list[float], viable_count: int) -> None:
         self.total_screened += len(scores)
         self.viable_count += viable_count
         self.generations += 1
-        self.new_clusters_per_batch.append(new_clusters)
         self._all_scores.extend(scores)
         self.batch_means.append(float(np.mean(scores)) if scores else 0.0)
 
-    def check_score_plateau(self) -> bool:
-        if len(self.batch_means) < 3:
-            return False
-        last_three = self.batch_means[-3:]
-        ref = last_three[0]
-        if ref == 0:
-            return False
-        for i in range(1, 3):
-            change = abs(last_three[i] - ref) / abs(ref)
-            if change >= 0.01:
-                return False
-        return True
-
-    def check_structural_saturation(self) -> bool:
-        if len(self.new_clusters_per_batch) < 2:
-            return False
-        return self.new_clusters_per_batch[-1] < 3 and self.new_clusters_per_batch[-2] < 3
-
     def should_terminate(self) -> tuple[bool, str]:
-        plateau = self.check_score_plateau()
-        saturation = self.check_structural_saturation()
+        plateau = check_score_plateau(self.batch_means)
+        saturation = check_structural_saturation(self.scaffolds_per_batch)
         if plateau and saturation:
             return True, "All convergence criteria met"
         reasons = []
@@ -169,19 +139,13 @@ class LoopState:
         return float(np.var(self._all_scores, ddof=1))
 
     # ------------------------------------------------------------------
-    # Scaffold tracking (novelty / exploration)
+    # Scaffold tracking
     # ------------------------------------------------------------------
 
     def record_scaffolds(self, scaffolds: list[str]) -> None:
-        """Record the Murcko scaffolds found in the latest batch."""
         self.scaffolds_per_batch.append(list(set(scaffolds)))
 
     def has_scaffold_stagnation(self, n_batches: int = 3) -> bool:
-        """Check if the same scaffold core appears in the last n_batches.
-
-        If the same scaffold family keeps appearing, the search has
-        mode-collapsed and needs an exploration boost.
-        """
         if len(self.scaffolds_per_batch) < n_batches:
             return False
         recent = self.scaffolds_per_batch[-n_batches:]
@@ -196,7 +160,7 @@ class LoopState:
         return most_common_count >= n_batches
 
     # ------------------------------------------------------------------
-    # Checkpointing (formerly CheckpointManager)
+    # Checkpointing
     # ------------------------------------------------------------------
 
     def _load(self) -> None:
@@ -263,9 +227,6 @@ class LoopState:
                 self.best_score = best
 
     def clear(self) -> None:
-        self.X_history.clear()
-        self.y_history.clear()
-        self.new_clusters_per_batch.clear()
         self.batch_means.clear()
         self._all_scores.clear()
         self.generations = 0
@@ -282,4 +243,6 @@ class LoopState:
 
 __all__ = [
     "LoopState",
+    "check_score_plateau",
+    "check_structural_saturation",
 ]

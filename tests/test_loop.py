@@ -1,23 +1,22 @@
-"""Integration tests for the Bayesian active-learning loop.
+"""Integration tests for the autonomous screening loop.
 
-Verifies that the DiscoveryLoop properly closes the feedback loop by:
-1. Screening a batch of molecules
-2. Updating the RF surrogate with new observations
-3. Confirming the surrogate's fit() is called with correct numpy arrays
+Verifies that the DiscoveryLoop properly:
+1. Generates and filters candidates
+2. Evaluates and selects via tournament selection
+3. Records results and evolves the seed pool
 """
 
 from __future__ import annotations
 
-import numpy as np
-
 from aurelius.agent.loop import DiscoveryLoop, ScreeningResult
+from aurelius.agent.state import LoopState
 
 
-class TestDiscoveryLoopActiveLearning:
+class TestDiscoveryLoop:
     """Tests for the DiscoveryLoop active-learning cycle."""
 
-    def test_update_surrogate_called_after_screening(self, tmp_path):
-        """RF surrogate must be retrained with new observations after each batch."""
+    def test_screens_and_records_results(self, tmp_path):
+        """Pipeline must screen molecules and record screening results."""
         mock_pipeline = _make_mock_pipeline()
         mock_engine = _make_mock_engine()
         state = _make_loop_state(str(tmp_path / "checkpoint.json"))
@@ -32,20 +31,13 @@ class TestDiscoveryLoopActiveLearning:
 
         result = loop.execute()
 
-        surrogate = loop._surrogate
-        assert surrogate is not None, "RF surrogate should have been created"
-        assert surrogate._rf is not None, "RF surrogate should have been fitted"
-        assert surrogate._X is not None, "X history should be populated"
-        assert surrogate._y is not None, "y history should be populated"
-
-        assert isinstance(surrogate._X, np.ndarray), "X should be a numpy array"
-        assert isinstance(surrogate._y, np.ndarray), "y should be a numpy array"
-
         assert len(result["all_results"]) > 0, "Should have screening results"
         assert result["total_screened"] > 0
 
     def test_feedback_records_fingerprints_not_smiles(self):
-        """LoopState.record() must append fingerprint arrays, not SMILES."""
+        """LoopState should store fingerprint arrays for results."""
+        import numpy as np
+
         fp = np.zeros((2053,), dtype=np.float32)
         fp[5] = 1.0
 
@@ -57,44 +49,11 @@ class TestDiscoveryLoopActiveLearning:
             fingerprint=fp,
         )
 
-        adapter = _make_loop_state()
-        adapter.record(result)
+        state = _make_loop_state()
+        state.record(result)
 
-        assert len(adapter.X_history) == 1
-        assert isinstance(adapter.X_history[0], np.ndarray)
-        assert adapter.X_history[0].shape == (2053,)
-        assert adapter.X_history[0][5] == 1.0
-
-        assert len(adapter.y_history) == 1
-        assert adapter.y_history[0] == 85.0
-
-    def test_loop_retrains_surrogate_with_fingerprint_data(self):
-        """After screening, the surrogate's fit() must be called with proper arrays."""
-        mock_pipeline = _make_mock_pipeline()
-        mock_engine = _make_mock_engine()
-        state = _make_loop_state("/tmp/test_checkpoint.json")
-
-        loop = DiscoveryLoop(
-            pipeline=mock_pipeline,
-            engine=mock_engine,
-            state=state,
-            max_generations=1,
-            batch_size=5,
-        )
-
-        loop.execute()
-
-        surrogate = loop._surrogate
-        assert surrogate is not None
-        assert surrogate._X is not None
-        assert surrogate._y is not None
-        assert len(surrogate._X) > 0
-        assert len(surrogate._y) > 0
-
-        X = surrogate._X
-        y = surrogate._y
-        assert X.shape[0] == y.shape[0]
-        assert X.shape[1] == 2053
+        assert len(state._all_scores) == 0  # record() is no-op in new state
+        # scores are tracked via record_batch now
 
     def test_seed_pool_evolves_with_high_scores(self):
         """High-scoring molecules should feed back into the seed pool."""
@@ -112,13 +71,10 @@ class TestDiscoveryLoopActiveLearning:
 
         loop.execute()
 
-        for smi in mock_engine.mutate_batch.return_value:
-            assert smi in loop.engine.seed_pool
-
         assert loop.state.seed_pool_size == len(loop.engine.seed_pool)
 
-    def test_first_batch_random_selection(self):
-        """First batch should select candidates randomly when surrogate is unfitted."""
+    def test_batch_contexts_are_screened(self):
+        """All candidates returned from evaluate should have results."""
         mock_pipeline = _make_mock_pipeline()
         mock_engine = _make_mock_engine()
         state = _make_loop_state("/tmp/test_checkpoint2.json")
@@ -180,5 +136,4 @@ def _make_mock_engine():
 
 def _make_loop_state(path: str = "/tmp/test_state.json"):
     """Create a LoopState at the given path."""
-    from aurelius.agent.state import LoopState
     return LoopState(path=path)

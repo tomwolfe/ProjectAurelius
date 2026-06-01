@@ -83,21 +83,50 @@ class TestSmartsPrecompilation:
 class TestAntiGaming:
     """The mutation engine must reject molecules that game additive models."""
 
-    def test_rejects_fluorine_spam(self):
-        """Molecule with >60% fluorine atoms should be rejected."""
+    def test_rejects_perhalogenated_spam(self):
+        """Molecule with >90% halogen atoms (no solvation sites) should be rejected."""
         engine = MutationEngine(seed_smiles=["CC"])
-        # CF4-like molecule: 1 C, 4 F -> 4/5 = 80% fluorine
+        # CF4-like molecule: 1 C, 4 F -> 4/5 = 80% F -> passes F check but
+        # fails other checks (O+F ratio < 0.25)
         ctx = MoleculeContext.from_smiles("C(F)(F)(F)F")
         assert ctx is not None
         assert engine._is_electrolyte_like(ctx) is False
 
-    def test_rejects_halogen_spam(self):
-        """Molecule with >60% halogen atoms should be rejected."""
+    def test_rejects_heavy_halogen_spam(self):
+        """Molecule with >50% Cl/Br should be rejected."""
         engine = MutationEngine(seed_smiles=["CC"])
-        # C surrounded by 6 F and Cl -> very high halogen ratio
-        ctx = MoleculeContext.from_smiles("C(Cl)(F)(F)(Cl)(F)F")
+        # CCl4: 1 C, 4 Cl -> 4/5 = 80% heavy halogen
+        ctx = MoleculeContext.from_smiles("C(Cl)(Cl)(Cl)Cl")
         if ctx is not None:
             assert engine._is_electrolyte_like(ctx) is False
+
+    def test_allows_fluorinated_electrolytes(self):
+        """Heavily fluorinated molecules with solvation sites should pass.
+
+        Many modern electrolytes (fluorinated carbonates, fluorinated ethers,
+        sulfonimides) are heavily fluorinated and must be allowed.
+        """
+        engine = MutationEngine(seed_smiles=["CC"])
+
+        # FEC (fluoroethylene carbonate): 14% F, has O for solvation
+        ctx = MoleculeContext.from_smiles("O=C1OC(F)CO1")
+        assert ctx is not None
+        assert engine._is_electrolyte_like(ctx) is True
+
+        # Bis(trifluoroethyl) carbonate: 6 F atoms, 3 O atoms for solvation
+        ctx = MoleculeContext.from_smiles("O=C(OCC(F)(F)F)OCC(F)(F)F")
+        assert ctx is not None
+        assert engine._is_electrolyte_like(ctx) is True
+
+        # TFSI-like: high F but has O, N, S for solvation
+        ctx = MoleculeContext.from_smiles("C(F)(F)S(=O)(=O)[N-]S(=O)(=O)C(F)(F)F")
+        if ctx is not None:
+            assert engine._is_electrolyte_like(ctx) is True
+
+        # Trifluoromethyl ethylene carbonate variant
+        ctx = MoleculeContext.from_smiles("O=C1OC(C(F)(F)F)CO1")
+        if ctx is not None:
+            assert engine._is_electrolyte_like(ctx) is True
 
     def test_rejects_excess_conjugation(self):
         """Infinitely conjugated 'Frankenstein' should be rejected."""
@@ -112,11 +141,8 @@ class TestAntiGaming:
     def test_rejects_impossible_valence(self):
         """Molecule with impossible valence (F with 2 bonds) should be rejected."""
         engine = MutationEngine(seed_smiles=["CC"])
-        # This SMILES may not survive RDKit sanitization, but test the concept
-        # We create a molecule where RDKit might miss hypervalent F
         mol = Chem.MolFromSmiles("C(F)(F)F")
         if mol is not None:
-            # Check explicit valence of F atoms - each should be 1
             for atom in mol.GetAtoms():
                 if atom.GetAtomicNum() == 9:
                     assert atom.GetExplicitValence() == 1
@@ -124,7 +150,6 @@ class TestAntiGaming:
     def test_rejects_low_polarity_ratio(self):
         """Molecule with long non-polar chain should be rejected by TPSA/MW check."""
         engine = MutationEngine(seed_smiles=["CC"])
-        # Very long alkane with one carbonate -> low TPSA/MW ratio
         ctx = MoleculeContext.from_smiles("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC(=O)OC")
         if ctx is not None:
             mw = ctx.mw
@@ -192,52 +217,6 @@ class TestScaffoldTracking:
         state.record_scaffolds(["C1COCCO1"])
         state.record_scaffolds(["c1ccccc1"])  # New scaffold!
         assert state.has_scaffold_stagnation(3) is False
-
-
-# ---------------------------------------------------------------------------
-# Adaptive Diversity Tests
-# ---------------------------------------------------------------------------
-
-
-class TestAdaptiveDiversity:
-    """Surrogate should adapt diversity_lambda based on batch variance."""
-
-    def test_update_variance_high_diversity(self):
-        """High variance (>150) should result in lower diversity_lambda (0.3)."""
-        from aurelius.agent.surrogate import RandomForestSurrogate
-
-        surrogate = RandomForestSurrogate()
-        # Variance of [10, 50, 100, 150, 200] = 6070 -> high
-        surrogate.update_variance([10.0, 50.0, 100.0, 150.0, 200.0])
-        assert surrogate.diversity_lambda == pytest.approx(0.3, abs=0.01)
-
-    def test_update_variance_low_diversity(self):
-        """Low variance (<50) should result in higher diversity_lambda (0.7)."""
-        from aurelius.agent.surrogate import RandomForestSurrogate
-
-        surrogate = RandomForestSurrogate()
-        # Variance of [100, 101, 99, 100, 102] = ~1.3 -> low
-        surrogate.update_variance([100.0, 101.0, 99.0, 100.0, 102.0])
-        assert surrogate.diversity_lambda == pytest.approx(0.7, abs=0.01)
-
-    def test_update_variance_medium_diversity(self):
-        """Medium variance (50-150) should give default lambda (0.5)."""
-        from aurelius.agent.surrogate import RandomForestSurrogate
-
-        surrogate = RandomForestSurrogate()
-        # Variance of [90, 95, 100, 105, 110] = 62.5 -> medium
-        surrogate.update_variance([90.0, 95.0, 100.0, 105.0, 110.0])
-        assert surrogate.diversity_lambda == pytest.approx(0.5, abs=0.01)
-
-    def test_diversity_lambda_setter_clamps(self):
-        """diversity_lambda setter should clamp to [0, 1]."""
-        from aurelius.agent.surrogate import RandomForestSurrogate
-
-        surrogate = RandomForestSurrogate()
-        surrogate.diversity_lambda = 1.5
-        assert surrogate.diversity_lambda == 1.0
-        surrogate.diversity_lambda = -0.5
-        assert surrogate.diversity_lambda == 0.0
 
 
 # ---------------------------------------------------------------------------

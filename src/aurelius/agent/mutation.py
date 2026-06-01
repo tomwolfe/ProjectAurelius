@@ -419,18 +419,34 @@ class MutationEngine:
             if ratio < ELECTROLYTE_MIN_HETEROATOM_RATIO:
                 return False
 
-        # Halogen spam filter: reject molecules where fluorine > 60% of heavy atoms.
-        # Prevents mutation engine from replacing every hydrogen with fluorine
-        # to artificially inflate scores (e.g., "CF" spam).
+        # Halogen content check: reject molecules where halogens dominate
+        # without providing solvation capability. Many effective battery
+        # electrolytes (fluorinated carbonates, sulfonimides, fluorinated
+        # ethers) are heavily fluorinated, so a blanket >60% F rejection
+        # is chemically inaccurate.
         n_f = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 9)
-        if n_total_heavy > 0 and n_f / n_total_heavy > 0.6:
-            return False
-
         n_cl = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 17)
         n_br = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 35)
         n_halogen = n_f + n_cl + n_br
-        if n_total_heavy > 0 and n_halogen / n_total_heavy > 0.6:
-            return False
+
+        if n_total_heavy > 0:
+            halogen_ratio = n_halogen / n_total_heavy
+            # Extreme case: >90% halogen = perhalogenated, no electrolyte character
+            if halogen_ratio > 0.9:
+                return False
+            # Heavy halogen (Cl, Br) spam: these are rare in electrolyte design
+            n_heavy_halogen = n_cl + n_br
+            if n_total_heavy > 0 and n_heavy_halogen / n_total_heavy > 0.5:
+                return False
+            # High fluorine with insufficient solvation sites: reject only if
+            # fluorine dominates AND there are no O or N atoms for Li+ solvation.
+            # This allows heavily fluorinated ethers, carbonates, and
+            # sulfonimides (which have O/N for solvation) while still
+            # rejecting perfluorocarbon chains (e.g. "CF" spam).
+            n_o = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 8)
+            n_n = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 7)
+            if n_halogen > n_total_heavy * 0.6 and (n_o + n_n) == 0:
+                return False
 
         # Electrochemical stability: reject molecules with unstable motifs
         for pattern, _name in _EC_UNSTABLE_PATTERNS:
