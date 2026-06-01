@@ -24,6 +24,34 @@ from aurelius.types import MoleculeContext
 log = logging.getLogger(__name__)
 
 
+def _adjusted_score(idx: int, scores: list[float], fps_list: list, selected_fps: list, diversity_lambda: float) -> float:
+    """Compute diversity-penalised score for a candidate."""
+    if not selected_fps:
+        return scores[idx]
+    fp = fps_list[idx]
+    max_sim = max(TanimotoSimilarity(fp, sfp) for sfp in selected_fps)
+    return scores[idx] * (1.0 - diversity_lambda * max_sim)
+
+
+def _best_in_tournament(
+    tournament: list[int],
+    scores: list[float],
+    fps_list: list,
+    selected_fps: list,
+    diversity_lambda: float,
+) -> tuple[int, float]:
+    """Find the best candidate in a tournament, adjusted for diversity."""
+    best_idx = max(tournament, key=lambda i: scores[i])
+    best_adj = _adjusted_score(best_idx, scores, fps_list, selected_fps, diversity_lambda)
+
+    for i in tournament:
+        adj = _adjusted_score(i, scores, fps_list, selected_fps, diversity_lambda)
+        if adj > best_adj:
+            best_adj = adj
+            best_idx = i
+    return best_idx, best_adj
+
+
 def tournament_select(
     contexts: list[MoleculeContext],
     scores: list[float],
@@ -37,17 +65,6 @@ def tournament_select(
     Each round picks ``tournament_size`` random candidates and selects the
     best-scoring one, then applies a Tanimoto diversity penalty to avoid
     selecting near-identical molecules.
-
-    Args:
-        contexts: List of candidate MoleculeContext objects.
-        scores: Corresponding Oracle scores (same length as contexts).
-        batch_size: Number of candidates to select.
-        tournament_size: Number of candidates in each tournament.
-        diversity_lambda: Strength of the diversity penalty (0 = none, 1 = max).
-        rng_seed: Random seed for reproducibility.
-
-    Returns:
-        List of selected MoleculeContext objects (length <= batch_size).
     """
     n = len(contexts)
     if n == 0:
@@ -56,6 +73,7 @@ def tournament_select(
         return list(contexts)
 
     rng = random.Random(rng_seed)
+    fps_list = [ctx.get_ecfp4() for ctx in contexts]
     selected: list[MoleculeContext] = []
     selected_fps: list[Any] = []
     used_indices: set[int] = set()
@@ -66,32 +84,11 @@ def tournament_select(
             break
 
         tournament = rng.sample(pool, min(tournament_size, len(pool)))
-        best_idx = max(tournament, key=lambda i: scores[i])
-        best_adj = scores[best_idx]
-
-        if selected_fps:
-            fp_best = contexts[best_idx].get_ecfp4()
-            max_sim_best = max(
-                TanimotoSimilarity(fp_best, sfp) for sfp in selected_fps
-            )
-            best_adj = scores[best_idx] * (1.0 - diversity_lambda * max_sim_best)
-
-            for i in tournament:
-                if i in used_indices:
-                    continue
-                fp_i = contexts[i].get_ecfp4()
-                max_sim_i = max(
-                    TanimotoSimilarity(fp_i, sfp) for sfp in selected_fps
-                )
-                adj = scores[i] * (1.0 - diversity_lambda * max_sim_i)
-                if adj > best_adj:
-                    best_adj = adj
-                    best_idx = i
+        best_idx, _ = _best_in_tournament(tournament, scores, fps_list, selected_fps, diversity_lambda)
 
         used_indices.add(best_idx)
-        ctx = contexts[best_idx]
-        selected.append(ctx)
-        selected_fps.append(ctx.get_ecfp4())
+        selected.append(contexts[best_idx])
+        selected_fps.append(fps_list[best_idx])
 
     return selected
 

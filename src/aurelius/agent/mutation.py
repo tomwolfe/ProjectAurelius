@@ -217,24 +217,28 @@ def heteroatom_ratio_min(ctx: MoleculeContext) -> bool:
     return o_f / n_total >= ELECTROLYTE_MIN_HETEROATOM_RATIO
 
 
+def _count_by_atomic_num(mol: Chem.Mol, nums: set[int]) -> int:
+    return sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() in nums)
+
+
+_HALOGEN_NUMS: set[int] = {9, 17, 35}
+_HEAVY_HALOGEN_NUMS: set[int] = {17, 35}
+_OXYGEN_NITROGEN: set[int] = {7, 8}
+
+
 @_register
 def halogen_ratio_limit(ctx: MoleculeContext) -> bool:
-    n_total = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() > 1)
+    n_total = _count_by_atomic_num(ctx.mol, set(range(2, 118)))
     if n_total == 0:
         return True
-    n_f = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 9)
-    n_cl = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 17)
-    n_br = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 35)
-    n_halogen = n_f + n_cl + n_br
-    n_heavy_halogen = n_cl + n_br
+    n_halogen = _count_by_atomic_num(ctx.mol, _HALOGEN_NUMS)
+    n_heavy = _count_by_atomic_num(ctx.mol, _HEAVY_HALOGEN_NUMS)
     if n_halogen / n_total > 0.9:
         return False
-    if n_heavy_halogen / n_total > 0.5:
+    if n_heavy / n_total > 0.5:
         return False
     if n_halogen > n_total * 0.6:
-        n_o = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 8)
-        n_n = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 7)
-        if n_o + n_n == 0:
+        if _count_by_atomic_num(ctx.mol, _OXYGEN_NITROGEN) == 0:
             return False
     return True
 
@@ -323,61 +327,69 @@ class MutationEngine:
     """
 
     def __init__(self, seed_smiles: list[str] | None = None, known_fps_hex: list[str] | None = None) -> None:
-        if seed_smiles is None:
-            import json
-            import os
+        self.seed_pool, self.seed_contexts, self.seed_fingerprints = self._init_seeds(seed_smiles)
 
-            json_path = os.path.join(os.path.dirname(__file__), "..", "data", "tier0_seed_smiles.json")
-            with open(json_path) as f:
-                seed_smiles = json.load(f)
-        self.seed_pool: list[str] = list(set(seed_smiles))
-
-        # Pre-parse seeds into MoleculeContext for fingerprint generation
-        self.seed_contexts: list[MoleculeContext] = []
-        self.seed_fingerprints: list[Any] = []
-        for smi in self.seed_pool:
-            ctx = MoleculeContext.from_smiles(smi)
-            if ctx is not None:
-                self.seed_contexts.append(ctx)
-                self.seed_fingerprints.append(ctx.get_ecfp4())
-
-        # Static commercial electrolyte fingerprints (loaded once from JSON)
-        self._commercial_fps: list[Any] = []
+        self._commercial_fps = []
         for h in known_fps_hex or []:
             try:
                 self._commercial_fps.append(_deserialize_fp(h))
             except Exception:
                 continue
 
-        # Canonical SMILES sets for O(1) exact duplicate prevention
-        self._seed_smiles: set[str] = set()
-        self._known_smiles: set[str] = set()
-        self._generated_smiles: set[str] = set()
-        self._seed_scaffolds: set[str] = set()
+        self._seed_smiles, self._seed_scaffolds = self._init_smiles_and_scaffolds()
+
+        self._known_smiles = set()
+        self._load_known_electrolytes()
+
+        self._generated_smiles = set()
+        self._harvested_fragments = []
+        self._harvested_fragment_set = set()
+        self._rng = np.random.default_rng(42)
+        self._smarts_rxns = self._init_smarts_rxns()
+
+    @staticmethod
+    def _init_seeds(seed_smiles: list[str] | None) -> tuple[list[str], list[MoleculeContext], list]:
+        from pathlib import Path
+        if seed_smiles is None:
+            import json
+            json_path = str(Path(__file__).resolve().parent.parent / "data" / "tier0_seed_smiles.json")
+            with open(json_path) as f:
+                seed_smiles = json.load(f)
+        pool = list(set(seed_smiles))
+        contexts = []
+        fps = []
+        for smi in pool:
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is not None:
+                contexts.append(ctx)
+                fps.append(ctx.get_ecfp4())
+        return pool, contexts, fps
+
+    def _init_smiles_and_scaffolds(self) -> tuple[set[str], set[str]]:
+        smiles_set = set()
+        scaffold_set = set()
         for ctx in self.seed_contexts:
             try:
                 canon = Chem.MolToSmiles(ctx.mol)
-                self._seed_smiles.add(canon)
+                smiles_set.add(canon)
                 if MurckoScaffold is not None:
                     scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
                     if scaffold:
-                        self._seed_scaffolds.add(scaffold)
+                        scaffold_set.add(scaffold)
             except Exception:
                 continue
+        return smiles_set, scaffold_set
 
-        self._load_known_electrolytes()
-        # Dynamic fragment pool: harvested from high-scoring discoveries
-        # Capped at _MAX_HARVESTED_FRAGMENTS to prevent memory bloat
-        self._harvested_fragments: list[str] = []
-        self._harvested_fragment_set: set[str] = set()
-        self._rng = np.random.default_rng(42)
-        self._smarts_rxns: list[tuple[Any, str]] = []
+    @staticmethod
+    def _init_smarts_rxns() -> list[tuple[Any, str]]:
+        rxns = []
         for smarts, name in ELECTROLYTE_SMARTS:
             try:
                 rxn = AllChem.ReactionFromSmarts(smarts)
-                self._smarts_rxns.append((rxn, name))
+                rxns.append((rxn, name))
             except Exception:
                 logger.debug("Failed to parse SMARTS '%s' (%s)", smarts, name)
+        return rxns
 
     def _load_known_electrolytes(self) -> None:
         """Load known commercial electrolytes into the fingerprint database."""
@@ -427,6 +439,22 @@ class MutationEngine:
             except Exception:
                 pass
 
+    def _eligible_for_harvest(self, frag_smi: str) -> MoleculeContext | None:
+        """Check if a fragment is eligible for harvesting.
+
+        Returns the MoleculeContext if eligible, None otherwise.
+        """
+        if frag_smi in self._harvested_fragment_set:
+            return None
+        if frag_smi in ELECTROLYTE_FRAGMENT_POOL:
+            return None
+        f_ctx = MoleculeContext.from_smiles(frag_smi)
+        if f_ctx is None or f_ctx.mw > 250 or f_ctx.hbd > 0:
+            return None
+        if self._harvested_fragments and self._fragment_too_similar(frag_smi, self._harvested_fragments, threshold=0.85):
+            return None
+        return f_ctx
+
     def harvest_fragments(self, smiles: str) -> None:
         """Extract BRICS fragments from a high-scoring molecule for future reassembly.
 
@@ -442,20 +470,8 @@ class MutationEngine:
         if ctx is None:
             return
         try:
-            frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
-            for frag_smi in frag_smiles:
-                if frag_smi in self._harvested_fragment_set:
-                    continue
-                if frag_smi in ELECTROLYTE_FRAGMENT_POOL:
-                    continue
-                f_ctx = MoleculeContext.from_smiles(frag_smi)
-                if f_ctx is None:
-                    continue
-                if f_ctx.mw > 250:
-                    continue
-                if f_ctx.hbd > 0:
-                    continue
-                if self._harvested_fragments and self._fragment_too_similar(frag_smi, self._harvested_fragments, threshold=0.85):
+            for frag_smi in BRICS.BRICSDecompose(ctx.mol):
+                if self._eligible_for_harvest(frag_smi) is None:
                     continue
                 self._harvested_fragments.append(frag_smi)
                 self._harvested_fragment_set.add(frag_smi)
@@ -486,6 +502,75 @@ class MutationEngine:
         """Total fragments available for BRICS reassembly (static + harvested)."""
         return len(ELECTROLYTE_FRAGMENT_POOL) + len(self._harvested_fragments)
 
+    @staticmethod
+    def _is_trivial_alkyl_extension(
+        ctx: MoleculeContext,
+        seed_smiles: list[str],
+        seed_fingerprints: list,
+        min_extra_carbons: int = 2,
+    ) -> bool:
+        """Check if the molecule is just an alkyl extension of any seed.
+
+        A molecule is a trivial alkyl extension if it has the same
+        heteroatom profile (same count of each heteroatom type) as a seed
+        but at least ``min_extra_carbons`` more carbon atoms.
+
+        This catches cases like DMC -> DPC (same 3 oxygens, 4 extra carbons)
+        while allowing single-carbon functionalizations (DMC -> EMC).
+
+        Physical basis: adding methylene groups to an existing electrolyte
+        scaffold does not create genuinely novel chemistry — it just extends
+        an alkyl chain, which is the simplest and most obvious mutation.
+        """
+        def _heteroatom_profile(mol: Chem.Mol) -> dict[int, int]:
+            profile: dict[int, int] = {}
+            for a in mol.GetAtoms():
+                z = a.GetAtomicNum()
+                if z in {7, 8, 9, 15, 16, 17, 35}:
+                    profile[z] = profile.get(z, 0) + 1
+            return profile
+
+        def _count_carbons(mol: Chem.Mol) -> int:
+            return sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6)
+
+        ctx_profile = _heteroatom_profile(ctx.mol)
+        ctx_c = _count_carbons(ctx.mol)
+
+        for seed_smi in seed_smiles:
+            seed_ctx = MoleculeContext.from_smiles(seed_smi)
+            if seed_ctx is None:
+                continue
+            seed_profile = _heteroatom_profile(seed_ctx.mol)
+            if ctx_profile == seed_profile:
+                seed_c = _count_carbons(seed_ctx.mol)
+                if ctx_c >= seed_c + min_extra_carbons:
+                    return True
+
+        return False
+
+    def _is_known_smiles(self, canon: str) -> bool:
+        """O(1) exact SMILES dedup check against seeds, knowns, and generated."""
+        return canon in self._seed_smiles or canon in self._known_smiles or canon in self._generated_smiles
+
+    def _is_novel_scaffold(self, ctx: MoleculeContext) -> bool:
+        """Check if the Murcko scaffold is novel vs the seed pool."""
+        if MurckoScaffold is None or not self._seed_scaffolds:
+            return True
+        try:
+            scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
+            if scaffold and scaffold in self._seed_scaffolds:
+                return False
+        except Exception:
+            pass
+        return True
+
+    def _is_novel_vs_commercial(self, fp: Any) -> bool:
+        """ECFP4 Tanimoto check against known commercial electrolytes only."""
+        if not self._commercial_fps:
+            return True
+        sims = BulkTanimotoSimilarity(fp, self._commercial_fps)
+        return not any(s >= 0.85 for s in sims)
+
     def _novelty_check(self, ctx: MoleculeContext, check_scaffold: bool = True) -> bool:
         """Return True if molecule is novel.
 
@@ -496,47 +581,47 @@ class MutationEngine:
              commercial electrolytes* only (static, small list).
           3. Optionally, its Murcko scaffold is not in the seed scaffold set
              (prevents rediscovery of known structural cores).
+          4. It is not a trivial alkyl chain extension of any seed.
 
         The Tanimoto check against generated molecules has been intentionally
         removed — exact SMILES matching (O(1)) handles intra-run dedup.
-        This prevents the O(N) performance crawl that occurred when every
-        generated molecule was appended to the fingerprint database.
         """
-        # O(1) canonical SMILES exact match (seeds, knowns, generated)
         try:
             canon = Chem.MolToSmiles(ctx.mol)
         except Exception:
             return False
-        if canon in self._seed_smiles:
+        if self._is_known_smiles(canon):
             return False
-        if canon in self._known_smiles:
+        if check_scaffold and not self._is_novel_scaffold(ctx):
             return False
-        if canon in self._generated_smiles:
+        if check_scaffold and self._is_trivial_alkyl_extension(ctx, self.seed_pool, self.seed_fingerprints):
             return False
-
-        # Murcko scaffold novelty check
-        if check_scaffold and MurckoScaffold is not None and self._seed_scaffolds:
-            try:
-                scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
-                if scaffold and scaffold in self._seed_scaffolds:
-                    return False
-            except Exception:
-                pass
-
-        # Tanimoto check against *known commercial electrolytes only*
-        # (static list, never grows — no O(N) bottleneck)
         fp = ctx.get_ecfp4()
-        if self._commercial_fps:
-            from rdkit.DataStructs import BulkTanimotoSimilarity
-            sims = BulkTanimotoSimilarity(fp, self._commercial_fps)
-            if any(s >= 0.85 for s in sims):
-                return False
-
+        if not self._is_novel_vs_commercial(fp):
+            return False
         return True
 
     # ------------------------------------------------------------------
     # Strategy 1: SMARTS functional-group replacement
     # ------------------------------------------------------------------
+
+    def _process_smarts_product(self, product: Chem.Mol, seed_smi: str) -> str | None:
+        """Validate and check novelty of a single SMARTS reaction product."""
+        if product is None:
+            return None
+        try:
+            Chem.SanitizeMol(product)
+        except Exception:
+            return None
+        product_smi = Chem.MolToSmiles(product)
+        if not product_smi or product_smi == seed_smi:
+            return None
+        product_ctx = MoleculeContext(smiles=product_smi, mol=product)
+        if not product_ctx.is_valid_electrolyte_mol():
+            return None
+        if not self._novelty_check(product_ctx):
+            return None
+        return product_smi
 
     def _apply_smarts_reactions(self, ctx: MoleculeContext) -> list[str]:
         """Apply electrolyte-relevant SMARTS transformations.
@@ -550,25 +635,10 @@ class MutationEngine:
         results: list[str] = []
         for rxn, name in self._smarts_rxns:
             try:
-                products = rxn.RunReactants((ctx.mol,))
-                for product_tuple in products:
+                for product_tuple in rxn.RunReactants((ctx.mol,)):
                     for product in product_tuple:
-                        if product is None:
-                            continue
-                        try:
-                            Chem.SanitizeMol(product)
-                        except Exception:
-                            continue
-                        product_ctx = MoleculeContext(
-                            smiles=Chem.MolToSmiles(product),
-                            mol=product,
-                        )
-                        if not product_ctx.is_valid_electrolyte_mol():
-                            continue
-                        if not self._novelty_check(product_ctx):
-                            continue
-                        p_smi = product_ctx.smiles
-                        if p_smi and p_smi != ctx.smiles:
+                        p_smi = self._process_smarts_product(product, ctx.smiles)
+                        if p_smi:
                             results.append(p_smi)
             except Exception:
                 logger.debug("SMARTS reaction '%s' failed for %s", name, ctx.smiles)
@@ -577,6 +647,22 @@ class MutationEngine:
     # ------------------------------------------------------------------
     # Strategy 2: BRICS fragmentation + reassembly
     # ------------------------------------------------------------------
+
+    def _collect_fragments_from_smiles(self, smiles_list: list[str]) -> list[Chem.Mol]:
+        """Decompose a list of SMILES into BRICS fragments."""
+        frags: list[Chem.Mol] = []
+        for smi in smiles_list:
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is None or ctx.mw > 250 or ctx.hbd > 0:
+                continue
+            try:
+                for fs in BRICS.BRICSDecompose(ctx.mol):
+                    frag_ctx = MoleculeContext.from_brics_fragment(fs)
+                    if frag_ctx is not None:
+                        frags.append(frag_ctx.mol)
+            except Exception:
+                continue
+        return frags
 
     def _load_brics_fragments(self, exploration_bias: bool = False) -> list[Chem.Mol]:
         """Load BRICS-decomposed fragments from the electrolyte pool.
@@ -591,33 +677,14 @@ class MutationEngine:
         repeated in the pool to increase their selection probability,
         biasing reassembly toward scaffold novelty.
         """
-        brics_frags: list[Chem.Mol] = []
         source_smiles: list[str] = list(ELECTROLYTE_FRAGMENT_POOL)
 
-        # When in exploration mode, oversample harvested fragments to
-        # bias BRICS reassembly toward novel scaffold discovery.
         if exploration_bias and self._harvested_fragments:
             repeat = max(1, len(ELECTROLYTE_FRAGMENT_POOL) // max(len(self._harvested_fragments), 1))
-            for _ in range(repeat):
-                source_smiles.extend(self._harvested_fragments)
+            source_smiles.extend(self._harvested_fragments * repeat)
 
         source_smiles.extend(self._harvested_fragments)
-
-        for smi in source_smiles:
-            ctx = MoleculeContext.from_smiles(smi)
-            if ctx is None:
-                continue
-            if ctx.mw > 250 or ctx.hbd > 0:
-                continue
-            try:
-                frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
-                for fs in frag_smiles:
-                    frag_ctx = MoleculeContext.from_brics_fragment(fs)
-                    if frag_ctx is not None:
-                        brics_frags.append(frag_ctx.mol)
-            except Exception:
-                continue
-        return brics_frags
+        return self._collect_fragments_from_smiles(source_smiles)
 
     def _is_electrolyte_like(self, ctx: MoleculeContext) -> bool:
         return _is_electrolyte_like(ctx)
@@ -665,30 +732,69 @@ class MutationEngine:
         all_frags = seed_frags + pool_frags
         return all_frags
 
+    @staticmethod
+    def _has_excessive_aliphatic_chain(mol: Chem.Mol, max_chain: int = 12) -> bool:
+        """Check if molecule has an aliphatic chain longer than max_chain.
+
+        BRICS reassembly can produce "Frankenstein" molecules with
+        unrealistically long continuous aliphatic chains that are
+        synthetically inaccessible and lack the heteroatom density
+        needed for electrolyte function.
+        """
+        visited: set[int] = set()
+        longest = [0]
+
+        def _dfs(idx: int, length: int) -> None:
+            visited.add(idx)
+            longest[0] = max(longest[0], length)
+            atom = mol.GetAtomWithIdx(idx)
+            for nb in atom.GetNeighbors():
+                n_idx = nb.GetIdx()
+                if n_idx not in visited:
+                    n_atom = mol.GetAtomWithIdx(n_idx)
+                    if n_atom.GetAtomicNum() == 6 and n_atom.GetHybridization() == Chem.HybridizationType.SP3:
+                        _dfs(n_idx, length + 1)
+            visited.discard(idx)
+
+        for atom in mol.GetAtoms():
+            if atom.GetAtomicNum() == 6 and atom.GetHybridization() == Chem.HybridizationType.SP3 and atom.GetIdx() not in visited:
+                _dfs(atom.GetIdx(), 1)
+
+        return longest[0] > max_chain
+
+    def _validate_brics_product(self, r_mol: Chem.Mol) -> str | None:
+        """Validate a BRICS reassembly product and return its SMILES if valid."""
+        if r_mol is None:
+            return None
+        try:
+            Chem.SanitizeMol(r_mol)
+        except Exception:
+            return None
+        s = Chem.MolToSmiles(r_mol)
+        if not s:
+            return None
+        product_ctx = MoleculeContext(smiles=s, mol=r_mol)
+        if not product_ctx.is_valid_electrolyte_mol():
+            return None
+        if not self._novelty_check(product_ctx):
+            return None
+        if not _is_electrolyte_like(product_ctx):
+            return None
+        if self._has_excessive_aliphatic_chain(r_mol):
+            return None
+        return s
+
     def _build_from_pairs(self, all_frags: list[Chem.Mol], valid_pairs: list[tuple[int, int]]) -> list[str]:
         """Sample complementary pairs and run BRICSBuild, returning valid products."""
         generated: list[str] = []
         for _ in range(500):
             rng = np.random.default_rng(self._rng.integers(0, 2**31))
-            pair_idx = rng.integers(0, len(valid_pairs))
-            i, j = valid_pairs[pair_idx]
             try:
+                i, j = valid_pairs[rng.integers(0, len(valid_pairs))]
                 for r_mol in BRICS.BRICSBuild([all_frags[i], all_frags[j]]):
-                    if r_mol is None:
-                        continue
-                    try:
-                        Chem.SanitizeMol(r_mol)
-                        s = Chem.MolToSmiles(r_mol)
-                        product_ctx = MoleculeContext(smiles=s, mol=r_mol)
-                        if (
-                            product_ctx.is_valid_electrolyte_mol()
-                            and self._novelty_check(product_ctx)
-                            and _is_electrolyte_like(product_ctx)
-                            and s
-                        ):
-                            generated.append(s)
-                    except Exception:
-                        continue
+                    s = self._validate_brics_product(r_mol)
+                    if s:
+                        generated.append(s)
             except Exception:
                 continue
         return generated

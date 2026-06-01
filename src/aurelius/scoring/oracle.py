@@ -211,11 +211,46 @@ def predict_dielectric_proxy(ctx: MoleculeContext) -> float:
     return max(1.0, value)
 
 
+def _count_branch_points(mol: Chem.Mol) -> int:
+    """Count topological branch points (sp3 atoms with degree >= 3).
+
+    Uses explicit atom degree (excluding implicit hydrogens) so that
+    terminal CH3 groups are NOT counted as branch points.  Only
+    tetrahedral (sp3) atoms with at least 3 explicit heavy-atom
+    neighbors qualify — e.g., quaternary carbons, tertiary amines.
+    Planar sp2 centres (carbonyl, aromatic) are excluded because they
+    do not create the steric hindrance that increases viscosity.
+
+    Viscosity increases with branching due to steric hindrance and
+    chain entanglement — branched isomers have higher viscosity than
+    their linear counterparts (e.g., neopentane vs n-pentane).
+    """
+    return sum(
+        1 for a in mol.GetAtoms()
+        if a.GetDegree() >= 3
+        and a.GetHybridization() == Chem.HybridizationType.SP3
+    )
+
+
+def _count_stereocenters(mol: Chem.Mol) -> int:
+    """Count atom stereocenters.
+
+    Stereocenters add steric bulk that increases rotational friction
+    and thus viscosity.
+    """
+    from rdkit.Chem import rdMolDescriptors
+    return rdMolDescriptors.CalcNumAtomStereoCenters(mol)
+
+
 def predict_viscosity_proxy(ctx: MoleculeContext) -> float:
-    """Predict a viscosity proxy via fragment-additivity.
+    """Predict a viscosity proxy via fragment-additivity + branching penalty.
 
     Uses pre-computed molecular weight and rotatable bond count from
     ``MoleculeContext`` (lazy-cached).
+
+    Includes a topological branching penalty: branched isomers have
+    higher viscosity than linear ones due to steric hindrance and
+    chain entanglement effects.
 
     Returns:
         Unitless viscosity proxy (typically 0.5–5.0 for electrolyte solvents).
@@ -231,6 +266,20 @@ def predict_viscosity_proxy(ctx: MoleculeContext) -> float:
     value += (mw - 30.0) * 0.005
     n_rot = ctx.rotatable_bonds
     value += n_rot * 0.15
+
+    # Topological branching penalty: each branch point adds steric hindrance
+    # and chain entanglement.  A highly branched isomer (e.g., tert-butyl vs
+    # n-pentyl) has fewer rotatable conformers but higher viscosity due to
+    # intermolecular entanglement.  Coefficient calibrated so that a single
+    # quaternary carbon outweighs the rotatable-bond advantage of a 5-carbon
+    # linear chain, matching known physical trends.
+    n_branch = _count_branch_points(mol)
+    value += n_branch * 0.80
+
+    # Stereocenter penalty: chiral centers add rotational friction
+    n_stereo = _count_stereocenters(mol)
+    value += n_stereo * 0.05
+
     return max(0.1, value)
 
 
@@ -475,9 +524,30 @@ def _is_conjugated_bond(mol: Chem.Mol, i: int, j: int) -> bool:
     return bool(a1.GetIsAromatic() or a2.GetIsAromatic())
 
 
+# Heteroatom perturbation parameters for the Topological Orbital Model (TOM).
+# Each entry: (atomic_num, pi_electrons, ew_flag, ed_flag, is_aromatic_ed)
+# - pi_electrons: number of π-electrons contributed
+# - ew_flag: 1 if electron-withdrawing, 0 otherwise
+# - ed_flag: 1 if electron-donating, 0 otherwise
+# - is_aromatic_ed: if True, the atom is ED only when aromatic (e.g., pyridine N)
+#                    otherwise it's EW when non-aromatic
+_ATOM_PERTURBATIONS: list[tuple[int, int, int, int, bool]] = [
+    (6, 1, 0, 0, False),    # aromatic carbon
+    (7, 1, 1, 0, False),    # non-aromatic N (EW)
+    (7, 1, 0, 1, True),     # aromatic N (ED)
+    (8, 2, 1, 0, False),    # oxygen
+    (9, 0, 1, 0, False),    # fluorine
+    (16, 2, 1, 0, False),   # sulfur
+    (15, 1, 1, 0, False),   # phosphorus
+]
+
+
 def _count_heteroatom_perturbations(mol: Chem.Mol) -> tuple[int, int, int]:
     """Count electron-withdrawing (EW) and electron-donating (ED) heteroatoms
     in conjugated positions, and total π-electrons.
+
+    Uses a data-driven lookup table for heteroatom perturbation parameters
+    instead of a long if/elif chain.
 
     Returns:
         (n_ew, n_ed, n_pi_electrons)
@@ -488,27 +558,21 @@ def _count_heteroatom_perturbations(mol: Chem.Mol) -> tuple[int, int, int]:
 
     for atom in mol.GetAtoms():
         z = atom.GetAtomicNum()
-        if atom.GetIsAromatic() or atom.GetDegree() > 0:
-            # Count π-electrons from double bonds, lone pairs, aromaticity
-            if z == 6 and atom.GetIsAromatic():
-                n_pi += 1
-            if z == 7:
-                n_pi += 1
+        if not (atom.GetIsAromatic() or atom.GetDegree() > 0):
+            continue
+        for az, pi, ew, ed, aromatic_ed in _ATOM_PERTURBATIONS:
+            if z != az:
+                continue
+            if aromatic_ed:
                 if atom.GetIsAromatic():
-                    n_ed += 1  # Pyridine-like N donates electron density
+                    n_ed += ed
                 else:
-                    n_ew += 1  # Nitrile-like N withdraws
-            if z == 8:
-                n_pi += 2  # Oxygen lone pairs
-                n_ew += 1
-            if z == 9:
-                n_ew += 1  # Fluorine is strongly EW
-            if z == 16:
-                n_pi += 2
-                n_ew += 1
-            if z == 15:
-                n_pi += 1
-                n_ew += 1
+                    n_ew += 1
+            else:
+                n_ew += ew
+                n_ed += ed
+            n_pi += pi
+            break
 
     return n_ew, n_ed, n_pi
 

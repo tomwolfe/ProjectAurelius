@@ -222,6 +222,40 @@ class DiscoveryLoop:
 
         return valid_contexts, invalid_count
 
+    def _compute_novelty(self, ctx: MoleculeContext) -> float | None:
+        """Compute novelty score (1 - max Tanimoto to seed pool)."""
+        fp = ctx.get_ecfp4()
+        seed_fps = getattr(self.engine, "seed_fingerprints", None)
+        if not isinstance(seed_fps, list) or not seed_fps:
+            return None
+        from rdkit.DataStructs import BulkTanimotoSimilarity
+        sims = BulkTanimotoSimilarity(fp, seed_fps)
+        return 1.0 - max(sims) if sims else None
+
+    @staticmethod
+    def _build_screening_result(smi: str, total_score: float, score_data: dict, t2: dict, novelty: float | None, ctx: MoleculeContext, sub_scores: dict) -> ScreeningResult:
+        return ScreeningResult(
+            smiles=smi,
+            total_score=total_score,
+            is_viable=score_data.get("is_viable", False),
+            rejection_reasons=score_data.get("rejection_reasons", []),
+            fingerprint=ctx.get_feature_vector(),
+            novelty_to_seed=novelty,
+            homo_eV=t2.get("homo_eV"),
+            lumo_eV=t2.get("lumo_eV"),
+            dielectric_proxy=t2.get("dielectric_proxy"),
+            viscosity_proxy=t2.get("viscosity_proxy"),
+            li_solvation_proxy=t2.get("li_solvation_proxy"),
+            sa_score=score_data.get("sa_score"),
+            sub_scores=sub_scores,
+        )
+
+    @staticmethod
+    def _is_discovery(total_score: float, score_data: dict) -> bool:
+        return (total_score >= DISCOVERY_THRESHOLD
+                and score_data.get("is_viable", False)
+                and not score_data.get("rejection_reasons", []))
+
     def _evaluate_and_select(
         self,
         valid_contexts: list[MoleculeContext],
@@ -247,59 +281,17 @@ class DiscoveryLoop:
             all_scores.append(total_score)
             result_contexts.append(ctx)
 
-            novelty: float | None = None
-            rdkit_fp = ctx.get_ecfp4()
-            seed_fps = getattr(self.engine, "seed_fingerprints", None)
-            if isinstance(seed_fps, list) and seed_fps:
-                from rdkit.DataStructs import BulkTanimotoSimilarity
-                sims = BulkTanimotoSimilarity(rdkit_fp, seed_fps)
-                novelty = 1.0 - max(sims) if sims else None
-
             t2 = result.get("tier2", {}) or {}
+            novelty = self._compute_novelty(ctx)
             sub_scores = score_data.get("sub_scores", {})
-            screening_result = ScreeningResult(
-                smiles=smi,
-                total_score=total_score,
-                is_viable=score_data.get("is_viable", False),
-                rejection_reasons=score_data.get("rejection_reasons", []),
-                fingerprint=ctx.get_feature_vector(),
-                novelty_to_seed=novelty,
-                homo_eV=t2.get("homo_eV"),
-                lumo_eV=t2.get("lumo_eV"),
-                dielectric_proxy=t2.get("dielectric_proxy"),
-                viscosity_proxy=t2.get("viscosity_proxy"),
-                li_solvation_proxy=t2.get("li_solvation_proxy"),
-                sa_score=score_data.get("sa_score"),
-                sub_scores=sub_scores,
-            )
 
-            is_discovery = (
-                total_score >= DISCOVERY_THRESHOLD
-                and score_data.get("is_viable", False)
-                and len(score_data.get("rejection_reasons", [])) == 0
-            )
-
-            if is_discovery:
-                discovery_entry = ScreeningResult(
-                    smiles=smi,
-                    total_score=total_score,
-                    is_viable=True,
-                    rejection_reasons=score_data.get("rejection_reasons", []),
-                    fingerprint=ctx.get_feature_vector(),
-                    novelty_to_seed=novelty,
-                    homo_eV=t2.get("homo_eV"),
-                    lumo_eV=t2.get("lumo_eV"),
-                    dielectric_proxy=t2.get("dielectric_proxy"),
-                    viscosity_proxy=t2.get("viscosity_proxy"),
-                    li_solvation_proxy=t2.get("li_solvation_proxy"),
-                    sa_score=score_data.get("sa_score"),
-                    sub_scores=sub_scores,
-                )
-                self.discoveries.append(discovery_entry)
-                self.state.add_discovery(discovery_entry)
+            sr = self._build_screening_result(smi, total_score, score_data, t2, novelty, ctx, sub_scores)
+            if self._is_discovery(total_score, score_data):
+                self.discoveries.append(sr)
+                self.state.add_discovery(sr)
                 log.info("  ** DISCOVERY ** %s (score=%.1f)", smi, total_score)
 
-            self.all_results.append(screening_result)
+            self.all_results.append(sr)
 
         if not result_contexts:
             return [], []
@@ -307,16 +299,37 @@ class DiscoveryLoop:
         if len(result_contexts) <= self.batch_size:
             return result_contexts, all_scores
 
-        selected = tournament_select(
-            result_contexts,
-            all_scores,
-            batch_size=self.batch_size,
-        )
-
-        selected_scores = [
-            all_scores[result_contexts.index(ctx)] for ctx in selected
-        ]
+        selected = tournament_select(result_contexts, all_scores, batch_size=self.batch_size)
+        selected_scores = [all_scores[result_contexts.index(ctx)] for ctx in selected]
         return selected, selected_scores
+
+    def _evolve_seed_pool(self, batch_contexts: list[MoleculeContext], batch_scores: list[float]) -> None:
+        """Feed high-scoring molecules back into the seed pool."""
+        for ctx, sc in zip(batch_contexts, batch_scores, strict=False):
+            if sc >= 65.0:
+                smi = ctx.smiles
+                existing = set(self.engine.seed_pool)
+                if smi not in existing:
+                    self.engine.seed_pool.append(smi)
+                    existing.add(smi)
+                self.engine.harvest_fragments(smi)
+        if len(self.engine.seed_pool) > 200:
+            self.engine.seed_pool = self.engine.seed_pool[-200:]
+        self.state.seed_pool_size = len(self.engine.seed_pool)
+
+    def _record_scaffolds(self, batch_contexts: list[MoleculeContext]) -> None:
+        if MurckoScaffold is None:
+            return
+        scaffolds = []
+        for ctx in batch_contexts:
+            try:
+                scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
+                if scaffold:
+                    scaffolds.append(scaffold)
+            except Exception:
+                continue
+        if scaffolds:
+            self.state.record_scaffolds(scaffolds)
 
     def _record_results(
         self,
@@ -326,38 +339,8 @@ class DiscoveryLoop:
     ) -> None:
         """Record batch results, update state, and evolve seeds/fragments."""
         batch_viable = sum(1 for s in batch_scores if s >= DISCOVERY_THRESHOLD)
-
-        seed_feed = [
-            ctx.smiles for ctx, sc in zip(batch_contexts, batch_scores, strict=False)
-            if sc >= 65.0
-        ]
-        if seed_feed:
-            existing = set(self.engine.seed_pool)
-            for smi in seed_feed:
-                if smi not in existing:
-                    self.engine.seed_pool.append(smi)
-                    existing.add(smi)
-            if len(self.engine.seed_pool) > 200:
-                self.engine.seed_pool = self.engine.seed_pool[-200:]
-
-        for ctx, sc in zip(batch_contexts, batch_scores, strict=False):
-            if sc >= 65.0:
-                self.engine.harvest_fragments(ctx.smiles)
-
-        self.state.seed_pool_size = len(self.engine.seed_pool)
-
-        batch_scaffolds: list[str] = []
-        if MurckoScaffold is not None:
-            for ctx in batch_contexts:
-                try:
-                    scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
-                    if scaffold:
-                        batch_scaffolds.append(scaffold)
-                except Exception:
-                    continue
-        if batch_scaffolds:
-            self.state.record_scaffolds(batch_scaffolds)
-
+        self._evolve_seed_pool(batch_contexts, batch_scores)
+        self._record_scaffolds(batch_contexts)
         self.state.record_batch(batch_scores, batch_viable)
 
         mean_div = compute_pairwise_diversity(batch_contexts)

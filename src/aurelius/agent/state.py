@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -69,10 +70,8 @@ class LoopState:
     scaffolds_per_batch: list[list[str]] = field(default_factory=list)
 
     # --- Checkpointing ---
-    batch: int = 0
     best_score: float = 0.0
     discoveries: list[dict[str, Any]] = field(default_factory=list)
-    total_generated: int = 0
     invalid_discarded: int = 0
     started_at: str = ""
     last_updated: str | None = None
@@ -129,7 +128,6 @@ class LoopState:
             all_scaffolds.extend(batch)
         if not all_scaffolds:
             return False
-        from collections import Counter
         counts = Counter(all_scaffolds)
         most_common_count = counts.most_common(1)[0][1]
         return most_common_count >= n_batches
@@ -143,11 +141,9 @@ class LoopState:
             try:
                 with open(self.path) as f:
                     data = json.load(f)
-                self.batch = data.get("batch", 0)
                 self.total_screened = data.get("total_screened", 0)
                 self.best_score = data.get("best_score", 0.0)
                 self.viable_count = data.get("viable_count", 0)
-                self.total_generated = data.get("total_generated", 0)
                 self.invalid_discarded = data.get("invalid_discarded", 0)
                 self.started_at = data.get("started_at", self.started_at)
                 self.last_updated = data.get("last_updated")
@@ -157,11 +153,9 @@ class LoopState:
 
     def save(self) -> None:
         data = {
-            "batch": self.batch,
             "total_screened": self.total_screened,
             "best_score": self.best_score,
             "viable_count": self.viable_count,
-            "total_generated": self.total_generated,
             "invalid_discarded": self.invalid_discarded,
             "started_at": self.started_at,
             "last_updated": datetime.now(UTC).isoformat(),
@@ -189,11 +183,9 @@ class LoopState:
         self._all_scores.clear()
         self.generations = 0
         self.seed_pool_size = 0
-        self.batch = 0
         self.total_screened = 0
         self.best_score = 0.0
         self.viable_count = 0
-        self.total_generated = 0
         self.invalid_discarded = 0
         self.discoveries.clear()
         self.save()
