@@ -60,7 +60,7 @@ class MutationEngine:
     Seeds are stored as MoleculeContext objects to enforce single-point parsing.
     """
 
-    def __init__(self, seed_smiles: list[str] | None = None, known_fps_hex: list[str] | None = None) -> None:
+    def __init__(self, seed_smiles: list[str] | None = None, known_fps_hex: list[str] | None = None, adaptive_bias: bool = True) -> None:
         self.seed_pool, self.seed_contexts, self.seed_fingerprints = self._init_seeds(seed_smiles)
 
         self._commercial_fps = []
@@ -78,8 +78,12 @@ class MutationEngine:
         self._generated_smiles = set()
         self._harvested_fragments = []
         self._harvested_fragment_set = set()
+        self._harvested_fragment_scores: dict[str, float] = {}
         self._rng = np.random.default_rng(42)
         self._smarts_rxns = self._init_smarts_rxns()
+        self._adaptive_bias = adaptive_bias
+        self._reaction_scores: dict[str, list[float]] = {}
+        self._product_to_reaction: dict[str, str] = {}
 
     @staticmethod
     def _init_seeds(seed_smiles: list[str] | None) -> tuple[list[str], list[MoleculeContext], list]:
@@ -183,19 +187,26 @@ class MutationEngine:
             return None
         return f_ctx
 
-    def harvest_fragments(self, smiles: str) -> None:
+    def harvest_fragments(self, smiles: str, score: float = 65.0) -> None:
         ctx = MoleculeContext.from_smiles(smiles)
         if ctx is None:
             return
         try:
             for frag_smi in BRICS.BRICSDecompose(ctx.mol):
+                if frag_smi in self._harvested_fragment_set:
+                    if score > self._harvested_fragment_scores.get(frag_smi, 0):
+                        self._harvested_fragment_scores[frag_smi] = score
+                    continue
                 if self._eligible_for_harvest(frag_smi) is None:
                     continue
                 self._harvested_fragments.append(frag_smi)
                 self._harvested_fragment_set.add(frag_smi)
+                self._harvested_fragment_scores[frag_smi] = score
                 if len(self._harvested_fragments) > _MAX_HARVESTED_FRAGMENTS:
-                    oldest = self._harvested_fragments.pop(0)
-                    self._harvested_fragment_set.discard(oldest)
+                    worst = min(self._harvested_fragments, key=lambda f: self._harvested_fragment_scores.get(f, 0))
+                    self._harvested_fragments.remove(worst)
+                    self._harvested_fragment_set.discard(worst)
+                    self._harvested_fragment_scores.pop(worst, None)
         except Exception:
             logger.debug("Failed to harvest fragments from %s", smiles, exc_info=True)
 
@@ -292,7 +303,7 @@ class MutationEngine:
     # Strategy 1: SMARTS functional-group replacement
     # ------------------------------------------------------------------
 
-    def _process_smarts_product(self, product: Chem.Mol, seed_smi: str) -> str | None:
+    def _process_smarts_product(self, product: Chem.Mol, seed_smi: str, reaction_name: str | None = None) -> str | None:
         if product is None:
             return None
         try:
@@ -307,20 +318,49 @@ class MutationEngine:
             return None
         if not self._novelty_check(product_ctx):
             return None
+        if reaction_name is not None and self._adaptive_bias:
+            self._product_to_reaction[product_smi] = reaction_name
         return product_smi
 
     def _apply_smarts_reactions(self, ctx: MoleculeContext) -> list[str]:
         results: list[str] = []
-        for rxn, name in self._smarts_rxns:
+        rxns = self._smarts_rxns
+        if self._adaptive_bias and self._reaction_scores:
+            def _mean_score(name: str) -> float:
+                scores = self._reaction_scores.get(name, [])
+                return float(np.mean(scores)) if scores else 0.0
+            rxns = sorted(rxns, key=lambda r: _mean_score(r[1]), reverse=True)
+        for rxn, name in rxns:
             try:
                 for product_tuple in rxn.RunReactants((ctx.mol,)):
                     for product in product_tuple:
-                        p_smi = self._process_smarts_product(product, ctx.smiles)
+                        p_smi = self._process_smarts_product(product, ctx.smiles, reaction_name=name)
                         if p_smi:
                             results.append(p_smi)
             except Exception:
                 logger.debug("SMARTS reaction '%s' failed for %s", name, ctx.smiles)
         return list(set(results))
+
+    def record_reaction_success(self, smiles: str, score: float) -> None:
+        """Record the score achieved by a molecule produced via a SMARTS reaction.
+        
+        Updates the reaction's success history so that high-performing reactions
+        are prioritised in future generations.
+        """
+        if not self._adaptive_bias:
+            return
+        ctx = MoleculeContext.from_smiles(smiles)
+        if ctx is None:
+            return
+        try:
+            canon = Chem.MolToSmiles(ctx.mol)
+        except Exception:
+            return
+        rxn_name = self._product_to_reaction.get(canon)
+        if rxn_name is not None:
+            if rxn_name not in self._reaction_scores:
+                self._reaction_scores[rxn_name] = []
+            self._reaction_scores[rxn_name].append(score)
 
     # ------------------------------------------------------------------
     # Strategy 2: BRICS fragmentation + reassembly

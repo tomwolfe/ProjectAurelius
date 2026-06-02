@@ -278,6 +278,7 @@ class DiscoveryLoop:
             self.engine.add_to_db(smi)
 
             total_score = score_data.get("total_score", 0.0)
+            self.engine.record_reaction_success(smi, total_score)
             all_scores.append(total_score)
             result_contexts.append(ctx)
 
@@ -312,7 +313,7 @@ class DiscoveryLoop:
                 if smi not in existing:
                     self.engine.seed_pool.append(smi)
                     existing.add(smi)
-                self.engine.harvest_fragments(smi)
+                self.engine.harvest_fragments(smi, score=sc)
         if len(self.engine.seed_pool) > 200:
             self.engine.seed_pool = self.engine.seed_pool[-200:]
         self.state.seed_pool_size = len(self.engine.seed_pool)
