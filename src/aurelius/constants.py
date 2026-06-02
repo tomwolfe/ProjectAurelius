@@ -263,6 +263,15 @@ CF3_PATTERN: Chem.Mol = Chem.MolFromSmarts("[C](F)(F)F")
 CARBONYL_F_PATTERN: Chem.Mol = Chem.MolFromSmarts("[CX3](=O)[CH2][F]")
 SULFONYL_F_PATTERN: Chem.Mol = Chem.MolFromSmarts("[SX4](=O)(=O)[F]")
 
+# Hypofluorite pattern — O-F single bond (violently reactive, not viable as solvent)
+HYPOFLUORITE_PATTERN: Chem.Mol = Chem.MolFromSmarts("[OX2][F]")
+HYPOFLUORITE_PENALTY_FACTOR: float = 0.50
+"""Multiplicative penalty for molecules containing O-F (hypofluorite) bonds.
+Hypofluorites are violently reactive oxidisers that decompose exothermically
+at room temperature, making them completely unsuitable as battery electrolyte
+solvents (the EA exploits the methyl-to-fluorine SMARTS reaction to generate
+these from carbonate/ether seed molecules)."""
+
 # ---------------------------------------------------------------------------
 # Commercial Building Blocks — Sigma-Aldrich Precursors for Electrolyte
 # ---------------------------------------------------------------------------

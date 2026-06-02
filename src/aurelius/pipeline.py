@@ -31,6 +31,8 @@ from aurelius.constants import (
     CARBONYL_F_PATTERN as _CARBONYL_F_PATTERN,
     DIELECTRIC_TARGET,
     HOMO_THRESHOLD,
+    HYPOFLUORITE_PATTERN as _HYPOFLUORITE_PATTERN,
+    HYPOFLUORITE_PENALTY_FACTOR as _HYPOFLUORITE_PENALTY,
     HYDROLYTICALLY_UNSTABLE_PATTERNS as _HYDRO_PATTERNS,
     LI_SOLVATION_TARGET,
     LUMO_TARGET,
@@ -368,6 +370,22 @@ class AureliusPipeline:
         return max(penalty, 0.5)
 
     @staticmethod
+    def _check_hypofluorite_instability(mol: Chem.Mol) -> float:
+        """Penalise molecules with O-F (hypofluorite) bonds.
+
+        Hypofluorites are violently reactive oxidisers — they decompose
+        exothermically at room temperature and cannot be used as battery
+        electrolyte solvents. The EA's methyl-to-fluorine SMARTS reaction
+        generates these from carbonate/ether seed molecules, exploiting
+        the scoring function's fluorine reward.
+
+        Returns a multiplier in [0.50, 1.0].
+        """
+        if _HYPOFLUORITE_PATTERN is not None and mol.HasSubstructMatch(_HYPOFLUORITE_PATTERN):
+            return _HYPOFLUORITE_PENALTY
+        return 1.0
+
+    @staticmethod
     def _check_al_corrosion_risk(mol: Chem.Mol) -> float:
         """Check for Al corrosion risk in high-LUMO fluorinated molecules.
 
@@ -484,6 +502,8 @@ class AureliusPipeline:
         if ctx is not None:
             hydro_penalty = self._check_hydrolytic_instability(ctx.mol)
             total_score *= hydro_penalty
+            hypo_penalty = self._check_hypofluorite_instability(ctx.mol)
+            total_score *= hypo_penalty
             if lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
                 al_corrosion_penalty = self._check_al_corrosion_risk(ctx.mol)
             total_score *= al_corrosion_penalty
@@ -510,6 +530,8 @@ class AureliusPipeline:
                     reasons.append(obj.failure_reason_template.format(value=value))
             if al_corrosion_penalty < 1.0:
                 reasons.append("Al corrosion risk (high-LUMO fluorinated molecule)")
+            if ctx is not None and self._check_hypofluorite_instability(ctx.mol) < 1.0:
+                reasons.append("hypofluorite (O-F) bond — violently reactive")
             rejection_reasons.append(
                 f"Aurelius Score {total_score:.1f} below threshold: {'; '.join(reasons)}"
             )
