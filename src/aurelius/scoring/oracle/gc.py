@@ -80,7 +80,7 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
     (Chem.MolFromSmarts("[CX3](=O)[CX3]"),         "ketone",             3.0,  0.5,  0.6),
     (Chem.MolFromSmarts("[CH](=O)"),               "aldehyde",           2.5,  0.3,  0.3),
     (Chem.MolFromSmarts("O=C([OX2])[OX2]"),        "carbonate",          5.0,  0.7,  1.5),
-    (Chem.MolFromSmarts("[OD2]([CX4])[CX4]"),      "ether",              1.5, -0.3,  0.5),
+    (Chem.MolFromSmarts("[OD2]([CX4])[CX4]"),      "ether",              1.5, -0.3,  1.0),
     (Chem.MolFromSmarts("[OH][CX4]"),              "alcohol",            4.5,  1.2,  2.0),
     (Chem.MolFromSmarts("[NX3;H2][CX4]"),          "primary_amine",      3.5,  0.5,  1.0),
     (Chem.MolFromSmarts("[NX3;H1]([CX4])[CX4]"),   "secondary_amine",    2.5,  0.4,  0.8),
@@ -106,6 +106,8 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
     (Chem.MolFromSmarts("[OX2][CX4][CX4][OX2]"),   "glyme_chelating",    2.0,  0.1,  1.8),
     (Chem.MolFromSmarts("[SX4](=O)(=O)[NX3][SX4](=O)(=O)"), "sulfonimide", 5.0,  0.5,  0.5),
     (Chem.MolFromSmarts("[CX3](=O)[OX2]C(F)(F)F"),  "fluorinated_carbonate", 3.0,  0.3, -0.1),
+    (Chem.MolFromSmarts("[SX3](=O)[CX4]"),           "sulfoxide",          6.0,  0.5,  2.5),
+    (Chem.MolFromSmarts("[n]"),                      "aromatic_nitrogen",  4.0,  0.3,  2.0),
 ]
 
 _GC_BASE_DIELECTRIC: float = 1.9
