@@ -316,42 +316,71 @@ class DiscoveryLoop:
     def _evaluate_mixture_pairs(
         self,
         valid_contexts: list[MoleculeContext],
+        result_map: dict[str, dict] | None = None,
     ) -> tuple[list[MoleculeContext], list[float]]:
-        """Occasionally (~10%) evaluate binary pairs as mixtures during the loop."""
+        """Evaluate the most complementary binary mixture pair (high-dielectric + low-viscosity).
+
+        ADR-2026-06-02: Replaced random-pair selection with targeted pairing.
+        Physical justification: Random pairs 10% of the time almost never hit
+        the complementary regime (high-dielectric + low-viscosity) needed for
+        the mixture_synergy_bonus to activate. By intentionally pairing the
+        highest-dielectric candidate with the lowest-viscosity candidate, we
+        maximise the chance of discovering a synergistic electrolyte mixture.
+        This is the minimal change: one targeted pair per batch instead of
+        random sampling. The thermodynamic mixing rules already reward this
+        complementarity — this intervention simply ensures the EA samples it.
+        """
         result_contexts: list[MoleculeContext] = []
         all_scores: list[float] = []
 
-        if len(valid_contexts) < 4:
+        if len(valid_contexts) < 4 or result_map is None:
             return result_contexts, all_scores
 
-        n_pairs = max(1, int(self.batch_size * 0.1))
-        indices = list(range(len(valid_contexts)))
-        random.shuffle(indices)
-        for k in range(0, min(n_pairs * 2, len(indices) - 1), 2):
-            ctx1 = valid_contexts[indices[k]]
-            ctx2 = valid_contexts[indices[k + 1]]
-            try:
-                mix = self.pipeline.screen_mixture(ctx1, ctx2, 0.5)
-            except Exception:
+        # Find the highest-dielectric and lowest-viscosity candidates
+        best_diel: tuple[int, float] = (-1, -1.0)
+        best_visc: tuple[int, float] = (-1, 999.0)
+        for i, ctx in enumerate(valid_contexts):
+            res = result_map.get(ctx.smiles)
+            if res is None:
                 continue
-            mix_score = mix.get("score", {}).get("total_score", 0.0)
-            mix_smi = f"{ctx1.smiles}|{ctx2.smiles}"
-            self.screened_smiles.add(mix_smi)
-            all_scores.append(mix_score)
-            result_contexts.append(ctx1)
-            synergy = mix.get("mixture_properties", {}).get("synergy_bonus", 0.0)
-            mix_score_data = mix.get("score", {})
-            mix_t2 = mix.get("mixture_properties", {})
-            novelty = self._compute_novelty(ctx1)
-            sr = self._build_screening_result(
-                mix_smi, mix_score, mix_score_data, mix_t2, novelty, ctx1,
-                mix_score_data.get("sub_scores", {}),
-            )
-            if sr.total_score >= DISCOVERY_THRESHOLD:
-                self.discoveries.append(sr)
-                self.state.add_discovery(sr)
-            self.all_results.append(sr)
-            log.info("  ** MIXTURE ** %s (score=%.1f, synergy=%.4f)", mix_smi, mix_score, synergy)
+            diel = res.get("dielectric_proxy", 0.0)
+            visc = res.get("viscosity_proxy", 999.0)
+            if diel > best_diel[1]:
+                best_diel = (i, diel)
+            if visc < best_visc[1]:
+                best_visc = (i, visc)
+
+        if best_diel[0] < 0 or best_visc[0] < 0:
+            return result_contexts, all_scores
+
+        ctx1 = valid_contexts[best_diel[0]]
+        ctx2 = valid_contexts[best_visc[0]]
+        if ctx1.smiles == ctx2.smiles:
+            return result_contexts, all_scores
+
+        try:
+            mix = self.pipeline.screen_mixture(ctx1, ctx2, 0.5)
+        except Exception:
+            return result_contexts, all_scores
+
+        mix_score = mix.get("score", {}).get("total_score", 0.0)
+        mix_smi = f"{ctx1.smiles}|{ctx2.smiles}"
+        self.screened_smiles.add(mix_smi)
+        all_scores.append(mix_score)
+        result_contexts.append(ctx1)
+        synergy = mix.get("mixture_properties", {}).get("synergy_bonus", 0.0)
+        mix_score_data = mix.get("score", {})
+        mix_t2 = mix.get("mixture_properties", {})
+        novelty = self._compute_novelty(ctx1)
+        sr = self._build_screening_result(
+            mix_smi, mix_score, mix_score_data, mix_t2, novelty, ctx1,
+            mix_score_data.get("sub_scores", {}),
+        )
+        if sr.total_score >= DISCOVERY_THRESHOLD:
+            self.discoveries.append(sr)
+            self.state.add_discovery(sr)
+        self.all_results.append(sr)
+        log.info("  ** MIXTURE ** %s (score=%.1f, synergy=%.4f)", mix_smi, mix_score, synergy)
 
         return result_contexts, all_scores
 
@@ -362,6 +391,7 @@ class DiscoveryLoop:
         """Evaluate all valid candidates through the Oracle and select the top batch."""
         all_scores: list[float] = []
         result_contexts: list[MoleculeContext] = []
+        result_map: dict[str, dict] = {}
 
         for ctx in valid_contexts:
             result = self._screen_molecule(ctx)
@@ -382,6 +412,7 @@ class DiscoveryLoop:
             result_contexts.append(ctx)
 
             t2 = result.get("tier2", {}) or {}
+            result_map[smi] = t2
             novelty = self._compute_novelty(ctx)
             sub_scores = score_data.get("sub_scores", {})
 
@@ -393,7 +424,7 @@ class DiscoveryLoop:
 
             self.all_results.append(sr)
 
-        mix_contexts, mix_scores = self._evaluate_mixture_pairs(valid_contexts)
+        mix_contexts, mix_scores = self._evaluate_mixture_pairs(valid_contexts, result_map)
         result_contexts.extend(mix_contexts)
         all_scores.extend(mix_scores)
 

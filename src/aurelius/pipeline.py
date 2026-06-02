@@ -245,12 +245,14 @@ class AureliusPipeline:
                 smiles, homo_eV, lumo_eV, dielectric_proxy, viscosity_proxy, li_solvation_proxy,
             )
 
+        quantum_confidence = t2_result.get("quantum_confidence", "unknown") if t2_result else "unknown"
         score = self._compute_score(
             homo_eV, lumo_eV,
             dielectric_proxy=dielectric_proxy,
             viscosity_proxy=viscosity_proxy,
             li_solvation_proxy=li_solvation_proxy,
             ctx=ctx,
+            quantum_confidence=quantum_confidence,
         )
 
         score = self._apply_domain_penalty(score, t2_result)
@@ -418,8 +420,20 @@ class AureliusPipeline:
         viscosity_proxy: float = 99.0,
         li_solvation_proxy: float = 0.0,
         ctx: MoleculeContext | None = None,
+        quantum_confidence: str = "unknown",
     ) -> dict[str, Any]:
         """Compute the multi-objective composite Aurelius Score.
+
+        ADR-2026-06-02: Added quantum_confidence multiplier. Physical
+        justification: The TOM fallback's particle-in-a-box model has MAE
+        ~1.07 eV on conjugated/novel scaffolds (quantum_confidence="tom_low").
+        Without a penalty, the EA can exploit TOM's blind spots by generating
+        highly conjugated molecules that score well on paper but are physically
+        unreliable. The 0.85x multiplier softens the score for low-confidence
+        predictions, biasing selection toward xTB-validated or simple-TOM
+        candidates without hard-rejecting novel scaffolds (which may still
+        have genuine merit). The multiplier is intentionally mild (0.85 vs.
+        0.70) to avoid strangling discovery while imposing epistemic humility.
 
         Iterates over the declarative ``_OBJECTIVES`` list, applies
         each objective's mathematical transform to the corresponding
@@ -432,6 +446,8 @@ class AureliusPipeline:
             viscosity_proxy: Predicted viscosity proxy.
             li_solvation_proxy: Predicted Li+ solvation proxy.
             ctx: Pre-parsed MoleculeContext for substructure checks.
+            quantum_confidence: Confidence level from quantum backend
+                ("xtb", "tom_high", or "tom_low").
 
         Returns:
             Dict with total_score, is_viable, sub_scores, rejection_reasons.
@@ -475,6 +491,11 @@ class AureliusPipeline:
             total_score *= bb_penalty
 
         total_score = float(np.clip(total_score, 0.0, 100.0))
+
+        # Confidence-weighted scoring: penalise low-confidence TOM predictions
+        if quantum_confidence == "tom_low":
+            total_score *= 0.85
+            total_score = float(np.clip(total_score, 0.0, 100.0))
 
         is_viable = total_score >= VIABILITY_THRESHOLD
 

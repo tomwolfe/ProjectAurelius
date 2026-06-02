@@ -36,6 +36,7 @@ from aurelius.scoring.oracle.quantum import (
     _HAS_XTB,
     _XTB_HOMO_RE,
     _XTB_LUMO_RE,
+    _count_aromatic_rings,
     _count_heteroatom_perturbations,
     _find_xtb_binary,
     _generate_xyz,
@@ -44,6 +45,7 @@ from aurelius.scoring.oracle.quantum import (
     _longest_conjugation_path,
     _parse_xtb_output,
     _run_xtb,
+    _wiener_index,
     compute_quantum_domain_penalty,
     has_xtb,
     predict_tom_orbitals,
@@ -88,4 +90,6 @@ __all__ = [
     "_is_conjugated_bond",
     "_ATOM_PERTURBATIONS",
     "_count_heteroatom_perturbations",
+    "_count_aromatic_rings",
+    "_wiener_index",
 ]
