@@ -225,16 +225,17 @@ class MutationEngine:
         if new_ctx is None:
             return False
         new_fp = new_ctx.get_ecfp4()
+        existing_fps: list = []
         for old_smi in existing_smis:
             old_ctx = self._get_ctx(old_smi)
             if old_ctx is None:
                 continue
-            old_fp = old_ctx.get_ecfp4()
-            from rdkit.DataStructs import TanimotoSimilarity
-            sim = TanimotoSimilarity(new_fp, old_fp)
-            if sim >= threshold:
-                return True
-        return False
+            existing_fps.append(old_ctx.get_ecfp4())
+        if not existing_fps:
+            return False
+        from rdkit.DataStructs import BulkTanimotoSimilarity
+        sims = BulkTanimotoSimilarity(new_fp, existing_fps)
+        return any(s >= threshold for s in sims)
 
     def fragment_pool_size(self) -> int:
         return len(ELECTROLYTE_FRAGMENT_POOL) + len(self._harvested_fragments)
@@ -290,13 +291,13 @@ class MutationEngine:
             pass
         return True
 
-    def _is_novel_vs_commercial(self, fp: Any) -> bool:
+    def _is_novel_vs_commercial(self, fp: Any, threshold: float = 0.85) -> bool:
         if not self._commercial_fps:
             return True
         sims = BulkTanimotoSimilarity(fp, self._commercial_fps)
-        return not any(s >= 0.85 for s in sims)
+        return not any(s >= threshold for s in sims)
 
-    def _novelty_check(self, ctx: MoleculeContext, check_scaffold: bool = True) -> bool:
+    def _novelty_check(self, ctx: MoleculeContext, check_scaffold: bool = True, force_exploration: bool = False) -> bool:
         try:
             canon = Chem.MolToSmiles(ctx.mol)
         except Exception:
@@ -308,7 +309,8 @@ class MutationEngine:
         if check_scaffold and self._is_trivial_alkyl_extension(ctx, self.seed_pool, self.seed_fingerprints):
             return False
         fp = ctx.get_ecfp4()
-        if not self._is_novel_vs_commercial(fp):
+        threshold = 0.90 if force_exploration else 0.85
+        if not self._is_novel_vs_commercial(fp, threshold=threshold):
             return False
         return True
 
@@ -316,7 +318,7 @@ class MutationEngine:
     # Strategy 1: SMARTS functional-group replacement
     # ------------------------------------------------------------------
 
-    def _process_smarts_product(self, product: Chem.Mol, seed_smi: str, reaction_name: str | None = None) -> str | None:
+    def _process_smarts_product(self, product: Chem.Mol, seed_smi: str, reaction_name: str | None = None, force_exploration: bool = False) -> str | None:
         if product is None:
             return None
         try:
@@ -333,13 +335,13 @@ class MutationEngine:
             product_ctx = self._ctx_cache[product_smi]
         if not product_ctx.is_valid_electrolyte_mol():
             return None
-        if not self._novelty_check(product_ctx):
+        if not self._novelty_check(product_ctx, force_exploration=force_exploration):
             return None
         if reaction_name is not None and self._adaptive_bias:
             self._product_to_reaction[product_smi] = reaction_name
         return product_smi
 
-    def _apply_smarts_reactions(self, ctx: MoleculeContext) -> list[str]:
+    def _apply_smarts_reactions(self, ctx: MoleculeContext, force_exploration: bool = False) -> list[str]:
         results: list[str] = []
         rxns = self._smarts_rxns
         if self._adaptive_bias and self._reaction_scores:
@@ -351,7 +353,7 @@ class MutationEngine:
             try:
                 for product_tuple in rxn.RunReactants((ctx.mol,)):
                     for product in product_tuple:
-                        p_smi = self._process_smarts_product(product, ctx.smiles, reaction_name=name)
+                        p_smi = self._process_smarts_product(product, ctx.smiles, reaction_name=name, force_exploration=force_exploration)
                         if p_smi:
                             results.append(p_smi)
             except Exception:
@@ -425,7 +427,7 @@ class MutationEngine:
     def _has_excessive_aliphatic_chain(mol: Chem.Mol, max_chain: int = 12) -> bool:
         return _has_excessive_aliphatic_chain_fn(mol, max_chain)
 
-    def _validate_brics_product(self, r_mol: Chem.Mol) -> str | None:
+    def _validate_brics_product(self, r_mol: Chem.Mol, force_exploration: bool = False) -> str | None:
         if r_mol is None:
             return None
         try:
@@ -438,7 +440,7 @@ class MutationEngine:
         product_ctx = MoleculeContext(smiles=s, mol=r_mol)
         if not product_ctx.is_valid_electrolyte_mol():
             return None
-        if not self._novelty_check(product_ctx):
+        if not self._novelty_check(product_ctx, force_exploration=force_exploration):
             return None
         if not is_electrolyte_like(product_ctx):
             return None
@@ -446,7 +448,7 @@ class MutationEngine:
             return None
         return s
 
-    def _build_from_pairs(self, all_frags: list[Chem.Mol], valid_pairs: list[tuple[int, int]]) -> list[str]:
+    def _build_from_pairs(self, all_frags: list[Chem.Mol], valid_pairs: list[tuple[int, int]], force_exploration: bool = False) -> list[str]:
         generated: list[str] = []
         n_pairs = len(valid_pairs)
         indices = self._rng.integers(0, n_pairs, size=min(150, n_pairs * 5))
@@ -454,7 +456,7 @@ class MutationEngine:
             try:
                 i, j = valid_pairs[idx]
                 for r_mol in BRICS.BRICSBuild([all_frags[i], all_frags[j]]):
-                    s = self._validate_brics_product(r_mol)
+                    s = self._validate_brics_product(r_mol, force_exploration=force_exploration)
                     if s:
                         generated.append(s)
             except Exception:
@@ -479,7 +481,7 @@ class MutationEngine:
             if not valid_pairs:
                 return generated
 
-        generated = self._build_from_pairs(all_frags, valid_pairs)
+        generated = self._build_from_pairs(all_frags, valid_pairs, force_exploration=force_exploration)
         return list(set(generated))
 
     # ------------------------------------------------------------------
@@ -494,7 +496,7 @@ class MutationEngine:
         candidates: set[str] = set()
 
         if not force_exploration:
-            smarts_results = self._apply_smarts_reactions(ctx)
+            smarts_results = self._apply_smarts_reactions(ctx, force_exploration=force_exploration)
             candidates.update(smarts_results)
 
         if not candidates or len(candidates) < batch_size:

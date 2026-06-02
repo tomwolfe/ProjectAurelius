@@ -393,12 +393,13 @@ class AureliusPipeline:
     def _check_building_block_grounding(mol: Chem.Mol) -> float:
         """Penalty for molecules with BRICS fragments not matching commercial precursors.
 
-        Returns a multiplier in [0.5, 1.0] where 0% fragment coverage → 0.5x
+        Returns a multiplier in [0.7, 1.0] where 0% fragment coverage → 0.7x
+        (softened from 0.5x to avoid strangling novel scaffold discovery)
         and 100% coverage → 1.0x.
         """
         from aurelius.agent.mutation.brics import brics_building_block_coverage
         coverage = brics_building_block_coverage(mol)
-        return 0.5 + 0.5 * coverage
+        return 0.7 + 0.3 * coverage
 
     def _compute_score(
         self,
