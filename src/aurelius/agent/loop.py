@@ -195,6 +195,7 @@ class DiscoveryLoop:
             force_exploration = self.state.has_scaffold_stagnation(2)
             if force_exploration:
                 log.info("Generation %d: Scaffold stagnation detected — pivoting to BRICS-only exploration.", generation)
+                self._inject_tier0_seeds()
             candidates = self._generate_candidates(generation, force_exploration=force_exploration)
             valid_contexts, invalid_count = self._filter_candidates(candidates)
 
@@ -230,6 +231,21 @@ class DiscoveryLoop:
             "total_viable": self.state.viable_count,
             "total_invalid": self.state.invalid_discarded,
         }
+
+    def _inject_tier0_seeds(self) -> None:
+        import json
+        from pathlib import Path
+        tier0_path = Path(__file__).resolve().parent.parent.parent / "data" / "tier0_seed_smiles.json"
+        if not tier0_path.exists():
+            return
+        with open(tier0_path) as f:
+            all_seeds = json.load(f)
+        existing = set(self.engine.seed_pool)
+        unused = [s for s in all_seeds if s not in existing]
+        if unused:
+            selected = random.sample(unused, min(5, len(unused)))
+            self.engine.seed_pool.extend(selected)
+            log.info("  Injected %d fresh tier0 seed SMILES into seed pool.", len(selected))
 
     def _generate_candidates(self, generation: int, force_exploration: bool = False) -> list[str]:
         top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()

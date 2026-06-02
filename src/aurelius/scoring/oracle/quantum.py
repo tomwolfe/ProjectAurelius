@@ -409,11 +409,13 @@ class QuantumOracle:
             return dict(self._cache[smiles])
 
         result: dict[str, float] | None = None
+        used_xtb = False
         if self._use_xtb:
             xyz = _generate_xyz(mol)
             result = _run_xtb(xyz)
             if result is not None:
                 self._n_xtb_calls += 1
+                used_xtb = True
             else:
                 logger.warning("QuantumOracle: xTB calculation failed — falling back to TOM.")
 
@@ -425,6 +427,13 @@ class QuantumOracle:
                 "dipole_D": 0.0,
             }
             self._n_tom_calls += 1
+
+        if used_xtb:
+            result["quantum_confidence"] = "xtb"
+        else:
+            L = _longest_conjugation_path(mol)
+            n_rings = mol.GetRingInfo().NumRings()
+            result["quantum_confidence"] = "tom_high" if L <= 8 and n_rings <= 2 else "tom_low"
 
         self._cache[smiles] = result
         return dict(result)

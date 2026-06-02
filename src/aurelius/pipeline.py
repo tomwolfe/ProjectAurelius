@@ -234,6 +234,7 @@ class AureliusPipeline:
                 "li_solvation_proxy": li_solvation_proxy,
                 "domain_applicable": oracle_result.get("domain_applicable", True),
                 "domain_reason": oracle_result.get("domain_reason", ""),
+                "quantum_confidence": oracle_result.get("quantum_confidence", "unknown"),
             }
             results["tier2"] = t2_result
             logger.info(

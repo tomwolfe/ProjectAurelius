@@ -43,7 +43,7 @@ def cli() -> None:
 
 @cli.command()
 def init() -> None:
-    """Initialize the Aurelius v9.0 pipeline."""
+    """Initialize the Aurelius v10.0 pipeline."""
     _make_pipeline()
     click.echo("\nPipeline initialized successfully.")
 
@@ -139,13 +139,13 @@ def batch(
 def score(
     smiles: str,
 ) -> None:
-    """Compute the Aurelius v9.0 score for a molecule (quick mode)."""
+    """Compute the Aurelius v10.0 score for a molecule (quick mode)."""
     pipeline = _make_pipeline()
     results = pipeline.screen_smiles(smiles)
 
     score = results.get("score", {})
     if score:
-        click.echo(f"\nAurelius Score v9.0: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
+        click.echo(f"\nAurelius Score v10.0: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
 
 
 @cli.command("doctor-xtb")
@@ -171,7 +171,7 @@ def evaluate_cmd(
         score = results.get("score", {})
         total = score.get("total_score", 0.0)
         viable = score.get("is_viable", False)
-        click.echo(f"\nAurelius Score v9.0: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}")
+        click.echo(f"\nAurelius Score v10.0: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}")
     except Exception as e:
         click.echo(f"[Aurelius Pipeline] Evaluation failed: {e}", err=True)
         sys.exit(1)

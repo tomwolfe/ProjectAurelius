@@ -158,6 +158,19 @@ def generate_discoveries_sdf(
         if ctx is None:
             continue
         mol = ctx.mol
+
+        from rdkit.Chem import AllChem
+        try:
+            mol_3d = Chem.RWMol(ctx.mol)
+            mol_3d.UpdatePropertyCache()
+            mol_h = Chem.AddHs(mol_3d)
+            params = AllChem.ETKDGv3()
+            params.randomSeed = 42
+            if AllChem.EmbedMolecule(mol_h, params) == -1:
+                mol.SetProp("3D_embed_failed", "True")
+        except Exception:
+            mol.SetProp("3D_embed_failed", "True")
+
         mol.SetProp("SMILES", r.smiles)
         mol.SetProp("total_score", f"{r.total_score:.2f}")
         if r.homo_eV is not None:

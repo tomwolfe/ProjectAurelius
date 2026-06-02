@@ -77,6 +77,7 @@ class PropertyOracle:
             "domain_applicable": True,
             "domain_reason": _DATA_SOURCE,
             "quantum_method": self._quantum.method,
+            "quantum_confidence": quantum_result.get("quantum_confidence", "unknown"),
         }
 
         self._cache[smiles] = result
