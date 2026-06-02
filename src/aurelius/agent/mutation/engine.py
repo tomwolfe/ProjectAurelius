@@ -7,6 +7,9 @@ in priority order:
 2. BRICS fragmentation + reassembly (medium priority)
 
 Seeds are stored as MoleculeContext objects to enforce single-point parsing.
+
+Delegates novelty checking to ``NoveltyValidator`` and fragment harvesting
+to ``FragmentHarvester`` for single-responsibility separation.
 """
 
 from __future__ import annotations
@@ -34,6 +37,8 @@ from aurelius.agent.mutation.brics import (
     has_excessive_aliphatic_chain as _has_excessive_aliphatic_chain_fn,
     inject_linkers,
 )
+from aurelius.agent.mutation.harvester import FragmentHarvester
+from aurelius.agent.mutation.novelty import NoveltyValidator
 from aurelius.agent.mutation.smarts import (
     ELECTROLYTE_FRAGMENT_POOL,
     ELECTROLYTE_SMARTS,
@@ -51,13 +56,13 @@ logger = logging.getLogger(__name__)
 class MutationEngine:
     """Multi-strategy molecule mutation engine for battery electrolytes.
 
-    Generates candidate molecules from seed SMILES using two strategies
-    in priority order:
+    Generates candidate molecules from seed SMILES using two strategies:
 
     1. SMARTS functional-group replacement (high priority)
     2. BRICS fragmentation + reassembly (medium priority)
 
-    Seeds are stored as MoleculeContext objects to enforce single-point parsing.
+    Novelty checking and fragment harvesting are delegated to dedicated
+    components (NoveltyValidator, FragmentHarvester).
     """
 
     def __init__(self, seed_smiles: list[str] | None = None, known_fps_hex: list[str] | None = None, adaptive_bias: bool = True) -> None:
@@ -77,14 +82,24 @@ class MutationEngine:
         self._load_known_electrolytes()
 
         self._generated_smiles = set()
-        self._harvested_fragments = []
-        self._harvested_fragment_set = set()
-        self._harvested_fragment_scores: dict[str, float] = {}
         self._rng = np.random.default_rng(42)
         self._smarts_rxns = self._init_smarts_rxns()
         self._adaptive_bias = adaptive_bias
         self._reaction_scores: dict[str, list[float]] = {}
         self._product_to_reaction: dict[str, str] = {}
+
+        # Delegated components
+        self._novelty_validator = NoveltyValidator(
+            seed_smiles=self._seed_smiles,
+            seed_scaffolds=self._seed_scaffolds,
+            seed_fingerprints=self.seed_fingerprints,
+            seed_pool=self.seed_pool,
+            commercial_fps=self._commercial_fps,
+            known_smiles=self._known_smiles,
+            generated_smiles=self._generated_smiles,
+            get_ctx=self._get_ctx,
+        )
+        self._fragment_harvester = FragmentHarvester(get_ctx=self._get_ctx)
 
     @staticmethod
     def _init_seeds(seed_smiles: list[str] | None) -> tuple[list[str], list[MoleculeContext], list]:
@@ -185,134 +200,34 @@ class MutationEngine:
             except Exception:
                 pass
 
-    def _eligible_for_harvest(self, frag_smi: str) -> MoleculeContext | None:
-        if frag_smi in self._harvested_fragment_set:
-            return None
-        if frag_smi in ELECTROLYTE_FRAGMENT_POOL:
-            return None
-        f_ctx = self._get_ctx(frag_smi)
-        if f_ctx is None or f_ctx.mw > 250 or f_ctx.hbd > 0:
-            return None
-        if self._harvested_fragments and self._fragment_too_similar(frag_smi, self._harvested_fragments, threshold=0.85):
-            return None
-        return f_ctx
-
-    def harvest_fragments(self, smiles: str, score: float = 65.0) -> None:
-        ctx = self._get_ctx(smiles)
-        if ctx is None:
-            return
-        try:
-            for frag_smi in BRICS.BRICSDecompose(ctx.mol):
-                if frag_smi in self._harvested_fragment_set:
-                    if score > self._harvested_fragment_scores.get(frag_smi, 0):
-                        self._harvested_fragment_scores[frag_smi] = score
-                    continue
-                if self._eligible_for_harvest(frag_smi) is None:
-                    continue
-                self._harvested_fragments.append(frag_smi)
-                self._harvested_fragment_set.add(frag_smi)
-                self._harvested_fragment_scores[frag_smi] = score
-                if len(self._harvested_fragments) > _MAX_HARVESTED_FRAGMENTS:
-                    worst = min(self._harvested_fragments, key=lambda f: self._harvested_fragment_scores.get(f, 0))
-                    self._harvested_fragments.remove(worst)
-                    self._harvested_fragment_set.discard(worst)
-                    self._harvested_fragment_scores.pop(worst, None)
-        except Exception:
-            logger.debug("Failed to harvest fragments from %s", smiles, exc_info=True)
-
-    def _fragment_too_similar(self, new_smi: str, existing_smis: list[str], threshold: float = 0.85) -> bool:
-        new_ctx = self._get_ctx(new_smi)
-        if new_ctx is None:
-            return False
-        new_fp = new_ctx.get_ecfp4()
-        existing_fps: list = []
-        for old_smi in existing_smis:
-            old_ctx = self._get_ctx(old_smi)
-            if old_ctx is None:
-                continue
-            existing_fps.append(old_ctx.get_ecfp4())
-        if not existing_fps:
-            return False
-        from rdkit.DataStructs import BulkTanimotoSimilarity
-        sims = BulkTanimotoSimilarity(new_fp, existing_fps)
-        return any(s >= threshold for s in sims)
-
-    def fragment_pool_size(self) -> int:
-        return len(ELECTROLYTE_FRAGMENT_POOL) + len(self._harvested_fragments)
-
-    def _is_trivial_alkyl_extension(
-        self,
-        ctx: MoleculeContext,
-        seed_smiles: list[str],
-        seed_fingerprints: list,
-        min_extra_carbons: int = 2,
-    ) -> bool:
-        def _heteroatom_profile(mol: Chem.Mol) -> dict[int, int]:
-            profile: dict[int, int] = {}
-            for a in mol.GetAtoms():
-                z = a.GetAtomicNum()
-                if z in {7, 8, 9, 15, 16, 17, 35}:
-                    profile[z] = profile.get(z, 0) + 1
-            return profile
-
-        def _count_carbons(mol: Chem.Mol) -> int:
-            return sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6)
-
-        ctx_profile = _heteroatom_profile(ctx.mol)
-        ctx_c = _count_carbons(ctx.mol)
-
-        if not hasattr(self, '_seed_trivial_cache'):
-            self._seed_trivial_cache: list[tuple[dict[int, int], int]] = []
-            for seed_smi in seed_smiles:
-                seed_ctx = self._get_ctx(seed_smi)
-                if seed_ctx is None:
-                    continue
-                self._seed_trivial_cache.append(
-                    (_heteroatom_profile(seed_ctx.mol), _count_carbons(seed_ctx.mol))
-                )
-
-        for seed_profile, seed_c in self._seed_trivial_cache:
-            if ctx_profile == seed_profile and ctx_c >= seed_c + min_extra_carbons:
-                return True
-
-        return False
+    # ------------------------------------------------------------------
+    # Novelty — delegated to NoveltyValidator
+    # ------------------------------------------------------------------
 
     def _is_known_smiles(self, canon: str) -> bool:
-        return canon in self._seed_smiles or canon in self._known_smiles or canon in self._generated_smiles
+        return self._novelty_validator.is_known_smiles(canon)
 
     def _is_novel_scaffold(self, ctx: MoleculeContext) -> bool:
-        if MurckoScaffold is None or not self._seed_scaffolds:
-            return True
-        try:
-            scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
-            if scaffold and scaffold in self._seed_scaffolds:
-                return False
-        except Exception:
-            pass
-        return True
+        return self._novelty_validator.is_novel_scaffold(ctx)
 
-    def _is_novel_vs_commercial(self, fp: Any, threshold: float = 0.85) -> bool:
-        if not self._commercial_fps:
-            return True
-        sims = BulkTanimotoSimilarity(fp, self._commercial_fps)
-        return not any(s >= threshold for s in sims)
+    def _is_novel_vs_commercial(self, fp: object, threshold: float = 0.85) -> bool:
+        return self._novelty_validator.is_novel_vs_commercial(fp, threshold=threshold)
+
+    def _is_trivial_alkyl_extension(self, ctx: MoleculeContext, min_extra_carbons: int = 2) -> bool:
+        return self._novelty_validator.is_trivial_alkyl_extension(ctx, min_extra_carbons=min_extra_carbons)
 
     def _novelty_check(self, ctx: MoleculeContext, check_scaffold: bool = True, force_exploration: bool = False) -> bool:
-        try:
-            canon = Chem.MolToSmiles(ctx.mol)
-        except Exception:
-            return False
-        if self._is_known_smiles(canon):
-            return False
-        if check_scaffold and not self._is_novel_scaffold(ctx):
-            return False
-        if check_scaffold and self._is_trivial_alkyl_extension(ctx, self.seed_pool, self.seed_fingerprints):
-            return False
-        fp = ctx.get_ecfp4()
-        threshold = 0.90 if force_exploration else 0.85
-        if not self._is_novel_vs_commercial(fp, threshold=threshold):
-            return False
-        return True
+        return self._novelty_validator.novelty_check(ctx, check_scaffold=check_scaffold, force_exploration=force_exploration)
+
+    # ------------------------------------------------------------------
+    # Fragment Harvesting — delegated to FragmentHarvester
+    # ------------------------------------------------------------------
+
+    def fragment_pool_size(self) -> int:
+        return self._fragment_harvester.fragment_pool_size()
+
+    def harvest_fragments(self, smiles: str, score: float = 65.0) -> None:
+        self._fragment_harvester.harvest_fragments(smiles, score=score)
 
     # ------------------------------------------------------------------
     # Strategy 1: SMARTS functional-group replacement
@@ -361,11 +276,6 @@ class MutationEngine:
         return list(set(results))
 
     def record_reaction_success(self, smiles: str, score: float) -> None:
-        """Record the score achieved by a molecule produced via a SMARTS reaction.
-        
-        Updates the reaction's success history so that high-performing reactions
-        are prioritised in future generations.
-        """
         if not self._adaptive_bias:
             return
         ctx = self._get_ctx(smiles)
@@ -398,12 +308,13 @@ class MutationEngine:
 
     def _load_brics_fragments(self, exploration_bias: bool = False) -> list[Chem.Mol]:
         source_smiles: list[str] = list(ELECTROLYTE_FRAGMENT_POOL)
+        harvested = self._fragment_harvester.get_harvested_fragments()
 
-        if exploration_bias and self._harvested_fragments:
-            repeat = max(1, len(ELECTROLYTE_FRAGMENT_POOL) // max(len(self._harvested_fragments), 1))
-            source_smiles.extend(self._harvested_fragments * repeat)
+        if exploration_bias and harvested:
+            repeat = max(1, len(ELECTROLYTE_FRAGMENT_POOL) // max(len(harvested), 1))
+            source_smiles.extend(harvested * repeat)
 
-        source_smiles.extend(self._harvested_fragments)
+        source_smiles.extend(harvested)
         return self._collect_fragments_from_smiles(source_smiles)
 
     def _is_electrolyte_like(self, ctx: MoleculeContext) -> bool:

@@ -7,6 +7,11 @@ in priority order:
    transformations (fluorination, methylation, ether/carbonate edits).
 2. **BRICS fragmentation + reassembly** — scaffold hopping by breaking
    and reconnecting fragments at retrosynthetically sensible bonds.
+
+Decomposed into:
+  - ``MutationEngine`` — orchestrator (strategy selection, public API)
+  - ``NoveltyValidator`` — novelty / trivial-extension / scaffold-gate checks
+  - ``FragmentHarvester`` — dynamic BRICS fragment pool management
 """
 
 from __future__ import annotations
@@ -16,8 +21,12 @@ from aurelius.agent.mutation.brics import (
     _MAX_HARVESTED_FRAGMENTS,
     brics_building_block_coverage as _brics_building_block_coverage,
     get_brics_types as _get_brics_types,
+    combined_grounding_score as _combined_grounding_score,
+    functional_group_coverage as _functional_group_coverage,
 )
 from aurelius.agent.mutation.engine import MutationEngine
+from aurelius.agent.mutation.harvester import FragmentHarvester
+from aurelius.agent.mutation.novelty import NoveltyValidator
 from aurelius.agent.mutation.smarts import (
     _ELECTROLYTE_CHECKS,
     ELECTROLYTE_FRAGMENT_POOL,
@@ -28,6 +37,8 @@ from aurelius.agent.mutation.smarts import (
 
 __all__ = [
     "MutationEngine",
+    "NoveltyValidator",
+    "FragmentHarvester",
     "ELECTROLYTE_SMARTS",
     "ELECTROLYTE_FRAGMENT_POOL",
     "_ELECTROLYTE_CHECKS",
@@ -37,4 +48,6 @@ __all__ = [
     "_MAX_HARVESTED_FRAGMENTS",
     "_get_brics_types",
     "_brics_building_block_coverage",
+    "_combined_grounding_score",
+    "_functional_group_coverage",
 ]

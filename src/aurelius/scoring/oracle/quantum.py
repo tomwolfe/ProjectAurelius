@@ -271,6 +271,35 @@ def _count_heteroatom_perturbations(mol: Chem.Mol) -> tuple[int, int, int]:
     return n_ew, n_ed, n_pi
 
 
+def _topological_sanity_L(mol: Chem.Mol, L: int) -> int:
+    """Cap effective conjugation length if the molecule lacks 3D structural support.
+
+    Physical justification: The particle-in-a-box gap (ΔE ∝ 1/L²) assumes a
+    perfectly planar, rigid conjugated system. Real molecules with long
+    conjugation paths (L > 12) require structural support — sp3 carbons,
+    branching, or ring fusion — to maintain planarity against torsional
+    disorder. A molecule with a long linear polyene chain but negligible sp3
+    character (sp3 fraction < 0.10) will have severe torsional disorder that
+    breaks conjugation, making the 1/L² gap scaling invalid. The effective
+    conjugation length is capped at 12 in such cases, which corresponds to
+    a gap floor of ~0.26 eV — realistically the minimum gap for any organic
+    electrolyte molecule in solution.
+    """
+    if L <= 12:
+        return L
+    n_c = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6)
+    n_sp3 = sum(
+        1 for a in mol.GetAtoms()
+        if a.GetAtomicNum() == 6 and a.GetHybridization() == Chem.HybridizationType.SP3
+    )
+    if n_c == 0:
+        return min(L, 12)
+    sp3_frac = n_sp3 / n_c
+    if sp3_frac < 0.10:
+        return 12
+    return L
+
+
 def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     """Predict HOMO/LUMO using the Topological Orbital Model (TOM).
 
@@ -285,6 +314,7 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     """
     L = _longest_conjugation_path(mol)
     L = max(L, 2)
+    L = _topological_sanity_L(mol, L)
 
     n_ew, n_ed, n_pi = _count_heteroatom_perturbations(mol)
 
