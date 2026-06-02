@@ -497,44 +497,18 @@ class AureliusPipeline:
 
         total_score *= 100.0
 
-        # Multiplicative penalties for structural violations (applied once)
-        al_corrosion_penalty = 1.0
-        if ctx is not None:
-            hydro_penalty = self._check_hydrolytic_instability(ctx.mol)
-            total_score *= hydro_penalty
-            hypo_penalty = self._check_hypofluorite_instability(ctx.mol)
-            total_score *= hypo_penalty
-            if lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
-                al_corrosion_penalty = self._check_al_corrosion_risk(ctx.mol)
-            total_score *= al_corrosion_penalty
-            bb_penalty = self._check_building_block_grounding(ctx.mol)
-            total_score *= bb_penalty
-
+        total_score = self._apply_penalties(total_score, lumo_eV, ctx)
         total_score = float(np.clip(total_score, 0.0, 100.0))
 
-        # Confidence-weighted scoring: penalise low-confidence TOM predictions
         if quantum_confidence == "tom_low":
             total_score *= 0.85
             total_score = float(np.clip(total_score, 0.0, 100.0))
 
         is_viable = total_score >= VIABILITY_THRESHOLD
 
-        # Build rejection reasons (declarative — no hardcoded if/elif chain)
-        rejection_reasons: list[str] = []
-        if not is_viable:
-            reasons = []
-            for obj in _OBJECTIVES:
-                s = sub_scores.get(obj.name, 0.0)
-                if s < 0.3:
-                    value = raw_values.get(obj.property_key, 0.0)
-                    reasons.append(obj.failure_reason_template.format(value=value))
-            if al_corrosion_penalty < 1.0:
-                reasons.append("Al corrosion risk (high-LUMO fluorinated molecule)")
-            if ctx is not None and self._check_hypofluorite_instability(ctx.mol) < 1.0:
-                reasons.append("hypofluorite (O-F) bond — violently reactive")
-            rejection_reasons.append(
-                f"Aurelius Score {total_score:.1f} below threshold: {'; '.join(reasons)}"
-            )
+        rejection_reasons = self._build_rejection_reasons(
+            total_score, sub_scores, raw_values, is_viable, ctx
+        )
 
         return {
             "total_score": total_score,
@@ -559,6 +533,46 @@ class AureliusPipeline:
         score["total_score"] = float(np.clip(score["total_score"], 0.0, 100.0))
         score["is_viable"] = score["total_score"] >= VIABILITY_THRESHOLD
         return score
+
+    @staticmethod
+    def _apply_penalties(
+        total_score: float, lumo_eV: float, ctx: MoleculeContext | None
+    ) -> float:
+        al_corrosion_penalty = 1.0
+        if ctx is None:
+            return total_score
+        total_score *= AureliusPipeline._check_hydrolytic_instability(ctx.mol)
+        total_score *= AureliusPipeline._check_hypofluorite_instability(ctx.mol)
+        if lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
+            al_corrosion_penalty = AureliusPipeline._check_al_corrosion_risk(ctx.mol)
+        total_score *= al_corrosion_penalty
+        total_score *= AureliusPipeline._check_building_block_grounding(ctx.mol)
+        return total_score
+
+    @staticmethod
+    def _build_rejection_reasons(
+        total_score: float,
+        sub_scores: dict[str, float],
+        raw_values: dict[str, float],
+        is_viable: bool,
+        ctx: MoleculeContext | None,
+    ) -> list[str]:
+        if is_viable:
+            return []
+        reasons = []
+        for obj in _OBJECTIVES:
+            s = sub_scores.get(obj.name, 0.0)
+            if s < 0.3:
+                value = raw_values.get(obj.property_key, 0.0)
+                reasons.append(obj.failure_reason_template.format(value=value))
+        if ctx is not None:
+            if AureliusPipeline._check_al_corrosion_risk(ctx.mol) < 1.0:
+                reasons.append("Al corrosion risk (high-LUMO fluorinated molecule)")
+            if AureliusPipeline._check_hypofluorite_instability(ctx.mol) < 1.0:
+                reasons.append("hypofluorite (O-F) bond — violently reactive")
+        return [
+            f"Aurelius Score {total_score:.1f} below threshold: {'; '.join(reasons)}"
+        ]
 
     @staticmethod
     def _format_score(score: dict[str, Any]) -> str:

@@ -1,14 +1,15 @@
 """Net Progress metric — repository-level objective function.
 
 Defines:
-  DISCOVERY_VALUE = (0.4 * rediscovery_rate) + (0.3 * scaffold_novelty)
-                    + (0.2 * top_k_enrichment) + (0.1 * oracle_calibration)
-  SIMPLICITY_COST = normalized_LOC + normalized_cyclomatic_complexity
-                    + normalized_dependency_count
-  NET_PROGRESS = DISCOVERY_VALUE - (λ * SIMPLICITY_COST)
+  DISCOVERY_VALUE = (0.25 * rediscovery_rate) + (0.20 * scaffold_novelty)
+                    + (0.15 * top_k_enrichment) + (0.20 * holdout_generalization)
+                    + (0.20 * experimental_trend_recovery)
+  SIMPLICITY_COST = (0.30 * norm_loc) + (0.20 * norm_cc_violations)
+                    + (0.20 * norm_dependencies) + (0.30 * norm_architectural_surface_area)
+  NET_PROGRESS = DISCOVERY_VALUE - (0.35 * SIMPLICITY_COST)
 
 This test calculates the BASELINE net progress and verifies that any code
-changes do not decrease it. The constants (λ, normalisation factors) are
+changes do not decrease it. The constants (lambda, normalisation factors) are
 chosen so that NET_PROGRESS lives in [0, 1] for a healthy repository.
 
 Usage:
@@ -25,15 +26,25 @@ import random
 import numpy as np
 import pytest
 from rdkit import Chem
+from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from aurelius.scoring.oracle.gc import predict_dielectric_proxy, predict_viscosity_proxy
-from aurelius.scoring.oracle.quantum import predict_tom_orbitals
+from aurelius.scoring.oracle.quantum import (
+    _count_aromatic_rings,
+    _count_heteroatom_perturbations,
+    _longest_conjugation_path,
+    _topological_sanity_L,
+    predict_tom_orbitals,
+)
 from aurelius.types import MoleculeContext
 
 
-LAMBDA = 0.3
+LAMBDA = 0.35
 
 SRC_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius")
+
+HOLDOUT_SEED = 42
+HOLDOUT_FRACTION = 0.20
 
 
 def _count_lines_of_code() -> int:
@@ -110,6 +121,31 @@ def _count_dependency_imports() -> int:
     return len(deps)
 
 
+def _count_architectural_surface_area() -> int:
+    """Count public classes and functions in core src/aurelius/ modules.
+
+    Tracks the number of public (non-underscore-prefixed) classes and
+    top-level functions as a proxy for architectural complexity.
+    """
+    count = 0
+    excluded = {"__init__.py", "__main__.py", "dependencies.py", "reporting.py"}
+    for root, _dirs, files in os.walk(SRC_DIR):
+        for fn in files:
+            if not fn.endswith(".py") or fn in excluded:
+                continue
+            filepath = os.path.join(root, fn)
+            with open(filepath) as f:
+                try:
+                    tree = ast.parse(f.read())
+                except SyntaxError:
+                    continue
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.ClassDef, ast.FunctionDef)):
+                    if not node.name.startswith("_"):
+                        count += 1
+    return count
+
+
 def _compute_rediscovery_rate() -> float:
     """Approximate rediscovery rate using a quick mutation-engine test."""
     engine = None
@@ -133,7 +169,6 @@ def _compute_rediscovery_rate() -> float:
 def _compute_scaffold_novelty() -> float:
     """Approximate scaffold novelty via mutation engine proposal."""
     try:
-        from rdkit.Chem.Scaffolds import MurckoScaffold
         from aurelius.agent.mutation import MutationEngine
 
         engine = MutationEngine(seed_smiles=["COC(=O)OC", "C1COCCO1"])
@@ -163,10 +198,7 @@ def _compute_scaffold_novelty() -> float:
 
 
 def _compute_top_k_enrichment() -> float:
-    """Compare mean score of top-10 vs bottom-10 from mutation engine proposals.
-
-    A positive enrichment means the pipeline correctly ranks candidates.
-    """
+    """Compare mean score of top-10 vs bottom-10 from mutation engine proposals."""
     try:
         from aurelius.pipeline import AureliusPipeline
         from aurelius.agent.mutation import MutationEngine
@@ -201,10 +233,11 @@ def _compute_top_k_enrichment() -> float:
         return 0.0
 
 
-def _compute_oracle_calibration() -> float:
-    """Compute TOM calibration quality as 1 - (MAE / 1.5), clipped to [0, 1].
+def _compute_holdout_generalization() -> float:
+    """TOM holdout MAE as 1 - (MAE / 1.5), clipped to [0, 1].
 
-    1.0 = perfect calibration, 0.0 = MAE >= 1.5 eV.
+    Uses a 80/20 holdout split of orbital_calibration.json.
+    1.0 = MAE=0 (perfect), 0.0 = MAE >= 1.5 eV.
     """
     path = os.path.join(
         os.path.dirname(__file__), "..", "src", "aurelius", "data", "orbital_calibration.json"
@@ -215,8 +248,15 @@ def _compute_oracle_calibration() -> float:
     except Exception:
         return 0.0
 
+    random.seed(HOLDOUT_SEED)
+    indices = list(range(len(data)))
+    random.shuffle(indices)
+    n_holdout = max(1, int(len(data) * HOLDOUT_FRACTION))
+    holdout_idx = set(indices[:n_holdout])
+    holdout = [data[i] for i in holdout_idx]
+
     errors = []
-    for entry in data:
+    for entry in holdout:
         mol = Chem.MolFromSmiles(entry["smiles"])
         if mol is None:
             continue
@@ -229,6 +269,54 @@ def _compute_oracle_calibration() -> float:
         return 0.0
     mae = sum(errors) / len(errors)
     return max(0.0, min(1.0, 1.0 - mae / 1.5))
+
+
+def _compute_experimental_trend_recovery() -> float:
+    """Score how well GC proxy captures known experimental dielectric trends.
+
+    Tests known high-dielectric vs low-dielectric pairs and branched vs
+    linear viscosity trends. Returns a score in [0, 1] where 1.0 means
+    all known trends are correctly reproduced.
+    """
+    from aurelius.types import MoleculeContext
+    from aurelius.scoring.oracle.gc import predict_dielectric_proxy, predict_viscosity_proxy
+
+    trends = [
+        ("dielectric", "C1COC(=O)O1", "COC(=O)OC", True),   # EC > DMC
+        ("dielectric", "CC1COC(=O)O1", "CCOCC", True),      # PC > DEE
+        ("dielectric", "C1COC(=O)O1", "CCOCC", True),        # EC > DEE
+        ("viscosity", "CC(C)(C)OC(=O)OC(C)(C)C", "COC(=O)OC", True),  # branched > linear
+        ("viscosity", "CC(C)(C)O", "CCCCO", True),          # branched > linear
+    ]
+
+    correct = 0
+    total = 0
+    for prop, smi_a, smi_b, expected_higher in trends:
+        ctx_a = MoleculeContext.from_smiles(smi_a)
+        ctx_b = MoleculeContext.from_smiles(smi_b)
+        if ctx_a is None or ctx_b is None:
+            continue
+        if prop == "dielectric":
+            va = predict_dielectric_proxy(ctx_a)
+            vb = predict_dielectric_proxy(ctx_b)
+        else:
+            va = predict_viscosity_proxy(ctx_a)
+            vb = predict_viscosity_proxy(ctx_b)
+        total += 1
+        if expected_higher and va > vb:
+            correct += 1
+        elif not expected_higher and va < vb:
+            correct += 1
+
+    # Additional trend: viscosity of glycerol > ethanol
+    ctx_gly = MoleculeContext.from_smiles("C(C(CO)O)O")
+    ctx_eth = MoleculeContext.from_smiles("CCO")
+    if ctx_gly and ctx_eth:
+        total += 1
+        if predict_viscosity_proxy(ctx_gly) > predict_viscosity_proxy(ctx_eth):
+            correct += 1
+
+    return correct / max(total, 1)
 
 
 class TestNetProgress:
@@ -244,49 +332,60 @@ class TestNetProgress:
         loc = _count_lines_of_code()
         cc_violations = _count_cyclomatic_violations()
         n_deps = _count_dependency_imports()
+        arch_surface = _count_architectural_surface_area()
 
         rediscovery_rate = _compute_rediscovery_rate()
         scaffold_novelty = _compute_scaffold_novelty()
         top_k_enrichment = _compute_top_k_enrichment()
-        oracle_cal = _compute_oracle_calibration()
+        holdout_gen = _compute_holdout_generalization()
+        trend_recovery = _compute_experimental_trend_recovery()
 
-        # Normalisation factors (empirical targets for a healthy repo)
         LOC_NORM = 5000.0
         CC_NORM = 5.0
         DEP_NORM = 10.0
+        ARCH_NORM = 50.0
 
         sim_loc = min(1.0, loc / LOC_NORM)
         sim_cc = min(1.0, cc_violations / CC_NORM)
         sim_dep = min(1.0, n_deps / DEP_NORM)
-        simplicity_cost = (sim_loc + sim_cc + sim_dep) / 3.0
+        sim_arch = min(1.0, arch_surface / ARCH_NORM)
+        simplicity_cost = (
+            0.30 * sim_loc
+            + 0.20 * sim_cc
+            + 0.20 * sim_dep
+            + 0.30 * sim_arch
+        )
 
         discovery_value = (
-            0.4 * rediscovery_rate
-            + 0.3 * scaffold_novelty
-            + 0.2 * top_k_enrichment
-            + 0.1 * oracle_cal
+            0.25 * rediscovery_rate
+            + 0.20 * scaffold_novelty
+            + 0.15 * top_k_enrichment
+            + 0.20 * holdout_gen
+            + 0.20 * trend_recovery
         )
 
         net_progress = discovery_value - LAMBDA * simplicity_cost
 
-        print(f"\n{'=' * 55}")
+        print(f"\n{'=' * 65}")
         print(f"  NET PROGRESS REPORT")
-        print(f"{'=' * 55}")
+        print(f"{'=' * 65}")
         print(f"  DISCOVERY VALUE")
-        print(f"    Rediscovery rate:     {rediscovery_rate:.3f}")
-        print(f"    Scaffold novelty:     {scaffold_novelty:.3f}")
-        print(f"    Top-k enrichment:     {top_k_enrichment:.3f}")
-        print(f"    Oracle calibration:   {oracle_cal:.3f}")
-        print(f"    DISCOVERY_VALUE:      {discovery_value:.3f}")
+        print(f"    Rediscovery rate:            {rediscovery_rate:.3f}")
+        print(f"    Scaffold novelty:            {scaffold_novelty:.3f}")
+        print(f"    Top-k enrichment:            {top_k_enrichment:.3f}")
+        print(f"    Holdout generalization:      {holdout_gen:.3f}")
+        print(f"    Experimental trend recovery: {trend_recovery:.3f}")
+        print(f"    DISCOVERY_VALUE:             {discovery_value:.3f}")
         print(f"  SIMPLICITY COST")
-        print(f"    Lines of code:        {loc} (norm={sim_loc:.3f})")
-        print(f"    CC violations >12:    {cc_violations} (norm={sim_cc:.3f})")
-        print(f"    Third-party deps:     {n_deps} (norm={sim_dep:.3f})")
-        print(f"    SIMPLICITY_COST:      {simplicity_cost:.3f}")
+        print(f"    Lines of code:               {loc} (norm={sim_loc:.3f})")
+        print(f"    CC violations >12:           {cc_violations} (norm={sim_cc:.3f})")
+        print(f"    Third-party deps:            {n_deps} (norm={sim_dep:.3f})")
+        print(f"    Architectural surface area:  {arch_surface} (norm={sim_arch:.3f})")
+        print(f"    SIMPLICITY_COST:             {simplicity_cost:.3f}")
         print(f"  NET PROGRESS")
-        print(f"    λ:                    {LAMBDA}")
-        print(f"    NET_PROGRESS:         {net_progress:.3f}")
-        print(f"{'=' * 55}")
+        print(f"    λ:                           {LAMBDA}")
+        print(f"    NET_PROGRESS:                {net_progress:.3f}")
+        print(f"{'=' * 65}")
 
         assert net_progress > 0.0, (
             f"NET_PROGRESS = {net_progress:.3f} is not positive. "
