@@ -341,15 +341,21 @@ class TestSoftwareSimplicity:
         )
 
     def test_no_string_dispatch_via_ast(self):
-        """AST-parse pipeline.py and oracle.py for string-based property dispatch.
+        """AST-parse pipeline.py and oracle/ for string-based property dispatch.
 
         The codebase must use direct callable references or Objective dataclass,
         not ``if property == "string":`` dispatch patterns.
         """
-        for filepath in [
+        oracle_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius", "scoring", "oracle")
+        oracle_files = [
+            os.path.join(oracle_dir, fn)
+            for fn in os.listdir(oracle_dir)
+            if fn.endswith(".py")
+        ]
+        filepaths = [
             os.path.join(os.path.dirname(__file__), "..", "src", "aurelius", "pipeline.py"),
-            os.path.join(os.path.dirname(__file__), "..", "src", "aurelius", "scoring", "oracle.py"),
-        ]:
+        ] + oracle_files
+        for filepath in filepaths:
             with open(filepath) as f:
                 tree = ast.parse(f.read())
             for node in ast.walk(tree):
@@ -367,6 +373,45 @@ class TestSoftwareSimplicity:
                                                 f"String dispatch found in {filepath}: "
                                                 f"if {left.id} == '{comparator.value}'"
                                             )
+
+    def test_no_ml_framework_imports_via_ast(self):
+        """AST-scan every .py file in src/aurelius/ for ML framework imports.
+
+        The codebase philosophy forbids deep learning frameworks (torch,
+        tensorflow, jax) to maintain simplicity and avoid ML bloat.
+        This is a hard AST-level gate that prevents accidental imports.
+        """
+        src_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius")
+        ml_packages = {"torch", "tensorflow", "jax", "keras", "transformers", "flax", "mxnet"}
+        violations: list[str] = []
+
+        for root, _dirs, files in os.walk(src_dir):
+            for fn in files:
+                if not fn.endswith(".py"):
+                    continue
+                filepath = os.path.join(root, fn)
+                with open(filepath) as f:
+                    try:
+                        tree = ast.parse(f.read())
+                    except SyntaxError:
+                        continue
+                rel_path = os.path.relpath(filepath, src_dir)
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            pkg = alias.name.split(".")[0]
+                            if pkg in ml_packages:
+                                violations.append(f"{rel_path}: import {alias.name}")
+                    elif isinstance(node, ast.ImportFrom):
+                        if node.module:
+                            pkg = node.module.split(".")[0]
+                            if pkg in ml_packages:
+                                violations.append(f"{rel_path}: from {node.module} import ...")
+
+        assert not violations, (
+            f"ML framework imports detected in src/aurelius/:\n" +
+            "\n".join(f"  {v}" for v in violations)
+        )
 
     def test_dependency_tree_no_ml_frameworks(self):
         """pyproject.toml must not contain ML training frameworks."""

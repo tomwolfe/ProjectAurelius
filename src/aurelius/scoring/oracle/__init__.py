@@ -1,0 +1,79 @@
+"""Hybrid quantum/GC property oracle for Project Aurelius.
+
+Provides:
+  - PropertyOracle: Multi-objective oracle (HOMO, LUMO, Dielectric, Viscosity, Li+ Solvation)
+  - QuantumOracle: Two-tier quantum backend (xTB / TOM fallback)
+  - GC model functions for bulk property prediction
+"""
+
+from __future__ import annotations
+
+from aurelius.scoring.oracle.gc import (
+    _CROSS_TERMS,
+    _GC_BASE_DIELECTRIC,
+    _GC_BASE_LI_SOLVATION,
+    _GC_BASE_VISCOSITY,
+    _GC_FRAGMENTS,
+    _GC_SATURATION_K,
+    _compute_dielectric_cross_terms,
+    _count_branch_points,
+    _count_fragments,
+    _count_stereocenters,
+    _saturate_contrib,
+    get_data_source,
+    predict_dielectric_proxy,
+    predict_li_solvation_proxy,
+    predict_viscosity_proxy,
+)
+from aurelius.scoring.oracle.oracle import PropertyOracle
+from aurelius.scoring.oracle.quantum import (
+    _ATOM_PERTURBATIONS,
+    _HAS_XTB,
+    _XTB_HOMO_RE,
+    _XTB_LUMO_RE,
+    _count_heteroatom_perturbations,
+    _find_xtb_binary,
+    _generate_xyz,
+    _generate_xyz_geometry_optimized,
+    _is_conjugated_bond,
+    _longest_conjugation_path,
+    _parse_xtb_output,
+    _run_xtb,
+    has_xtb,
+    predict_tom_orbitals,
+    QuantumOracle,
+)
+
+__all__ = [
+    "PropertyOracle",
+    "QuantumOracle",
+    "get_data_source",
+    "has_xtb",
+    "predict_dielectric_proxy",
+    "predict_viscosity_proxy",
+    "predict_li_solvation_proxy",
+    "predict_tom_orbitals",
+    "_GC_FRAGMENTS",
+    "_count_fragments",
+    "_count_branch_points",
+    "_count_stereocenters",
+    "_compute_dielectric_cross_terms",
+    "_CROSS_TERMS",
+    "_GC_BASE_DIELECTRIC",
+    "_GC_BASE_LI_SOLVATION",
+    "_GC_BASE_VISCOSITY",
+    "_GC_SATURATION_K",
+    "_saturate_contrib",
+    "_HAS_XTB",
+    "_find_xtb_binary",
+    "_generate_xyz",
+    "_generate_xyz_geometry_optimized",
+    "_run_xtb",
+    "_parse_xtb_output",
+    "_XTB_HOMO_RE",
+    "_XTB_LUMO_RE",
+    "_longest_conjugation_path",
+    "_is_conjugated_bond",
+    "_ATOM_PERTURBATIONS",
+    "_count_heteroatom_perturbations",
+]
