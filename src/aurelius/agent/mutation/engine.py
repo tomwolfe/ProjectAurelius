@@ -72,6 +72,7 @@ class MutationEngine:
 
         self._seed_smiles, self._seed_scaffolds = self._init_smiles_and_scaffolds()
 
+        self._ctx_cache: dict[str, MoleculeContext] = {}
         self._known_smiles = set()
         self._load_known_electrolytes()
 
@@ -129,6 +130,15 @@ class MutationEngine:
                 logger.debug("Failed to parse SMARTS '%s' (%s)", smarts, name)
         return rxns
 
+    def _get_ctx(self, smiles: str) -> MoleculeContext | None:
+        if smiles not in self._ctx_cache:
+            ctx = MoleculeContext.from_smiles(smiles)
+            if ctx is not None:
+                self._ctx_cache[smiles] = ctx
+            else:
+                self._ctx_cache[smiles] = None  # type: ignore[assignment]
+        return self._ctx_cache.get(smiles)
+
     def _load_known_electrolytes(self) -> None:
         import json
         import os
@@ -151,7 +161,7 @@ class MutationEngine:
                 continue
 
         for smi in smiles_list:
-            ctx = MoleculeContext.from_smiles(smi)
+            ctx = self._get_ctx(smi)
             if ctx is not None:
                 canon = Chem.MolToSmiles(ctx.mol)
                 if canon not in existing_smis:
@@ -167,7 +177,7 @@ class MutationEngine:
         return len(self._commercial_fps)
 
     def add_to_db(self, smiles: str) -> None:
-        ctx = MoleculeContext.from_smiles(smiles)
+        ctx = self._get_ctx(smiles)
         if ctx is not None:
             try:
                 canon = Chem.MolToSmiles(ctx.mol)
@@ -180,7 +190,7 @@ class MutationEngine:
             return None
         if frag_smi in ELECTROLYTE_FRAGMENT_POOL:
             return None
-        f_ctx = MoleculeContext.from_smiles(frag_smi)
+        f_ctx = self._get_ctx(frag_smi)
         if f_ctx is None or f_ctx.mw > 250 or f_ctx.hbd > 0:
             return None
         if self._harvested_fragments and self._fragment_too_similar(frag_smi, self._harvested_fragments, threshold=0.85):
@@ -188,7 +198,7 @@ class MutationEngine:
         return f_ctx
 
     def harvest_fragments(self, smiles: str, score: float = 65.0) -> None:
-        ctx = MoleculeContext.from_smiles(smiles)
+        ctx = self._get_ctx(smiles)
         if ctx is None:
             return
         try:
@@ -210,14 +220,13 @@ class MutationEngine:
         except Exception:
             logger.debug("Failed to harvest fragments from %s", smiles, exc_info=True)
 
-    @staticmethod
-    def _fragment_too_similar(new_smi: str, existing_smis: list[str], threshold: float = 0.85) -> bool:
-        new_ctx = MoleculeContext.from_smiles(new_smi)
+    def _fragment_too_similar(self, new_smi: str, existing_smis: list[str], threshold: float = 0.85) -> bool:
+        new_ctx = self._get_ctx(new_smi)
         if new_ctx is None:
             return False
         new_fp = new_ctx.get_ecfp4()
         for old_smi in existing_smis:
-            old_ctx = MoleculeContext.from_smiles(old_smi)
+            old_ctx = self._get_ctx(old_smi)
             if old_ctx is None:
                 continue
             old_fp = old_ctx.get_ecfp4()
@@ -230,8 +239,8 @@ class MutationEngine:
     def fragment_pool_size(self) -> int:
         return len(ELECTROLYTE_FRAGMENT_POOL) + len(self._harvested_fragments)
 
-    @staticmethod
     def _is_trivial_alkyl_extension(
+        self,
         ctx: MoleculeContext,
         seed_smiles: list[str],
         seed_fingerprints: list,
@@ -251,15 +260,19 @@ class MutationEngine:
         ctx_profile = _heteroatom_profile(ctx.mol)
         ctx_c = _count_carbons(ctx.mol)
 
-        for seed_smi in seed_smiles:
-            seed_ctx = MoleculeContext.from_smiles(seed_smi)
-            if seed_ctx is None:
-                continue
-            seed_profile = _heteroatom_profile(seed_ctx.mol)
-            if ctx_profile == seed_profile:
-                seed_c = _count_carbons(seed_ctx.mol)
-                if ctx_c >= seed_c + min_extra_carbons:
-                    return True
+        if not hasattr(self, '_seed_trivial_cache'):
+            self._seed_trivial_cache: list[tuple[dict[int, int], int]] = []
+            for seed_smi in seed_smiles:
+                seed_ctx = self._get_ctx(seed_smi)
+                if seed_ctx is None:
+                    continue
+                self._seed_trivial_cache.append(
+                    (_heteroatom_profile(seed_ctx.mol), _count_carbons(seed_ctx.mol))
+                )
+
+        for seed_profile, seed_c in self._seed_trivial_cache:
+            if ctx_profile == seed_profile and ctx_c >= seed_c + min_extra_carbons:
+                return True
 
         return False
 
@@ -313,7 +326,11 @@ class MutationEngine:
         product_smi = Chem.MolToSmiles(product)
         if not product_smi or product_smi == seed_smi:
             return None
-        product_ctx = MoleculeContext(smiles=product_smi, mol=product)
+        if product_smi not in self._ctx_cache:
+            product_ctx = MoleculeContext(smiles=product_smi, mol=product)
+            self._ctx_cache[product_smi] = product_ctx
+        else:
+            product_ctx = self._ctx_cache[product_smi]
         if not product_ctx.is_valid_electrolyte_mol():
             return None
         if not self._novelty_check(product_ctx):
@@ -349,14 +366,10 @@ class MutationEngine:
         """
         if not self._adaptive_bias:
             return
-        ctx = MoleculeContext.from_smiles(smiles)
+        ctx = self._get_ctx(smiles)
         if ctx is None:
             return
-        try:
-            canon = Chem.MolToSmiles(ctx.mol)
-        except Exception:
-            return
-        rxn_name = self._product_to_reaction.get(canon)
+        rxn_name = self._product_to_reaction.get(ctx.smiles)
         if rxn_name is not None:
             if rxn_name not in self._reaction_scores:
                 self._reaction_scores[rxn_name] = []
@@ -369,7 +382,7 @@ class MutationEngine:
     def _collect_fragments_from_smiles(self, smiles_list: list[str]) -> list[Chem.Mol]:
         frags: list[Chem.Mol] = []
         for smi in smiles_list:
-            ctx = MoleculeContext.from_smiles(smi)
+            ctx = self._get_ctx(smi)
             if ctx is None or ctx.mw > 250 or ctx.hbd > 0:
                 continue
             try:
@@ -435,10 +448,11 @@ class MutationEngine:
 
     def _build_from_pairs(self, all_frags: list[Chem.Mol], valid_pairs: list[tuple[int, int]]) -> list[str]:
         generated: list[str] = []
-        for _ in range(500):
-            rng = np.random.default_rng(self._rng.integers(0, 2**31))
+        n_pairs = len(valid_pairs)
+        indices = self._rng.integers(0, n_pairs, size=min(150, n_pairs * 5))
+        for idx in indices:
             try:
-                i, j = valid_pairs[rng.integers(0, len(valid_pairs))]
+                i, j = valid_pairs[idx]
                 for r_mol in BRICS.BRICSBuild([all_frags[i], all_frags[j]]):
                     s = self._validate_brics_product(r_mol)
                     if s:
@@ -473,7 +487,7 @@ class MutationEngine:
     # ------------------------------------------------------------------
 
     def mutate(self, smiles: str, batch_size: int = 50, force_exploration: bool = False) -> list[str]:
-        ctx = MoleculeContext.from_smiles(smiles)
+        ctx = self._get_ctx(smiles)
         if ctx is None:
             return []
 

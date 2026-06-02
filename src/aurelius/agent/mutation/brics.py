@@ -10,6 +10,7 @@ Contains:
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 from rdkit import Chem
 from rdkit.Chem import BRICS
@@ -157,13 +158,12 @@ def _strip_brics_dummies(frag_smi: str) -> str | None:
     return Chem.MolToSmiles(rw)
 
 
-def brics_building_block_coverage(mol: Chem.Mol) -> float:
-    """Fraction of BRICS fragments matching known commercial building blocks.
-
-    For each BRICS fragment from the molecule, strips dummy-atom labels and
-    checks substructure match against pre-compiled commercial building blocks.
-    Returns 0.0 (poor) to 1.0 (excellent). Returns 0.5 if decomposition fails.
-    """
+@lru_cache(maxsize=2048)
+def _cached_coverage(smiles: str) -> float:
+    """Cached building block coverage by SMILES string."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return 0.5
     try:
         frags = list(BRICS.BRICSDecompose(mol))
     except Exception:
@@ -183,3 +183,14 @@ def brics_building_block_coverage(mol: Chem.Mol) -> float:
                 matched += 1
                 break
     return matched / len(frags)
+
+
+def brics_building_block_coverage(mol: Chem.Mol) -> float:
+    """Fraction of BRICS fragments matching known commercial building blocks.
+
+    For each BRICS fragment from the molecule, strips dummy-atom labels and
+    checks substructure match against pre-compiled commercial building blocks.
+    Returns 0.0 (poor) to 1.0 (excellent). Returns 0.5 if decomposition fails.
+    """
+    smiles = Chem.MolToSmiles(mol)
+    return _cached_coverage(smiles)
