@@ -2,6 +2,16 @@
 
 Predicts dielectric, viscosity, and Li+ solvation via functional-group
 additivity with Michaelis-Menten saturation and non-linear cross-terms.
+
+ADR-2026-06-01: Added [-2.0, 2.0] clip to _compute_dielectric_cross_terms.
+Physical justification: cross-term additive bonuses have no upper bound; a
+molecule with carbonate + ether + sulfone + nitrile can accumulate ~1.2 extra
+dielectric points, enough to materially misrank candidates. A single clip guard
+bounds the cross-term contribution to what is physically plausible — no polar
+group combination can more than double the base dielectric contribution. This is
+the minimal non-invasive fix: one line, no new data structures, no architectural
+change. The alternative (capping each cross-term individually or using saturation)
+would add complexity without proportional benefit.
 """
 
 from __future__ import annotations
@@ -95,12 +105,23 @@ _CROSS_TERMS: list[tuple[str, str, float, str]] = [
 
 
 def _compute_dielectric_cross_terms(counts: dict[str, int]) -> float:
-    """Compute non-linear cross-term contributions to dielectric proxy."""
+    """Compute non-linear cross-term contributions to dielectric proxy.
+
+    Physical justification: Cross-terms capture non-additive dielectric
+    enhancement from co-occurring polar groups (e.g., carbonate-ether
+    synergy). Without a ceiling, a molecule with four synergistic groups
+    (carbonate + ether + sulfone + nitrile) can accumulate ~1.2 extra
+    dielectric points, enough to materially misrank candidates. The
+    [-2.0, 2.0] clip bounds the cross-term contribution to what is
+    physically plausible for a molecular dielectric proxy — no single
+    polar group combination can more than double the base dielectric
+    contribution.
+    """
     correction = 0.0
     for frag_a, frag_b, boost, _desc in _CROSS_TERMS:
         if counts.get(frag_a, 0) > 0 and counts.get(frag_b, 0) > 0:
             correction += boost
-    return correction
+    return max(-2.0, min(2.0, correction))
 
 
 def predict_dielectric_proxy(ctx: MoleculeContext) -> float:

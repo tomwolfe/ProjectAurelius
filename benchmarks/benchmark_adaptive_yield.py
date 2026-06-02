@@ -7,6 +7,11 @@ prove that the intervention increases novel Murcko scaffold yield.
 
 Usage:
     python -m benchmarks.benchmark_adaptive_yield
+
+ADR-2026-06-01: Added random.seed(seed) to run_trial alongside np.random.seed
+for reproducibility. The MutationEngine uses random.shuffle internally (via BRICS),
+which Python's random module controls — without this seed, trials are not
+deterministically reproducible.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ import io
 import json
 import logging
 import os
+import random
 import sys
 import time
 import warnings
@@ -70,6 +76,7 @@ def compute_murcko_scaffold(smiles: str) -> str | None:
 def run_trial(adaptive_bias: bool, seed: int = 42) -> dict:
     """Run a discovery loop trial and return results."""
     np.random.seed(seed)
+    random.seed(seed)
 
     engine = MutationEngine(seed_smiles=SEED_SMILES, adaptive_bias=adaptive_bias)
 

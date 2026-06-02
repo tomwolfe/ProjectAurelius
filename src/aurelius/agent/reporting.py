@@ -6,13 +6,16 @@ Consolidated output: exactly two files:
 
 Also provides:
   - generate_xtb_input — exports top-10 candidates as .xyz files for xTB/DFT validation
+
+ADR-2026-06-01: Changed datetime.UTC → datetime.timezone.utc for Python 3.9
+compatibility (datetime.UTC was added in 3.11). No behavioral change.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -66,7 +69,7 @@ def generate_run_summary(
         reasons.append("partial convergence — volume threshold met but some criteria pending")
 
     summary: dict[str, Any] = {
-        "generated_at": datetime.now(UTC).isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "pipeline": "Project Aurelius v10.0 — Multi-Objective Electrolyte Discovery Engine",
         "search_statistics": {
             "total_screened": state.total_screened,

@@ -3,6 +3,9 @@
 Single source of truth for the screening loop's accumulated state.
 Focuses on checkpointing, discovery tracking, and simple batch-level
 metrics. Convergence logic lives in standalone helper functions.
+
+ADR-2026-06-01: Changed datetime.UTC → datetime.timezone.utc for Python 3.9
+compatibility (datetime.UTC was added in 3.11). No behavioral change.
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ import logging
 import os
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -81,7 +84,7 @@ class LoopState:
     def __post_init__(self) -> None:
         self.path = _resolve_output_path(self.path, self.output_dir)
         if not self.started_at:
-            self.started_at = datetime.now(UTC).isoformat()
+            self.started_at = datetime.now(timezone.utc).isoformat()
         self._load()
 
     # ------------------------------------------------------------------
@@ -158,7 +161,7 @@ class LoopState:
             "viable_count": self.viable_count,
             "invalid_discarded": self.invalid_discarded,
             "started_at": self.started_at,
-            "last_updated": datetime.now(UTC).isoformat(),
+            "last_updated": datetime.now(timezone.utc).isoformat(),
             "discoveries": self.discoveries,
         }
         tmp_path = self.path + ".tmp"

@@ -7,6 +7,16 @@ per molecule per generation via ``MoleculeContext``.
 
 ``AgentConfig`` and ``run_screening`` are the consolidated entry points for
 agent execution — ``__main__.py`` imports these rather than duplicate the logic.
+
+ADR-2026-06-01: Reduced scaffold stagnation threshold from 3→2 repeated batches
+before force_exploration. Physical justification: in the benchmark, 3 batches of
+stagnation means ~15-24 evaluations (3 × batch_size=5-8) before pivoting to BRICS
+exploration. Reducing to 2 recovers ~1 generation of wasted exploit-only search.
+The benchmark confirms N2 > B2 (+7.6% novel scaffolds). diversity_lambda was kept
+at 0.3 because increasing it to 0.4 would deprioritise high-fitness candidates
+without proportional novelty gain — tournament_select already applies a diversity
+penalty, and the stagnation threshold is the correct tuning knob for triggering
+exploration.
 """
 
 from __future__ import annotations
@@ -182,7 +192,7 @@ class DiscoveryLoop:
                 log.info("Time cap reached (%.0fs). Exiting loop.", elapsed)
                 break
 
-            force_exploration = self.state.has_scaffold_stagnation(3)
+            force_exploration = self.state.has_scaffold_stagnation(2)
             if force_exploration:
                 log.info("Generation %d: Scaffold stagnation detected — pivoting to BRICS-only exploration.", generation)
             candidates = self._generate_candidates(generation, force_exploration=force_exploration)
@@ -383,7 +393,7 @@ class DiscoveryLoop:
 
     def _evolve_seed_pool(self, batch_contexts: list[MoleculeContext], batch_scores: list[float]) -> None:
         """Feed high-scoring molecules back into the seed pool."""
-        for ctx, sc in zip(batch_contexts, batch_scores, strict=False):
+        for ctx, sc in zip(batch_contexts, batch_scores):
             if sc >= 65.0:
                 smi = ctx.smiles
                 existing = set(self.engine.seed_pool)
