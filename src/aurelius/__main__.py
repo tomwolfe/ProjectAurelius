@@ -177,6 +177,57 @@ def evaluate_cmd(
         sys.exit(1)
 
 
+@cli.command("validate")
+@click.argument("smiles")
+def validate_cmd(smiles: str) -> None:
+    """Run the full pipeline on a SMILES and print per-objective scorecard."""
+    from aurelius.pipeline import _OBJECTIVES, AureliusPipeline
+    from aurelius.constants import VIABILITY_THRESHOLD
+
+    pipeline = _make_pipeline()
+    results = pipeline.screen_smiles(smiles)
+    score = results.get("score", {})
+    t2 = results.get("tier2", {})
+
+    total = score.get("total_score", 0.0)
+    viable = score.get("is_viable", False)
+    sub_scores = score.get("sub_scores", {})
+
+    click.echo(f"\n{'=' * 56}")
+    click.echo(f"  Project Aurelius v10.0 — Validate")
+    click.echo(f"  SMILES: {smiles}")
+    click.echo(f"{'=' * 56}")
+    click.echo(f"  {'Objective':<28} {'Raw':>8} {'Weight':>8} {'SubScore':>8}")
+    click.echo(f"  {'-' * 28} {'-' * 8} {'-' * 8} {'-' * 8}")
+
+    for obj in _OBJECTIVES:
+        raw = t2.get(obj.property_key, 0.0)
+        if obj.property_key == "sa_score":
+            raw = score.get("sa_score", 0.0)
+        sub = sub_scores.get(obj.name, 0.0)
+        weighted = obj.weight * sub
+        label = obj.name[:28]
+        click.echo(f"  {label:<28} {raw:>8.3f} {obj.weight:>8.2f} {weighted:>8.4f}")
+
+    click.echo(f"  {'-' * 28} {'-' * 8} {'-' * 8} {'-' * 8}")
+    click.echo(f"  {'TOTAL':>28} {total:>8.1f}/100")
+    click.echo(f"  {'Verdict':>28} {'VIABLE' if viable else 'REJECTED'}")
+    if score.get("rejection_reasons"):
+        for reason in score["rejection_reasons"]:
+            click.echo(f"  {'':>28} {reason}")
+    if t2:
+        click.echo(f"\n  Predicted Properties:")
+        click.echo(f"    HOMO: {t2.get('homo_eV', 'N/A')} eV")
+        click.echo(f"    LUMO: {t2.get('lumo_eV', 'N/A')} eV")
+        click.echo(f"    Gap:  {t2.get('gap_eV', 'N/A')} eV")
+        click.echo(f"    Dielectric proxy: {t2.get('dielectric_proxy', 'N/A')}")
+        click.echo(f"    Viscosity proxy:  {t2.get('viscosity_proxy', 'N/A')}")
+        click.echo(f"    Li+ solvation:    {t2.get('li_solvation_proxy', 'N/A')}")
+    click.echo(f"{'=' * 56}")
+    if not viable:
+        sys.exit(1)
+
+
 @cli.command("agent")
 @click.option("--max-generations", type=int, default=50, help="Maximum generations to run")
 @click.option("--batch-size", type=int, default=50, help="Candidates per batch")

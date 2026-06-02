@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import random
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -65,8 +66,8 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
     resumed = state.total_screened > 0
     if resumed:
         log.info(
-            "Resuming from checkpoint: batch=%d, screened=%d, best_score=%.1f",
-            state.batch, state.total_screened, state.best_score,
+            "Resuming from checkpoint: generations=%d, screened=%d, best_score=%.1f",
+            state.generations, state.total_screened, state.best_score,
         )
     else:
         log.info("Fresh start. No checkpoint found.")
@@ -88,7 +89,37 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
     all_results = results["all_results"]
     discoveries = results["discoveries"]
 
-    generate_run_summary(loop.state, all_results, discoveries)
+    # Post-loop mixture synergy analysis: pairwise score top-10 discoveries
+    top_mixtures = None
+    top_10 = sorted(discoveries, key=lambda r: -r.total_score)[:10]
+    if len(top_10) >= 2:
+        mixture_results = []
+        for i in range(len(top_10)):
+            for j in range(i + 1, len(top_10)):
+                ctx_i = MoleculeContext.from_smiles(top_10[i].smiles)
+                ctx_j = MoleculeContext.from_smiles(top_10[j].smiles)
+                if ctx_i is None or ctx_j is None:
+                    continue
+                mix = pipeline.screen_mixture(ctx_i, ctx_j, 0.5)
+                mix_score = mix.get("score", {}).get("total_score", 0.0)
+                synergy = mix.get("mixture_properties", {}).get("synergy_bonus", 0.0)
+                mixture_results.append({
+                    "component1_smiles": top_10[i].smiles,
+                    "component2_smiles": top_10[j].smiles,
+                    "component1_score": top_10[i].total_score,
+                    "component2_score": top_10[j].total_score,
+                    "mixture_score": round(mix_score, 4),
+                    "synergy_bonus": round(synergy, 4),
+                })
+        mixture_results.sort(key=lambda m: -m["mixture_score"])
+        top_mixtures = mixture_results[:3]
+        log.info("Top-3 mixtures from post-loop analysis:")
+        for m in top_mixtures:
+            log.info("  %s + %s -> score=%.1f (synergy=%.4f)",
+                     m["component1_smiles"], m["component2_smiles"],
+                     m["mixture_score"], m["synergy_bonus"])
+
+    generate_run_summary(loop.state, all_results, discoveries, top_mixtures=top_mixtures)
     generate_discoveries_sdf(discoveries)
     state.save()
 
@@ -256,6 +287,48 @@ class DiscoveryLoop:
                 and score_data.get("is_viable", False)
                 and not score_data.get("rejection_reasons", []))
 
+    def _evaluate_mixture_pairs(
+        self,
+        valid_contexts: list[MoleculeContext],
+    ) -> tuple[list[MoleculeContext], list[float]]:
+        """Occasionally (~10%) evaluate binary pairs as mixtures during the loop."""
+        result_contexts: list[MoleculeContext] = []
+        all_scores: list[float] = []
+
+        if len(valid_contexts) < 4:
+            return result_contexts, all_scores
+
+        n_pairs = max(1, int(self.batch_size * 0.1))
+        indices = list(range(len(valid_contexts)))
+        random.shuffle(indices)
+        for k in range(0, min(n_pairs * 2, len(indices) - 1), 2):
+            ctx1 = valid_contexts[indices[k]]
+            ctx2 = valid_contexts[indices[k + 1]]
+            try:
+                mix = self.pipeline.screen_mixture(ctx1, ctx2, 0.5)
+            except Exception:
+                continue
+            mix_score = mix.get("score", {}).get("total_score", 0.0)
+            mix_smi = f"{ctx1.smiles}|{ctx2.smiles}"
+            self.screened_smiles.add(mix_smi)
+            all_scores.append(mix_score)
+            result_contexts.append(ctx1)
+            synergy = mix.get("mixture_properties", {}).get("synergy_bonus", 0.0)
+            mix_score_data = mix.get("score", {})
+            mix_t2 = mix.get("mixture_properties", {})
+            novelty = self._compute_novelty(ctx1)
+            sr = self._build_screening_result(
+                mix_smi, mix_score, mix_score_data, mix_t2, novelty, ctx1,
+                mix_score_data.get("sub_scores", {}),
+            )
+            if sr.total_score >= DISCOVERY_THRESHOLD:
+                self.discoveries.append(sr)
+                self.state.add_discovery(sr)
+            self.all_results.append(sr)
+            log.info("  ** MIXTURE ** %s (score=%.1f, synergy=%.4f)", mix_smi, mix_score, synergy)
+
+        return result_contexts, all_scores
+
     def _evaluate_and_select(
         self,
         valid_contexts: list[MoleculeContext],
@@ -293,6 +366,10 @@ class DiscoveryLoop:
                 log.info("  ** DISCOVERY ** %s (score=%.1f)", smi, total_score)
 
             self.all_results.append(sr)
+
+        mix_contexts, mix_scores = self._evaluate_mixture_pairs(valid_contexts)
+        result_contexts.extend(mix_contexts)
+        all_scores.extend(mix_scores)
 
         if not result_contexts:
             return [], []

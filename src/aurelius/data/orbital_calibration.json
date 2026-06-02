@@ -1,0 +1,16 @@
+[
+  {"smiles": "C1COC(=O)O1",       "name": "EC",       "homo_eV": -7.6, "lumo_eV": -0.8},
+  {"smiles": "COC(=O)OC",         "name": "DMC",      "homo_eV": -7.8, "lumo_eV": -0.5},
+  {"smiles": "COCCOC",            "name": "DME",      "homo_eV": -7.2, "lumo_eV":  1.2},
+  {"smiles": "COC(=O)OCC",        "name": "EMC",      "homo_eV": -7.6, "lumo_eV": -0.6},
+  {"smiles": "CC1COC(=O)O1",      "name": "PC",       "homo_eV": -7.5, "lumo_eV": -0.7},
+  {"smiles": "CCOC(=O)OCC",       "name": "DEC",      "homo_eV": -7.7, "lumo_eV": -0.5},
+  {"smiles": "C1C(F)OC(=O)O1",    "name": "FEC",      "homo_eV": -7.9, "lumo_eV": -0.9},
+  {"smiles": "C1=COC(=O)O1",      "name": "VC",       "homo_eV": -6.5, "lumo_eV": -1.5},
+  {"smiles": "C1CCOC1",           "name": "THF",      "homo_eV": -7.0, "lumo_eV":  1.5},
+  {"smiles": "CC#N",              "name": "ACN",      "homo_eV": -7.8, "lumo_eV":  0.8},
+  {"smiles": "CS(=O)C",           "name": "DMSO",     "homo_eV": -6.8, "lumo_eV":  0.5},
+  {"smiles": "C1CS(=O)(=O)CC1",   "name": "Sulfolane","homo_eV": -7.6, "lumo_eV": -0.3},
+  {"smiles": "CCOCC",             "name": "DEE",      "homo_eV": -7.1, "lumo_eV":  1.4},
+  {"smiles": "O=C1CCCO1",         "name": "GBL",      "homo_eV": -7.4, "lumo_eV": -0.6}
+]

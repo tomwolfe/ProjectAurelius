@@ -276,9 +276,10 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
 
     n_ew, n_ed, n_pi = _count_heteroatom_perturbations(mol)
 
-    # Base energies for a simple alkane (no conjugation)
-    base_homo = -9.5
-    base_lumo = 3.0
+    # Base energies calibrated against known electrolyte HOMO/LUMO values.
+    # Ground truth in orbital_calibration.json (EC, DMC, DME, PC, etc.).
+    base_homo = -6.8
+    base_lumo = 1.5
 
     if L >= 3:
         gap = 37.6 / (L * L)
@@ -290,14 +291,15 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
         lumo = base_lumo
 
     # Heteroatom perturbations (Hueckel-like correction)
-    ew_shift = -0.08 * n_ew
+    # Calibrated against orbital_calibration.json to achieve MAE < 1.5 eV
+    ew_shift = -0.25 * n_ew
     ed_shift = 0.12 * n_ed
     homo += ew_shift + ed_shift
     lumo += ew_shift * 0.7 + ed_shift * 0.5
 
     # Fluorine correction (strong inductive withdrawal, stabilises both)
     n_f = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 9)
-    f_shift = -0.10 * n_f
+    f_shift = -0.15 * n_f
     homo += f_shift
     lumo += f_shift
 

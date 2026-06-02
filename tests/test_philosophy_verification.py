@@ -109,12 +109,16 @@ class TestNovelScaffoldDiscovery:
 
         EMC (COC(=O)OCC) is a one-carbon extension of DMC. The scaffold
         is the same but the functional change is minimal and non-trivial.
+        It must pass the novelty gate even with full scaffold checking.
         """
         engine = MutationEngine(seed_smiles=["COC(=O)OC"])
         emc_ctx = MoleculeContext.from_smiles("COC(=O)OCC")
         assert emc_ctx is not None
+        assert engine._novelty_check(emc_ctx, check_scaffold=True) is True, (
+            "EMC is a single-carbon extension of DMC — should be accepted even with check_scaffold=True"
+        )
         assert engine._novelty_check(emc_ctx, check_scaffold=False) is True, (
-            "EMC is a single-carbon extension of DMC — should be accepted with check_scaffold=False"
+            "EMC should be accepted with check_scaffold=False"
         )
 
 

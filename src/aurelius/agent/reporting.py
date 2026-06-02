@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 
-from aurelius.agent.state import LoopState
+from aurelius.agent.state import LoopState, check_score_plateau, check_structural_saturation
 from aurelius.types import ScreeningResult
 
 
@@ -34,6 +34,7 @@ def generate_run_summary(
     discoveries: list[ScreeningResult],
     path: str = "run_summary.json",
     output_dir: str | Path | None = None,
+    top_mixtures: list[dict[str, Any]] | None = None,
 ) -> None:
     """Write a single consolidated run_summary.json with all screening results.
 
@@ -46,14 +47,15 @@ def generate_run_summary(
         discoveries: Discovery list (score >= 65).
         path: Output JSON path.
         output_dir: Directory to write to.
+        top_mixtures: Optional top-N binary mixture results.
     """
     log = logging.getLogger("aurelius_agent")
 
     path = _resolve_output_path(path, output_dir)
     scores = [r.total_score for r in all_results]
 
-    plateau = state.check_score_plateau()
-    saturation = state.check_structural_saturation()
+    plateau = check_score_plateau(state.batch_means)
+    saturation = check_structural_saturation(state.scaffolds_per_batch)
 
     reasons = []
     if plateau:
@@ -110,6 +112,9 @@ def generate_run_summary(
         ],
         "all_results_count": len(all_results),
     }
+
+    if top_mixtures:
+        summary["top_mixtures"] = top_mixtures
 
     with open(path, "w") as f:
         json.dump(summary, f, indent=2)
