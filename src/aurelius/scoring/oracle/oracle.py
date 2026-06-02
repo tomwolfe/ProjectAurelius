@@ -19,11 +19,15 @@ from rdkit import Chem
 
 from aurelius.scoring.oracle.gc import (
     _DATA_SOURCE,
+    compute_gc_domain_penalty,
     predict_dielectric_proxy,
     predict_li_solvation_proxy,
     predict_viscosity_proxy,
 )
-from aurelius.scoring.oracle.quantum import QuantumOracle
+from aurelius.scoring.oracle.quantum import (
+    QuantumOracle,
+    compute_quantum_domain_penalty,
+)
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
@@ -67,6 +71,18 @@ class PropertyOracle:
         viscosity = predict_viscosity_proxy(ctx)
         li_solvation = predict_li_solvation_proxy(ctx)
 
+        # Domain of applicability penalties
+        q_penalty, q_reason = compute_quantum_domain_penalty(ctx)
+        gc_penalty, gc_reason = compute_gc_domain_penalty(ctx)
+        domain_penalty = min(q_penalty, gc_penalty)
+        domain_reasons: list[str] = []
+        if q_penalty < 1.0:
+            domain_reasons.append(f"quantum: {q_reason}")
+        if gc_penalty < 1.0:
+            domain_reasons.append(f"GC: {gc_reason}")
+        domain_applicable = domain_penalty >= 0.85
+        domain_reason_str = "; ".join(domain_reasons) if domain_reasons else _DATA_SOURCE
+
         result: dict[str, Any] = {
             "homo_eV": round(homo, 4),
             "lumo_eV": round(lumo, 4),
@@ -74,8 +90,9 @@ class PropertyOracle:
             "dielectric_proxy": round(dielectric, 4),
             "viscosity_proxy": round(viscosity, 4),
             "li_solvation_proxy": round(li_solvation, 4),
-            "domain_applicable": True,
-            "domain_reason": _DATA_SOURCE,
+            "domain_applicable": domain_applicable,
+            "domain_reason": domain_reason_str,
+            "domain_penalty": round(domain_penalty, 4),
             "quantum_method": self._quantum.method,
             "quantum_confidence": quantum_result.get("quantum_confidence", "unknown"),
         }

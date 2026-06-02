@@ -4,9 +4,6 @@ Consolidated output: exactly two files:
   - discoveries.sdf — top discovery molecules with multi-objective properties
   - run_summary.json — full structured run report
 
-Also provides:
-  - generate_xtb_input — exports top-10 candidates as .xyz files for xTB/DFT validation
-
 ADR-2026-06-01: Changed datetime.UTC → datetime.timezone.utc for Python 3.9
 compatibility (datetime.UTC was added in 3.11). No behavioral change.
 """
@@ -196,85 +193,4 @@ def generate_discoveries_sdf(
     log.info("Discoveries SDF written to %s (%d molecules)", path, len(top))
 
 
-def generate_xtb_input(
-    discoveries: list[ScreeningResult],
-    output_dir: str | Path = "xtb_input",
-    top_n: int = 10,
-) -> list[str]:
-    """Export top-N discoveries as .xyz files for xTB/DFT single-point energy calculations.
 
-    Each molecule is embedded into 3D coordinates using RDKit's ETKDG conformer
-    generation, followed by MMFF94 force-field optimization to produce
-    chemically sensible geometries. Output files are named ``<rank>_<smiles>.xyz``
-    where special characters in SMILES are replaced with underscores.
-
-    Args:
-        discoveries: List of discovery ScreeningResult objects.
-        output_dir: Directory to write .xyz files to.
-        top_n: Number of top discoveries to export (default 10).
-
-    Returns:
-        List of paths to the generated .xyz files.
-    """
-    log = logging.getLogger("aurelius_agent")
-    from rdkit import Chem
-    from rdkit.Chem import AllChem
-    from aurelius.types import MoleculeContext
-
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    top = sorted(discoveries, key=lambda r: -r.total_score)[:top_n]
-    xyz_paths: list[str] = []
-
-    for rank, r in enumerate(top, start=1):
-        ctx = MoleculeContext.from_smiles(r.smiles)
-        if ctx is None:
-            continue
-        mol = ctx.mol
-
-        try:
-            mol_h = Chem.AddHs(mol)
-            conf_id = AllChem.EmbedMolecule(
-                mol_h,
-                randomSeed=42,
-                useRandomCoords=False,
-                useETKDGv3=True,
-            )
-            if conf_id < 0:
-                # Fall back to random coordinates if ETKDG fails
-                conf_id = AllChem.EmbedMolecule(
-                    mol_h, randomSeed=42, useRandomCoords=True
-                )
-            if conf_id < 0:
-                continue
-
-            AllChem.MMFFOptimizeMolecule(mol_h, confId=conf_id)
-
-            xyz_block = Chem.MolToXYZBlock(mol_h, confId=conf_id)
-
-            safe_name = r.smiles.replace("/", "_").replace("\\", "_").replace("[", "_").replace("]", "_")
-            safe_name = safe_name.replace("(", "_").replace(")", "_").replace("=", "_")
-            safe_name = safe_name.replace("#", "_").replace("@", "_")
-            # Truncate to avoid excessively long filenames
-            safe_name = safe_name[:60]
-
-            xyz_path = output_path / f"{rank:03d}_{safe_name}.xyz"
-            with open(xyz_path, "w") as f:
-                # Add comment line with metadata
-                f.write(xyz_block.rstrip("\n") + "\n")
-                f.write(f"# total_score={r.total_score:.2f}")
-                if r.homo_eV is not None:
-                    f.write(f" homo={r.homo_eV:.4f}")
-                if r.lumo_eV is not None:
-                    f.write(f" lumo={r.lumo_eV:.4f}")
-                f.write("\n")
-
-            xyz_paths.append(str(xyz_path))
-
-        except Exception as exc:
-            log.debug("Failed to generate 3D geometry for %s: %s", r.smiles, exc)
-            continue
-
-    log.info("xTB input files written to %s/ (%d molecules)", output_dir, len(xyz_paths))
-    return xyz_paths

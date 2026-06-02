@@ -36,6 +36,7 @@ import tempfile
 from rdkit import Chem
 
 from aurelius.constants import CF3_PATTERN as _CF3_PATTERN, SULFONE_PATTERN as _SULFONE_PATTERN
+from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
 
@@ -357,16 +358,56 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     homo += f_shift
     lumo += f_shift
 
-    # Sulfone/Phosphate correction (strong EW)
-    n_sulfone = len(mol.GetSubstructMatches(_SULFONE_PATTERN))
-    homo += -0.25 * n_sulfone
-    lumo += -0.40 * n_sulfone
-
-    n_cf3 = len(mol.GetSubstructMatches(_CF3_PATTERN))
-    homo += -0.20 * n_cf3
-    lumo += -0.15 * n_cf3
-
     return homo, lumo
+
+
+# ---------------------------------------------------------------------------
+# Domain of Applicability (DoA) — TOM-specific epistemic uncertainty
+# ---------------------------------------------------------------------------
+# Physical justification: The TOM is calibrated against molecules with moderate
+# conjugation (L ≤ 12) and reasonable pi-electron counts. Molecules with extreme
+# conjugation paths lacking sp3 structural support, or excessive pi-systems,
+# fall outside the TOM calibration domain. The particle-in-a-box model assumes
+# a planar rigid system; long conjugation without sp3 breaks planarity, and
+# excessive pi-electrons violate the single-particle HMO approximation.
+# These are closed-form heuristics — no ML involved.
+
+
+def compute_quantum_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
+    """Compute domain-of-applicability penalty for TOM predictions.
+
+    Penalises molecules with topological features that fall outside the
+    TOM calibration domain (conjugation > 12 without sp3 support, excessive
+    pi-electrons).
+
+    Returns:
+        (penalty_multiplier, reason_string)
+        Multiplier in [0.70, 1.0]; 1.0 = fully within domain.
+    """
+    mol = ctx.mol
+    reasons: list[str] = []
+    penalty = 1.0
+
+    L = _longest_conjugation_path(mol)
+    if L > 12:
+        n_c = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6)
+        n_sp3 = sum(
+            1 for a in mol.GetAtoms()
+            if a.GetAtomicNum() == 6 and a.GetHybridization() == Chem.HybridizationType.SP3
+        )
+        sp3_frac = n_sp3 / max(n_c, 1)
+        if sp3_frac < 0.15:
+            penalty *= 0.70
+            reasons.append(
+                f"long conjugation (L={L}) without sp3 support (sp3_frac={sp3_frac:.2f})"
+            )
+
+    _, _, n_pi = _count_heteroatom_perturbations(mol)
+    if n_pi > 24:
+        penalty *= 0.80
+        reasons.append(f"excessive pi-system (n_pi={n_pi}) outside TOM calibration")
+
+    return penalty, "; ".join(reasons) if reasons else "within domain"
 
 
 # ---------------------------------------------------------------------------

@@ -28,6 +28,23 @@ logger = logging.getLogger(__name__)
 
 _SEED_TRIVIAL_NUMS: set[int] = {7, 8, 9, 15, 16, 17, 35}
 
+# SMARTS patterns for generic commercial electrolyte motifs that are NOT
+# already caught by ``is_trivial_alkyl_extension`` (which handles simple
+# alkyl homologation of known molecules). These patterns catch multi-group
+# commercial motifs (e.g. glymes, sulfone-nitriles) where the heteroatom
+# profile changes, escaping the simpler carbon-count-based check.
+# Molecules matching these patterns without a novel Murcko scaffold are
+# penalised to prevent rediscovery of known commercial electrolytes.
+_COMMERCIAL_MOTIF_PATTERNS: list[tuple[Chem.Mol, str]] = []
+for _smi, _desc in [
+    ("[OX2][CX4][CX4][OX2]", "glyme_backbone"),
+    ("[CX4][SX4](=O)(=O)[CX4]", "dialkyl_sulfone"),
+    ("[CX4][C]#[N]", "alkyl_nitrile"),
+]:
+    _m = Chem.MolFromSmarts(_smi)
+    if _m is not None:
+        _COMMERCIAL_MOTIF_PATTERNS.append((_m, _desc))
+
 
 def _heteroatom_profile(mol: Chem.Mol) -> dict[int, int]:
     profile: dict[int, int] = {}
@@ -93,7 +110,48 @@ class NoveltyValidator:
         sims = BulkTanimotoSimilarity(fp, self._commercial_fps)
         return not any(s >= threshold for s in sims)
 
+    @staticmethod
+    def _motif_hetero_count(mol: Chem.Mol, pat: Chem.Mol) -> int:
+        """Count heteroatoms in substructure matches of a pattern."""
+        return sum(
+            1 for match in mol.GetSubstructMatches(pat)
+            for idx in match
+            if mol.GetAtomWithIdx(idx).GetAtomicNum() in {7, 8, 15, 16}
+        )
+
+    def is_commercial_motif(self, ctx: MoleculeContext) -> bool:
+        """Check if molecule matches a generic commercial electrolyte motif.
+
+        Returns True if the molecule matches any of the pre-compiled commercial
+        motif patterns AND:
+          - Does not possess a truly novel Murcko scaffold
+          - Has NO additional heteroatoms beyond what the matched motif provides
+
+        This prevents false-positives on hybrid molecules (e.g. sulfone-ethers)
+        that contain a commercial substructure but also have other functional
+        groups making them genuinely novel.
+        """
+        mol = ctx.mol
+        for pat, _desc in _COMMERCIAL_MOTIF_PATTERNS:
+            if not mol.HasSubstructMatch(pat):
+                continue
+            total_het = sum(
+                1 for a in mol.GetAtoms() if a.GetAtomicNum() in {7, 8, 15, 16}
+            )
+            if total_het > self._motif_hetero_count(mol, pat):
+                continue
+            try:
+                scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+                if not scaffold or scaffold in self._seed_scaffolds:
+                    return True
+            except Exception:
+                continue
+        return False
+
     def is_trivial_alkyl_extension(self, ctx: MoleculeContext, min_extra_carbons: int = 2) -> bool:
+        scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
+        if scaffold and scaffold not in self._seed_scaffolds:
+            return False
         ctx_profile = _heteroatom_profile(ctx.mol)
         ctx_c = _count_carbons(ctx.mol)
 
@@ -122,6 +180,8 @@ class NoveltyValidator:
         if check_scaffold and not self.is_novel_scaffold(ctx):
             return False
         if check_scaffold and self.is_trivial_alkyl_extension(ctx):
+            return False
+        if check_scaffold and self.is_commercial_motif(ctx):
             return False
         fp = ctx.get_ecfp4()
         threshold = 0.90 if force_exploration else 0.85

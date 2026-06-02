@@ -225,6 +225,8 @@ class AureliusPipeline:
             viscosity_proxy = oracle_result.get("viscosity_proxy", 99.0)
             li_solvation_proxy = oracle_result.get("li_solvation_proxy", 0.0)
 
+            domain_penalty = oracle_result.get("domain_penalty", 1.0)
+
             t2_result = {
                 "homo_eV": homo_eV,
                 "lumo_eV": lumo_eV,
@@ -234,6 +236,7 @@ class AureliusPipeline:
                 "li_solvation_proxy": li_solvation_proxy,
                 "domain_applicable": oracle_result.get("domain_applicable", True),
                 "domain_reason": oracle_result.get("domain_reason", ""),
+                "domain_penalty": domain_penalty,
                 "quantum_confidence": oracle_result.get("quantum_confidence", "unknown"),
             }
             results["tier2"] = t2_result
@@ -249,6 +252,8 @@ class AureliusPipeline:
             li_solvation_proxy=li_solvation_proxy,
             ctx=ctx,
         )
+
+        score = self._apply_domain_penalty(score, t2_result)
         results["score"] = score
 
         logger.debug("Scorecard:\n%s", self._format_score(score))
@@ -495,6 +500,22 @@ class AureliusPipeline:
             "sa_score": round(sa_score, 4),
             "rejection_reasons": rejection_reasons,
         }
+
+    @staticmethod
+    def _apply_domain_penalty(score: dict[str, Any], t2_result: dict[str, Any] | None) -> dict[str, Any]:
+        if t2_result is not None:
+            domain_penalty = t2_result.get("domain_penalty", 1.0)
+            if domain_penalty < 1.0:
+                score["total_score"] *= domain_penalty
+                score["domain_penalty_applied"] = domain_penalty
+                reason = t2_result.get("domain_reason", "")
+                if reason:
+                    score.setdefault("rejection_reasons", []).append(
+                        f"Domain penalty {domain_penalty:.2f}: {reason}"
+                    )
+        score["total_score"] = float(np.clip(score["total_score"], 0.0, 100.0))
+        score["is_viable"] = score["total_score"] >= VIABILITY_THRESHOLD
+        return score
 
     @staticmethod
     def _format_score(score: dict[str, Any]) -> str:

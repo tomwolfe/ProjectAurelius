@@ -26,6 +26,44 @@ from aurelius.types import MoleculeContext
 _DATA_SOURCE: str = "hybrid (GC bulk + Quantum orbital)"
 
 
+def compute_gc_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
+    """Compute domain-of-applicability penalty for GC predictions.
+
+    Physical justification: The GC fragment-additivity model is calibrated
+    on molecules with moderate functional group density and reasonable
+    molecular weight (MW < 500, rotatable bonds < 20). Extreme fluorination
+    without polar solvation sites (F >= 6, polar atoms < 2) falls outside
+    the GC calibration domain because the saturation curves for halogenated
+    fragments were not validated against such extreme compositions. High-MW
+    molecules accumulate group contributions linearly but real dielectric
+    and viscosity saturate, which the Michaelis-Menten model only partially
+    captures. These are closed-form topological heuristics — no ML.
+
+    Returns:
+        (penalty_multiplier, reason_string)
+        Multiplier in [0.70, 1.0]; 1.0 = fully within domain.
+    """
+    mol = ctx.mol
+    reasons: list[str] = []
+    penalty = 1.0
+
+    n_f = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 9)
+    n_polar = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() in (7, 8, 15, 16))
+    if n_f >= 6 and n_polar < 2:
+        penalty *= 0.75
+        reasons.append(f"extreme fluorination (F={n_f}) without polar solvation sites")
+
+    if ctx.mw > 500:
+        penalty *= 0.85
+        reasons.append(f"high MW ({ctx.mw:.0f}) outside GC calibration domain")
+
+    if ctx.rotatable_bonds > 20:
+        penalty *= 0.85
+        reasons.append(f"excessive flexibility ({ctx.rotatable_bonds} rotatable bonds)")
+
+    return penalty, "; ".join(reasons) if reasons else "within domain"
+
+
 def get_data_source() -> str:
     return _DATA_SOURCE
 

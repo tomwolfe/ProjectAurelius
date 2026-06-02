@@ -26,6 +26,8 @@ from aurelius.scoring.oracle import (
     PropertyOracle,
     _count_branch_points,
     _count_fragments,
+    compute_gc_domain_penalty,
+    compute_quantum_domain_penalty,
     predict_dielectric_proxy,
     predict_tom_orbitals,
     predict_viscosity_proxy,
@@ -282,6 +284,39 @@ class TestOracleNonlinear:
         assert five < 2.0 * single, (
             f"Saturation failed: 5 esters (diel={five:.3f}) "
             f"should be < 2x 1 ester (diel={single:.3f}, 2x={2 * single:.3f})"
+        )
+
+    def test_domain_of_applicability_penalizes_artifacts(self):
+        """The DoA penalty must downgrade "TOM-artifact" molecules."""
+        ctx_long_conj = MoleculeContext.from_smiles(
+            "C=CC=CC=CC=CC=CC=CC=CC=C"
+        )
+        assert ctx_long_conj is not None
+        qp, qr = compute_quantum_domain_penalty(ctx_long_conj)
+        assert qp < 0.85, (
+            f"Long conjugated polyene should be penalised by TOM DoA "
+            f"(got penalty={qp}, reason='{qr}')"
+        )
+
+        ctx_pfalkane = MoleculeContext.from_smiles(
+            "FC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F"
+        )
+        assert ctx_pfalkane is not None
+        gcp, gcr = compute_gc_domain_penalty(ctx_pfalkane)
+        assert gcp < 0.85, (
+            f"Perfluorinated alkane without solvation sites should be penalised "
+            f"by GC DoA (got penalty={gcp}, reason='{gcr}')"
+        )
+
+        ctx_normal = MoleculeContext.from_smiles("COC(=O)OC")
+        assert ctx_normal is not None
+        qp2, _ = compute_quantum_domain_penalty(ctx_normal)
+        gcp2, _ = compute_gc_domain_penalty(ctx_normal)
+        assert qp2 == 1.0, (
+            f"DMC should have no TOM DoA penalty (got {qp2})"
+        )
+        assert gcp2 == 1.0, (
+            f"DMC should have no GC DoA penalty (got {gcp2})"
         )
 
     def test_tom_conjugation_nonlinear(self):
@@ -647,7 +682,72 @@ class TestBuildingBlockGrounding:
 
 
 # ---------------------------------------------------------------------------
-# F. No Silent Degradation Gate — Yield Must Not Drop
+# G. Global Novelty Gate — Reject Trivial Commercial Variants
+# ---------------------------------------------------------------------------
+
+
+class TestGlobalNoveltyGate:
+    """The global novelty gate must reject trivial commercial electrolyte motifs
+    unless they possess a truly novel Murcko scaffold."""
+
+    def test_global_novelty_rejects_trivial_commercial(self):
+        """Pure sulfones matching a seed scaffold must be rejected by the
+        global novelty gate (no extra heteroatoms beyond the sulfone motif)."""
+        from aurelius.agent.mutation.novelty import _COMMERCIAL_MOTIF_PATTERNS
+
+        assert len(_COMMERCIAL_MOTIF_PATTERNS) >= 3, (
+            f"Expected at least 3 commercial motif patterns, got {len(_COMMERCIAL_MOTIF_PATTERNS)}"
+        )
+
+        engine = MutationEngine(seed_smiles=["CS(=O)(=O)C"])
+        sulfone = MoleculeContext.from_smiles("CCS(=O)(=O)CC")
+        assert sulfone is not None
+        is_commercial = engine._novelty_validator.is_commercial_motif(sulfone)
+        assert is_commercial, (
+            "Diethyl sulfone should be flagged as a commercial motif "
+            "(dialkyl sulfone with seed scaffold)"
+        )
+        assert engine._novelty_check(sulfone) is False, (
+            "Diethyl sulfone must be rejected by novelty check"
+        )
+
+    def test_global_novelty_allows_novel_scaffold_variants(self):
+        """Molecules with a truly novel Murcko scaffold should NOT be rejected
+        even if they contain commercial motifs."""
+        engine = MutationEngine(seed_smiles=["COC(=O)OC"])
+        novel_ctx = MoleculeContext.from_smiles("c1ccccc1OC(=O)OC")
+        assert novel_ctx is not None
+        if engine._novelty_validator.is_novel_scaffold(novel_ctx):
+            assert engine._novelty_check(novel_ctx, check_scaffold=True) is True, (
+                "Phenyl methyl carbonate should be accepted if it has a novel scaffold"
+            )
+
+    def test_global_novelty_rejects_simple_glyme(self):
+        """Simple glymes with seed scaffolds must be rejected."""
+        engine = MutationEngine(seed_smiles=["COCCOC"])
+        dg_ctx = MoleculeContext.from_smiles("COCCOCCOC")
+        assert dg_ctx is not None
+        is_commercial = engine._novelty_validator.is_commercial_motif(dg_ctx)
+        assert is_commercial, (
+            "Diglyme should be flagged as a commercial motif"
+        )
+        assert engine._novelty_check(dg_ctx) is False, (
+            "Diglyme must be rejected by novelty check"
+        )
+
+    def test_glyme_with_novel_scaffold_accepted(self):
+        """A glyme-like molecule with a novel scaffold must be accepted."""
+        engine = MutationEngine(seed_smiles=["COCCOC"])
+        novel_glyme_ctx = MoleculeContext.from_smiles("c1ccccc1OCCOC")
+        assert novel_glyme_ctx is not None
+        if engine._novelty_validator.is_novel_scaffold(novel_glyme_ctx):
+            assert engine._novelty_check(novel_glyme_ctx, check_scaffold=True) is True, (
+                "Phenyl-modified glyme with novel scaffold should be accepted"
+            )
+
+
+# ---------------------------------------------------------------------------
+# H. No Silent Degradation Gate — Yield Must Not Drop
 # ---------------------------------------------------------------------------
 
 
