@@ -14,6 +14,7 @@ from __future__ import annotations
 from aurelius.agent.mutation.brics import (
     _BRICS_LINKER_FRAGMENTS,
     _MAX_HARVESTED_FRAGMENTS,
+    brics_building_block_coverage as _brics_building_block_coverage,
     get_brics_types as _get_brics_types,
 )
 from aurelius.agent.mutation.engine import MutationEngine
@@ -35,4 +36,5 @@ __all__ = [
     "_BRICS_LINKER_FRAGMENTS",
     "_MAX_HARVESTED_FRAGMENTS",
     "_get_brics_types",
+    "_brics_building_block_coverage",
 ]

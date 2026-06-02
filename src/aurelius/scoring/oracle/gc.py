@@ -175,3 +175,60 @@ def predict_li_solvation_proxy(ctx: MoleculeContext) -> float:
     mw = ctx.mw
     value += max(0.0, (mw - 50.0)) * 0.002
     return max(0.5, value)
+
+
+# ---------------------------------------------------------------------------
+# Mixture Property Prediction — Ideal Thermodynamic Mixing Rules
+# ---------------------------------------------------------------------------
+# These implement volume-fraction weighted averaging for dielectric and
+# Li+ solvation (extensive properties in ideal mixtures) and log-linear
+# (Grunberg-Nissan) mixing for viscosity.
+
+
+def predict_mixture_dielectric(d1: float, d2: float, frac1: float = 0.5) -> float:
+    """Ideal volume-fraction weighted dielectric for a binary mixture."""
+    return frac1 * d1 + (1.0 - frac1) * d2
+
+
+def predict_mixture_viscosity(v1: float, v2: float, frac1: float = 0.5) -> float:
+    """Ideal log-linear (Grunberg-Nissan) viscosity for a binary mixture."""
+    v1_s = max(v1, 0.001)
+    v2_s = max(v2, 0.001)
+    ln_mix = frac1 * math.log(v1_s) + (1.0 - frac1) * math.log(v2_s)
+    return math.exp(ln_mix)
+
+
+def predict_mixture_li_solvation(ls1: float, ls2: float, frac1: float = 0.5) -> float:
+    """Additive Li+ solvation for a binary mixture."""
+    return frac1 * ls1 + (1.0 - frac1) * ls2
+
+
+def mixture_synergy_bonus(
+    d1: float, d2: float, v1: float, v2: float, frac1: float = 0.5
+) -> float:
+    """Non-linear synergy bonus for complementary binary electrolyte mixtures.
+
+    A complementary pair combines a high-dielectric component (d > 4.0) with
+    a low-viscosity component (v < 1.5). Neither pure component simultaneously
+    achieves both benefits because polar groups that raise dielectric also
+    increase viscosity. The mixture's synergy reflects this thermodynamic
+    complementarity — it is a non-linear effect that single-molecule scoring
+    cannot capture.
+
+    The bonus scales with how well the mixture's combined dielectric and
+    viscosity meet both targets simultaneously.
+    """
+    has_high_d = max(d1, d2) > 4.0
+    has_low_v = min(v1, v2) < 1.5
+
+    if not (has_high_d and has_low_v):
+        return 0.0
+
+    f2 = 1.0 - frac1
+    d_mix = frac1 * max(d1, 0.0) + f2 * max(d2, 0.0)
+    v_mix = math.exp(
+        frac1 * math.log(max(v1, 0.001)) + f2 * math.log(max(v2, 0.001))
+    )
+
+    score = d_mix / 4.0 + 1.5 / max(v_mix, 0.01)
+    return min(max(0.0, score), 6.0)

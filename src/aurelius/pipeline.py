@@ -13,6 +13,7 @@ All stages accept a pre-parsed MoleculeContext to enforce single-point parsing.
 from __future__ import annotations
 
 import logging
+import math
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -44,7 +45,13 @@ from aurelius.constants import (
     VIABILITY_THRESHOLD,
     VISCOSITY_THRESHOLD,
 )
-from aurelius.scoring.oracle import PropertyOracle
+from aurelius.scoring.oracle import (
+    PropertyOracle,
+    mixture_synergy_bonus,
+    predict_mixture_dielectric,
+    predict_mixture_li_solvation,
+    predict_mixture_viscosity,
+)
 from aurelius.screening.tier1 import Filter
 from aurelius.types import MoleculeContext
 from aurelius.utils.chem_utils import electrolyte_synthetic_accessibility
@@ -254,6 +261,91 @@ class AureliusPipeline:
 
         return results
 
+    def screen_mixture(
+        self,
+        ctx1: MoleculeContext,
+        ctx2: MoleculeContext,
+        frac1: float = 0.5,
+    ) -> dict[str, Any]:
+        """Score a binary mixture using ideal mixing rules with synergy bonus.
+
+        Evaluates each component individually via screen_molecule, then
+        computes mixture dielectric/viscosity using thermodynamic mixing
+        rules and applies a non-linear synergy bonus for complementary pairs
+        (high-dielectric + low-viscosity).
+
+        Args:
+            ctx1: First component MoleculeContext.
+            ctx2: Second component MoleculeContext.
+            frac1: Volume fraction of first component.
+
+        Returns:
+            Dict with component results, mixture properties, and score.
+        """
+        res1 = self.screen_molecule(ctx1)
+        res2 = self.screen_molecule(ctx2)
+
+        p1 = res1.get("tier2", {})
+        p2 = res2.get("tier2", {})
+        if p1 is None:
+            p1 = {}
+        if p2 is None:
+            p2 = {}
+        f2 = 1.0 - frac1
+
+        d1 = p1.get("dielectric_proxy", 0.0)
+        d2 = p2.get("dielectric_proxy", 0.0)
+        v1 = p1.get("viscosity_proxy", 99.0)
+        v2 = p2.get("viscosity_proxy", 99.0)
+
+        d_mix = predict_mixture_dielectric(d1, d2, frac1)
+        v_mix = predict_mixture_viscosity(v1, v2, frac1)
+        ls_mix = predict_mixture_li_solvation(
+            p1.get("li_solvation_proxy", 0.0),
+            p2.get("li_solvation_proxy", 0.0),
+            frac1,
+        )
+        h_mix = frac1 * p1.get("homo_eV", -99.0) + f2 * p2.get("homo_eV", -99.0)
+        l_mix = frac1 * p1.get("lumo_eV", -99.0) + f2 * p2.get("lumo_eV", -99.0)
+
+        synergy = mixture_synergy_bonus(d1, d2, v1, v2, frac1)
+
+        # Base score from individual component scores weighted average
+        s1 = res1.get("score", {}).get("total_score", 0.0)
+        s2 = res2.get("score", {}).get("total_score", 0.0)
+        weighted_base = frac1 * s1 + f2 * s2
+
+        total = min(100.0, weighted_base + synergy)
+        is_viable = total >= VIABILITY_THRESHOLD
+
+        score: dict[str, Any] = {
+            "total_score": total,
+            "is_viable": is_viable,
+            "synergy_bonus": round(synergy, 4),
+            "weighted_base": round(weighted_base, 4),
+            "sub_scores": {
+                "component1_score": round(s1, 4),
+                "component2_score": round(s2, 4),
+            },
+            "rejection_reasons": [],
+        }
+
+        mixture_props: dict[str, float] = {
+            "dielectric_proxy": round(d_mix, 4),
+            "viscosity_proxy": round(v_mix, 4),
+            "li_solvation_proxy": round(ls_mix, 4),
+            "homo_eV": round(h_mix, 4),
+            "lumo_eV": round(l_mix, 4),
+            "synergy_bonus": round(synergy, 4),
+        }
+
+        return {
+            "component1": res1,
+            "component2": res2,
+            "mixture_properties": mixture_props,
+            "score": score,
+        }
+
     @staticmethod
     def _check_hydrolytic_instability(mol: Chem.Mol) -> float:
         """Check for hydrolytically unstable motifs.
@@ -296,6 +388,17 @@ class AureliusPipeline:
         if n_f >= AL_CORROSION_MIN_FLUORINE and (n_cf3 >= 1 or n_f_ewg >= 1):
             return AL_CORROSION_PENALTY_FACTOR
         return 1.0
+
+    @staticmethod
+    def _check_building_block_grounding(mol: Chem.Mol) -> float:
+        """Penalty for molecules with BRICS fragments not matching commercial precursors.
+
+        Returns a multiplier in [0.5, 1.0] where 0% fragment coverage → 0.5x
+        and 100% coverage → 1.0x.
+        """
+        from aurelius.agent.mutation.brics import brics_building_block_coverage
+        coverage = brics_building_block_coverage(mol)
+        return 0.5 + 0.5 * coverage
 
     def _compute_score(
         self,
@@ -358,6 +461,8 @@ class AureliusPipeline:
             if lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
                 al_corrosion_penalty = self._check_al_corrosion_risk(ctx.mol)
             total_score *= al_corrosion_penalty
+            bb_penalty = self._check_building_block_grounding(ctx.mol)
+            total_score *= bb_penalty
 
         total_score = float(np.clip(total_score, 0.0, 100.0))
 

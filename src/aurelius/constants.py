@@ -262,3 +262,65 @@ SULFONE_PATTERN: Chem.Mol = Chem.MolFromSmarts("S(=O)(=O)")
 CF3_PATTERN: Chem.Mol = Chem.MolFromSmarts("[C](F)(F)F")
 CARBONYL_F_PATTERN: Chem.Mol = Chem.MolFromSmarts("[CX3](=O)[CH2][F]")
 SULFONYL_F_PATTERN: Chem.Mol = Chem.MolFromSmarts("[SX4](=O)(=O)[F]")
+
+# ---------------------------------------------------------------------------
+# Commercial Building Blocks — Sigma-Aldrich Precursors for Electrolyte
+# ---------------------------------------------------------------------------
+# Hardcoded list of commercially available precursor/building block SMILES.
+# Used by the BRICS building-block grounding penalty to ensure that
+# EA-discovered molecules are synthesizable from real precursors.
+# Focused on common electrolyte motifs: carbonates, ethers, nitriles,
+# sulfones, fluorinated fragments, and simple alkyl building blocks.
+
+COMMERCIAL_BUILDING_BLOCK_SMILES: tuple[str, ...] = (
+    "CO",                    # Methanol
+    "CCO",                   # Ethanol
+    "CCCCO",                 # 1-Butanol
+    "CCCO",                  # 1-Propanol
+    "COC(=O)OC",             # Dimethyl carbonate
+    "CCOC(=O)OCC",           # Diethyl carbonate
+    "C1COC(=O)O1",           # Ethylene carbonate
+    "CC1COC(=O)O1",          # Propylene carbonate
+    "C1CCOC1",               # THF
+    "C1COCCO1",              # 1,4-Dioxane
+    "COCCOC",                # DME
+    "CC#N",                  # Acetonitrile
+    "CS(=O)(=O)C",           # Dimethyl sulfone
+    "C1CS(=O)(=O)CC1",       # Sulfolane
+    "CC(=O)OCC",             # Ethyl acetate
+    "CC(=O)O",               # Acetic acid
+    "FC(F)F",                # Fluoroform (CF3H)
+    "CN",                    # Methylamine
+    "CCOCC",                 # Diethyl ether
+    "C1CO1",                 # Ethylene oxide
+    "CS(=O)C",               # DMSO
+    "CCN",                   # Ethylamine
+    "CC(C)=O",               # Acetone
+    "C(=O)O",                # Formic acid
+    "CCOC=O",                # Ethyl formate
+    "FC(F)(F)C(F)(F)F",      # Perfluoroethane (C2F6)
+    # Expanded to cover common BRICS fragments from electrolyte candidates
+    "COC(=O)C(F)(F)F",       # Methyl trifluoroacetate
+    "CCC#N",                 # Propionitrile
+    "FC(F)(F)C#N",           # Trifluoroacetonitrile
+    "C=O",                   # Formaldehyde
+    "COCOC",                 # Dimethoxymethane
+    "CS(=O)(=O)F",           # Methanesulfonyl fluoride
+    "FC(F)(F)OC(F)(F)F",     # Perfluoro ether
+    "CS(=O)(=O)O",           # Methanesulfonic acid
+    "FC(F)(F)CS(=O)(=O)C",   # Trifluoromethyl methyl sulfone
+    "FC(F)(F)OC",            # Trifluoromethyl methyl ether
+    "FC(F)(F)S(=O)(=O)F",    # Trifluoromethanesulfonyl fluoride
+    "FCS(=O)(=O)F",          # Fluoromethylsulfonyl fluoride
+    "CCS(=O)(=O)CC",         # Diethyl sulfone
+    # Coverage for sulfone-cyano, sulfone-CF3, fluoro-nitrile combinations
+    "CS(=O)(=O)CC#N",        # Methylsulfonylacetonitrile
+    "N#CCS(=O)(=O)CC#N",     # Bis(cyanoethyl)sulfone (or similar)
+    "FC(F)(F)C(F)(F)S(=O)(=O)C(F)(F)F",  # Perfluorobutyl sulfone
+    "O=S(=O)(CC(F)(F)F)CC(F)(F)F",       # Bis(trifluoroethyl) sulfone
+    "N#CCO",                 # Glycolonitrile (cyano-methanol)
+    "FC(F)(F)CO",            # Trifluoroethanol
+    "FC(F)(F)C(F)(F)CO",     # Perfluoropropanol
+    "FC(F)(F)S(=O)(=O)C(F)(F)F",         # Trifluoromethanesulfonic anhydride like
+
+)

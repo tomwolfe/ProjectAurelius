@@ -4,12 +4,17 @@ Contains:
   - BRICS linker fragments and type utilities
   - Complementary pair finding for BRICSBuild
   - Aliphatic chain anti-gaming check
+  - Building-block grounding cross-referencing
 """
 
 from __future__ import annotations
 
-from rdkit import Chem
+import re
 
+from rdkit import Chem
+from rdkit.Chem import BRICS
+
+from aurelius.constants import COMMERCIAL_BUILDING_BLOCK_SMILES
 from aurelius.types import MoleculeContext
 
 # Maximum number of dynamically harvested fragments to keep.
@@ -109,3 +114,72 @@ def has_excessive_aliphatic_chain(mol: Chem.Mol, max_chain: int = 12) -> bool:
             _dfs(atom.GetIdx(), 1)
 
     return longest[0] > max_chain
+
+
+# ---------------------------------------------------------------------------
+# Building-Block Grounding — Commercial Precursor Cross-Referencing
+# ---------------------------------------------------------------------------
+# Pre-compile building block molecules at module load time.
+
+_BB_MOLS: tuple[Chem.Mol, ...] = ()
+_bb_temp: list[Chem.Mol] = []
+for _smi in COMMERCIAL_BUILDING_BLOCK_SMILES:
+    _m = Chem.MolFromSmiles(_smi)
+    if _m is not None:
+        _bb_temp.append(_m)
+_BB_MOLS = tuple(_bb_temp)
+_BB_DUMMY_RE: re.Pattern = re.compile(r"\[\d*\*\]")
+
+
+def _strip_brics_dummies(frag_smi: str) -> str | None:
+    """Strip BRICS dummy-atom labels (e.g. [1*], [2*]) from a fragment SMILES.
+
+    Uses RDKit to remove dummy atoms (atomic num 0) properly, handling cases
+    where multiple dummy atoms neighbor a single heavy atom (e.g. [1*]C([1*])=O).
+    """
+    frag_mol = Chem.MolFromSmiles(frag_smi)
+    if frag_mol is None:
+        return None
+
+    rw = Chem.RWMol(frag_mol)
+    dummy_ids = sorted(
+        (a.GetIdx() for a in rw.GetAtoms() if a.GetAtomicNum() == 0),
+        reverse=True,
+    )
+    for idx in dummy_ids:
+        rw.RemoveAtom(idx)
+
+    try:
+        rw.UpdatePropertyCache()
+        Chem.SanitizeMol(rw)
+    except Exception:
+        return None
+    return Chem.MolToSmiles(rw)
+
+
+def brics_building_block_coverage(mol: Chem.Mol) -> float:
+    """Fraction of BRICS fragments matching known commercial building blocks.
+
+    For each BRICS fragment from the molecule, strips dummy-atom labels and
+    checks substructure match against pre-compiled commercial building blocks.
+    Returns 0.0 (poor) to 1.0 (excellent). Returns 0.5 if decomposition fails.
+    """
+    try:
+        frags = list(BRICS.BRICSDecompose(mol))
+    except Exception:
+        return 0.5
+    if not frags:
+        return 0.5
+    matched = 0
+    for fs in frags:
+        core_smi = _strip_brics_dummies(fs)
+        if core_smi is None:
+            continue
+        core_mol = Chem.MolFromSmiles(core_smi)
+        if core_mol is None:
+            continue
+        for bb in _BB_MOLS:
+            if core_mol.HasSubstructMatch(bb) or bb.HasSubstructMatch(core_mol):
+                matched += 1
+                break
+    return matched / len(frags)
