@@ -68,3 +68,8 @@ research/
 
 # Seed generation scripts
 generate_*.py
+
+# Runtime outputs
+agent_state.json
+discoveries.sdf
+run_summary.json
