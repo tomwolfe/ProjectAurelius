@@ -51,6 +51,19 @@ flowchart TD
 
 The composite Aurelius Score is computed via Gaussian LUMO reward (SEI formation window), sigmoid HOMO penalty (oxidative stability threshold), sigmoid dielectric/viscosity/Li-solvation rewards, and SA score penalty. Tournament selection with a Tanimoto diversity penalty steers each generation away from chemical saturation.
 
+## Installation
+
+Since Aurelius relies on RDKit's C++ bindings, we recommend a conda-first installation.
+
+```bash
+# 1. Create and activate a conda environment with Python 3.11 and RDKit
+conda create -n aurelius python=3.11 rdkit -c conda-forge
+conda activate aurelius
+
+# 2. Install Aurelius directly from GitHub
+pip install git+https://github.com/tomwolfe/ProjectAurelius.git
+```
+
 ## Quick Start
 
 ```bash
