@@ -12,11 +12,15 @@ import logging
 from collections.abc import Callable
 
 from rdkit import Chem
-from rdkit.Chem import AllChem, rdMolDescriptors
+from rdkit.Chem import rdMolDescriptors
 
 from aurelius.constants import (
     ELECTROCHEMICALLY_UNSTABLE_PATTERNS as _EC_UNSTABLE_PATTERNS,
+)
+from aurelius.constants import (
     ELECTROLYTE_MIN_HETEROATOM_RATIO,
+)
+from aurelius.constants import (
     HYDROLYTICALLY_UNSTABLE_PATTERNS as _HYDRO_UNSTABLE_PATTERNS,
 )
 from aurelius.types import MoleculeContext
@@ -184,10 +188,7 @@ def halogen_ratio_limit(ctx: MoleculeContext) -> bool:
         return False
     if n_heavy / n_total > 0.5:
         return False
-    if n_halogen > n_total * 0.6:
-        if _count_by_atomic_num(ctx.mol, _OXYGEN_NITROGEN) == 0:
-            return False
-    return True
+    return not (n_halogen > n_total * 0.6 and _count_by_atomic_num(ctx.mol, _OXYGEN_NITROGEN) == 0)
 
 
 @_register
@@ -246,13 +247,8 @@ def valence_sanity(ctx: MoleculeContext) -> bool:
 def polarity_ratio_min(ctx: MoleculeContext) -> bool:
     mw = ctx.mw
     tpsa = ctx.tpsa
-    if mw > 200 and tpsa / mw < 0.05:
-        return False
-    return True
+    return not (mw > 200 and tpsa / mw < 0.05)
 
 
 def is_electrolyte_like(ctx: MoleculeContext) -> bool:
-    for _name, check in _ELECTROLYTE_CHECKS:
-        if not check(ctx):
-            return False
-    return True
+    return all(check(ctx) for _name, check in _ELECTROLYTE_CHECKS)

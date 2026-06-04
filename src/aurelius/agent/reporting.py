@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -66,7 +66,7 @@ def generate_run_summary(
         reasons.append("partial convergence — volume threshold met but some criteria pending")
 
     summary: dict[str, Any] = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "pipeline": "Project Aurelius v10.0 — Multi-Objective Electrolyte Discovery Engine",
         "search_statistics": {
             "total_screened": state.total_screened,
@@ -145,6 +145,7 @@ def generate_discoveries_sdf(
     log = logging.getLogger("aurelius_agent")
 
     from rdkit import Chem
+
     from aurelius.types import MoleculeContext
 
     top = sorted(discoveries, key=lambda r: -r.total_score)[:50]

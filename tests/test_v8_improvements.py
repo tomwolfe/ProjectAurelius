@@ -2,30 +2,27 @@
 
 from __future__ import annotations
 
-import numpy as np
-import pytest
 from rdkit import Chem
 
-from aurelius.constants import (
-    HYDROLYTICALLY_UNSTABLE_PATTERNS,
-    ELECTROCHEMICALLY_UNSTABLE_PATTERNS,
-    SULFONE_PATTERN,
-    CF3_PATTERN,
-    CARBONYL_F_PATTERN,
-    SULFONYL_F_PATTERN,
-    PEROXIDE_PATTERN,
-    ALDEHYDE_PATTERN,
-    CARBONATE_PATTERN,
-    ETHER_PATTERN,
-    SULFONE_SA_PATTERN,
-    NITRILE_PATTERN,
-    EPOXIDE_PATTERN,
-)
-from aurelius.scoring.oracle import _GC_FRAGMENTS, _count_fragments, predict_tom_orbitals
 from aurelius.agent.mutation import MutationEngine, _find_max_conjugated_path
 from aurelius.agent.state import LoopState
+from aurelius.constants import (
+    ALDEHYDE_PATTERN,
+    CARBONATE_PATTERN,
+    CARBONYL_F_PATTERN,
+    CF3_PATTERN,
+    ELECTROCHEMICALLY_UNSTABLE_PATTERNS,
+    EPOXIDE_PATTERN,
+    ETHER_PATTERN,
+    HYDROLYTICALLY_UNSTABLE_PATTERNS,
+    NITRILE_PATTERN,
+    PEROXIDE_PATTERN,
+    SULFONE_PATTERN,
+    SULFONE_SA_PATTERN,
+    SULFONYL_F_PATTERN,
+)
+from aurelius.scoring.oracle import _GC_FRAGMENTS, _count_fragments, predict_tom_orbitals
 from aurelius.types import MoleculeContext
-
 
 # ---------------------------------------------------------------------------
 # SMARTS Pre-compilation Tests
@@ -140,7 +137,7 @@ class TestAntiGaming:
 
     def test_rejects_impossible_valence(self):
         """Molecule with impossible valence (F with 2 bonds) should be rejected."""
-        engine = MutationEngine(seed_smiles=["CC"])
+        MutationEngine(seed_smiles=["CC"])
         mol = Chem.MolFromSmiles("C(F)(F)F")
         if mol is not None:
             for atom in mol.GetAtoms():
@@ -153,7 +150,6 @@ class TestAntiGaming:
         ctx = MoleculeContext.from_smiles("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC(=O)OC")
         if ctx is not None:
             mw = ctx.mw
-            tpsa = ctx.tpsa
             if mw > 200:
                 assert engine._is_electrolyte_like(ctx) is False
 

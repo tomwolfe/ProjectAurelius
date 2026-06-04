@@ -15,7 +15,7 @@ import logging
 import os
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -84,7 +84,7 @@ class LoopState:
     def __post_init__(self) -> None:
         self.path = _resolve_output_path(self.path, self.output_dir)
         if not self.started_at:
-            self.started_at = datetime.now(timezone.utc).isoformat()
+            self.started_at = datetime.now(UTC).isoformat()
         self._load()
 
     # ------------------------------------------------------------------
@@ -161,7 +161,7 @@ class LoopState:
             "viable_count": self.viable_count,
             "invalid_discarded": self.invalid_discarded,
             "started_at": self.started_at,
-            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "last_updated": datetime.now(UTC).isoformat(),
             "discoveries": self.discoveries,
         }
         tmp_path = self.path + ".tmp"

@@ -39,12 +39,11 @@ logging.getLogger("aurelius").setLevel(logging.WARNING)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from aurelius.agent.loop import DiscoveryLoop, AgentConfig
-from aurelius.agent.mutation import MutationEngine
-from aurelius.agent.state import LoopState
-from aurelius.pipeline import AureliusPipeline
-from aurelius.types import MoleculeContext
-
+from aurelius.agent.loop import DiscoveryLoop  # noqa: E402
+from aurelius.agent.mutation import MutationEngine  # noqa: E402
+from aurelius.agent.state import LoopState  # noqa: E402
+from aurelius.pipeline import AureliusPipeline  # noqa: E402
+from aurelius.types import MoleculeContext  # noqa: E402
 
 SEED_SMILES = [
     "COC(=O)OC",
@@ -170,7 +169,7 @@ def main() -> None:
 
     # Get unique scaffolds of top discoveries
     top_scaffolds: set[str] = set()
-    for score, smi in top_results:
+    for _score, smi in top_results:
         s = _compute_murcko_scaffold(smi)
         if s:
             top_scaffolds.add(s)

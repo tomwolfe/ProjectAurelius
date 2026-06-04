@@ -104,7 +104,6 @@ class NoveltyValidator:
         return True
 
     def is_novel_vs_commercial(self, fp: object, threshold: float = 0.85) -> bool:
-        import numpy as np
         if not self._commercial_fps:
             return True
         sims = BulkTanimotoSimilarity(fp, self._commercial_fps)
@@ -185,6 +184,4 @@ class NoveltyValidator:
             return False
         fp = ctx.get_ecfp4()
         threshold = 0.90 if force_exploration else 0.85
-        if not self.is_novel_vs_commercial(fp, threshold=threshold):
-            return False
-        return True
+        return self.is_novel_vs_commercial(fp, threshold=threshold)

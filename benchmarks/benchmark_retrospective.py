@@ -34,9 +34,9 @@ logging.getLogger("aurelius").setLevel(logging.WARNING)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from aurelius.agent.mutation import MutationEngine
-from aurelius.pipeline import AureliusPipeline
-from aurelius.types import MoleculeContext
+from aurelius.agent.mutation import MutationEngine  # noqa: E402
+from aurelius.pipeline import AureliusPipeline  # noqa: E402
+from aurelius.types import MoleculeContext  # noqa: E402
 
 HOLDOUT_FRACTION = 0.20
 TOP_N = 100

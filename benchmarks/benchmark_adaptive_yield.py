@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import json
 import logging
 import os
 import random
@@ -36,12 +35,11 @@ logging.getLogger("aurelius").setLevel(logging.WARNING)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from aurelius.agent.loop import DiscoveryLoop, AgentConfig
-from aurelius.agent.mutation import MutationEngine
-from aurelius.agent.state import LoopState
-from aurelius.pipeline import AureliusPipeline
-from aurelius.types import MoleculeContext
-
+from aurelius.agent.loop import DiscoveryLoop  # noqa: E402
+from aurelius.agent.mutation import MutationEngine  # noqa: E402
+from aurelius.agent.state import LoopState  # noqa: E402
+from aurelius.pipeline import AureliusPipeline  # noqa: E402
+from aurelius.types import MoleculeContext  # noqa: E402
 
 SEED_SMILES = [
     "COC(=O)OC",
@@ -115,7 +113,7 @@ def get_unique_scaffolds_from_results(results: dict) -> tuple[set[str], int]:
     top_results = scored[:n_top]
 
     scaffolds: set[str] = set()
-    for score, smi in top_results:
+    for _score, smi in top_results:
         s = compute_murcko_scaffold(smi)
         if s:
             scaffolds.add(s)

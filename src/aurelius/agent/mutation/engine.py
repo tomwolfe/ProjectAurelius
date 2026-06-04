@@ -19,23 +19,14 @@ from typing import Any
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import BRICS, AllChem, rdMolDescriptors
-from rdkit.DataStructs import BulkTanimotoSimilarity
-
-from aurelius.constants import (
-    ELECTROCHEMICALLY_UNSTABLE_PATTERNS as _EC_UNSTABLE_PATTERNS,
-    ELECTROLYTE_MIN_HETEROATOM_RATIO,
-    HYDROLYTICALLY_UNSTABLE_PATTERNS as _HYDRO_UNSTABLE_PATTERNS,
-)
-from aurelius.types import MoleculeContext
-from aurelius.utils.chem_utils import _deserialize_fp
+from rdkit.Chem import BRICS, AllChem
 
 from aurelius.agent.mutation.brics import (
-    _MAX_HARVESTED_FRAGMENTS,
     find_complementary_pairs,
-    get_brics_types,
-    has_excessive_aliphatic_chain as _has_excessive_aliphatic_chain_fn,
     inject_linkers,
+)
+from aurelius.agent.mutation.brics import (
+    has_excessive_aliphatic_chain as _has_excessive_aliphatic_chain_fn,
 )
 from aurelius.agent.mutation.harvester import FragmentHarvester
 from aurelius.agent.mutation.novelty import NoveltyValidator
@@ -44,6 +35,8 @@ from aurelius.agent.mutation.smarts import (
     ELECTROLYTE_SMARTS,
     is_electrolyte_like,
 )
+from aurelius.types import MoleculeContext
+from aurelius.utils.chem_utils import _deserialize_fp
 
 try:
     from rdkit.Chem.Scaffolds import MurckoScaffold

@@ -41,7 +41,7 @@ class TestDiscoveryLoop:
         fp = np.zeros((2053,), dtype=np.float32)
         fp[5] = 1.0
 
-        result = ScreeningResult(
+        ScreeningResult(
             smiles="CC(=O)OC",
             total_score=85.0,
             is_viable=True,

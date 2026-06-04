@@ -62,7 +62,6 @@ class FragmentHarvester:
 
     @staticmethod
     def _fragment_too_similar(new_smi: str, existing_smis: list[str], threshold: float = 0.85) -> bool:
-        from rdkit import Chem
         new_mol = Chem.MolFromSmiles(new_smi)
         if new_mol is None:
             return False

@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import math
 import os
 import re
 import subprocess
@@ -35,7 +34,6 @@ import tempfile
 
 from rdkit import Chem
 
-from aurelius.constants import CF3_PATTERN as _CF3_PATTERN, SULFONE_PATTERN as _SULFONE_PATTERN
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
@@ -272,7 +270,7 @@ def _count_heteroatom_perturbations(mol: Chem.Mol) -> tuple[int, int, int]:
     return n_ew, n_ed, n_pi
 
 
-def _topological_sanity_L(mol: Chem.Mol, L: int) -> int:
+def _topological_sanity_l(mol: Chem.Mol, L: int) -> int:
     """Cap effective conjugation length if the molecule lacks 3D structural support.
 
     Physical justification: The particle-in-a-box gap (ΔE ∝ 1/L²) assumes a
@@ -355,7 +353,7 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     """
     L = _longest_conjugation_path(mol)
     L = max(L, 2)
-    L = _topological_sanity_L(mol, L)
+    L = _topological_sanity_l(mol, L)
 
     n_ew, n_ed, n_pi = _count_heteroatom_perturbations(mol)
 

@@ -27,8 +27,8 @@ logging.getLogger("aurelius").setLevel(logging.WARNING)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from aurelius.pipeline import AureliusPipeline
-from aurelius.types import MoleculeContext
+from aurelius.pipeline import AureliusPipeline  # noqa: E402
+from aurelius.types import MoleculeContext  # noqa: E402
 
 
 def _load_benchmark() -> list[dict]:
@@ -48,7 +48,7 @@ def _spearman_rho(x: list[float], y: list[float]) -> float:
         tie_corrected = []
         for i, v in enumerate(vals):
             tied = sum(1 for sv in sorted_vals if sv == v)
-            tie_corrected.append(sum(r for r, sv in zip(ranks, vals) if sv == v) / tied if tied > 0 else ranks[i])
+            tie_corrected.append(sum(r for r, sv in zip(ranks, vals, strict=False) if sv == v) / tied if tied > 0 else ranks[i])
         return tie_corrected
 
     rx = _rank(x)

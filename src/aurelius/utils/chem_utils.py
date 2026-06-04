@@ -14,14 +14,28 @@ import numpy as np
 from rdkit import Chem
 
 from aurelius.constants import (
-    PEROXIDE_PATTERN as _PEROXIDE_PATTERN,
     ALDEHYDE_PATTERN as _ALDEHYDE_PATTERN,
+)
+from aurelius.constants import (
     ANHYDRIDE_PATTERN as _ANHYDRIDE_PATTERN,
+)
+from aurelius.constants import (
     CARBONATE_PATTERN as _CARBONATE_PATTERN,
-    ETHER_PATTERN as _ETHER_PATTERN,
-    SULFONE_SA_PATTERN as _SULFONE_SA_PATTERN,
-    NITRILE_PATTERN as _NITRILE_PATTERN,
+)
+from aurelius.constants import (
     EPOXIDE_PATTERN as _EPOXIDE_PATTERN,
+)
+from aurelius.constants import (
+    ETHER_PATTERN as _ETHER_PATTERN,
+)
+from aurelius.constants import (
+    NITRILE_PATTERN as _NITRILE_PATTERN,
+)
+from aurelius.constants import (
+    PEROXIDE_PATTERN as _PEROXIDE_PATTERN,
+)
+from aurelius.constants import (
+    SULFONE_SA_PATTERN as _SULFONE_SA_PATTERN,
 )
 
 # ---------------------------------------------------------------------------

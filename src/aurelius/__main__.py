@@ -181,8 +181,7 @@ def evaluate_cmd(
 @click.argument("smiles")
 def validate_cmd(smiles: str) -> None:
     """Run the full pipeline on a SMILES and print per-objective scorecard."""
-    from aurelius.pipeline import _OBJECTIVES, AureliusPipeline
-    from aurelius.constants import VIABILITY_THRESHOLD
+    from aurelius.pipeline import _OBJECTIVES
 
     pipeline = _make_pipeline()
     results = pipeline.screen_smiles(smiles)
@@ -194,7 +193,7 @@ def validate_cmd(smiles: str) -> None:
     sub_scores = score.get("sub_scores", {})
 
     click.echo(f"\n{'=' * 56}")
-    click.echo(f"  Project Aurelius v10.0 — Validate")
+    click.echo("  Project Aurelius v10.0 — Validate")
     click.echo(f"  SMILES: {smiles}")
     click.echo(f"{'=' * 56}")
     click.echo(f"  {'Objective':<28} {'Raw':>8} {'Weight':>8} {'SubScore':>8}")
@@ -216,7 +215,7 @@ def validate_cmd(smiles: str) -> None:
         for reason in score["rejection_reasons"]:
             click.echo(f"  {'':>28} {reason}")
     if t2:
-        click.echo(f"\n  Predicted Properties:")
+        click.echo("\n  Predicted Properties:")
         click.echo(f"    HOMO: {t2.get('homo_eV', 'N/A')} eV")
         click.echo(f"    LUMO: {t2.get('lumo_eV', 'N/A')} eV")
         click.echo(f"    Gap:  {t2.get('gap_eV', 'N/A')} eV")

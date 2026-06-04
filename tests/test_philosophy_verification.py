@@ -17,7 +17,6 @@ from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from aurelius.agent.mutation import (
-    ELECTROLYTE_FRAGMENT_POOL,
     MutationEngine,
     _is_electrolyte_like,
 )
@@ -398,20 +397,19 @@ class TestSoftwareSimplicity:
             with open(filepath) as f:
                 tree = ast.parse(f.read())
             for node in ast.walk(tree):
-                if isinstance(node, ast.If):
-                    if isinstance(node.test, ast.Compare):
-                        left = node.test.left
-                        if isinstance(left, ast.Name) and left.id in (
-                            "property", "prop", "key", "name",
-                        ):
-                            for op in node.test.ops:
-                                if isinstance(op, (ast.Eq, ast.Is)):
-                                    for comparator in node.test.comparators:
-                                        if isinstance(comparator, ast.Constant) and isinstance(comparator.value, str):
-                                            pytest.fail(
-                                                f"String dispatch found in {filepath}: "
-                                                f"if {left.id} == '{comparator.value}'"
-                                            )
+                if isinstance(node, ast.If) and isinstance(node.test, ast.Compare):
+                    left = node.test.left
+                    if isinstance(left, ast.Name) and left.id in (
+                        "property", "prop", "key", "name",
+                    ):
+                        for op in node.test.ops:
+                            if isinstance(op, (ast.Eq, ast.Is)):
+                                for comparator in node.test.comparators:
+                                    if isinstance(comparator, ast.Constant) and isinstance(comparator.value, str):
+                                        pytest.fail(
+                                            f"String dispatch found in {filepath}: "
+                                            f"if {left.id} == '{comparator.value}'"
+                                        )
 
     def test_no_ml_framework_imports_via_ast(self):
         """AST-scan every .py file in src/aurelius/ for ML framework imports.
@@ -441,14 +439,13 @@ class TestSoftwareSimplicity:
                             pkg = alias.name.split(".")[0]
                             if pkg in ml_packages:
                                 violations.append(f"{rel_path}: import {alias.name}")
-                    elif isinstance(node, ast.ImportFrom):
-                        if node.module:
-                            pkg = node.module.split(".")[0]
-                            if pkg in ml_packages:
-                                violations.append(f"{rel_path}: from {node.module} import ...")
+                    elif isinstance(node, ast.ImportFrom) and node.module:
+                        pkg = node.module.split(".")[0]
+                        if pkg in ml_packages:
+                            violations.append(f"{rel_path}: from {node.module} import ...")
 
         assert not violations, (
-            f"ML framework imports detected in src/aurelius/:\n" +
+            "ML framework imports detected in src/aurelius/:\n" +
             "\n".join(f"  {v}" for v in violations)
         )
 
@@ -506,7 +503,7 @@ class TestSoftwareSimplicity:
 
         Uses ``radon cc`` if available; otherwise skips the test.
         """
-        radon = pytest.importorskip("radon.complexity", reason="radon not installed")
+        pytest.importorskip("radon.complexity", reason="radon not installed")
         from radon.complexity import cc_visit
 
         src_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius")
@@ -531,7 +528,7 @@ class TestSoftwareSimplicity:
                         continue
 
         assert not high_complexity, (
-            f"Functions exceeding cyclomatic complexity of 12:\n" +
+            "Functions exceeding cyclomatic complexity of 12:\n" +
             "\n".join(f"  {name}: {c}" for name, c in high_complexity)
         )
 

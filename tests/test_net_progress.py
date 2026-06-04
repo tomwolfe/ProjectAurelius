@@ -24,20 +24,14 @@ import os
 import random
 
 import numpy as np
-import pytest
 from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from aurelius.scoring.oracle.gc import predict_dielectric_proxy, predict_viscosity_proxy
 from aurelius.scoring.oracle.quantum import (
-    _count_aromatic_rings,
-    _count_heteroatom_perturbations,
-    _longest_conjugation_path,
-    _topological_sanity_L,
     predict_tom_orbitals,
 )
 from aurelius.types import MoleculeContext
-
 
 LAMBDA = 0.35
 
@@ -113,11 +107,10 @@ def _count_dependency_imports() -> int:
                         pkg = alias.name.split(".")[0]
                         if pkg not in stdlib and not pkg.startswith("aurelius"):
                             deps.add(pkg)
-                elif isinstance(node, ast.ImportFrom):
-                    if node.module:
-                        pkg = node.module.split(".")[0]
-                        if pkg not in stdlib and not pkg.startswith("aurelius"):
-                            deps.add(pkg)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    pkg = node.module.split(".")[0]
+                    if pkg not in stdlib and not pkg.startswith("aurelius"):
+                        deps.add(pkg)
     return len(deps)
 
 
@@ -140,9 +133,8 @@ def _count_architectural_surface_area() -> int:
                 except SyntaxError:
                     continue
             for node in ast.walk(tree):
-                if isinstance(node, (ast.ClassDef, ast.FunctionDef)):
-                    if not node.name.startswith("_"):
-                        count += 1
+                if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and not node.name.startswith("_"):
+                    count += 1
     return count
 
 
@@ -200,8 +192,8 @@ def _compute_scaffold_novelty() -> float:
 def _compute_top_k_enrichment() -> float:
     """Compare mean score of top-10 vs bottom-10 from mutation engine proposals."""
     try:
-        from aurelius.pipeline import AureliusPipeline
         from aurelius.agent.mutation import MutationEngine
+        from aurelius.pipeline import AureliusPipeline
 
         engine = MutationEngine(seed_smiles=["COC(=O)OC", "C1COCCO1"])
         candidates = engine.propose_candidates(n_candidates=50, batch_size=25)
@@ -279,7 +271,6 @@ def _compute_experimental_trend_recovery() -> float:
     all known trends are correctly reproduced.
     """
     from aurelius.types import MoleculeContext
-    from aurelius.scoring.oracle.gc import predict_dielectric_proxy, predict_viscosity_proxy
 
     trends = [
         ("dielectric", "C1COC(=O)O1", "COC(=O)OC", True),   # EC > DMC
@@ -303,9 +294,7 @@ def _compute_experimental_trend_recovery() -> float:
             va = predict_viscosity_proxy(ctx_a)
             vb = predict_viscosity_proxy(ctx_b)
         total += 1
-        if expected_higher and va > vb:
-            correct += 1
-        elif not expected_higher and va < vb:
+        if expected_higher and va > vb or not expected_higher and va < vb:
             correct += 1
 
     # Additional trend: viscosity of glycerol > ethanol
@@ -367,22 +356,22 @@ class TestNetProgress:
         net_progress = discovery_value - LAMBDA * simplicity_cost
 
         print(f"\n{'=' * 65}")
-        print(f"  NET PROGRESS REPORT")
+        print("  NET PROGRESS REPORT")
         print(f"{'=' * 65}")
-        print(f"  DISCOVERY VALUE")
+        print("  DISCOVERY VALUE")
         print(f"    Rediscovery rate:            {rediscovery_rate:.3f}")
         print(f"    Scaffold novelty:            {scaffold_novelty:.3f}")
         print(f"    Top-k enrichment:            {top_k_enrichment:.3f}")
         print(f"    Holdout generalization:      {holdout_gen:.3f}")
         print(f"    Experimental trend recovery: {trend_recovery:.3f}")
         print(f"    DISCOVERY_VALUE:             {discovery_value:.3f}")
-        print(f"  SIMPLICITY COST")
+        print("  SIMPLICITY COST")
         print(f"    Lines of code:               {loc} (norm={sim_loc:.3f})")
         print(f"    CC violations >12:           {cc_violations} (norm={sim_cc:.3f})")
         print(f"    Third-party deps:            {n_deps} (norm={sim_dep:.3f})")
         print(f"    Architectural surface area:  {arch_surface} (norm={sim_arch:.3f})")
         print(f"    SIMPLICITY_COST:             {simplicity_cost:.3f}")
-        print(f"  NET PROGRESS")
+        print("  NET PROGRESS")
         print(f"    λ:                           {LAMBDA}")
         print(f"    NET_PROGRESS:                {net_progress:.3f}")
         print(f"{'=' * 65}")

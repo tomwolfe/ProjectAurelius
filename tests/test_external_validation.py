@@ -23,11 +23,10 @@ import os
 
 import pytest
 
-pytestmark = pytest.mark.slow
-
 from aurelius.pipeline import AureliusPipeline
 from aurelius.types import MoleculeContext
 
+pytestmark = pytest.mark.slow
 
 BENCHMARK_PATH = os.path.join(
     os.path.dirname(__file__), "..", "src", "aurelius", "data", "external_property_benchmark.json",

@@ -15,8 +15,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from rdkit import Chem
-
 from aurelius.scoring.oracle.gc import (
     _DATA_SOURCE,
     compute_gc_domain_penalty,

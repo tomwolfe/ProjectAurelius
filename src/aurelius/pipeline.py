@@ -13,7 +13,6 @@ All stages accept a pre-parsed MoleculeContext to enforce single-point parsing.
 from __future__ import annotations
 
 import logging
-import math
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -27,13 +26,8 @@ from aurelius.constants import (
     AL_CORROSION_LUMO_THRESHOLD,
     AL_CORROSION_MIN_FLUORINE,
     AL_CORROSION_PENALTY_FACTOR,
-    CF3_PATTERN as _CF3_PATTERN,
-    CARBONYL_F_PATTERN as _CARBONYL_F_PATTERN,
     DIELECTRIC_TARGET,
     HOMO_THRESHOLD,
-    HYPOFLUORITE_PATTERN as _HYPOFLUORITE_PATTERN,
-    HYPOFLUORITE_PENALTY_FACTOR as _HYPOFLUORITE_PENALTY,
-    HYDROLYTICALLY_UNSTABLE_PATTERNS as _HYDRO_PATTERNS,
     LI_SOLVATION_TARGET,
     LUMO_TARGET,
     SA_THRESHOLD,
@@ -43,9 +37,26 @@ from aurelius.constants import (
     SCORE_WEIGHT_LUMO,
     SCORE_WEIGHT_SA,
     SCORE_WEIGHT_VISCOSITY,
-    SULFONYL_F_PATTERN as _SULFONYL_F_PATTERN,
     VIABILITY_THRESHOLD,
     VISCOSITY_THRESHOLD,
+)
+from aurelius.constants import (
+    CARBONYL_F_PATTERN as _CARBONYL_F_PATTERN,
+)
+from aurelius.constants import (
+    CF3_PATTERN as _CF3_PATTERN,
+)
+from aurelius.constants import (
+    HYDROLYTICALLY_UNSTABLE_PATTERNS as _HYDRO_PATTERNS,
+)
+from aurelius.constants import (
+    HYPOFLUORITE_PATTERN as _HYPOFLUORITE_PATTERN,
+)
+from aurelius.constants import (
+    HYPOFLUORITE_PENALTY_FACTOR as _HYPOFLUORITE_PENALTY,
+)
+from aurelius.constants import (
+    SULFONYL_F_PATTERN as _SULFONYL_F_PATTERN,
 )
 from aurelius.scoring.oracle import (
     PropertyOracle,

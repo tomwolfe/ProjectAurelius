@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-from rdkit import Chem
 
 from aurelius.types import MoleculeContext
 
@@ -26,7 +25,7 @@ class TestTournamentSelection:
     def test_batch_size_respected(self):
         """Selection should return exactly batch_size candidates (if available)."""
         scores = list(range(20))
-        smiles = [f"CCCCCCCCCCCCCCCCCCCCCCCCO" for _ in range(20)]
+        smiles = ["CCCCCCCCCCCCCCCCCCCCCCCCO" for _ in range(20)]
         contexts = [_valid_context(s) for s in smiles]
 
         selected = _tournament_select(contexts, scores, batch_size=5)

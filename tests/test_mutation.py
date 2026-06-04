@@ -1,16 +1,11 @@
 """Tests for the mutation engine — novelty, fragment harvesting, dynamic pool."""
 from __future__ import annotations
 
-from rdkit import Chem
-from rdkit.DataStructs import TanimotoSimilarity
-from rdkit.Chem import AllChem
-
 from aurelius.agent.mutation import (
-    MutationEngine,
     ELECTROLYTE_FRAGMENT_POOL,
+    MutationEngine,
 )
 from aurelius.types import MoleculeContext
-
 
 # ---------------------------------------------------------------------------
 # Novelty check tests
@@ -141,7 +136,7 @@ class TestStagnationPivot:
         candidates and no SMARTS products."""
         engine = MutationEngine(seed_smiles=["COC(=O)OC"])
 
-        normal_result = engine.mutate("COC(=O)OC", batch_size=20, force_exploration=False)
+        engine.mutate("COC(=O)OC", batch_size=20, force_exploration=False)
 
         exploration_result = engine.mutate("COC(=O)OC", batch_size=20, force_exploration=True)
 

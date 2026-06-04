@@ -23,7 +23,6 @@ from aurelius.scoring.oracle.gc import predict_dielectric_proxy, predict_viscosi
 from aurelius.scoring.oracle.quantum import predict_tom_orbitals
 from aurelius.types import MoleculeContext
 
-
 HOLDOUT_FRACTION = 0.20
 TOM_MAE_THRESHOLD = 1.5
 RANDOM_SEED = 42

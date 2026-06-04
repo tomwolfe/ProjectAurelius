@@ -21,14 +21,11 @@ exploration.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import random
 import time
 from dataclasses import dataclass
 from typing import Any
-
-import numpy as np
 
 from aurelius.agent.mutation import MutationEngine
 from aurelius.agent.reporting import generate_discoveries_sdf, generate_run_summary
@@ -440,7 +437,7 @@ class DiscoveryLoop:
 
     def _evolve_seed_pool(self, batch_contexts: list[MoleculeContext], batch_scores: list[float]) -> None:
         """Feed high-scoring molecules back into the seed pool."""
-        for ctx, sc in zip(batch_contexts, batch_scores):
+        for ctx, sc in zip(batch_contexts, batch_scores, strict=False):
             if sc >= 65.0:
                 smi = ctx.smiles
                 existing = set(self.engine.seed_pool)
