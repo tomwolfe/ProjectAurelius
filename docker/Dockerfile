@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install RDKit
-RUN pip install --no-cache-dir rdkit==2024.10.4
+RUN pip install --no-cache-dir rdkit==2024.09.6
 
 # Install remaining project dependencies
 COPY requirements-full.txt /tmp/requirements-full.txt
