@@ -133,7 +133,7 @@ where $S_{\text{raw}}$ is the composite oracle score, $\mathbf{f}_i$ is the Morg
 The hybrid oracle was validated against published experimental data for common electrolyte solvents. Table 1 reports Spearman rank correlation coefficients.
 
 | Property | N | $\rho$ | p-value |
-|---|---|---|---|---|
+|---|---|---|---|
 | Dielectric $\varepsilon$ | 23 | $+0.3226$ | 0.1332 |
 | Viscosity $\eta$ | 23 | $+0.7253$ | 0.0001 |
 | Donor Number | 16 | $+0.1368$ | 0.6135 |
