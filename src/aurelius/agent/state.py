@@ -170,14 +170,15 @@ class LoopState:
         os.replace(tmp_path, self.path)
 
     def add_discovery(self, discovery: dict[str, Any] | ScreeningResult) -> None:
-        if hasattr(discovery, "smiles"):
-            discovery = {
+        if isinstance(discovery, dict):
+            self.discoveries.append(discovery)
+        else:
+            self.discoveries.append({
                 "smiles": discovery.smiles,
                 "total_score": discovery.total_score,
                 "is_viable": discovery.is_viable,
                 "rejection_reasons": discovery.rejection_reasons,
-            }
-        self.discoveries.append(discovery)
+            })
         self.discoveries.sort(key=lambda d: d.get("total_score", 0), reverse=True)
         self.discoveries = self.discoveries[:_MAX_DISCOVERIES]
 

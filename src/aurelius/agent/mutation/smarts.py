@@ -156,20 +156,20 @@ def aromatic_ring_limit(ctx: MoleculeContext) -> bool:
 @_register
 def has_heteroatom(ctx: MoleculeContext) -> bool:
     hetero_atoms = {8, 9, 15, 16}
-    return sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() in hetero_atoms) >= 1
+    return sum(a.GetAtomicNum() in hetero_atoms for a in ctx.mol.GetAtoms()) >= 1
 
 
 @_register
 def heteroatom_ratio_min(ctx: MoleculeContext) -> bool:
-    n_total = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() > 1)
+    n_total = sum(a.GetAtomicNum() > 1 for a in ctx.mol.GetAtoms())
     if n_total == 0:
         return True
-    o_f = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() in (8, 9))
+    o_f = sum(a.GetAtomicNum() in (8, 9) for a in ctx.mol.GetAtoms())
     return o_f / n_total >= ELECTROLYTE_MIN_HETEROATOM_RATIO
 
 
 def _count_by_atomic_num(mol: Chem.Mol, nums: set[int]) -> int:
-    return sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() in nums)
+    return sum(a.GetAtomicNum() in nums for a in mol.GetAtoms())
 
 
 _HALOGEN_NUMS: set[int] = {9, 17, 35}
@@ -226,8 +226,8 @@ def conjugation_limit(ctx: MoleculeContext) -> bool:
 
 @_register
 def sp3_fraction_min(ctx: MoleculeContext) -> bool:
-    n_sp3 = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 6 and a.GetHybridization() == Chem.HybridizationType.SP3)
-    n_c = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 6)
+    n_sp3 = sum(a.GetAtomicNum() == 6 and a.GetHybridization() == Chem.HybridizationType.SP3 for a in ctx.mol.GetAtoms())
+    n_c = sum(a.GetAtomicNum() == 6 for a in ctx.mol.GetAtoms())
     if n_c >= 4:
         return n_sp3 / n_c >= 0.20
     return True

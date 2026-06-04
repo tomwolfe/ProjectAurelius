@@ -99,8 +99,8 @@ def _generate_xyz_geometry_optimized(mol: Chem.RWMol) -> str:
         mol = Chem.AddHs(mol)
 
     params = rdDistGeom.ETKDGv3()
-    params.randomSeed = 42
-    params.useRandomCoords = True
+    params.randomSeed = 42  # type: ignore[assignment]
+    params.useRandomCoords = True  # type: ignore[assignment]
     result = AllChem.EmbedMolecule(mol, params)
     if result != 0:
         with contextlib.suppress(Exception):
@@ -286,10 +286,10 @@ def _topological_sanity_l(mol: Chem.Mol, L: int) -> int:
     """
     if L <= 12:
         return L
-    n_c = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6)
+    n_c = sum(a.GetAtomicNum() == 6 for a in mol.GetAtoms())
     n_sp3 = sum(
-        1 for a in mol.GetAtoms()
-        if a.GetAtomicNum() == 6 and a.GetHybridization() == Chem.HybridizationType.SP3
+        a.GetAtomicNum() == 6 and a.GetHybridization() == Chem.HybridizationType.SP3
+        for a in mol.GetAtoms()
     )
     if n_c == 0:
         return min(L, 12)
@@ -395,7 +395,7 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     lumo += ew_shift * 0.3 + ed_shift * 0.5
 
     # Fluorine correction (strong inductive withdrawal, stabilises both)
-    n_f = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 9)
+    n_f = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
     f_shift = -0.15 * n_f
     homo += f_shift
     lumo += f_shift
@@ -440,10 +440,10 @@ def compute_quantum_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
 
     L = _longest_conjugation_path(mol)
     if L > 12:
-        n_c = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6)
+        n_c = sum(a.GetAtomicNum() == 6 for a in mol.GetAtoms())
         n_sp3 = sum(
-            1 for a in mol.GetAtoms()
-            if a.GetAtomicNum() == 6 and a.GetHybridization() == Chem.HybridizationType.SP3
+            a.GetAtomicNum() == 6 and a.GetHybridization() == Chem.HybridizationType.SP3
+            for a in mol.GetAtoms()
         )
         sp3_frac = n_sp3 / max(n_c, 1)
         if sp3_frac < 0.15:
@@ -520,11 +520,11 @@ class QuantumOracle:
             self._n_tom_calls += 1
 
         if used_xtb:
-            result["quantum_confidence"] = "xtb"
+            result["quantum_confidence"] = "xtb"  # type: ignore[assignment]
         else:
             L = _longest_conjugation_path(mol)
             n_rings = mol.GetRingInfo().NumRings()
-            result["quantum_confidence"] = "tom_high" if L <= 8 and n_rings <= 2 else "tom_low"
+            result["quantum_confidence"] = "tom_high" if L <= 8 and n_rings <= 2 else "tom_low"  # type: ignore[assignment]
 
         self._cache[smiles] = result
         return dict(result)

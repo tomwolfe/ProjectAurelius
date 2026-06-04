@@ -41,7 +41,7 @@ from aurelius.utils.chem_utils import _deserialize_fp
 try:
     from rdkit.Chem.Scaffolds import MurckoScaffold
 except ImportError:
-    MurckoScaffold = None
+    MurckoScaffold = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +71,10 @@ class MutationEngine:
         self._seed_smiles, self._seed_scaffolds = self._init_smiles_and_scaffolds()
 
         self._ctx_cache: dict[str, MoleculeContext] = {}
-        self._known_smiles = set()
+        self._known_smiles: set[str] = set()
         self._load_known_electrolytes()
 
-        self._generated_smiles = set()
+        self._generated_smiles: set[str] = set()
         self._rng = np.random.default_rng(42)
         self._smarts_rxns = self._init_smarts_rxns()
         self._adaptive_bias = adaptive_bias
@@ -95,7 +95,7 @@ class MutationEngine:
         self._fragment_harvester = FragmentHarvester(get_ctx=self._get_ctx)
 
     @staticmethod
-    def _init_seeds(seed_smiles: list[str] | None) -> tuple[list[str], list[MoleculeContext], list]:
+    def _init_seeds(seed_smiles: list[str] | None) -> tuple[list[str], list[MoleculeContext], list[Any]]:
         from pathlib import Path
         if seed_smiles is None:
             import json
@@ -169,11 +169,11 @@ class MutationEngine:
                 continue
 
         for smi in smiles_list:
-            ctx = self._get_ctx(smi)
-            if ctx is not None:
-                canon = Chem.MolToSmiles(ctx.mol)
+            cached_ctx = self._get_ctx(smi)
+            if cached_ctx is not None:
+                canon = Chem.MolToSmiles(cached_ctx.mol)
                 if canon not in existing_smis:
-                    self._commercial_fps.append(ctx.get_ecfp4())
+                    self._commercial_fps.append(cached_ctx.get_ecfp4())
                     self._known_smiles.add(canon)
 
         logger.info(

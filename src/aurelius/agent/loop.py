@@ -38,7 +38,7 @@ from aurelius.types import MoleculeContext, ScreeningResult
 try:
     from rdkit.Chem.Scaffolds import MurckoScaffold
 except ImportError:
-    MurckoScaffold = None
+    MurckoScaffold = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -287,7 +287,7 @@ class DiscoveryLoop:
         return 1.0 - max(sims) if sims else None
 
     @staticmethod
-    def _build_screening_result(smi: str, total_score: float, score_data: dict, t2: dict, novelty: float | None, ctx: MoleculeContext, sub_scores: dict) -> ScreeningResult:
+    def _build_screening_result(smi: str, total_score: float, score_data: dict[str, Any], t2: dict[str, Any], novelty: float | None, ctx: MoleculeContext, sub_scores: dict[str, Any]) -> ScreeningResult:
         return ScreeningResult(
             smiles=smi,
             total_score=total_score,
@@ -305,7 +305,7 @@ class DiscoveryLoop:
         )
 
     @staticmethod
-    def _is_discovery(total_score: float, score_data: dict) -> bool:
+    def _is_discovery(total_score: float, score_data: dict[str, Any]) -> bool:
         return (total_score >= DISCOVERY_THRESHOLD
                 and score_data.get("is_viable", False)
                 and not score_data.get("rejection_reasons", []))
@@ -313,7 +313,7 @@ class DiscoveryLoop:
     def _evaluate_mixture_pairs(
         self,
         valid_contexts: list[MoleculeContext],
-        result_map: dict[str, dict] | None = None,
+        result_map: dict[str, Any] | None = None,
     ) -> tuple[list[MoleculeContext], list[float]]:
         """Evaluate the most complementary binary mixture pair (high-dielectric + low-viscosity).
 
@@ -388,7 +388,7 @@ class DiscoveryLoop:
         """Evaluate all valid candidates through the Oracle and select the top batch."""
         all_scores: list[float] = []
         result_contexts: list[MoleculeContext] = []
-        result_map: dict[str, dict] = {}
+        result_map: dict[str, Any] = {}
 
         for ctx in valid_contexts:
             result = self._screen_molecule(ctx)

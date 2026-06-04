@@ -24,7 +24,7 @@ from aurelius.types import MoleculeContext
 log = logging.getLogger(__name__)
 
 
-def _adjusted_score(idx: int, scores: list[float], fps_list: list, selected_fps: list, diversity_lambda: float) -> float:
+def _adjusted_score(idx: int, scores: list[float], fps_list: list[Any], selected_fps: list[Any], diversity_lambda: float) -> float:
     """Compute diversity-penalised score for a candidate."""
     if not selected_fps:
         return scores[idx]
@@ -36,8 +36,8 @@ def _adjusted_score(idx: int, scores: list[float], fps_list: list, selected_fps:
 def _best_in_tournament(
     tournament: list[int],
     scores: list[float],
-    fps_list: list,
-    selected_fps: list,
+    fps_list: list[Any],
+    selected_fps: list[Any],
     diversity_lambda: float,
 ) -> tuple[int, float]:
     """Find the best candidate in a tournament, adjusted for diversity."""

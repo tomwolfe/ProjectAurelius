@@ -75,7 +75,7 @@ class Filter:
         logp = ctx.logp
 
         hba_count = sum(
-            1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() in self._HBA_ELEMENTS
+            a.GetAtomicNum() in self._HBA_ELEMENTS for a in ctx.mol.GetAtoms()
         )
 
         if mw >= 300:

@@ -129,7 +129,7 @@ for _smi in COMMERCIAL_BUILDING_BLOCK_SMILES:
     if _m is not None:
         _bb_temp.append(_m)
 _BB_MOLS = tuple(_bb_temp)
-_BB_DUMMY_RE: re.Pattern = re.compile(r"\[\d*\*\]")
+_BB_DUMMY_RE: re.Pattern[str] = re.compile(r"\[\d*\*\]")
 
 
 def _strip_brics_dummies(frag_smi: str) -> str | None:

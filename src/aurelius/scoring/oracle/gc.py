@@ -47,8 +47,8 @@ def compute_gc_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
     reasons: list[str] = []
     penalty = 1.0
 
-    n_f = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 9)
-    n_polar = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() in (7, 8, 15, 16))
+    n_f = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
+    n_polar = sum(a.GetAtomicNum() in (7, 8, 15, 16) for a in mol.GetAtoms())
     if n_f >= 6 and n_polar < 2:
         penalty *= 0.75
         reasons.append(f"extreme fluorination (F={n_f}) without polar solvation sites")
@@ -189,9 +189,9 @@ def predict_dielectric_proxy(ctx: MoleculeContext) -> float:
 def _count_branch_points(mol: Chem.Mol) -> int:
     """Count topological branch points (sp3 atoms with degree >= 3)."""
     return sum(
-        1 for a in mol.GetAtoms()
-        if a.GetDegree() >= 3
+        a.GetDegree() >= 3
         and a.GetHybridization() == Chem.HybridizationType.SP3
+        for a in mol.GetAtoms()
     )
 
 

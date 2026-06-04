@@ -413,7 +413,7 @@ class AureliusPipeline:
         only checks the structural criteria.
         """
         # Count fluorine atoms
-        n_f = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 9)
+        n_f = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
 
         # Count CF3 groups
         n_cf3 = len(mol.GetSubstructMatches(_CF3_PATTERN))

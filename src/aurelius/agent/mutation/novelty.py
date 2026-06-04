@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import Any
 
 from rdkit import Chem
 from rdkit.DataStructs import BulkTanimotoSimilarity
@@ -22,7 +23,7 @@ from aurelius.types import MoleculeContext
 try:
     from rdkit.Chem.Scaffolds import MurckoScaffold
 except ImportError:
-    MurckoScaffold = None
+    MurckoScaffold = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ def _heteroatom_profile(mol: Chem.Mol) -> dict[int, int]:
 
 
 def _count_carbons(mol: Chem.Mol) -> int:
-    return sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6)
+    return sum(a.GetAtomicNum() == 6 for a in mol.GetAtoms())
 
 
 class NoveltyValidator:
@@ -72,9 +73,9 @@ class NoveltyValidator:
         self,
         seed_smiles: set[str],
         seed_scaffolds: set[str],
-        seed_fingerprints: list,
+        seed_fingerprints: list[Any],
         seed_pool: list[str],
-        commercial_fps: list,
+        commercial_fps: list[Any],
         known_smiles: set[str],
         generated_smiles: set[str],
         get_ctx: Callable[[str], MoleculeContext | None],
@@ -103,7 +104,7 @@ class NoveltyValidator:
             pass
         return True
 
-    def is_novel_vs_commercial(self, fp: object, threshold: float = 0.85) -> bool:
+    def is_novel_vs_commercial(self, fp: Any, threshold: float = 0.85) -> bool:
         if not self._commercial_fps:
             return True
         sims = BulkTanimotoSimilarity(fp, self._commercial_fps)
@@ -135,7 +136,7 @@ class NoveltyValidator:
             if not mol.HasSubstructMatch(pat):
                 continue
             total_het = sum(
-                1 for a in mol.GetAtoms() if a.GetAtomicNum() in {7, 8, 15, 16}
+                a.GetAtomicNum() in {7, 8, 15, 16} for a in mol.GetAtoms()
             )
             if total_het > self._motif_hetero_count(mol, pat):
                 continue
