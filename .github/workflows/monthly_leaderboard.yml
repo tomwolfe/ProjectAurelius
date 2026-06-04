@@ -1,0 +1,58 @@
+name: Monthly Leaderboard
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+permissions:
+  issues: read
+  issues: write
+
+jobs:
+  leaderboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup micromamba
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-file: environment.yml
+          init-shell: bash
+          cache-environment: true
+
+      - name: Install package
+        run: pip install -e .
+        shell: bash -l {0}
+
+      - name: Run benchmarks
+        run: |
+          echo "# Monthly Leaderboard Report" > leaderboard_report.md
+          echo "" >> leaderboard_report.md
+          echo "## External Validation" >> leaderboard_report.md
+          echo '```' >> leaderboard_report.md
+          python -m benchmarks.benchmark_external_validation >> leaderboard_report.md 2>&1
+          echo '```' >> leaderboard_report.md
+          echo "" >> leaderboard_report.md
+          echo "## Reality Check" >> leaderboard_report.md
+          echo '```' >> leaderboard_report.md
+          python -m benchmarks.benchmark_reality_check >> leaderboard_report.md 2>&1
+          echo '```' >> leaderboard_report.md
+        shell: bash -l {0}
+
+      - name: Find pinned issue
+        id: pinned-issue
+        run: |
+          ISSUE_NUMBER=$(gh api graphql \
+            -f query='query($owner:String!,$repo:String!){repository(owner:$owner,name:$repo){issues(first:1,states:OPEN,filterBy:{pinned:true}){nodes{number}}}}' \
+            -f owner=${{ github.repository_owner }} \
+            -f repo=${{ github.event.repository.name }} \
+            --jq '.data.repository.issues.nodes[0].number')
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Post comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ steps.pinned-issue.outputs.issue_number }}
+          body-path: leaderboard_report.md
