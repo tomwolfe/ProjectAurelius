@@ -18,26 +18,26 @@ The hybrid oracle (non-linear quantum HOMO/LUMO + additive GC bulk properties) k
 ## Architecture
 
 ```mermaid
-graph TD
-    A[Seed Pool] --> B[BRICS Mutation]
-    B --> C[Anti-Gaming Gate]
-    C --> D[Novelty Gate]
-    D --> E[Tier 1 Filter]
-    E --> F{Hybrid Oracle}
+flowchart TD
+    A["Seed Pool"] --> B["BRICS Mutation"]
+    B --> C["Anti-Gaming Gate"]
+    C --> D["Novelty Gate"]
+    D --> E["Tier 1 Filter"]
+    E --> F{"Hybrid Oracle"}
 
-    subgraph Oracle[Oracle Internals]
-        G[xTB / TOM] --> H[HOMO / LUMO]
-        I[GC Fragment-Additivity] --> J[Bulk: ε, η, Li⁺]
-        H --> K[DoA Penalty]
+    subgraph Oracle["Oracle Internals"]
+        G["xTB / TOM"] --> H["HOMO / LUMO"]
+        I["GC Fragment-Additivity"] --> J["Bulk: eps, eta, Li+"]
+        H --> K["DoA Penalty"]
         J --> K
-        K --> L[Composite Score]
+        K --> L["Composite Score"]
     end
 
     F --> L
-    L --> M[Tournament Selection]
-    M --> N{Converged?}
+    L --> M["Tournament Selection"]
+    M --> N{"Converged?"}
     N -->|No| B
-    N -->|Yes| O[Top Discoveries]
+    N -->|Yes| O["Top Discoveries"]
 ```
 
 ## Overview
