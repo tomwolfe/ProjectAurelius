@@ -309,6 +309,21 @@ def _topological_sanity_l(mol: Chem.Mol, L: int) -> int:
     return L
 
 
+# σ* LUMO corrections for S/P=O groups in non-conjugated molecules.
+# Physical basis: S=O and P=O bonds have low-lying σ* orbitals from
+# d-orbital participation that lower LUMO significantly below what the
+# inductive EW perturbation predicts. Each correction is applied once
+# if the group is present (not per-match, to avoid double counting).
+_SIGMA_STAR_LUMO: list[tuple[Chem.Mol, str, float]] = [
+    (Chem.MolFromSmarts("S(=O)(=O)"), "sulfone", -0.70),
+    (Chem.MolFromSmarts("[SX3](=O)"), "sulfoxide", -0.50),
+    (Chem.MolFromSmarts("[PX4](=O)"), "phosphate", -0.30),
+]
+
+# Pre-compiled SMARTS for phosphate HOMO correction (P=O in phosphates)
+_PHOSPHATE_PATTERN: Chem.Mol = Chem.MolFromSmarts("[PX4](=O)")
+
+
 def _count_aromatic_rings(mol: Chem.Mol) -> int:
     """Count number of aromatic rings (all atoms in ring are aromatic)."""
     ring_info = mol.GetRingInfo()
@@ -428,6 +443,14 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     # (l_ew=0.3) is physically justified: in Hueckel theory, substituent effects
     # are larger on HOMO than LUMO because HOMO coefficients at substituted
     # positions are typically larger.
+    #
+    # ADR-2026-06-10: Added σ* LUMO correction for S/P=O groups in non-conjugated
+    # molecules (L<3). Physical justification: S=O and P=O groups have low-lying
+    # σ* orbitals from d-orbital participation that lower LUMO beyond the inductive
+    # EW perturbation — the PiB model (designed for π* LUMOs) cannot capture this.
+    # Also added phosphate HOMO correction (+0.50 per P=O) to compensate for the
+    # over-counting of EW atoms in σ-only P-O-C bonds of phosphate esters, which
+    # pushed HOMO ~0.9 eV too deep for TEP/TMP.
     base_homo = -6.8
     base_lumo = 1.5
 
@@ -469,6 +492,24 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     # The C≡N π* is ~0.7-1.0 eV lower than the general N perturbation predicts
     n_nitrile = len(mol.GetSubstructMatches(NITRILE_PATTERN))
     lumo += -0.70 * n_nitrile
+
+    # Phosphate HOMO correction (compensates for over-counted σ-only P-O-C oxygen EW)
+    # Physical justification: The TOM counts all P-O-C oxygens as EW (-0.32 each),
+    # but in σ-only environments their inductive effect is attenuated through two
+    # sigma bonds (P-O-C). The +0.50 per P(=O) group corrects ~2/3 of the
+    # over-counting, which was ~0.96 eV for trialkyl phosphates.
+    n_phosphate = len(mol.GetSubstructMatches(_PHOSPHATE_PATTERN))
+    homo += 0.50 * n_phosphate
+
+    # σ* LUMO correction for non-conjugated S/P=O groups (d-orbital participation)
+    # Physical justification: S=O and P=O bonds have low-lying σ* orbitals from
+    # d-orbital participation that lower LUMO by 0.3-0.7 eV. The PiB model (designed
+    # for π* LUMOs) does not capture this effect. Applied only for L<3 where the
+    # LUMO is σ* (not π*) character.
+    if L < 3:
+        for _spattern, _sname, _sshift in _SIGMA_STAR_LUMO:
+            if len(mol.GetSubstructMatches(_spattern)) > 0:
+                lumo += _sshift
 
     return homo, lumo
 

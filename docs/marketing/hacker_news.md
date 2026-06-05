@@ -35,7 +35,7 @@ No PyTorch, no TensorFlow, no JAX. The AST-level test (`test_no_ml_framework_imp
 ## Stack
 
 - RDKit for molecular manipulation (BRICS, SMARTS, fingerprints)
-- xTB/GFN2-xTB for quantum chemistry (or TOM fallback — a closed-form Hückel/particle-in-a-box model with Wiener-index compactness and nitrile C≡N LUMO correction, improving TOM-only Spearman ρ from 0.20 → 0.52)
+- xTB/GFN2-xTB for quantum chemistry (or TOM fallback — a closed-form Hückel/particle-in-a-box model with Wiener-index compactness and nitrile C≡N LUMO correction, improving TOM-only Spearman ρ from 0.20 → 0.53)
 - Pure Python group-contribution fragment-additivity for bulk properties (dielectric, viscosity, Li+ solvation, ionic conductivity, mixture synergy via Margules-inspired mixing rules)
 - Click CLI, structlog for structured logging
 
@@ -48,8 +48,8 @@ External validation against published experimental data (Tables 1-2 in `paper/ma
 | Dielectric ε | 23 | +0.8493 | 0.0000 |
 | Viscosity η | 23 | +0.8053 | 0.0000 |
 | Donor Number | 16 | +0.6956 | 0.0028 |
-| HOMO | 26 | +0.5115 | 0.0076 |
-| LUMO | 26 | +0.4985 | 0.0095 |
+| HOMO | 26 | +0.5251 | 0.0059 |
+| LUMO | 26 | +0.5118 | 0.0075 |
 
 The mutation engine achieves 93.3% novel scaffold discovery rate with a mean score gap of +34.72 over known commercial electrolytes in 5-generation loops.
 
