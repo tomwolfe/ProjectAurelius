@@ -44,14 +44,14 @@ No PyTorch, no TensorFlow, no JAX. The AST-level test (`test_no_ml_framework_imp
 External validation against published experimental data (Tables 1-2 in `paper/manuscript.md`) shows:
 
 | Property | N | Spearman ρ | p-value |
-|---|---|---|---|
-| Dielectric ε | 23 | +0.5855 | 0.0033 |
-| Viscosity η | 23 | +0.7431 | 0.0000 |
-| Donor Number | 16 | +0.5309 | 0.0344 |
+|---|---|---|---|---|
+| Dielectric ε | 23 | +0.8493 | 0.0000 |
+| Viscosity η | 23 | +0.8024 | 0.0000 |
+| Donor Number | 16 | +0.6956 | 0.0028 |
 | HOMO | 26 | +0.5115 | 0.0076 |
 | LUMO | 26 | +0.4985 | 0.0095 |
 
-The mutation engine achieves 100.0% novel scaffold discovery rate with a mean score gap of +36.05 over known commercial electrolytes in 5-generation loops.
+The mutation engine achieves 93.3% novel scaffold discovery rate with a mean score gap of +34.48 over known commercial electrolytes in 5-generation loops.
 
 ## Why "self-verifying"?
 

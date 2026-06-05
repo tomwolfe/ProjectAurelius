@@ -35,7 +35,7 @@ from aurelius.agent.mutation.smarts import (
     ELECTROLYTE_SMARTS,
     is_electrolyte_like,
 )
-from aurelius.types import MoleculeContext, is_mixture_smiles, parse_mixture_smiles, format_mixture_smiles
+from aurelius.types import MoleculeContext, format_mixture_smiles
 from aurelius.utils.chem_utils import _deserialize_fp
 
 try:
