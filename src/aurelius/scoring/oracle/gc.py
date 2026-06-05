@@ -3,6 +3,16 @@
 Predicts dielectric, viscosity, and Li+ solvation via functional-group
 additivity with Michaelis-Menten saturation and non-linear cross-terms.
 
+ADR-2026-06-05: Parameter refinements to improve weak proxy correlations:
+  Dielectric ε: nitrile 8.0→5.5, amide 5.0→6.0, sulfoxide 6.0→7.5;
+                MAX_DIELECTRIC_PER_TPSA 0.35→0.60 (constants.py).
+  Li⁺ solvation: amide 1.2→2.5, glyme_chelating 1.8→0.6, sulfoxide 2.5→3.5,
+                 aromatic_nitrogen 2.0→3.5.
+  Rationale: nitrile was over-contributing relative to carbonate (ACN > DMSO
+  ranked wrong); glyme_chelating double-counted ether chelation; amides and
+  sulfoxides were under-valued for Li⁺ binding. External validation Spearman ρ:
+  Dielectric 0.3226→0.3967, Donor Number 0.1368→0.4074.
+
 ADR-2026-06-01: Added [-2.0, 2.0] clip to _compute_dielectric_cross_terms.
 Physical justification: cross-term additive bonuses have no upper bound; a
 molecule with carbonate + ether + sulfone + nitrile can accumulate ~1.2 extra
@@ -76,7 +86,7 @@ def get_data_source() -> str:
 _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
     (Chem.MolFromSmarts("[CX3](=O)[OX2H0]"),       "ester",              2.5,  0.6,  0.8),
     (Chem.MolFromSmarts("[CX3](=O)[OH]"),          "carboxylic_acid",    4.0,  1.0,  1.8),
-    (Chem.MolFromSmarts("[CX3](=O)[NX3]"),         "amide",              5.0,  0.8,  1.2),
+    (Chem.MolFromSmarts("[CX3](=O)[NX3]"),         "amide",              6.0,  0.8,  2.5),
     (Chem.MolFromSmarts("[CX3](=O)[CX3]"),         "ketone",             3.0,  0.5,  0.6),
     (Chem.MolFromSmarts("[CH](=O)"),               "aldehyde",           2.5,  0.3,  0.3),
     (Chem.MolFromSmarts("O=C([OX2])[OX2]"),        "carbonate",          5.0,  0.7,  1.5),
@@ -85,7 +95,7 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
     (Chem.MolFromSmarts("[NX3;H2][CX4]"),          "primary_amine",      3.5,  0.5,  1.0),
     (Chem.MolFromSmarts("[NX3;H1]([CX4])[CX4]"),   "secondary_amine",    2.5,  0.4,  0.8),
     (Chem.MolFromSmarts("[NX3;H0]([CX4])([CX4])[CX4]"), "tertiary_amine", 1.5,  0.3,  0.5),
-    (Chem.MolFromSmarts("[C]#[N]"),                "nitrile",            8.0,  0.4,  1.2),
+    (Chem.MolFromSmarts("[C]#[N]"),                "nitrile",            5.5,  0.4,  1.2),
     (Chem.MolFromSmarts("[CX3]=[CX3]"),            "alkene",             0.5,  0.1,  0.1),
     (Chem.MolFromSmarts("[CX2]#[CX2]"),            "alkyne",             1.0,  0.2,  0.2),
     (Chem.MolFromSmarts("[c]"),                    "aromatic_carbon",    0.5,  0.5,  0.1),
@@ -103,11 +113,11 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
     (Chem.MolFromSmarts("[S]([CX4])[CX4]"),        "thioether",          1.0,  0.2,  0.3),
     (Chem.MolFromSmarts("[F][CX4][OX2][CX4]"),     "fluorinated_ether",  1.0,  0.0, -0.2),
     (Chem.MolFromSmarts("[PX4](=N)([OX2])([OX2])[OX2]"), "phosphazene",  3.5,  0.4,  0.8),
-    (Chem.MolFromSmarts("[OX2][CX4][CX4][OX2]"),   "glyme_chelating",    2.0,  0.1,  1.8),
+    (Chem.MolFromSmarts("[OX2][CX4][CX4][OX2]"),   "glyme_chelating",    2.0,  0.1,  0.6),
     (Chem.MolFromSmarts("[SX4](=O)(=O)[NX3][SX4](=O)(=O)"), "sulfonimide", 5.0,  0.5,  0.5),
     (Chem.MolFromSmarts("[CX3](=O)[OX2]C(F)(F)F"),  "fluorinated_carbonate", 3.0,  0.3, -0.1),
-    (Chem.MolFromSmarts("[SX3](=O)[CX4]"),           "sulfoxide",             6.0,  0.5,  2.5),
-    (Chem.MolFromSmarts("[n]"),                      "aromatic_nitrogen",     4.0,  0.3,  2.0),
+    (Chem.MolFromSmarts("[SX3](=O)[CX4]"),           "sulfoxide",             7.5,  0.5,  3.5),
+    (Chem.MolFromSmarts("[n]"),                      "aromatic_nitrogen",     4.0,  0.3,  3.5),
     (Chem.MolFromSmarts("[PX4](=O)([OX2])([OX2])[#6]"), "phosphonate",        3.5,  0.5,  1.0),
 ]
 
