@@ -503,7 +503,6 @@ class TestSoftwareSimplicity:
 
         Uses ``radon cc`` if available; otherwise skips the test.
         """
-        pytest.importorskip("radon.complexity", reason="radon not installed")
         from radon.complexity import cc_visit
 
         src_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius")
@@ -560,6 +559,15 @@ class TestFrankensteinAblation:
         assert good > bad, (
             f"Complementary synergy ({good:.2f}) must exceed "
             f"non-complementary ({bad:.2f})"
+        )
+
+    def test_mixture_synergy_frankenstein_zero(self):
+        """Frankenstein pair (two high-viscosity molecules) must get zero synergy."""
+        from aurelius.scoring.oracle.gc import mixture_synergy_bonus
+
+        result = mixture_synergy_bonus(d1=8.0, v1=2.5, d2=7.0, v2=2.3, frac1=0.5)
+        assert result == 0.0, (
+            f"Frankenstein pair (two high-viscosity) must have synergy=0.0 (got {result})"
         )
 
     def test_mixture_synergy_via_pipeline(self):

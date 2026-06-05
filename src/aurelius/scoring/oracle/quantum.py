@@ -530,6 +530,8 @@ class QuantumOracle:
         else:
             L = _longest_conjugation_path(mol)
             n_rings = mol.GetRingInfo().NumRings()
+            # ADR-2026-06-02: L > 8 or n_rings > 2 indicates topological complexity where
+            # the 1-D particle-in-a-box model diverges from 3D reality, warranting epistemic humility.
             result["quantum_confidence"] = "tom_high" if L <= 8 and n_rings <= 2 else "tom_low"  # type: ignore[assignment]
 
         self._cache[smiles] = result
