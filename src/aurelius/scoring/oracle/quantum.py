@@ -399,6 +399,19 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
             L = int(L * (1.0 - 0.28 * compactness))
             L = max(L, 2)
 
+    # ADR-2026-06-06: Peierls distortion damping for long conjugation paths.
+    # Physical justification: Long polyenes undergo bond-length alternation
+    # (Peierls distortion) that opens a finite gap even for infinite chains.
+    # The 1/L^2 particle-in-a-box gap collapses unrealistically for L > 12;
+    # real conjugated polymers have delta_E ≈ 1.5-2.0 eV regardless of chain
+    # length. We apply a closed-form saturation: L_eff = L_th + (L - L_th) /
+    # (1 + alpha * (L - L_th)) for L > 8, which preserves existing behavior
+    # at moderate conjugation while preventing gap collapse at long extension.
+    if L > 8:
+        alpha = 0.10
+        L = int(8 + (L - 8) / (1.0 + alpha * (L - 8)))
+        L = max(L, 2)
+
     n_ew, n_ed, n_pi = _count_heteroatom_perturbations(mol)
 
     # Base energies calibrated against known electrolyte HOMO/LUMO values.
