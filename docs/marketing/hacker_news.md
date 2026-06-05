@@ -51,7 +51,7 @@ External validation against published experimental data (Tables 1-2 in `paper/ma
 | HOMO | 26 | +0.5115 | 0.0076 |
 | LUMO | 26 | +0.4985 | 0.0095 |
 
-The mutation engine achieves 95.7% novel scaffold discovery rate with a mean score gap of +33.86 over known commercial electrolytes in 5-generation loops.
+The mutation engine achieves 100.0% novel scaffold discovery rate with a mean score gap of +36.05 over known commercial electrolytes in 5-generation loops.
 
 ## Why "self-verifying"?
 

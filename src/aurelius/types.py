@@ -140,8 +140,7 @@ class MoleculeContext:
     def is_valid_electrolyte_mol(self) -> bool:
         if self.mw < 30.0 or self.mw > 1000.0:
             return False
-        h_acceptors = Descriptors.NumHAcceptors(self.mol)
-        return h_acceptors >= 1
+        return self.hba >= 1
 
     def count_heteroatoms(self) -> dict[int, int]:
         counts: dict[int, int] = {8: 0, 9: 0, 15: 0, 16: 0}

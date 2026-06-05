@@ -415,6 +415,10 @@ class TestSoftwareSimplicity:
         from aurelius.agent.mutation import _ELECTROLYTE_CHECKS
         assert len(_ELECTROLYTE_CHECKS) >= 5
 
+    def test_sa_rules_are_data_driven(self):
+        from aurelius.utils.chem_utils import _SA_RULES
+        assert len(_SA_RULES) >= 10
+
     def test_no_dead_state_fields(self):
         """LoopState must not have dead fields that are never written."""
         from aurelius.agent.state import LoopState

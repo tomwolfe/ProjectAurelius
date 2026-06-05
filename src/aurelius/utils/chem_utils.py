@@ -1,13 +1,14 @@
-"""RDKit helper functions — serialization and validation only.
+"""RDKit helper functions — serialization, SA scoring, and validation.
 
 All molecular parsing and featurization is handled by ``MoleculeContext``.
 This module only retains unique utilities not duplicated in MoleculeContext:
-fingerprint serialization/deserialization and a limited set of helpers for
-the mutation engine.
+fingerprint serialization/deserialization, SA scoring via a data-driven rule
+registry, and Tanimoto helpers for the mutation engine.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -99,6 +100,130 @@ def _tanimoto(fp1: Any, fp2: Any) -> float:
     return float(FingerprintSimilarity(fp1, fp2))
 
 
+# ---------------------------------------------------------------------------
+# Data-driven synthetic accessibility rule registry
+# ---------------------------------------------------------------------------
+# Each rule returns a score delta relative to a base of 3.0.
+# Positive delta = harder to synthesise (penalty).
+# Negative delta = easier to synthesise (reward).
+# This replaces a 30-line sequential if/elif chain with a declarative,
+# composable rule set.
+
+_SA_RULES: list[tuple[str, Callable[[Any], float]]] = []
+
+
+def _register_sa(fn: Callable[[Any], float]) -> Callable[[Any], float]:
+    _SA_RULES.append((fn.__name__, fn))
+    return fn
+
+
+@_register_sa
+def _ring_strain_penalty(ctx: Any) -> float:
+    mol = ctx.mol
+    ring_info = mol.GetRingInfo()
+    score = 0.0
+    for ring in ring_info.AtomRings():
+        if len(ring) <= 4:
+            score += 1.0
+    return score
+
+
+@_register_sa
+def _stereocenter_penalty(ctx: Any) -> float:
+    return 0.5 * Chem.rdMolDescriptors.CalcNumAtomStereoCenters(ctx.mol)
+
+
+@_register_sa
+def _peroxide_penalty(ctx: Any) -> float:
+    if _PEROXIDE_PATTERN is not None and ctx.mol.HasSubstructMatch(_PEROXIDE_PATTERN):
+        n = len(ctx.mol.GetSubstructMatches(_PEROXIDE_PATTERN))
+        return 3.0 * min(n, 3)
+    return 0.0
+
+
+@_register_sa
+def _aldehyde_penalty(ctx: Any) -> float:
+    if _ALDEHYDE_PATTERN is not None and ctx.mol.HasSubstructMatch(_ALDEHYDE_PATTERN):
+        return 1.0
+    return 0.0
+
+
+@_register_sa
+def _anhydride_penalty(ctx: Any) -> float:
+    if _ANHYDRIDE_PATTERN is not None and ctx.mol.HasSubstructMatch(_ANHYDRIDE_PATTERN):
+        return 2.0
+    return 0.0
+
+
+@_register_sa
+def _poly_peroxide_penalty(ctx: Any) -> float:
+    """Additional penalty when ≥2 O-O bonds detected via graph traversal."""
+    n = sum(
+        1 for a in ctx.mol.GetAtoms()
+        if a.GetAtomicNum() == 8 and a.GetDegree() == 2
+        and any(n.GetAtomicNum() == 8 for n in a.GetNeighbors())
+    )
+    return 2.0 if n >= 2 else 0.0
+
+
+@_register_sa
+def _hypervalent_halogen_penalty(ctx: Any) -> float:
+    for atom in ctx.mol.GetAtoms():
+        z = atom.GetAtomicNum()
+        if z in (9, 17, 35) and atom.GetExplicitValence() > 1:
+            return 3.0
+    return 0.0
+
+
+@_register_sa
+def _long_alkyl_chain_penalty(ctx: Any) -> float:
+    n_c = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 6)
+    if n_c > 12 and ctx.tpsa < 40:
+        return min((n_c - 12) * 0.2, 2.0)
+    return 0.0
+
+
+@_register_sa
+def _carbonate_reward(ctx: Any) -> float:
+    if _CARBONATE_PATTERN is not None and ctx.mol.HasSubstructMatch(_CARBONATE_PATTERN):
+        return -0.5
+    return 0.0
+
+
+@_register_sa
+def _ether_reward(ctx: Any) -> float:
+    if _ETHER_PATTERN is not None and ctx.mol.HasSubstructMatch(_ETHER_PATTERN):
+        return -0.3
+    return 0.0
+
+
+@_register_sa
+def _sulfone_reward(ctx: Any) -> float:
+    if _SULFONE_SA_PATTERN is not None and ctx.mol.HasSubstructMatch(_SULFONE_SA_PATTERN):
+        return -0.3
+    return 0.0
+
+
+@_register_sa
+def _nitrile_reward(ctx: Any) -> float:
+    if _NITRILE_PATTERN is not None and ctx.mol.HasSubstructMatch(_NITRILE_PATTERN):
+        return -0.2
+    return 0.0
+
+
+@_register_sa
+def _fluorine_reward(ctx: Any) -> float:
+    f_count = sum(1 for a in ctx.mol.GetAtoms() if a.GetAtomicNum() == 9)
+    return -0.15 * min(f_count, 4)
+
+
+@_register_sa
+def _epoxide_reward(ctx: Any) -> float:
+    if _EPOXIDE_PATTERN is not None and ctx.mol.HasSubstructMatch(_EPOXIDE_PATTERN):
+        return -0.5
+    return 0.0
+
+
 def electrolyte_synthetic_accessibility(ctx: Any) -> float:
     """Custom synthetic accessibility score for battery electrolytes.
 
@@ -111,88 +236,19 @@ def electrolyte_synthetic_accessibility(ctx: Any) -> float:
         peroxides, and reactive functional groups
       - Reflects real industrial electrolyte synthesis difficulty
 
+    Uses a data-driven rule registry (``_SA_RULES``) instead of a
+    sequential if/elif chain, making individual rules auditable and
+    independently testable.
+
     Args:
         ctx: Pre-parsed MoleculeContext.
 
     Returns:
         SA score in [1.0, 10.0] (lower = easier to synthesise).
     """
-    mol = ctx.mol
-
-    # Base: electrolytes are generally simpler than drug-like molecules
     score = 3.0
-
-    # --- Penalties (harder to synthesise) ---
-
-    # Ring strain: 3- or 4-membered rings
-    ring_info = mol.GetRingInfo()
-    for ring in ring_info.AtomRings():
-        if len(ring) <= 4:
-            score += 1.0
-
-    # Stereocenters increase synthetic difficulty
-    n_stereo = Chem.rdMolDescriptors.CalcNumAtomStereoCenters(mol)
-    score += 0.5 * n_stereo
-
-    # Peroxides: highly unstable, extremely hard to formulate
-    if _PEROXIDE_PATTERN is not None and mol.HasSubstructMatch(_PEROXIDE_PATTERN):
-        n_peroxide = len(mol.GetSubstructMatches(_PEROXIDE_PATTERN))
-        score += 3.0 * min(n_peroxide, 3)
-
-    # Aldehydes: reactive, prone to oxidation
-    if _ALDEHYDE_PATTERN is not None and mol.HasSubstructMatch(_ALDEHYDE_PATTERN):
-        score += 1.0
-
-    # Acid chlorides, anhydrides — highly reactive
-    if _ANHYDRIDE_PATTERN is not None and mol.HasSubstructMatch(_ANHYDRIDE_PATTERN):
-        score += 2.0
-
-    # --- Rewards (easier to synthesise — common electrolyte precursors) ---
-
-    # Carbonates: workhorse electrolyte solvents
-    if _CARBONATE_PATTERN is not None and mol.HasSubstructMatch(_CARBONATE_PATTERN):
-        score -= 0.5
-
-    # Ethers: common co-solvents
-    if _ETHER_PATTERN is not None and mol.HasSubstructMatch(_ETHER_PATTERN):
-        score -= 0.3
-
-    # Sulfones: high-voltage electrolyte components
-    if _SULFONE_SA_PATTERN is not None and mol.HasSubstructMatch(_SULFONE_SA_PATTERN):
-        score -= 0.3
-
-    # Nitriles: common electrolyte additives
-    if _NITRILE_PATTERN is not None and mol.HasSubstructMatch(_NITRILE_PATTERN):
-        score -= 0.2
-
-    # Fluorinated groups: ubiquitous in modern electrolytes
-    f_count = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 9)
-    score -= 0.15 * min(f_count, 4)
-
-    # Epoxides: useful industrial precursors for ring-opening polymerisation
-    if _EPOXIDE_PATTERN is not None and mol.HasSubstructMatch(_EPOXIDE_PATTERN):
-        score -= 0.5
-
-    # Poly-peroxide penalty: more than one peroxide -> extremely unstable
-    n_peroxide = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 8 and a.GetDegree() == 2
-                     and any(n.GetAtomicNum() == 8 for n in a.GetNeighbors()))
-    if n_peroxide >= 2:
-        score += 2.0
-
-    # Hypervalent halogen penalty: reject excessively substituted halogens
-    for atom in mol.GetAtoms():
-        z = atom.GetAtomicNum()
-        if z in (9, 17, 35) and atom.GetExplicitValence() > 1:
-            score += 3.0
-            break
-
-    # Long alkyl chain penalty: penalise molecules with very long non-polar tails
-    n_c = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6)
-    tpsa = ctx.tpsa
-    if n_c > 12 and tpsa < 40:
-        excess = (n_c - 12) * 0.2
-        score += min(excess, 2.0)
-
+    for _name, rule_fn in _SA_RULES:
+        score += rule_fn(ctx)
     return float(np.clip(score, 1.0, 10.0))
 
 
