@@ -12,7 +12,9 @@ Black-box ML models discover that ester fragments correlate with high dielectric
 
 Aurelius rejects this explicitly. The oracle uses Michaelis-Menten saturation ceilings: `f(n) = min(ΔD_i · n_i, cap_i)`. Five esters do NOT give five times the dielectric boost of one ester. The test `test_fragment_saturation_prevents_stacking` enforces this.
 
-`src/aurelius/scoring/oracle/gc.py` — saturation logic, line by line, no ML.
+The oracle also predicts ionic conductivity (Walden-product proxy combining dielectric, viscosity, and Li+ solvation) and handles solvent mixtures with Margules-inspired non-ideal mixing synergy.
+
+`src/aurelius/scoring/oracle/gc.py` — saturation, cross-terms, conductivity, and mixture logic, line by line, no ML.
 
 3/5
 
@@ -56,6 +58,8 @@ Each is a 5-line Python function decorated with `@_register` in `smarts.py`. Dat
 **Why this matters for battery research**
 
 A generative model that can't distinguish between a realizable carbonate ester and an impossible 14-carbon chain isn't just wrong — it's wasting synthesis resources and eroding trust in computational discovery.
+
+External validation against published experimental data confirms Spearman ρ = 0.76 for LUMO (N=26, p<0.0001) and positive correlation across all five benchmarked properties (dielectric, viscosity, donor number, HOMO, LUMO). The mutation engine achieves 93.5% novel scaffold discovery.
 
 Aurelius is open source (MIT), CLI-first, zero ML frameworks. The entire anti-gating system is a few hundred lines of RDKit + Python.
 

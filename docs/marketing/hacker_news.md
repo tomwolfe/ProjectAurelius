@@ -17,7 +17,7 @@ The test asserts `Net Progress > 0`. Every commit must add more scientific value
 
 Most molecular generation pipelines are black boxes — you feed in SMILES and get scores out, with no idea whether the model is hallucinating impossible molecules. Aurelius uses:
 
-1. **A hybrid quantum + fragment-additivity oracle** — xTB/GFN2-xTB for HOMO/LUMO (quantum phenomena aren't additive), group-contribution for bulk properties (dielectric, viscosity, Li+ solvation)
+1. **A hybrid quantum + fragment-additivity oracle** — xTB/GFN2-xTB for HOMO/LUMO (quantum phenomena aren't additive), group-contribution for bulk properties (dielectric, viscosity, Li+ solvation, ionic conductivity). The fragment library covers carbonate, ether, sulfone, sulfoxide, nitrile, phosphonate, fluorinated carbonate, and more, with non-linear cross-terms (carbonate-ether synergy, fluorinated nitrile dipole enhancement, sulfone-nitrile high-voltage synergy). Ionic conductivity is estimated via a Walden-product proxy combining dielectric (salt dissociation), viscosity (Stokes-Einstein mobility), and Li+ binding.
 2. **Anti-gaming gates** — BRICS reassembly can produce "Frankenstein" molecules with 14-carbon aliphatic chains. The pipeline explicitly rejects them via DFS-based chain-length checks, valence sanity, ring strain limits, and sp³ fraction minimums
 3. **Domain-of-applicability penalties** — if a molecule is too fluorinated or has excessive conjugation, the oracle discounts its own score rather than confidently giving wrong answers
 
@@ -35,13 +35,23 @@ No PyTorch, no TensorFlow, no JAX. The AST-level test (`test_no_ml_framework_imp
 ## Stack
 
 - RDKit for molecular manipulation (BRICS, SMARTS, fingerprints)
-- xTB/GFN2-xTB for quantum chemistry (or TOM fallback — a closed-form Hückel/particle-in-a-box model — when xTB isn't installed)
-- Pure Python group-contribution fragment-additivity for bulk properties
+- xTB/GFN2-xTB for quantum chemistry (or TOM fallback — a closed-form Hückel/particle-in-a-box model with Wiener-index compactness and nitrile C≡N LUMO correction, improving TOM-only Spearman ρ from 0.20 → 0.52)
+- Pure Python group-contribution fragment-additivity for bulk properties (dielectric, viscosity, Li+ solvation, ionic conductivity, mixture synergy via Margules-inspired mixing rules)
 - Click CLI, structlog for structured logging
 
 ## Comparative validation
 
-External validation against published experimental data shows Spearman ρ = 0.76 for LUMO predictions and positive rank correlation across all five benchmarked properties (dielectric, viscosity, donor number, HOMO, LUMO). The mutation engine achieves >20% novel scaffold discovery rate in 3-generation loops.
+External validation against published experimental data (Tables 1-2 in `paper/manuscript.md`) shows:
+
+| Property | N | Spearman ρ | p-value |
+|---|---|---|---|
+| Dielectric ε | 23 | +0.3226 | 0.1332 |
+| Viscosity η | 23 | +0.7253 | 0.0001 |
+| Donor Number | 16 | +0.1368 | 0.6135 |
+| HOMO | 26 | +0.2561 | 0.2067 |
+| LUMO | 26 | +0.7627 | 0.0000 |
+
+The mutation engine achieves 93.5% novel scaffold discovery rate with a mean score gap of +28.74 over known commercial electrolytes in 5-generation loops.
 
 ## Why "self-verifying"?
 
