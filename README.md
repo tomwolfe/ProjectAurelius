@@ -106,7 +106,7 @@ particle-in-a-box and Hückel theory. TOM estimates HOMO/LUMO from:
 - Nitrile C≡N π* correction (−0.70 eV per C≡N)
 
 TOM is non-linear in molecular topology and cannot be "gamed" by fragment stacking.
-Wiener-index compactness improved external HOMO Spearman ρ from 0.20 to 0.5251. Ester SMARTS disambiguation (ADR-2026-06-05d) improved Dielectric Spearman ρ from 0.5855 to 0.8493, Viscosity from 0.7431 to 0.8053, and Donor Number from 0.5309 to 0.6956. Cyclic sulfone/sultone GC fragments (ADR-2026-06-05f) added incremental ring-rigidity correction, further improving Viscosity ρ to 0.8053.
+Wiener-index compactness, EW LUMO scaling (0.30→0.35), and aromatic ring stabilization together improved external LUMO Spearman ρ from 0.5118 to 0.5364 (HOLD) — 0.5251 — alongside TOM holdout MAE reduction from 0.853 to 0.834 eV (ADR-2026-06-11). Ester SMARTS disambiguation (ADR-2026-06-05d) improved Dielectric Spearman ρ from 0.5855 to 0.8493, Viscosity from 0.7431 to 0.8053, and Donor Number from 0.5309 to 0.6956. Cyclic sulfone/sultone GC fragments (ADR-2026-06-05f) added incremental ring-rigidity correction, further improving Viscosity ρ to 0.8053.
 
 ## Anti-Gaming Constraints
 

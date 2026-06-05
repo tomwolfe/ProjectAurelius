@@ -2,7 +2,7 @@
 
 ## Abstract
 
-We present Project Aurelius, an autonomous evolutionary algorithm (EA) pipeline for the discovery of novel battery electrolyte molecules. Aurelius combines a BRICS-based mutation engine with a hybrid oracle that predicts frontier orbital energies via quantum chemistry (xTB/GFN2-xTB or Topological Orbital Model) and bulk electrolyte properties (dielectric constant, viscosity, Li+ solvation, ionic conductivity) via interpretable group-contribution (GC) fragment-additivity. The pipeline is distinguished by three features: (i) a self-verifying repository-level objective function that penalizes software complexity while rewarding discovery value, (ii) physics-based anti-gaming gates that reject synthetically inaccessible "Frankenstein" molecules, and (iii) a domain-of-applicability (DoA) penalty that prevents the oracle from operating outside its calibrated chemical space. External validation against published experimental data yields Spearman rank correlations of $\rho_{\text{LUMO}} = 0.51$, $\rho_{\text{HOMO}} = 0.53$, $\rho_{\text{Dielectric}} = 0.85$, $\rho_{\text{Viscosity}} = 0.81$, and $\rho_{\text{Donor}} = 0.70$ with $\rho > 0$ for all five benchmarked properties.
+We present Project Aurelius, an autonomous evolutionary algorithm (EA) pipeline for the discovery of novel battery electrolyte molecules. Aurelius combines a BRICS-based mutation engine with a hybrid oracle that predicts frontier orbital energies via quantum chemistry (xTB/GFN2-xTB or Topological Orbital Model) and bulk electrolyte properties (dielectric constant, viscosity, Li+ solvation, ionic conductivity) via interpretable group-contribution (GC) fragment-additivity. The pipeline is distinguished by three features: (i) a self-verifying repository-level objective function that penalizes software complexity while rewarding discovery value, (ii) physics-based anti-gaming gates that reject synthetically inaccessible "Frankenstein" molecules, and (iii) a domain-of-applicability (DoA) penalty that prevents the oracle from operating outside its calibrated chemical space. External validation against published experimental data yields Spearman rank correlations of $\rho_{\text{LUMO}} = 0.54$, $\rho_{\text{HOMO}} = 0.53$, $\rho_{\text{Dielectric}} = 0.85$, $\rho_{\text{Viscosity}} = 0.81$, and $\rho_{\text{Donor}} = 0.70$ with $\rho > 0$ for all five benchmarked properties.
 
 ## 1. Introduction
 
@@ -59,7 +59,7 @@ The base energies are calibrated against a reference set of 44 electrolyte molec
 $$E_{\text{HOMO}} = E_{\text{HOMO}}^{(0)} + \Delta E_{\text{EW}} + \Delta E_{\text{ED}} + \Delta E_{\text{arom}}$$
 $$E_{\text{LUMO}} = E_{\text{LUMO}}^{(0)} + \gamma \cdot \Delta E_{\text{EW}} + \Delta E_{\text{arom}} + \Delta E_{\text{nitrile}}$$
 
-where $E_{\text{HOMO}}^{(0)} = -6.8\ \text{eV}$, $E_{\text{LUMO}}^{(0)} = 1.5\ \text{eV}$, $\Delta E_{\text{EW}}$ and $\Delta E_{\text{ED}}$ are Hückel-like heteroatom perturbation corrections, $\Delta E_{\text{arom}}$ is an aromatic stabilization term ($-0.20$ eV per aromatic ring), $\Delta E_{\text{nitrile}} = -0.70\ \text{eV}$ per nitrile C$\equiv$N group (correction for the low-lying $\pi^*$ orbital), and $\gamma = 0.3$ accounts for the physically observed HOMO-biased substituent sensitivity. Additional corrections include a phosphate HOMO correction ($+0.50$ eV per P=O group) to compensate for over-counted EW inductive effects in $\sigma$-only P-O-C bonds, and a $\sigma^*$ LUMO correction for S/P=O groups ($-0.30$ to $-0.70$ eV) capturing low-lying d-orbital-derived $\sigma^*$ orbitals. The Wiener-index compactness, nitrile, phosphate, and $\sigma^*$ corrections improve TOM-only Spearman rank correlation on the external benchmark from $\rho = 0.20$ to $\rho = 0.53$.
+where $E_{\text{HOMO}}^{(0)} = -6.8\ \text{eV}$, $E_{\text{LUMO}}^{(0)} = 1.5\ \text{eV}$, $\Delta E_{\text{EW}}$ and $\Delta E_{\text{ED}}$ are Hückel-like heteroatom perturbation corrections, $\Delta E_{\text{arom}}$ is an aromatic stabilization term ($-0.25$ eV per aromatic ring for HOMO, $-0.15$ eV for LUMO), $\Delta E_{\text{nitrile}} = -0.70\ \text{eV}$ per nitrile C$\equiv$N group (correction for the low-lying $\pi^*$ orbital), and $\gamma = 0.35$ accounts for the physically observed HOMO-biased substituent sensitivity with a strengthened LUMO EW coupling (ADR-2026-06-11). Additional corrections include a phosphate HOMO correction ($+0.50$ eV per P=O group) to compensate for over-counted EW inductive effects in $\sigma$-only P-O-C bonds, and a $\sigma^*$ LUMO correction for S/P=O groups ($-0.30$ to $-0.70$ eV) capturing low-lying d-orbital-derived $\sigma^*$ orbitals. The Wiener-index compactness, nitrile, phosphate, and $\sigma^*$ corrections improve TOM-only Spearman rank correlation on the external benchmark from $\rho = 0.20$ to $\rho = 0.53$.
 
 #### 2.3.2 Group-Contribution Fragment-Additivity
 
@@ -160,7 +160,7 @@ The hybrid oracle was validated against published experimental data for common e
 | Viscosity $\eta$ | 23 | $+0.8053$ | 0.0000 |
 | Donor Number | 16 | $+0.6956$ | 0.0028 |
 | HOMO | 26 | $+0.5251$ | 0.0059 |
-| LUMO | 26 | $+0.5118$ | 0.0075 |
+| LUMO | 26 | $+0.5364$ | 0.0047 |
 
 **Table 1:** Spearman rank correlation between Aurelius oracle predictions and published experimental values. Full results generated by `benchmarks/benchmark_external_validation.py`.
 
@@ -170,7 +170,7 @@ The EA was run for 5 generations with 5 seed molecules. The top 50 discovered mo
 
 | Metric | Value | Target |
 |---|---|---|---|---|
-| Mean score gap (discoveries - known) | $+28.28$ | $> 0$ |
+| Mean score gap (discoveries - known) | $+27.32$ | $> 0$ |
 | Novel scaffold ratio | $100.0\%$ | $> 80\%$ |
 
 **Table 2:** Reality check benchmark comparing top EA discoveries against known commercial electrolytes. Full results generated by `benchmarks/benchmark_reality_check.py`.
