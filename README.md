@@ -106,7 +106,7 @@ particle-in-a-box and Hückel theory. TOM estimates HOMO/LUMO from:
 - Nitrile C≡N π* correction (−0.70 eV per C≡N)
 
 TOM is non-linear in molecular topology and cannot be "gamed" by fragment stacking.
-Wiener-index compactness improved external HOMO Spearman ρ from 0.20 to 0.52.
+Wiener-index compactness improved external HOMO Spearman ρ from 0.20 to 0.5115.
 
 ## Anti-Gaming Constraints
 
