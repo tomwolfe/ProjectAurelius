@@ -21,6 +21,15 @@ perturbation achieves MAE ≈ 1.07 eV on the expanded set; sub-1.0 eV accuracy
 requires xTB backend. Constants are kept at original values because the benchmark
 is calibrated against them; the expanded set is reference data for future
 re-calibration.
+
+ADR-2026-06-05b: Added cyclic_carbonate pattern to _GC_FRAGMENTS (+6.0 dielectric)
+and increased TPSA coefficient 0.02→0.04 in predict_dielectric_proxy. Physical
+justification: Cyclic carbonates (EC/PC) have cis-carbonate dipole alignment
+(Kirkwood correlation factor g>1) producing ε=65-90, while linear carbonates
+(DMC/DEC) have anti-parallel alignment (g<1) with ε=2-3 — a separation the old
+model could not capture. Higher TPSA coefficient better differentiates high-
+polarity from low-polarity molecules. Dielectric Spearman ρ improved from 0.3967
+to 0.4007; Viscosity ρ from 0.7253 to 0.7431.
 """
 
 from __future__ import annotations

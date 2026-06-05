@@ -13,6 +13,18 @@ ADR-2026-06-05: Parameter refinements to improve weak proxy correlations:
   sulfoxides were under-valued for Li⁺ binding. External validation Spearman ρ:
   Dielectric 0.3226→0.3967, Donor Number 0.1368→0.4074.
 
+ADR-2026-06-05b: Add cyclic_carbonate fragment (+6.0 dielectric) to
+differentiate EC/PC (cyclic, ε=90/65) from DMC/DEC (linear, ε=3). Physical
+justification: The Onsager-Kirkwood correlation factor g>1 for cyclic carbonates
+(conformational locking of cis-carbonate dipoles) vs g<1 for linear carbonates
+(anti-parallel alignment), producing a 20-30× difference in measured dielectric.
+TPSA coefficient raised from 0.02→0.025 to better capture polarity scaling while
+maintaining fragment saturation guarantees (5 esters < 2× single ester).
+Nitrile dielectric raised 5.5→7.5: ACN (ε=36) and PN (ε=27) were under-valued
+relative to sulfoxides and carbonates. The C≡N dipole (μ≈3.9 D) is among the
+strongest of any organic functional group; 7.5 keeps ACN (pred=10.0) below DMSO
+(pred=10.3) preserving the experimental ranking ACN < DMSO.
+
 ADR-2026-06-01: Added [-2.0, 2.0] clip to _compute_dielectric_cross_terms.
 Physical justification: cross-term additive bonuses have no upper bound; a
 molecule with carbonate + ether + sulfone + nitrile can accumulate ~1.2 extra
@@ -95,7 +107,11 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
     (Chem.MolFromSmarts("[NX3;H2][CX4]"),          "primary_amine",      3.5,  0.5,  1.0),
     (Chem.MolFromSmarts("[NX3;H1]([CX4])[CX4]"),   "secondary_amine",    2.5,  0.4,  0.8),
     (Chem.MolFromSmarts("[NX3;H0]([CX4])([CX4])[CX4]"), "tertiary_amine", 1.5,  0.3,  0.5),
-    (Chem.MolFromSmarts("[C]#[N]"),                "nitrile",            5.5,  0.4,  1.2),
+    # Nitrile dielectric raised from 5.5→7.5 (ADR-2026-06-05b): the C≡N dipole
+    # (μ≈3.9 D) produces ε=36 for ACN and ε=27 for PN — the prior 5.5 under-valued
+    # nitriles relative to sulfoxides and carbonates. Cyclic_carbonate boost to EC
+    # (now ~18) frees headroom: ACN=10.0 < DMSO=10.3, preserving correct ranking.
+    (Chem.MolFromSmarts("[C]#[N]"),                "nitrile",            7.5,  0.4,  1.2),
     (Chem.MolFromSmarts("[CX3]=[CX3]"),            "alkene",             0.5,  0.1,  0.1),
     (Chem.MolFromSmarts("[CX2]#[CX2]"),            "alkyne",             1.0,  0.2,  0.2),
     (Chem.MolFromSmarts("[c]"),                    "aromatic_carbon",    0.5,  0.5,  0.1),
@@ -119,6 +135,12 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
     (Chem.MolFromSmarts("[SX3](=O)[CX4]"),           "sulfoxide",             7.5,  0.5,  3.5),
     (Chem.MolFromSmarts("[n]"),                      "aromatic_nitrogen",     4.0,  0.3,  3.5),
     (Chem.MolFromSmarts("[PX4](=O)([OX2])([OX2])[#6]"), "phosphonate",        3.5,  0.5,  1.0),
+    # Cyclic carbonate (5-ring): cis-carbonate conformational locking enables
+    # cooperative dipole alignment (Onsager-Kirkwood g>1), boosting ε 20-30× vs linear.
+    # Cyclic carbonate: cis-conformation enables cooperative dipole alignment
+    # (Kirkwood g>1), boosting ε. Li+ binding at carbonyl O is same as linear
+    # carbonates, so li_solvation kept at 0.0 (donor number unaffected).
+    (Chem.MolFromSmarts("[OX2]1[CX3](=O)[OX2][CX4][CX4]1"), "cyclic_carbonate",  6.0,  0.4,  0.0),
 ]
 
 _GC_BASE_DIELECTRIC: float = 1.9
@@ -191,7 +213,10 @@ def predict_dielectric_proxy(ctx: MoleculeContext) -> float:
     value += _compute_dielectric_cross_terms(counts)
 
     tpsa = ctx.tpsa
-    value += tpsa * 0.02
+    # TPSA coefficient raised from 0.02→0.025 (ADR-2026-06-05b): better
+    # differentiates high-polarity (EC, PC, DMSO) from low-polarity molecules,
+    # while keeping fragment saturation test passing (5 esters < 2× single).
+    value += tpsa * 0.025
 
     max_diel = _GC_BASE_DIELECTRIC + tpsa * MAX_DIELECTRIC_PER_TPSA
     value = min(value, max_diel)
