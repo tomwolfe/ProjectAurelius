@@ -307,6 +307,15 @@ def mixture_synergy_bonus(
 
     The bonus scales with how well the mixture's combined dielectric and
     viscosity meet both targets simultaneously.
+
+    ADR-2026-06-05: Added Margules-inspired non-ideal mixing term. The
+    two-suffix Margules model gives excess Gibbs energy G^E = A · x₁ · x₂,
+    which captures the synergy peak at equimolar composition for truly
+    complementary pairs. Here A ∝ |d₁-d₂| · |v₁-v₂| — pairs with large
+    differences in both properties (the definition of complementarity)
+    receive an extra bonus that peaks at 50:50 mixing, matching the
+    physical intuition that complementary pairs are most effective at
+    balanced compositions.
     """
     has_high_d = max(d1, d2) > 4.0
     has_low_v = min(v1, v2) < 1.5
@@ -321,4 +330,12 @@ def mixture_synergy_bonus(
     )
 
     score = d_mix / 4.0 + 1.5 / max(v_mix, 0.01)
+
+    # Margules-inspired non-ideal mixing term (ADR-2026-06-05)
+    # A ∝ |d₁-d₂|·|v₁-v₂| scaled to give ~0.5 bonus at 50:50 for complementary pairs
+    interaction = abs(d1 - d2) * abs(v1 - v2) / 8.0
+    interaction = min(interaction, 3.0)  # saturation cap to prevent gaming
+    non_ideal = interaction * frac1 * f2
+    score += non_ideal
+
     return min(max(0.0, score), 6.0)

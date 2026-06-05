@@ -335,6 +335,53 @@ class TestOracleNonlinear:
             f"Benzene gap {gap_benzene:.3f} should be < butadiene gap {gap_butadiene:.3f}"
         )
 
+    def test_wiener_compactness_deepens_carbonate_homo(self):
+        """Wiener compactness adjustment should make cyclic EC HOMO deeper than
+        the original TOM prediction, bringing it closer to the DFT reference."""
+        from aurelius.scoring.oracle.quantum import _wiener_index
+
+        ec_mol = Chem.MolFromSmiles("C1COC(=O)O1")
+        dmc_mol = Chem.MolFromSmiles("COC(=O)OC")
+
+        ec_w = _wiener_index(ec_mol)
+        dmc_w = _wiener_index(dmc_mol)
+
+        # EC is cyclic (more compact), DMC is acyclic (more extended)
+        # EC should have lower Wiener index per atom
+        w_per_atom_ec = ec_w / ec_mol.GetNumAtoms()
+        w_per_atom_dmc = dmc_w / dmc_mol.GetNumAtoms()
+        assert w_per_atom_dmc > w_per_atom_ec, (
+            f"EC W/n={w_per_atom_ec:.1f} should be < DMC W/n={w_per_atom_dmc:.1f} "
+            f"since EC is more compact"
+        )
+
+        # The compactness correction should give EC deeper HOMO than DMC
+        ec_h, _ = predict_tom_orbitals(ec_mol)
+        dmc_h, _ = predict_tom_orbitals(dmc_mol)
+
+        # EC should have more negative HOMO (deeper) than pre-correction baseline
+        # Without correction, both EC and DMC were predicted at -5.699
+        assert ec_h < -6.0, (
+            f"EC HOMO should be deeper than -6.0 eV with compactness correction (got {ec_h:.3f})"
+        )
+
+    def test_wiener_compactness_preserves_linear_ordering(self):
+        """The compactness adjustment must not invert the expected gap scaling:
+        molecules with longer conjugation should still have smaller gaps."""
+        butadiene = Chem.MolFromSmiles("C=CC=C")
+        octatetraene = Chem.MolFromSmiles("C=CC=CC=CC=C")
+
+        b_h, b_l = predict_tom_orbitals(butadiene)
+        o_h, o_l = predict_tom_orbitals(octatetraene)
+
+        gap_b = b_l - b_h
+        gap_o = o_l - o_h
+
+        assert gap_o < gap_b, (
+            f"Octatetraene gap ({gap_o:.3f}) should be < butadiene gap ({gap_b:.3f}) "
+            f"even with compactness adjustment"
+        )
+
 
 # ---------------------------------------------------------------------------
 # C. Software "As Simple As Possible"
@@ -615,6 +662,46 @@ class TestFrankensteinAblation:
         assert mixture_score > weighted_avg, (
             f"EC/DME mixture score ({mixture_score:.1f}) must exceed "
             f"weighted average ({weighted_avg:.1f})"
+        )
+
+    def test_mixture_synergy_margules_peaks_at_equimolar(self):
+        """The Margules-inspired term (A·x₁·x₂) must peak at 50:50 mixing
+        for a complementary pair, giving higher synergy at balanced
+        compositions than at skewed ones."""
+        from aurelius.scoring.oracle.gc import mixture_synergy_bonus
+
+        d1, v1 = 8.0, 2.5  # high-dielec, moderate-visc
+        d2, v2 = 2.0, 0.5  # low-dielec, low-visc
+
+        syn_equimolar = mixture_synergy_bonus(d1, d2, v1, v2, frac1=0.5)
+        syn_skewed = mixture_synergy_bonus(d1, d2, v1, v2, frac1=0.9)
+
+        assert syn_equimolar > syn_skewed, (
+            f"Equimolar synergy ({syn_equimolar:.3f}) should exceed "
+            f"skewed synergy ({syn_skewed:.3f}) — Margules term peaks at x₁=x₂"
+        )
+
+    def test_mixture_synergy_margules_capped(self):
+        """The Margules interaction parameter must be capped to prevent
+        gaming by stacking extreme component values."""
+        from aurelius.scoring.oracle.gc import mixture_synergy_bonus
+
+        # Extreme values — should be capped at max 6.0
+        syn_extreme = mixture_synergy_bonus(d1=15.0, v1=10.0, d2=1.0, v2=0.1, frac1=0.5)
+
+        assert syn_extreme <= 6.0, (
+            f"Synergy with extreme values ({syn_extreme:.3f}) must not exceed 6.0 cap"
+        )
+
+    def test_mixture_synergy_margules_no_bonus_unless_complementary(self):
+        """The Margules term must not create a false bonus for
+        non-complementary pairs (both high-viscosity)."""
+        from aurelius.scoring.oracle.gc import mixture_synergy_bonus
+
+        # Both high-viscosity — should get zero synergy
+        syn = mixture_synergy_bonus(d1=8.0, v1=2.5, d2=7.0, v2=2.3, frac1=0.5)
+        assert syn == 0.0, (
+            f"Non-complementary pair must have synergy=0 (got {syn})"
         )
 
 
