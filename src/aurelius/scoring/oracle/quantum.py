@@ -34,6 +34,7 @@ import tempfile
 
 from rdkit import Chem
 
+from aurelius.constants import NITRILE_PATTERN
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
@@ -407,6 +408,11 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     arom_stab_lumo = -0.15 * n_arom
     homo += arom_stab_homo
     lumo += arom_stab_lumo
+
+    # Nitrile triple bond LUMO correction (low-lying π* orbital of C≡N)
+    # The C≡N π* is ~0.7-1.0 eV lower than the general N perturbation predicts
+    n_nitrile = len(mol.GetSubstructMatches(NITRILE_PATTERN))
+    lumo += -0.70 * n_nitrile
 
     return homo, lumo
 
