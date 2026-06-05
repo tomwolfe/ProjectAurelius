@@ -48,8 +48,8 @@ External validation against published experimental data (Tables 1-2 in `paper/ma
 | Dielectric ε | 23 | +0.3226 | 0.1332 |
 | Viscosity η | 23 | +0.7253 | 0.0001 |
 | Donor Number | 16 | +0.1368 | 0.6135 |
-| HOMO | 26 | +0.2561 | 0.2067 |
-| LUMO | 26 | +0.7627 | 0.0000 |
+| HOMO | 26 | +0.5115 | 0.0076 |
+| LUMO | 26 | +0.5053 | 0.0085 |
 
 The mutation engine achieves 93.5% novel scaffold discovery rate with a mean score gap of +28.74 over known commercial electrolytes in 5-generation loops.
 
