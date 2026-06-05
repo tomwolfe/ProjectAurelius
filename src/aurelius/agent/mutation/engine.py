@@ -35,7 +35,7 @@ from aurelius.agent.mutation.smarts import (
     ELECTROLYTE_SMARTS,
     is_electrolyte_like,
 )
-from aurelius.types import MoleculeContext
+from aurelius.types import MoleculeContext, is_mixture_smiles, parse_mixture_smiles, format_mixture_smiles
 from aurelius.utils.chem_utils import _deserialize_fp
 
 try:
@@ -441,4 +441,83 @@ class MutationEngine:
         if len(unique) > n_candidates:
             indices = self._rng.choice(len(unique), size=n_candidates, replace=False)
             unique = [unique[i] for i in indices]
+        return unique
+
+    # ------------------------------------------------------------------
+    # Mixture-level mutation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _component_tanimoto(smi_a: str, smi_b: str) -> float:
+        """Compute Tanimoto similarity between two component molecules."""
+        ctx_a = MoleculeContext.from_smiles(smi_a)
+        ctx_b = MoleculeContext.from_smiles(smi_b)
+        if ctx_a is None or ctx_b is None:
+            return 1.0
+        from rdkit.DataStructs import TanimotoSimilarity
+        return TanimotoSimilarity(ctx_a.get_ecfp4(), ctx_b.get_ecfp4())
+
+    def _mutate_mixture(
+        self, smi_a: str, smi_b: str, frac: float, batch_size: int = 10
+    ) -> list[str]:
+        """Generate mixture variants by mutating components or perturbing fraction.
+
+        Mutation types (randomly chosen):
+          - 40%: mutate component A via SMARTS/BRICS
+          - 40%: mutate component B via SMARTS/BRICS
+          - 20%: perturb volume fraction frac_A by ±0.05-0.15
+        """
+        variants: list[str] = []
+        r = self._rng.random()
+
+        if r < 0.40:
+            mutated = self.mutate(smi_a, batch_size=batch_size)
+            for new_a in mutated[:3]:
+                tan = self._component_tanimoto(new_a, smi_b)
+                if tan <= 0.80:
+                    variants.append(format_mixture_smiles(new_a, smi_b, frac))
+        elif r < 0.80:
+            mutated = self.mutate(smi_b, batch_size=batch_size)
+            for new_b in mutated[:3]:
+                tan = self._component_tanimoto(smi_a, new_b)
+                if tan <= 0.80:
+                    variants.append(format_mixture_smiles(smi_a, new_b, frac))
+        else:
+            delta = (self._rng.random() - 0.5) * 0.20
+            new_frac = max(0.1, min(0.9, frac + delta))
+            variants.append(format_mixture_smiles(smi_a, smi_b, new_frac))
+
+        return list(set(variants))
+
+    def propose_mixture_candidates(
+        self,
+        seed_smiles: list[str],
+        n_mixtures: int = 10,
+        batch_size: int = 10,
+    ) -> list[str]:
+        """Generate binary mixture candidates from a list of seed SMILES.
+
+        Pairs molecules from the seed pool and creates mixture variants.
+        Pairs with component Tanimoto > 0.80 are excluded as trivial.
+        """
+        if len(seed_smiles) < 2:
+            return []
+        unique_seeds = list(dict.fromkeys(seed_smiles))
+        candidates: list[str] = []
+        n_pairs = min(len(unique_seeds), 5)
+        for i in range(n_pairs):
+            for j in range(i + 1, n_pairs):
+                smi_a = unique_seeds[i]
+                smi_b = unique_seeds[j]
+                tan = self._component_tanimoto(smi_a, smi_b)
+                if tan > 0.80:
+                    continue
+                frac = round(self._rng.uniform(0.3, 0.7), 2)
+                candidates.append(format_mixture_smiles(smi_a, smi_b, frac))
+                mix_variants = self._mutate_mixture(smi_a, smi_b, frac, batch_size=batch_size)
+                candidates.extend(mix_variants)
+        unique = list(dict.fromkeys(candidates))
+        if len(unique) > n_mixtures:
+            idx = self._rng.choice(len(unique), size=n_mixtures, replace=False)
+            unique = [unique[i] for i in idx]
         return unique

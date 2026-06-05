@@ -33,7 +33,12 @@ from aurelius.agent.selection import compute_pairwise_diversity, tournament_sele
 from aurelius.agent.state import LoopState
 from aurelius.constants import DISCOVERY_THRESHOLD
 from aurelius.pipeline import AureliusPipeline
-from aurelius.types import MoleculeContext, ScreeningResult
+from aurelius.types import (
+    MoleculeContext,
+    ScreeningResult,
+    is_mixture_smiles,
+    parse_mixture_smiles,
+)
 
 try:
     from rdkit.Chem.Scaffolds import MurckoScaffold
@@ -246,7 +251,15 @@ class DiscoveryLoop:
 
     def _generate_candidates(self, generation: int, force_exploration: bool = False) -> list[str]:
         top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
-        return list(self.engine.mutate_batch(top_seeds, self.batch_size * 3, force_exploration=force_exploration))
+        single_candidates = list(self.engine.mutate_batch(top_seeds, self.batch_size * 3, force_exploration=force_exploration))
+        mixture_candidates = list(self.engine.propose_mixture_candidates(
+            top_seeds,
+            n_mixtures=max(2, self.batch_size // 5),
+            batch_size=5,
+        ))
+        all_candidates = single_candidates + mixture_candidates
+        random.shuffle(all_candidates)
+        return all_candidates
 
     def _top_seeds_from_results(self) -> list[str]:
         scored = [(r.total_score, r.smiles) for r in self.all_results if r.total_score > 0]
@@ -265,16 +278,45 @@ class DiscoveryLoop:
             if smi in self.screened_smiles:
                 invalid_count += 1
                 continue
-            ctx = MoleculeContext.from_smiles(smi)
-            if ctx is None:
-                invalid_count += 1
-                continue
-            if not ctx.is_valid_electrolyte_mol():
-                invalid_count += 1
-                continue
-            valid_contexts.append(ctx)
+            if is_mixture_smiles(smi):
+                ctx = self._make_mixture_context(smi)
+                if ctx is None:
+                    invalid_count += 1
+                else:
+                    valid_contexts.append(ctx)
+            else:
+                ctx = MoleculeContext.from_smiles(smi)
+                if ctx is None:
+                    invalid_count += 1
+                    continue
+                if not ctx.is_valid_electrolyte_mol():
+                    invalid_count += 1
+                    continue
+                valid_contexts.append(ctx)
 
         return valid_contexts, invalid_count
+
+    @staticmethod
+    def _make_mixture_context(mixture_smi: str) -> MoleculeContext | None:
+        """Create a MoleculeContext from a mixture SMILES.
+
+        Validates both components and returns a context keyed on component A
+        (for fingerprint-based diversity calculations).
+        """
+        parsed = parse_mixture_smiles(mixture_smi)
+        if parsed is None:
+            return None
+        smi_a, smi_b, frac = parsed
+        ctx_a = MoleculeContext.from_smiles(smi_a)
+        ctx_b = MoleculeContext.from_smiles(smi_b)
+        if ctx_a is None or ctx_b is None:
+            return None
+        if not ctx_a.is_valid_electrolyte_mol():
+            return None
+        if not ctx_b.is_valid_electrolyte_mol():
+            return None
+        ctx_a.smiles = mixture_smi
+        return ctx_a
 
     def _compute_novelty(self, ctx: MoleculeContext) -> float | None:
         """Compute novelty score (1 - max Tanimoto to seed pool)."""
@@ -337,6 +379,8 @@ class DiscoveryLoop:
         best_diel: tuple[int, float] = (-1, -1.0)
         best_visc: tuple[int, float] = (-1, 999.0)
         for i, ctx in enumerate(valid_contexts):
+            if is_mixture_smiles(ctx.smiles):
+                continue
             res = result_map.get(ctx.smiles)
             if res is None:
                 continue
@@ -438,13 +482,14 @@ class DiscoveryLoop:
     def _evolve_seed_pool(self, batch_contexts: list[MoleculeContext], batch_scores: list[float]) -> None:
         """Feed high-scoring molecules back into the seed pool."""
         for ctx, sc in zip(batch_contexts, batch_scores, strict=False):
-            if sc >= 65.0:
-                smi = ctx.smiles
-                existing = set(self.engine.seed_pool)
-                if smi not in existing:
-                    self.engine.seed_pool.append(smi)
-                    existing.add(smi)
-                self.engine.harvest_fragments(smi, score=sc)
+            if sc < 65.0 or is_mixture_smiles(ctx.smiles):
+                continue
+            smi = ctx.smiles
+            existing = set(self.engine.seed_pool)
+            if smi not in existing:
+                self.engine.seed_pool.append(smi)
+                existing.add(smi)
+            self.engine.harvest_fragments(smi, score=sc)
         if len(self.engine.seed_pool) > 200:
             self.engine.seed_pool = self.engine.seed_pool[-200:]
         self.state.seed_pool_size = len(self.engine.seed_pool)
@@ -454,6 +499,8 @@ class DiscoveryLoop:
             return
         scaffolds = []
         for ctx in batch_contexts:
+            if is_mixture_smiles(ctx.smiles):
+                continue
             try:
                 scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
                 if scaffold:
@@ -486,9 +533,36 @@ class DiscoveryLoop:
         )
 
     def _screen_molecule(self, ctx: MoleculeContext) -> dict[str, Any] | None:
+        if is_mixture_smiles(ctx.smiles):
+            return self._screen_mixture(ctx)
         try:
             result = self.pipeline.screen_molecule(ctx)
         except (ImportError, ValueError, RuntimeError, TypeError) as e:
             log.warning("Pipeline error for %s: %s", ctx.smiles, e)
             return None
         return result if result is not None else None
+
+    def _screen_mixture(self, ctx: MoleculeContext) -> dict[str, Any] | None:
+        parsed = parse_mixture_smiles(ctx.smiles)
+        if parsed is None:
+            return None
+        smi_a, smi_b, frac = parsed
+        ctx_a = MoleculeContext.from_smiles(smi_a)
+        ctx_b = MoleculeContext.from_smiles(smi_b)
+        if ctx_a is None or ctx_b is None:
+            return None
+        try:
+            mix = self.pipeline.screen_mixture(ctx_a, ctx_b, frac)
+        except (ImportError, ValueError, RuntimeError, TypeError) as e:
+            log.warning("Pipeline error for mixture %s: %s", ctx.smiles, e)
+            return None
+        if mix is None:
+            return None
+        score = mix.get("score", {})
+        mixture_props = mix.get("mixture_properties", {})
+        return {
+            "score": score,
+            "tier2": mixture_props,
+            "component1": mix.get("component1"),
+            "component2": mix.get("component2"),
+        }

@@ -6,6 +6,9 @@ to eliminate circular imports between modules.
 MoleculeContext is the absolute single source of truth for molecular
 parsing. No module should call ``Chem.MolFromSmiles`` outside of this
 class or the mutation engine's fragment pool.
+
+Binary mixtures are represented as compound SMILES: ``SMILES_A|SMILES_B|frac_A``
+where ``frac_A`` is the volume fraction of the first component in [0.1, 0.9].
 """
 
 from __future__ import annotations
@@ -17,6 +20,8 @@ from typing import Any
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
+
+MIXTURE_SEPARATOR: str = "|"
 
 
 @dataclass(frozen=True)
@@ -151,7 +156,45 @@ class MoleculeContext:
         return counts
 
 
+# ---------------------------------------------------------------------------
+# Binary Mixture Support
+# ---------------------------------------------------------------------------
+
+_MIXTURE_SEP: str = "|"
+
+
+def is_mixture_smiles(smiles: str) -> bool:
+    """Check if a SMILES string represents a binary mixture (contains '|')."""
+    return _MIXTURE_SEP in smiles
+
+
+def parse_mixture_smiles(smiles: str) -> tuple[str, str, float] | None:
+    """Parse a mixture SMILES ``SMILES_A|SMILES_B|frac_A``.
+
+    Returns (smiles_a, smiles_b, frac_a) or None if parsing fails.
+    """
+    try:
+        parts = smiles.split(_MIXTURE_SEP)
+        if len(parts) != 3:
+            return None
+        smi_a, smi_b, frac_str = parts
+        frac = float(frac_str)
+        if not (0.0 <= frac <= 1.0):
+            return None
+        return smi_a, smi_b, frac
+    except (ValueError, TypeError):
+        return None
+
+
+def format_mixture_smiles(smi_a: str, smi_b: str, frac_a: float) -> str:
+    """Format a mixture SMILES string."""
+    return f"{smi_a}{_MIXTURE_SEP}{smi_b}{_MIXTURE_SEP}{frac_a:.4f}"
+
+
 __all__ = [
     "MoleculeContext",
     "ScreeningResult",
+    "is_mixture_smiles",
+    "parse_mixture_smiles",
+    "format_mixture_smiles",
 ]

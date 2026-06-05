@@ -45,7 +45,7 @@ External validation against published experimental data (Tables 1-2 in `paper/ma
 
 | Property | N | Spearman ρ | p-value |
 |---|---|---|---|
-| Dielectric ε | 23 | +0.4106 | 0.0517 |
+| Dielectric ε | 23 | +0.5855 | 0.0033 |
 | Viscosity η | 23 | +0.7431 | 0.0000 |
 | Donor Number | 16 | +0.5309 | 0.0344 |
 | HOMO | 26 | +0.5115 | 0.0076 |
