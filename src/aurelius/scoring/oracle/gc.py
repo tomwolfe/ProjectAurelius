@@ -139,6 +139,18 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
     (Chem.MolFromSmarts("S(=O)(=O)[CX4]"),         "sulfone",            5.0,  0.5,  1.0),
     (Chem.MolFromSmarts("S(=O)(=O)[OX2]"),         "sulfonate",          5.5,  0.6,  1.2),
     (Chem.MolFromSmarts("S(=O)(=O)F"),             "sulfonyl_fluoride",  4.0,  0.4,  0.5),
+    # Cyclic sulfone (5-ring): S in 5-membered ring (sulfolane). Ring rigidity increases
+    # viscosity significantly vs acyclic sulfones. Dielectric ~44 for sulfolane.
+    # NOTE: These are incremental corrections OVER the general "sulfone"/"sulfonate" fragments
+    # which already match the cyclic S(=O)(=O) group. Small values prevent double-counting.
+    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][CX4]1"), "cyclic_sulfone_5", 0.5, 1.0, 0.2),
+    # Cyclic sulfone (6-ring): slightly less ring strain than 5-ring
+    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][CX4][CX4]1"), "cyclic_sulfone_6", 0.3, 0.8, 0.1),
+    # Sultone (5-ring cyclic sulfonate ester): S-O-C in ring (e.g., 1,3-propane sultone).
+    # The S-O-C ester linkage adds extra dielectric vs acyclic sulfonate.
+    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][OX2]1"), "sultone_5", 0.5, 0.6, 0.3),
+    # Sultone (6-ring): larger ring, less strain
+    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][CX4][OX2]1"), "sultone_6", 0.3, 0.4, 0.2),
     (Chem.MolFromSmarts("[PX4](=O)([OX2])([OX2])[OX2]"), "phosphate",    4.0,  0.8,  1.5),
     (Chem.MolFromSmarts("[C](F)(F)F"),             "trifluoromethyl",    0.5,  0.2, -0.3),
     (Chem.MolFromSmarts("[C](F)(F)"),              "difluoromethylene",  0.3,  0.1, -0.2),

@@ -384,13 +384,19 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     # We compute a "compactness" factor and shorten the effective
     # conjugation length for compact molecules, which increases the
     # particle-in-a-box gap and deepens the HOMO.
+    #
+    # ADR-2026-06-05f: Tuned compactness factor from 0.30 to 0.28.
+    # Physical justification: the 0.30 factor over-corrected for very compact
+    # molecules (EC, PC), causing HOMO to overshoot DFT reference by >0.15 eV
+    # for some calibration entries. Reducing to 0.28 preserves the rank-ordering
+    # improvement (Spearman ρ > 0.50) while slightly reducing MAE.
     n_atoms = mol.GetNumAtoms()
     w = _wiener_index(mol)
     if n_atoms > 1:
         w_linear = n_atoms * (n_atoms * n_atoms - 1) / 6.0
         if w_linear > 0:
             compactness = max(0.0, 1.0 - w / w_linear)
-            L = int(L * (1.0 - 0.3 * compactness))
+            L = int(L * (1.0 - 0.28 * compactness))
             L = max(L, 2)
 
     n_ew, n_ed, n_pi = _count_heteroatom_perturbations(mol)

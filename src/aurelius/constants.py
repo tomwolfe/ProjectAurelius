@@ -235,7 +235,14 @@ HYDROLYTICALLY_UNSTABLE_PATTERNS: list[tuple[Chem.Mol, str, float]] = [
     (Chem.MolFromSmarts("[Si]([OX2])[OX2]"), "silyl_ether", 0.3),
     (Chem.MolFromSmarts("[CX3](=[OX1])[OX2][CX2]=[CX2]"), "enol_ester", 0.35),
     (Chem.MolFromSmarts("[#6][CX3](=[OX1])[OX2][CX3](=[OX1])[#6]"), "geminal_diester", 0.2),
+    (Chem.MolFromSmarts("[CX3](=[OX1])[F,Cl,Br,I]"), "acyl_halide", 0.4),
+    (Chem.MolFromSmarts("[C]=[C]=[O]"), "terminal_ketene", 0.5),
 ]
+
+# Acyl halide pattern — highly reactive toward hydrolysis, toxic
+ACYL_HALIDE_PATTERN: Chem.Mol = Chem.MolFromSmarts("[CX3](=[OX1])[F,Cl,Br,I]")
+# Terminal ketene pattern — violently reactive toward water and nucleophiles
+TERMINAL_KETENE_PATTERN: Chem.Mol = Chem.MolFromSmarts("[C]=[C]=[O]")
 
 # Electrochemically unstable motifs (used by mutation.py)
 ELECTROCHEMICALLY_UNSTABLE_PATTERNS: list[tuple[Chem.Mol, str]] = [
@@ -245,6 +252,8 @@ ELECTROCHEMICALLY_UNSTABLE_PATTERNS: list[tuple[Chem.Mol, str]] = [
     (Chem.MolFromSmarts("[OX2]1[OX2][OX2]1"), "trioxirane"),
     (Chem.MolFromSmarts("[CH2]1[CH2][CH2]1"), "cyclopropane"),
     (Chem.MolFromSmarts("[CH2]1[CH2][CH2][CH2]1"), "cyclobutane"),
+    (Chem.MolFromSmarts("[CX3](=[OX1])[F,Cl,Br,I]"), "acyl_halide"),
+    (Chem.MolFromSmarts("[C]=[C]=[O]"), "terminal_ketene"),
 ]
 
 # Individual pre-compiled patterns for chem_utils.py SA score
