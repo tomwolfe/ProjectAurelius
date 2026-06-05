@@ -81,4 +81,4 @@ disable_error_code = ["attr-defined", "no-untyped-call", "no-any-return"]
 
 [[tool.mypy.overrides]]
 module = "rdkit.*"
-ignore_errors = true
+follow_imports = "skip"
