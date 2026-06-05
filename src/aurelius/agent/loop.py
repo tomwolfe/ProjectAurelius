@@ -352,6 +352,36 @@ class DiscoveryLoop:
                 and score_data.get("is_viable", False)
                 and not score_data.get("rejection_reasons", []))
 
+    @staticmethod
+    def _find_best_mixture_pair(
+        valid_contexts: list[MoleculeContext],
+        result_map: dict[str, Any] | None,
+    ) -> tuple[int, int]:
+        """Find indices of the highest-dielectric and lowest-viscosity candidates.
+
+        Returns (-1, -1) if no valid pair is found.
+        """
+        if len(valid_contexts) < 4 or result_map is None:
+            return -1, -1
+
+        best_diel: tuple[int, float] = (-1, -1.0)
+        best_visc: tuple[int, float] = (-1, 999.0)
+        for i, ctx in enumerate(valid_contexts):
+            if is_mixture_smiles(ctx.smiles):
+                continue
+            res = result_map.get(ctx.smiles)
+            if res is None:
+                continue
+            diel = res.get("dielectric_proxy", 0.0)
+            visc = res.get("viscosity_proxy", 999.0)
+            if diel > best_diel[1]:
+                best_diel = (i, diel)
+            if visc < best_visc[1]:
+                best_visc = (i, visc)
+        if best_diel[0] < 0 or best_visc[0] < 0:
+            return -1, -1
+        return best_diel[0], best_visc[0]
+
     def _evaluate_mixture_pairs(
         self,
         valid_contexts: list[MoleculeContext],
@@ -372,30 +402,12 @@ class DiscoveryLoop:
         result_contexts: list[MoleculeContext] = []
         all_scores: list[float] = []
 
-        if len(valid_contexts) < 4 or result_map is None:
+        idx_diel, idx_visc = self._find_best_mixture_pair(valid_contexts, result_map)
+        if idx_diel < 0 or idx_visc < 0:
             return result_contexts, all_scores
 
-        # Find the highest-dielectric and lowest-viscosity candidates
-        best_diel: tuple[int, float] = (-1, -1.0)
-        best_visc: tuple[int, float] = (-1, 999.0)
-        for i, ctx in enumerate(valid_contexts):
-            if is_mixture_smiles(ctx.smiles):
-                continue
-            res = result_map.get(ctx.smiles)
-            if res is None:
-                continue
-            diel = res.get("dielectric_proxy", 0.0)
-            visc = res.get("viscosity_proxy", 999.0)
-            if diel > best_diel[1]:
-                best_diel = (i, diel)
-            if visc < best_visc[1]:
-                best_visc = (i, visc)
-
-        if best_diel[0] < 0 or best_visc[0] < 0:
-            return result_contexts, all_scores
-
-        ctx1 = valid_contexts[best_diel[0]]
-        ctx2 = valid_contexts[best_visc[0]]
+        ctx1 = valid_contexts[idx_diel]
+        ctx2 = valid_contexts[idx_visc]
         if ctx1.smiles == ctx2.smiles:
             return result_contexts, all_scores
 

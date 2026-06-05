@@ -104,7 +104,13 @@ def get_data_source() -> str:
 
 # (pattern, name, dielectric_contrib, viscosity_contrib, li_solvation_contrib)
 _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
-    (Chem.MolFromSmarts("[CX3](=O)[OX2H0]"),       "ester",              2.5,  0.6,  0.8),
+    # ADR-2026-06-05d: Added ([#6]) to exclude carbonyls without carbon substituent
+    # (i.e. carbonate groups O=C(-O-)(-O-) where both neighbors are oxygens).
+    # Linear carbonates (DMC ε≈3.1, DEC ε≈2.8) were overpredicted (pred≈8.7) because
+    # each -OX2H0 attached to the carbonate carbonyl matched the ester pattern.
+    # Physical justification: true esters have C(=O)-C structure; carbonate carbonyls
+    # have C(=O)-O structure with no direct C-C bond. The ([#6]) disambiguates them.
+    (Chem.MolFromSmarts("[CX3](=O)([#6])[OX2H0]"),  "ester",              2.5,  0.6,  0.8),
     (Chem.MolFromSmarts("[CX3](=O)[OH]"),          "carboxylic_acid",    4.0,  1.0,  1.8),
     (Chem.MolFromSmarts("[CX3](=O)[NX3]"),         "amide",              6.0,  0.8,  2.5),
     (Chem.MolFromSmarts("[CX3](=O)[CX3]"),         "ketone",             3.0,  0.5,  0.6),

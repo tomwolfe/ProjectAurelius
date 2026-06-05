@@ -6,12 +6,12 @@ Gate 1 of the self-verification loop:
 Measures Spearman rank correlation between oracle predictions and published
 experimental values for dielectric constant, viscosity, donor number, HOMO, and LUMO.
 
-Baseline Spearman ρ from external_property_benchmark.json (v10.0.0):
-  LUMO:       ρ = +0.76 (strong)  — TOM calibration working
-  Viscosity:  ρ = +0.73 (strong)  — GC + MW/branching trends correct
-  HOMO:       ρ = +0.26 (weak)    — TOM HOMO calibration needs improvement
-  Dielectric: ρ = +0.32 (weak)    — GC proxy limited for real ε trends
-  Donor Nb:   ρ = +0.14 (weak)    — Li+ solvation model now positive (added sulfoxide + arom N)
+Current Spearman ρ from external_property_benchmark.json (v10.0.0):
+  Dielectric: ρ = +0.85 (strong)  — ester SMARTS disambiguation (ADR-2026-06-05d)
+  Viscosity:  ρ = +0.80 (strong)  — GC + MW/branching trends + ester fix
+  HOMO:       ρ = +0.51 (moderate) — TOM Wiener compactness + heteroatom pert.
+  LUMO:       ρ = +0.50 (moderate) — TOM calibration + π* nitrile correction
+  Donor Nb:   ρ = +0.70 (strong)  — GC with sulfoxide, arom N, ester disambiguation
 
 Thresholds set to prevent REGRESSION below baseline (not demand perfection).
 """

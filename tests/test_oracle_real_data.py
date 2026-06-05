@@ -247,15 +247,20 @@ def test_fragment_saturation_prevents_stacking(oracle: PropertyOracle) -> None:
     """Verify that stacking 5 ester groups does NOT linearly multiply the dielectric proxy.
 
     The saturation function (1 - exp(-k * count)) ensures diminishing returns:
-    5 esters should contribute less than 2x the dielectric of 1 ester.
+    5 esters should contribute less than 2x the fragment-additive part of 1 ester.
+    The TPSA contribution is excluded from this comparison because it scales
+    linearly with molecular surface area, not with fragment count.
     """
-    # 1 ester group: ethyl acetate
-    single = predict_dielectric_proxy(_ctx("CC(=O)OCC"))
+    from aurelius.scoring.oracle.gc import _GC_BASE_DIELECTRIC
 
-    # 5 ester groups: molecule with 5 ester linkages in a chain
-    five = predict_dielectric_proxy(
-        _ctx("CC(=O)OCC(=O)OCC(=O)OCC(=O)OCC(=O)OC")
-    )
+    def _frag_contrib(smi: str) -> float:
+        ctx = _ctx(smi)
+        total = predict_dielectric_proxy(ctx)
+        tpsa_part = ctx.tpsa * 0.030
+        return total - _GC_BASE_DIELECTRIC - tpsa_part
+
+    single_frag = _frag_contrib("CC(=O)OCC")
+    five_frag = _frag_contrib("CC(=O)OCC(=O)OCC(=O)OCC(=O)OCC(=O)OC")
 
     # Verify that the test molecules actually have 1 and >=3 ester groups
     counts_single = _count_fragments(_ctx("CC(=O)OCC").mol)
@@ -263,9 +268,10 @@ def test_fragment_saturation_prevents_stacking(oracle: PropertyOracle) -> None:
     assert counts_single.get("ester", 0) == 1, f"Expected 1 ester, got {counts_single.get('ester', 0)}"
     assert counts_five.get("ester", 0) >= 3, f"Expected >=3 esters, got {counts_five.get('ester', 0)}"
 
-    # Critical assertion: saturation means 5 esters << 5x single ester
-    assert five < 2.0 * single, (
-        f"Saturation failed: 5 esters (diel={five:.3f}) should be < 2x 1 ester (diel={single:.3f}, 2x={2*single:.3f})"
+    # Critical assertion: saturation means 5 ester fragments << 5x single ester fragments
+    assert five_frag < 2.0 * single_frag, (
+        f"Saturation failed: 5 esters (frag contrib={five_frag:.3f}) should be "
+        f"< 2x 1 ester (frag contrib={single_frag:.3f}, 2x={2*single_frag:.3f})"
     )
 
 

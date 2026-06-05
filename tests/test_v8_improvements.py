@@ -62,7 +62,10 @@ class TestSmartsPrecompilation:
         mol = Chem.MolFromSmiles("COC(=O)OC")
         counts = _count_fragments(mol)
         assert counts.get("carbonate", 0) >= 1
-        assert counts.get("ester", 0) >= 1
+        # DMC (COC(=O)OC) has no true esters — its carbonyl connects to two
+        # oxygens, not a carbon.  The ester SMARTS ([CX3](=O)([#6])[OX2H0])
+        # correctly rejects carbonate carbonyls (ADR-2026-06-05d).
+        assert counts.get("ester", 0) == 0
 
     def test_mutation_engine_uses_precompiled(self):
         """MutationEngine should use pre-compiled patterns from constants."""

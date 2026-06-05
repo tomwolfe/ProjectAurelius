@@ -269,20 +269,29 @@ class TestOracleNonlinear:
         )
 
     def test_fragment_saturation_prevents_stacking(self):
-        """Stacking 5 ester groups does NOT linearly multiply dielectric proxy."""
-        single = predict_dielectric_proxy(MoleculeContext.from_smiles("CC(=O)OCC"))
-        five = predict_dielectric_proxy(
-            MoleculeContext.from_smiles("CC(=O)OCC(=O)OCC(=O)OCC(=O)OCC(=O)OC")
-        )
+        """Stacking 5 ester groups does NOT linearly multiply dielectric proxy.
+
+        The TPSA contribution is excluded because it scales linearly with molecular
+        surface area, not fragment count. Only the fragment-additive part is compared.
+        """
+        from aurelius.scoring.oracle.gc import _GC_BASE_DIELECTRIC
+
+        def _frag_contrib(smi: str) -> float:
+            ctx = MoleculeContext.from_smiles(smi)
+            total = predict_dielectric_proxy(ctx)
+            return total - _GC_BASE_DIELECTRIC - ctx.tpsa * 0.030
+
+        single_frag = _frag_contrib("CC(=O)OCC")
+        five_frag = _frag_contrib("CC(=O)OCC(=O)OCC(=O)OCC(=O)OCC(=O)OC")
         counts_single = _count_fragments(MoleculeContext.from_smiles("CC(=O)OCC").mol)
         counts_five = _count_fragments(
             MoleculeContext.from_smiles("CC(=O)OCC(=O)OCC(=O)OCC(=O)OCC(=O)OC").mol
         )
         assert counts_single.get("ester", 0) == 1
         assert counts_five.get("ester", 0) >= 3
-        assert five < 2.0 * single, (
-            f"Saturation failed: 5 esters (diel={five:.3f}) "
-            f"should be < 2x 1 ester (diel={single:.3f}, 2x={2 * single:.3f})"
+        assert five_frag < 2.0 * single_frag, (
+            f"Saturation failed: 5 esters (frag={five_frag:.3f}) "
+            f"should be < 2x 1 ester (frag={single_frag:.3f}, 2x={2 * single_frag:.3f})"
         )
 
     def test_domain_of_applicability_penalizes_artifacts(self):
