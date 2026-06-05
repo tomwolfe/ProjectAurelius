@@ -2,7 +2,7 @@
 
 ## Abstract
 
-We present Project Aurelius, an autonomous evolutionary algorithm (EA) pipeline for the discovery of novel battery electrolyte molecules. Aurelius combines a BRICS-based mutation engine with a hybrid oracle that predicts frontier orbital energies via quantum chemistry (xTB/GFN2-xTB or Topological Orbital Model) and bulk electrolyte properties (dielectric constant, viscosity, Li+ solvation) via interpretable group-contribution (GC) fragment-additivity. The pipeline is distinguished by three features: (i) a self-verifying repository-level objective function that penalizes software complexity while rewarding discovery value, (ii) physics-based anti-gaming gates that reject synthetically inaccessible "Frankenstein" molecules, and (iii) a domain-of-applicability (DoA) penalty that prevents the oracle from operating outside its calibrated chemical space. External validation against published experimental data yields a Spearman rank correlation of $\rho = 0.76$ for LUMO predictions and $\rho > 0$ for all five benchmarked properties.
+We present Project Aurelius, an autonomous evolutionary algorithm (EA) pipeline for the discovery of novel battery electrolyte molecules. Aurelius combines a BRICS-based mutation engine with a hybrid oracle that predicts frontier orbital energies via quantum chemistry (xTB/GFN2-xTB or Topological Orbital Model) and bulk electrolyte properties (dielectric constant, viscosity, Li+ solvation, ionic conductivity) via interpretable group-contribution (GC) fragment-additivity. The pipeline is distinguished by three features: (i) a self-verifying repository-level objective function that penalizes software complexity while rewarding discovery value, (ii) physics-based anti-gaming gates that reject synthetically inaccessible "Frankenstein" molecules, and (iii) a domain-of-applicability (DoA) penalty that prevents the oracle from operating outside its calibrated chemical space. External validation against published experimental data yields a Spearman rank correlation of $\rho = 0.76$ for LUMO predictions and $\rho > 0$ for all five benchmarked properties.
 
 ## 1. Introduction
 
@@ -46,28 +46,38 @@ The oracle evaluates each surviving candidate molecule $\mathcal{M}$ through two
 
 Frontier orbital energies are predicted via the semi-empirical GFN2-xTB method when available. When the xTB binary is not installed, the pipeline falls back to the **Topological Orbital Model (TOM)**, a closed-form physical model based on particle-in-a-box and Hückel theory.
 
-Let $L$ be the longest conjugation path length in the molecule. The HOMO-LUMO gap follows particle-in-a-box scaling:
+Let $L_0$ be the longest conjugation path length in the molecule. The effective conjugation length $L$ is adjusted by a Wiener-index compactness factor that captures through-space orbital overlap:
+
+$$L = L_0 \cdot \left(1 - 0.3 \cdot c\right), \quad c = \max\left(0,\; 1 - \frac{W}{W_{\text{linear}}}\right)$$
+
+where $W$ is the Wiener index (sum of all-pairs shortest paths) and $W_{\text{linear}}$ is the Wiener index of a linear chain of the same atom count. Compact molecules (low $W$ relative to a linear chain) have stronger through-space overlap, which effectively deepens the HOMO and increases the particle-in-a-box gap. The HOMO-LUMO gap then follows:
 
 $$\Delta E = \frac{h^2}{8mL^2} \propto L^{-2}$$
 
 The base energies are calibrated against a reference set of 44 electrolyte molecules:
 
 $$E_{\text{HOMO}} = E_{\text{HOMO}}^{(0)} + \Delta E_{\text{EW}} + \Delta E_{\text{ED}} + \Delta E_{\text{arom}}$$
-$$E_{\text{LUMO}} = E_{\text{LUMO}}^{(0)} + \gamma \cdot \Delta E_{\text{EW}} + \Delta E_{\text{arom}}$$
+$$E_{\text{LUMO}} = E_{\text{LUMO}}^{(0)} + \gamma \cdot \Delta E_{\text{EW}} + \Delta E_{\text{arom}} + \Delta E_{\text{nitrile}}$$
 
-where $E_{\text{HOMO}}^{(0)} = -6.8\ \text{eV}$, $E_{\text{LUMO}}^{(0)} = 1.5\ \text{eV}$, $\Delta E_{\text{EW}}$ and $\Delta E_{\text{ED}}$ are Hückel-like heteroatom perturbation corrections, $\Delta E_{\text{arom}}$ is an aromatic stabilization term ($-0.20$ eV per aromatic ring), and $\gamma = 0.3$ accounts for the physically observed HOMO-biased substituent sensitivity.
+where $E_{\text{HOMO}}^{(0)} = -6.8\ \text{eV}$, $E_{\text{LUMO}}^{(0)} = 1.5\ \text{eV}$, $\Delta E_{\text{EW}}$ and $\Delta E_{\text{ED}}$ are Hückel-like heteroatom perturbation corrections, $\Delta E_{\text{arom}}$ is an aromatic stabilization term ($-0.20$ eV per aromatic ring), $\Delta E_{\text{nitrile}} = -0.70\ \text{eV}$ per nitrile C$\equiv$N group (correction for the low-lying $\pi^*$ orbital), and $\gamma = 0.3$ accounts for the physically observed HOMO-biased substituent sensitivity. The Wiener-index compactness and nitrile corrections improve TOM-only Spearman rank correlation on the external benchmark from $\rho = 0.20$ to $\rho = 0.52$.
 
 #### 2.3.2 Group-Contribution Fragment-Additivity
 
-Bulk properties are predicted via fragment-additivity with non-linear saturation and cross-term corrections:
+Bulk properties (dielectric constant, viscosity, Li$^+$ solvation, ionic conductivity) are predicted via fragment-additivity with non-linear saturation and cross-term corrections:
 
 $$D(\mathcal{M}) = D_0 + \sum_{i} \min\left(\Delta D_i \cdot n_i,\ \text{cap}_i\right) + X_{\text{cross}}$$
 
-where $D_0$ is the base property value (e.g., dielectric constant proxy of 1.9), $\Delta D_i$ is the contribution of fragment $i$ present $n_i$ times, $\text{cap}_i$ is a Michaelis-Menten saturation ceiling, and $X_{\text{cross}}$ captures non-linear synergistic effects from co-occurring polar groups (carbonate-ether synergy, sulfone-nitrile enhancement) clipped to $[-2.0, 2.0]$.
+where $D_0$ is the base property value (e.g., dielectric constant proxy of 1.9), $\Delta D_i$ is the contribution of fragment $i$ present $n_i$ times, $\text{cap}_i$ is a Michaelis-Menten saturation ceiling, and $X_{\text{cross}}$ captures non-linear synergistic effects from co-occurring polar groups (carbonate-ether, sulfone-nitrile, fluorinated nitrile dipole enhancement, etc.) clipped to $[-2.0, 2.0]$. The fragment library includes carbonate, ether, sulfone, sulfoxide, nitrile, phosphonate, fluorinated carbonate, and other common electrolyte functional groups.
 
 Dielectric predictions include a topological polar surface area (TPSA) correction:
 
 $$D_{\text{final}} = \min\left(D_0 + \text{TPSA} \times 0.02 + X_{\text{cross}},\ D_0 + \text{TPSA} \times k_{\text{max}}\right)$$
+
+Ionic conductivity is estimated via a Walden-product proxy that combines dielectric (salt dissociation), viscosity (Stokes-Einstein mobility), and Li$^+$ solvation (charge carrier availability):
+
+$$\kappa \propto \frac{(\varepsilon - 1)}{\eta} \cdot \exp\left(-\frac{1}{2}\left(\frac{s - 3.5}{1.5}\right)^2\right)$$
+
+where $\varepsilon$ is the dielectric proxy, $\eta$ the viscosity proxy, and $s$ the Li$^+$ solvation proxy. The Gaussian factor centered at $s = 3.5$ enforces a Goldilocks condition: weak binding fails to dissociate salts, while strong binding reduces the transference number.
 
 #### 2.3.3 Domain-of-Applicability Penalty
 
@@ -82,6 +92,18 @@ $$P_{\text{QM}} = \begin{cases}0.70 & L > 12 \land f_{\text{sp}^3} < 0.15 \\ 0.8
 $$P_{\text{GC}} = \begin{cases}0.75 & n_{\text{F}} \geq 6 \land n_{\text{polar}} < 2 \\ 0.85 & M_w > 500 \\ 1.0 & \text{otherwise}\end{cases}$$
 
 The composite score applies the product of both penalties to the weighted objective sum.
+
+#### 2.3.4 Mixture Property Prediction
+
+For solvent mixtures, bulk properties are estimated via ideal thermodynamic mixing rules:
+
+$$P_{\text{mix}} = \frac{x_1 P_1 + x_2 P_2}{x_1 + x_2}$$
+
+where $x_i$ and $P_i$ are the mole fraction and GC-predicted property of component $i$. A **mixture synergy bonus** rewards complementary pairs—one high-dielectric, one low-viscosity—that together satisfy both targets better than either alone:
+
+$$S_{\text{syn}} = \frac{D_{\text{mix}}}{4.0} + \frac{1.5}{\max(\eta_{\text{mix}}, 0.01)} + A \cdot x_1 x_2$$
+
+where the Margules-inspired non-ideal term $A \propto |D_1-D_2| \cdot |\eta_1-\eta_2|$ (capped at 3.0) captures the physical intuition that maximally differentiated pairs produce the strongest synergy at balanced compositions. The total synergy is clamped to $[0, 6.0]$.
 
 ### 2.4 Net Progress Objective
 
