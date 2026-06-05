@@ -60,18 +60,17 @@ class FragmentHarvester:
             return None
         return f_ctx
 
-    @staticmethod
-    def _fragment_too_similar(new_smi: str, existing_smis: list[str], threshold: float = 0.85) -> bool:
-        new_mol = Chem.MolFromSmiles(new_smi)
-        if new_mol is None:
+    def _fragment_too_similar(self, new_smi: str, existing_smis: list[str], threshold: float = 0.85) -> bool:
+        new_ctx = self._get_ctx(new_smi)
+        if new_ctx is None:
             return False
-        new_fp = Chem.RDKFingerprint(new_mol)
+        new_fp = Chem.RDKFingerprint(new_ctx.mol)
         existing_fps = []
         for old_smi in existing_smis:
-            old_mol = Chem.MolFromSmiles(old_smi)
-            if old_mol is None:
+            old_ctx = self._get_ctx(old_smi)
+            if old_ctx is None:
                 continue
-            existing_fps.append(Chem.RDKFingerprint(old_mol))
+            existing_fps.append(Chem.RDKFingerprint(old_ctx.mol))
         if not existing_fps:
             return False
         sims = BulkTanimotoSimilarity(new_fp, existing_fps)

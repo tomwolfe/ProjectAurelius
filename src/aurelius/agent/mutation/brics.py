@@ -125,9 +125,9 @@ def has_excessive_aliphatic_chain(mol: Chem.Mol, max_chain: int = 12) -> bool:
 _BB_MOLS: tuple[Chem.Mol, ...] = ()
 _bb_temp: list[Chem.Mol] = []
 for _smi in COMMERCIAL_BUILDING_BLOCK_SMILES:
-    _m = Chem.MolFromSmiles(_smi)
-    if _m is not None:
-        _bb_temp.append(_m)
+    _ctx = MoleculeContext.from_smiles(_smi)
+    if _ctx is not None:
+        _bb_temp.append(_ctx.mol)
 _BB_MOLS = tuple(_bb_temp)
 _BB_DUMMY_RE: re.Pattern[str] = re.compile(r"\[\d*\*\]")
 
@@ -138,9 +138,10 @@ def _strip_brics_dummies(frag_smi: str) -> str | None:
     Uses RDKit to remove dummy atoms (atomic num 0) properly, handling cases
     where multiple dummy atoms neighbor a single heavy atom (e.g. [1*]C([1*])=O).
     """
-    frag_mol = Chem.MolFromSmiles(frag_smi)
-    if frag_mol is None:
+    frag_ctx = MoleculeContext.from_brics_fragment(frag_smi)
+    if frag_ctx is None:
         return None
+    frag_mol = frag_ctx.mol
 
     rw = Chem.RWMol(frag_mol)
     dummy_ids = sorted(
@@ -161,9 +162,10 @@ def _strip_brics_dummies(frag_smi: str) -> str | None:
 @lru_cache(maxsize=2048)
 def _cached_coverage(smiles: str) -> float:
     """Cached building block coverage by SMILES string."""
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
+    ctx = MoleculeContext.from_smiles(smiles)
+    if ctx is None:
         return 0.5
+    mol = ctx.mol
     try:
         frags = list(BRICS.BRICSDecompose(mol))
     except Exception:
@@ -175,9 +177,10 @@ def _cached_coverage(smiles: str) -> float:
         core_smi = _strip_brics_dummies(fs)
         if core_smi is None:
             continue
-        core_mol = Chem.MolFromSmiles(core_smi)
-        if core_mol is None:
+        core_ctx = MoleculeContext.from_smiles(core_smi)
+        if core_ctx is None:
             continue
+        core_mol = core_ctx.mol
         for bb in _BB_MOLS:
             if core_mol.HasSubstructMatch(bb) or bb.HasSubstructMatch(core_mol):
                 matched += 1

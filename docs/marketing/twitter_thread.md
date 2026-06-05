@@ -59,7 +59,7 @@ Each is a 5-line Python function decorated with `@_register` in `smarts.py`. Dat
 
 A generative model that can't distinguish between a realizable carbonate ester and an impossible 14-carbon chain isn't just wrong — it's wasting synthesis resources and eroding trust in computational discovery.
 
-External validation against published experimental data confirms Spearman ρ = 0.51 for LUMO (N=26, p=0.0075) and ρ = 0.53 for HOMO (N=26, p=0.0059), with positive correlation across all five benchmarked properties (dielectric ρ=+0.8493 p=0.0000, viscosity ρ=+0.8053 p=0.0000, donor number ρ=+0.6956 p=0.0028, HOMO ρ=+0.5251 p=0.0059, LUMO ρ=+0.5118 p=0.0075). The mutation engine achieves 93.3% novel scaffold discovery.
+External validation against published experimental data confirms Spearman ρ = 0.51 for LUMO (N=26, p=0.0075) and ρ = 0.53 for HOMO (N=26, p=0.0059), with positive correlation across all five benchmarked properties (dielectric ρ=+0.8493 p=0.0000, viscosity ρ=+0.8053 p=0.0000, donor number ρ=+0.6956 p=0.0028, HOMO ρ=+0.5251 p=0.0059, LUMO ρ=+0.5118 p=0.0075). The mutation engine achieves 100.0% novel scaffold discovery.
 
 Aurelius is open source (MIT), CLI-first, zero ML frameworks. The entire anti-gating system is a few hundred lines of RDKit + Python.
 
