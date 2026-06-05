@@ -381,7 +381,7 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
         w_linear = n_atoms * (n_atoms * n_atoms - 1) / 6.0
         if w_linear > 0:
             compactness = max(0.0, 1.0 - w / w_linear)
-            L = L * (1.0 - 0.3 * compactness)
+            L = int(L * (1.0 - 0.3 * compactness))
             L = max(L, 2)
 
     n_ew, n_ed, n_pi = _count_heteroatom_perturbations(mol)
