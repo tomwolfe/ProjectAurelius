@@ -19,6 +19,7 @@ from aurelius.scoring.oracle.gc import (
     _DATA_SOURCE,
     compute_gc_domain_penalty,
     predict_dielectric_proxy,
+    predict_ionic_conductivity_proxy,
     predict_li_solvation_proxy,
     predict_viscosity_proxy,
 )
@@ -68,6 +69,7 @@ class PropertyOracle:
         dielectric = predict_dielectric_proxy(ctx)
         viscosity = predict_viscosity_proxy(ctx)
         li_solvation = predict_li_solvation_proxy(ctx)
+        conductivity = predict_ionic_conductivity_proxy(dielectric, viscosity, li_solvation)
 
         # Domain of applicability penalties
         q_penalty, q_reason = compute_quantum_domain_penalty(ctx)
@@ -88,6 +90,7 @@ class PropertyOracle:
             "dielectric_proxy": round(dielectric, 4),
             "viscosity_proxy": round(viscosity, 4),
             "li_solvation_proxy": round(li_solvation, 4),
+            "conductivity_proxy": round(conductivity, 4),
             "domain_applicable": domain_applicable,
             "domain_reason": domain_reason_str,
             "domain_penalty": round(domain_penalty, 4),

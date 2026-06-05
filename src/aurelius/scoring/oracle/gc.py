@@ -106,8 +106,9 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
     (Chem.MolFromSmarts("[OX2][CX4][CX4][OX2]"),   "glyme_chelating",    2.0,  0.1,  1.8),
     (Chem.MolFromSmarts("[SX4](=O)(=O)[NX3][SX4](=O)(=O)"), "sulfonimide", 5.0,  0.5,  0.5),
     (Chem.MolFromSmarts("[CX3](=O)[OX2]C(F)(F)F"),  "fluorinated_carbonate", 3.0,  0.3, -0.1),
-    (Chem.MolFromSmarts("[SX3](=O)[CX4]"),           "sulfoxide",          6.0,  0.5,  2.5),
-    (Chem.MolFromSmarts("[n]"),                      "aromatic_nitrogen",  4.0,  0.3,  2.0),
+    (Chem.MolFromSmarts("[SX3](=O)[CX4]"),           "sulfoxide",             6.0,  0.5,  2.5),
+    (Chem.MolFromSmarts("[n]"),                      "aromatic_nitrogen",     4.0,  0.3,  2.0),
+    (Chem.MolFromSmarts("[PX4](=O)([OX2])([OX2])[#6]"), "phosphonate",        3.5,  0.5,  1.0),
 ]
 
 _GC_BASE_DIELECTRIC: float = 1.9
@@ -141,6 +142,8 @@ _CROSS_TERMS: list[tuple[str, str, float, str]] = [
     ("carbonate", "nitrile", -0.3, "carbonate-nitrile antagonism"),
     ("alcohol", "carbonate", -0.4, "alcohol-carbonate H-bond competition"),
     ("sulfone", "carbonate", -0.3, "sulfone-carbonate polarity competition"),
+    ("nitrile", "fluorine", 0.3, "fluorinated nitrile dipole enhancement"),
+    ("sulfone", "nitrile", 0.5, "sulfone-nitrile high-voltage synergy"),
 ]
 
 
@@ -236,6 +239,32 @@ def predict_li_solvation_proxy(ctx: MoleculeContext) -> float:
     mw = ctx.mw
     value += max(0.0, (mw - 50.0)) * 0.002
     return max(0.5, value)
+
+
+def predict_ionic_conductivity_proxy(
+    dielectric: float, viscosity: float, li_solvation: float
+) -> float:
+    """Predict ionic conductivity proxy via Walden-product model.
+
+    Combines dielectric (salt dissociation), viscosity (Stokes-Einstein
+    mobility), and Li+ solvation (charge carrier availability) into a
+    single figure of merit. The Walden product relates molar conductivity
+    to fluidity: ion mobility is inversely proportional to viscosity and
+    proportional to the number of charge carriers (set by dielectric *
+    Li+ binding strength). The Li+ solvation contribution uses a Gaussian
+    centered on the Goldilocks target (3.5) — too-weak binding fails to
+    dissociate salts, too-strong binding reduces transference number.
+    """
+    if viscosity <= 0.0 or dielectric < 0.0:
+        return 0.0
+
+    effective_dielec = max(0.0, dielectric - 1.0)
+    solvation_factor = math.exp(-0.5 * ((li_solvation - 3.5) / 1.5) ** 2)
+
+    if viscosity < 0.001:
+        return 0.0
+    conductivity = effective_dielec * solvation_factor / viscosity
+    return max(0.0, min(10.0, conductivity))
 
 
 # ---------------------------------------------------------------------------
