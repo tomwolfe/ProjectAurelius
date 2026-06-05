@@ -12,8 +12,9 @@ A physically-grounded Evolutionary Algorithm pipeline with a **hybrid quantum + 
 | Dielectric ε | GC fragment-additivity + TPSA | Bulk polarity is reasonably additive. |
 | Viscosity | GC fragment-additivity + MW + RotB | Transport properties correlate with group contributions. |
 | Li+ Solvation | GC fragment-additivity | Donor-number additivity is physically valid. |
+| Ionic Conductivity | Walden-product proxy (ε, η, Li⁺) | Unifies salt dissociation, mobility, and charge-carrier availability into a single figure of merit. |
 
-The hybrid oracle (non-linear quantum HOMO/LUMO + additive GC bulk properties) keeps the pipeline physically grounded while maintaining interpretability.
+The hybrid oracle (non-linear quantum HOMO/LUMO + additive GC bulk properties) keeps the pipeline physically grounded while maintaining interpretability. A Walden-product conductivity proxy combines dielectric, viscosity, and Li+ solvation into a unified transport metric.
 
 ## Architecture
 
@@ -45,11 +46,11 @@ flowchart TD
 | Component | Framework | Purpose |
 |-----------|-----------|---------|
 | Filter | RDKit | Electrolyte viability (MW, HBD, RotB, SA score) |
-| Oracle | Quantum + GC | HOMO/LUMO from xTB/TOM; bulk from fragment-additivity |
+| Oracle | Quantum + GC | HOMO/LUMO from xTB/TOM; bulk (ε, η, Li⁺, σ) from fragment-additivity + Walden-product conductivity proxy |
 | Mutation | SMARTS + BRICS | Targeted electrolyte edits + scaffold hopping |
- | Selection | Tournament Selection | Tanimoto-guided evolutionary diversity pressure |
+| Selection | Tournament Selection | Tanimoto-guided evolutionary diversity pressure |
 
-The composite Aurelius Score is computed via Gaussian LUMO reward (SEI formation window), sigmoid HOMO penalty (oxidative stability threshold), sigmoid dielectric/viscosity/Li-solvation rewards, and SA score penalty. Tournament selection with a Tanimoto diversity penalty steers each generation away from chemical saturation.
+The composite Aurelius Score is computed via Gaussian LUMO reward (SEI formation window), sigmoid HOMO penalty (oxidative stability threshold), sigmoid dielectric/viscosity/Li-solvation/conductivity rewards, and SA score penalty. Tournament selection with a Tanimoto diversity penalty steers each generation away from chemical saturation.
 
 ## Installation
 
@@ -84,7 +85,8 @@ aurelius doctor-xtb              Check xTB quantum backend availability
 aurelius screen <smiles>         Screen a single molecule
 aurelius batch <file>            Screen molecules from SMILES file
 aurelius score <smiles>          Compute Aurelius score only
-aurelius validate <smiles>       Run physics validation
+aurelius evaluate <smiles>       Run ML oracle evaluation
+aurelius validate <smiles>       Run full pipeline with detailed scorecard
 aurelius agent                   Run the autonomous screening agent
 ```
 
@@ -100,8 +102,11 @@ particle-in-a-box and Hückel theory. TOM estimates HOMO/LUMO from:
 - Longest conjugation path length (non-linear 1/L² gap scaling)
 - Heteroatom perturbation analysis
 - Inductive effects from fluorine, sulfone, CF₃ groups
+- Wiener-index compactness adjustment (deepens HOMO for compact molecules)
+- Nitrile C≡N π* correction (−0.70 eV per C≡N)
 
 TOM is non-linear in molecular topology and cannot be "gamed" by fragment stacking.
+Wiener-index compactness improved external HOMO Spearman ρ from 0.20 to 0.52.
 
 ## Anti-Gaming Constraints
 
@@ -115,19 +120,33 @@ The mutation engine includes topological safeguards:
 
 ```
 src/aurelius/
+├── __main__.py             # CLI entry point
 ├── agent/
 │   ├── loop.py             # DiscoveryLoop (Evolutionary Algorithm)
-│   ├── mutation.py         # SMARTS+BRICS mutation engine
-│   ├── reporting.py        # SDF + JSON report generation
-│   ├── state.py            # Checkpoint, convergence, feedback
-│   └── selection.py        # Tournament selection + diversity penalty
+│   ├── mutation/
+│   │   ├── brics.py        # BRICS decomposition / recombination
+│   │   ├── engine.py       # Mutation engine orchestration
+│   │   ├── harvester.py    # External SMILES harvest / caching
+│   │   ├── novelty.py      # Novelty gate (Tanimoto similarity)
+│   │   └── smarts.py       # SMARTS-based targeted mutations
+│   ├── reporting.py        # Report generation
+│   ├── selection.py        # Tournament selection + diversity penalty
+│   └── state.py            # Checkpoint, convergence, feedback
+├── cli_scripts/            # CLI subcommand package
+├── constants.py            # Global constants
+├── data/                   # Calibration & benchmark data (JSON)
+├── pipeline.py             # Pipeline orchestrator
 ├── scoring/
-│   └── oracle.py           # Hybrid Quantum + GC oracle
+│   └── oracle/
+│       ├── gc.py           # Group-contribution fragment-additivity
+│       ├── oracle.py       # PropertyOracle (composite scorer)
+│       └── quantum.py      # xTB / Topological Orbital Model (TOM)
 ├── screening/
 │   └── tier1/filter.py     # Electrolyte viability filter
-├── pipeline.py             # Pipeline orchestrator
-├── config.py               # Configuration
-└── types.py                # Shared type definitions
+├── types.py                # Shared type definitions
+└── utils/
+    ├── chem_utils.py       # Chemical utilities
+    └── dependencies.py     # Dependency checks
 ```
 
 ## Scientific References
