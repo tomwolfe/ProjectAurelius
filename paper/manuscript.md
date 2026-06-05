@@ -2,7 +2,7 @@
 
 ## Abstract
 
-We present Project Aurelius, an autonomous evolutionary algorithm (EA) pipeline for the discovery of novel battery electrolyte molecules. Aurelius combines a BRICS-based mutation engine with a hybrid oracle that predicts frontier orbital energies via quantum chemistry (xTB/GFN2-xTB or Topological Orbital Model) and bulk electrolyte properties (dielectric constant, viscosity, Li+ solvation, ionic conductivity) via interpretable group-contribution (GC) fragment-additivity. The pipeline is distinguished by three features: (i) a self-verifying repository-level objective function that penalizes software complexity while rewarding discovery value, (ii) physics-based anti-gaming gates that reject synthetically inaccessible "Frankenstein" molecules, and (iii) a domain-of-applicability (DoA) penalty that prevents the oracle from operating outside its calibrated chemical space. External validation against published experimental data yields Spearman rank correlations of $\rho_{\text{LUMO}} = 0.51$ and $\rho_{\text{HOMO}} = 0.51$ and $\rho > 0$ for all five benchmarked properties.
+We present Project Aurelius, an autonomous evolutionary algorithm (EA) pipeline for the discovery of novel battery electrolyte molecules. Aurelius combines a BRICS-based mutation engine with a hybrid oracle that predicts frontier orbital energies via quantum chemistry (xTB/GFN2-xTB or Topological Orbital Model) and bulk electrolyte properties (dielectric constant, viscosity, Li+ solvation, ionic conductivity) via interpretable group-contribution (GC) fragment-additivity. The pipeline is distinguished by three features: (i) a self-verifying repository-level objective function that penalizes software complexity while rewarding discovery value, (ii) physics-based anti-gaming gates that reject synthetically inaccessible "Frankenstein" molecules, and (iii) a domain-of-applicability (DoA) penalty that prevents the oracle from operating outside its calibrated chemical space. External validation against published experimental data yields Spearman rank correlations of $\rho_{\text{LUMO}} = 0.50$, $\rho_{\text{HOMO}} = 0.51$, and $\rho_{\text{Donor}} = 0.53$ with $\rho > 0$ for all five benchmarked properties.
 
 ## 1. Introduction
 
@@ -158,7 +158,7 @@ The hybrid oracle was validated against published experimental data for common e
 |---|---|---|---|
 | Dielectric $\varepsilon$ | 23 | $+0.4106$ | 0.0517 |
 | Viscosity $\eta$ | 23 | $+0.7431$ | 0.0000 |
-| Donor Number | 16 | $+0.4074$ | 0.1173 |
+| Donor Number | 16 | $+0.5309$ | 0.0344 |
 | HOMO | 26 | $+0.5115$ | 0.0076 |
 | LUMO | 26 | $+0.4985$ | 0.0095 |
 

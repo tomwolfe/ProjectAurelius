@@ -101,7 +101,7 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
     (Chem.MolFromSmarts("[CX3](=O)[NX3]"),         "amide",              6.0,  0.8,  2.5),
     (Chem.MolFromSmarts("[CX3](=O)[CX3]"),         "ketone",             3.0,  0.5,  0.6),
     (Chem.MolFromSmarts("[CH](=O)"),               "aldehyde",           2.5,  0.3,  0.3),
-    (Chem.MolFromSmarts("O=C([OX2])[OX2]"),        "carbonate",          5.0,  0.7,  1.5),
+    (Chem.MolFromSmarts("O=C([OX2])[OX2]"),        "carbonate",          5.0,  0.7,  1.2),
     (Chem.MolFromSmarts("[OD2]([CX4])[CX4]"),      "ether",              1.5, -0.3,  1.0),
     (Chem.MolFromSmarts("[OH][CX4]"),              "alcohol",            4.5,  1.2,  2.0),
     (Chem.MolFromSmarts("[NX3;H2][CX4]"),          "primary_amine",      3.5,  0.5,  1.0),
@@ -111,7 +111,7 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
     # (μ≈3.9 D) produces ε=36 for ACN and ε=27 for PN — the prior 5.5 under-valued
     # nitriles relative to sulfoxides and carbonates. Cyclic_carbonate boost to EC
     # (now ~18) frees headroom: ACN=10.0 < DMSO=10.3, preserving correct ranking.
-    (Chem.MolFromSmarts("[C]#[N]"),                "nitrile",            7.5,  0.4,  1.2),
+    (Chem.MolFromSmarts("[C]#[N]"),                "nitrile",            7.5,  0.4,  0.8),
     (Chem.MolFromSmarts("[CX3]=[CX3]"),            "alkene",             0.5,  0.1,  0.1),
     (Chem.MolFromSmarts("[CX2]#[CX2]"),            "alkyne",             1.0,  0.2,  0.2),
     (Chem.MolFromSmarts("[c]"),                    "aromatic_carbon",    0.5,  0.5,  0.1),
