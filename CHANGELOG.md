@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.0.3] - 2026-06-06
+
+### Changed
+- Enforced Single Source of Truth: Completely removed hardcoded validation metrics table from `README.md` to fulfill v10.0.1 changelog promise.
+- Simplified `DiscoveryLoop`: Removed redundant `screened_smiles` set to strictly enforce `LoopState` as the sole source of truth (YAGNI/KISS).
+
+### Added
+- `benchmarks/benchmark_mixture_synergy.py`: Lightweight, pure-function validation script for the Margules-inspired binary mixture synergy bonus.
+
 ## [10.0.2] - 2026-06-06
 
 ### Changed

@@ -119,16 +119,6 @@ python -m benchmarks.benchmark_external_validation
 python -m benchmarks.benchmark_reality_check
 ```
 
-| Property | N | ρ | p-value |
-|----------|---|----|---------|
-| Dielectric ε | 23 | +0.8493 | 0.0000 *** |
-| Viscosity η | 23 | +0.8053 | 0.0000 *** |
-| Donor Number | 16 | +0.6956 | 0.0028 ** |
-| HOMO | 26 | +0.5251 | 0.0059 ** |
-| LUMO | 26 | +0.5364 | 0.0047 ** |
-
-*Metrics above are dynamically validated. To verify, run `python -m benchmarks.benchmark_external_validation`.*
-
 ## Anti-Gaming Constraints
 
 The mutation engine includes topological safeguards:

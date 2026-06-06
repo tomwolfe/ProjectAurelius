@@ -181,8 +181,6 @@ class DiscoveryLoop:
         self.batch_size = batch_size
         self.max_wall_time = max_wall_time
 
-        self.screened_smiles: set[str] = set()
-
     @staticmethod
     def _dict_to_screening(d: dict[str, Any]) -> ScreeningResult:
         return ScreeningResult(
@@ -287,7 +285,7 @@ class DiscoveryLoop:
         invalid_count = 0
 
         for smi in candidates:
-            if smi in self.screened_smiles:
+            if any(r["smiles"] == smi for r in self.state._all_results):
                 invalid_count += 1
                 continue
             if is_mixture_smiles(smi):
@@ -430,7 +428,6 @@ class DiscoveryLoop:
 
         mix_score = mix.get("score", {}).get("total_score", 0.0)
         mix_smi = f"{ctx1.smiles}|{ctx2.smiles}"
-        self.screened_smiles.add(mix_smi)
         all_scores.append(mix_score)
         result_contexts.append(ctx1)
         synergy = mix.get("mixture_properties", {}).get("synergy_bonus", 0.0)
@@ -467,7 +464,6 @@ class DiscoveryLoop:
                 continue
 
             smi = ctx.smiles
-            self.screened_smiles.add(smi)
             self.engine.add_to_db(smi)
 
             total_score = score_data.get("total_score", 0.0)
