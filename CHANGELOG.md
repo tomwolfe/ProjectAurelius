@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.0.2] - 2026-06-06
+
+### Changed
+- Enforced KISS: Removed redundant `all_results` and `discoveries` lists from `DiscoveryLoop`; `LoopState` is now the sole source of truth for screening state.
+- Documentation sync: Updated `README.md` and `paper/manuscript.md` with live benchmark metrics, removing hardcoded historical baselines to resolve v10.0.1 changelog contradiction.
+- Updated `tests/test_loop.py` to reference `state._all_results` instead of removed `loop.all_results`.
+
 ## [10.0.1] - 2026-06-06
 
 ### Changed

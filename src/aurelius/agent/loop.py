@@ -181,9 +181,24 @@ class DiscoveryLoop:
         self.batch_size = batch_size
         self.max_wall_time = max_wall_time
 
-        self.all_results: list[ScreeningResult] = []
-        self.discoveries: list[ScreeningResult] = []
         self.screened_smiles: set[str] = set()
+
+    @staticmethod
+    def _dict_to_screening(d: dict[str, Any]) -> ScreeningResult:
+        return ScreeningResult(
+            smiles=d.get("smiles", ""),
+            total_score=d.get("total_score", 0.0),
+            is_viable=d.get("is_viable", False),
+            rejection_reasons=d.get("rejection_reasons", []),
+            novelty_to_seed=d.get("novelty_to_seed"),
+            homo_eV=d.get("homo_eV"),
+            lumo_eV=d.get("lumo_eV"),
+            dielectric_proxy=d.get("dielectric_proxy"),
+            viscosity_proxy=d.get("viscosity_proxy"),
+            li_solvation_proxy=d.get("li_solvation_proxy"),
+            sa_score=d.get("sa_score"),
+            sub_scores=d.get("sub_scores"),
+        )
 
     def execute(self) -> dict[str, Any]:
         wall_start = time.time()
@@ -227,8 +242,8 @@ class DiscoveryLoop:
             self.state.save()
 
         return {
-            "all_results": self.all_results,
-            "discoveries": self.discoveries,
+            "all_results": [self._dict_to_screening(d) for d in self.state._all_results],
+            "discoveries": [self._dict_to_screening(d) for d in self.state.discoveries],
             "total_screened": self.state.total_screened,
             "total_viable": self.state.viable_count,
             "total_invalid": self.state.invalid_discarded,
@@ -262,10 +277,7 @@ class DiscoveryLoop:
         return all_candidates
 
     def _top_seeds_from_results(self) -> list[str]:
-        scored = [(r.total_score, r.smiles) for r in self.all_results if r.total_score > 0]
-        scored.sort(key=lambda x: -x[0])
-        n = max(5, len(scored) // 5)
-        return [s for _, s in scored[:n]]
+        return self.state.top_scored_smiles(divisor=5)
 
     def _filter_candidates(
         self,
@@ -430,9 +442,8 @@ class DiscoveryLoop:
             mix_score_data.get("sub_scores", {}),
         )
         if sr.total_score >= DISCOVERY_THRESHOLD:
-            self.discoveries.append(sr)
             self.state.add_discovery(sr)
-        self.all_results.append(sr)
+        self.state.add_result(sr)
         log.info("  ** MIXTURE ** %s (score=%.1f, synergy=%.4f)", mix_smi, mix_score, synergy)
 
         return result_contexts, all_scores
@@ -471,11 +482,10 @@ class DiscoveryLoop:
 
             sr = self._build_screening_result(smi, total_score, score_data, t2, novelty, ctx, sub_scores)
             if self._is_discovery(total_score, score_data):
-                self.discoveries.append(sr)
                 self.state.add_discovery(sr)
                 log.info("  ** DISCOVERY ** %s (score=%.1f)", smi, total_score)
 
-            self.all_results.append(sr)
+            self.state.add_result(sr)
 
         mix_contexts, mix_scores = self._evaluate_mixture_pairs(valid_contexts, result_map)
         result_contexts.extend(mix_contexts)

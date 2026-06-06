@@ -69,6 +69,9 @@ class LoopState:
     generations: int = 0
     seed_pool_size: int = 0
 
+    # --- Result tracking (single source of truth) ---
+    _all_results: list[dict[str, Any]] = field(default_factory=list)
+
     # --- Scaffold tracking ---
     scaffolds_per_batch: list[list[str]] = field(default_factory=list)
 
@@ -151,6 +154,7 @@ class LoopState:
                 self.started_at = data.get("started_at", self.started_at)
                 self.last_updated = data.get("last_updated")
                 self.discoveries = data.get("discoveries", [])
+                self._all_results = data.get("_all_results", [])
             except (json.JSONDecodeError, KeyError, TypeError, OSError):
                 pass
 
@@ -163,6 +167,7 @@ class LoopState:
             "started_at": self.started_at,
             "last_updated": datetime.now(UTC).isoformat(),
             "discoveries": self.discoveries,
+            "_all_results": self._all_results,
         }
         tmp_path = self.path + ".tmp"
         with open(tmp_path, "w") as f:
@@ -182,6 +187,28 @@ class LoopState:
         self.discoveries.sort(key=lambda d: d.get("total_score", 0), reverse=True)
         self.discoveries = self.discoveries[:_MAX_DISCOVERIES]
 
+    def add_result(self, sr: Any) -> None:
+        self._all_results.append({
+            "smiles": sr.smiles,
+            "total_score": sr.total_score,
+            "is_viable": sr.is_viable,
+            "rejection_reasons": sr.rejection_reasons,
+            "novelty_to_seed": sr.novelty_to_seed,
+            "homo_eV": sr.homo_eV,
+            "lumo_eV": sr.lumo_eV,
+            "dielectric_proxy": sr.dielectric_proxy,
+            "viscosity_proxy": sr.viscosity_proxy,
+            "li_solvation_proxy": sr.li_solvation_proxy,
+            "sa_score": sr.sa_score,
+            "sub_scores": sr.sub_scores,
+        })
+
+    def top_scored_smiles(self, divisor: int = 5) -> list[str]:
+        scored = [(r["total_score"], r["smiles"]) for r in self._all_results if r["total_score"] > 0]
+        scored.sort(key=lambda x: -x[0])
+        n = max(5, len(scored) // divisor)
+        return [s for _, s in scored[:n]]
+
     def clear(self) -> None:
         self.batch_means.clear()
         self._all_scores.clear()
@@ -192,6 +219,7 @@ class LoopState:
         self.viable_count = 0
         self.invalid_discarded = 0
         self.discoveries.clear()
+        self._all_results.clear()
         self.save()
 
 

@@ -88,7 +88,7 @@ class TestDiscoveryLoop:
         loop.execute()
 
         assert loop.state.total_screened > 0
-        assert len(loop.all_results) > 0
+        assert len(loop.state._all_results) > 0
 
 
 # ---------------------------------------------------------------------------
