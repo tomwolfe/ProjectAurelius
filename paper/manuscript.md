@@ -189,7 +189,7 @@ The self-verifying Net Progress objective represents a novel approach to softwar
 
 ## 5. Conclusion
 
-Project Aurelius demonstrates that a physics-grounded, interpretable evolutionary algorithm can discover novel electrolyte molecules while maintaining physical realizability and software simplicity. The hybrid oracle, anti-gaming gates, and self-verifying objective together form a pipeline that is both powerful and auditable. Future work will extend the fragment-additivity calibration set and incorporate experimental validation of top candidates.
+Project Aurelius demonstrates that a physics-grounded, interpretable evolutionary algorithm can discover novel electrolyte molecules while maintaining physical realizability and software simplicity. The hybrid oracle, anti-gaming gates, and self-verifying objective together form a pipeline that is both powerful and auditable.
 
 ## References
 

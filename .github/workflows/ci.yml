@@ -132,6 +132,29 @@ jobs:
       - name: Run pytest
         run: pytest tests/ -v --tb=short
 
+  benchmark-validation:
+    name: Benchmark Validation
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run External Validation Benchmark
+        run: python -m benchmarks.benchmark_external_validation
+
+      - name: Run Reality Check Benchmark
+        run: python -m benchmarks.benchmark_reality_check
+
   test-philosophy:
     name: Philosophy Gates (Net Progress & External Validation)
     runs-on: macos-latest
