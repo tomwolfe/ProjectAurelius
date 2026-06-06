@@ -160,6 +160,9 @@ def _compute_rediscovery_rate() -> float:
 
 def _compute_scaffold_novelty() -> float:
     """Approximate scaffold novelty via mutation engine proposal."""
+    # Fixed seeds ensure deterministic Net Progress calculation for CI stability.
+    np.random.seed(42)
+    random.seed(42)
     try:
         from aurelius.agent.mutation import MutationEngine
 
@@ -191,6 +194,9 @@ def _compute_scaffold_novelty() -> float:
 
 def _compute_top_k_enrichment() -> float:
     """Compare mean score of top-10 vs bottom-10 from mutation engine proposals."""
+    # Fixed seeds ensure deterministic Net Progress calculation for CI stability.
+    np.random.seed(42)
+    random.seed(42)
     try:
         from aurelius.agent.mutation import MutationEngine
         from aurelius.pipeline import AureliusPipeline

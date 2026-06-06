@@ -78,17 +78,18 @@ aurelius agent --max-generations 50   # Run autonomous discovery loop
 
 ## CLI Reference
 
-```
-aurelius init                    Initialize pipeline
-aurelius doctor                  Validate dependencies and hardware
-aurelius doctor-xtb              Check xTB quantum backend availability
-aurelius screen <smiles>         Screen a single molecule
-aurelius batch <file>            Screen molecules from SMILES file
-aurelius score <smiles>          Compute Aurelius score only
-aurelius evaluate <smiles>       Run ML oracle evaluation
-aurelius validate <smiles>       Run full pipeline with detailed scorecard
-aurelius agent                   Run the autonomous screening agent
-```
+| Command | Arguments | Purpose |
+|---------|-----------|---------|
+| `init` | | Initialize pipeline |
+| `doctor` | | Validate dependencies and hardware |
+| `doctor-xtb` | | Check xTB quantum backend availability |
+| `screen` | `<smiles>` | Screen a single molecule |
+| `batch` | `<file>` | Screen molecules from SMILES file |
+| `score` | `<smiles>` | Compute Aurelius score only |
+| `evaluate` | `<smiles>` | Run ML oracle evaluation |
+| `validate` | `<smiles>` | Run full pipeline with detailed scorecard |
+| `agent` | `--max-generations --batch-size` | Run the autonomous screening agent |
+| `mixture` | `<smiles_a> <smiles_b> [--frac]` | Screen a binary electrolyte mixture |
 
 ## Quantum Backend
 
@@ -107,6 +108,18 @@ particle-in-a-box and Hückel theory. TOM estimates HOMO/LUMO from:
 
 TOM is non-linear in molecular topology and cannot be "gamed" by fragment stacking.
 Wiener-index compactness, EW LUMO scaling (0.30→0.35), and aromatic ring stabilization together improved external LUMO Spearman ρ from 0.5118 to 0.5364 (HOLD) — 0.5251 — alongside TOM holdout MAE reduction from 0.853 to 0.834 eV (ADR-2026-06-11). Ester SMARTS disambiguation (ADR-2026-06-05d) improved Dielectric Spearman ρ from 0.5855 to 0.8493, Viscosity from 0.7431 to 0.8053, and Donor Number from 0.5309 to 0.6956. Cyclic sulfone/sultone GC fragments (ADR-2026-06-05f) added incremental ring-rigidity correction, further improving Viscosity ρ to 0.8053.
+
+## Validation Metrics
+
+| Benchmark | Metric | Value |
+|-----------|--------|-------|
+| External: Dielectric ε | Spearman ρ | +0.8493 (N=23, p<0.001) |
+| External: Viscosity η | Spearman ρ | +0.8053 (N=23, p<0.001) |
+| External: Donor Number | Spearman ρ | +0.6956 (N=16, p<0.01) |
+| External: HOMO | Spearman ρ | +0.5251 (N=26, p<0.01) |
+| External: LUMO | Spearman ρ | +0.5364 (N=26, p<0.01) |
+| Reality Check: Score gap | Top discoveries − known | +27.98 (discoveries: 84.98, known: 57.00) |
+| Reality Check: Scaffold novelty | Novel scaffold ratio | 100.0% (>80% target) |
 
 ## Anti-Gaming Constraints
 

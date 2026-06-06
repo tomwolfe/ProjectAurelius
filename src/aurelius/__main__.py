@@ -9,6 +9,7 @@ Usage:
     aurelius score <smiles>          Compute Aurelius score only
     aurelius evaluate <smiles>       Run full pipeline evaluation
     aurelius agent                   Run the autonomous screening agent
+    aurelius mixture <smi_a> <smi_b> [--frac]  Screen a binary electrolyte mixture
 """
 
 from __future__ import annotations
@@ -239,6 +240,32 @@ def agent(
 
     cfg = AgentConfig(max_generations=max_generations, batch_size=batch_size)
     run_screening(cfg)
+
+
+@cli.command("mixture")
+@click.argument("smiles_a")
+@click.argument("smiles_b")
+@click.option("--frac", type=float, default=0.5, help="Volume fraction of component A (0.0 to 1.0)")
+def mixture_cmd(smiles_a: str, smiles_b: str, frac: float) -> None:
+    """Screen a binary electrolyte mixture."""
+    if not (0.0 <= frac <= 1.0):
+        click.echo("Error: --frac must be between 0.0 and 1.0", err=True)
+        sys.exit(1)
+    pipeline = _make_pipeline()
+    ctx_a = MoleculeContext.from_smiles(smiles_a)
+    ctx_b = MoleculeContext.from_smiles(smiles_b)
+    if ctx_a is None or ctx_b is None:
+        click.echo("Error: Invalid SMILES provided.", err=True)
+        sys.exit(1)
+    result = pipeline.screen_mixture(ctx_a, ctx_b, frac)
+    score = result.get("score", {})
+    mix_props = result.get("mixture_properties", {})
+    click.echo(f"\nMixture Aurelius Score: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
+    click.echo(f"  Synergy Bonus: {mix_props.get('synergy_bonus', 0.0):.4f}")
+    click.echo(f"  Dielectric Proxy: {mix_props.get('dielectric_proxy', 0.0):.2f}")
+    click.echo(f"  Viscosity Proxy:  {mix_props.get('viscosity_proxy', 0.0):.2f}")
+    if not score.get("is_viable", False):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

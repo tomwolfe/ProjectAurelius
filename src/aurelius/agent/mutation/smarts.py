@@ -139,6 +139,10 @@ def find_max_conjugated_path(mol: Chem.Mol) -> int:
 # MoleculeContext and returns True if the check passes (electrolyte-like).
 # This replaces a 60-line wall of sequential if-blocks with a declarative,
 # composable rule set that is easy to audit, extend, or prune.
+#
+# NOTE: These are lightweight pre-compute gates to prevent the EA from
+# wasting cycles on obviously invalid topologies during mutation. The
+# definitive, strict viability gate is src/aurelius/screening/tier1/filter.py.
 
 _ELECTROLYTE_CHECKS: list[tuple[str, Callable[[MoleculeContext], bool]]] = []
 
