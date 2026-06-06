@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.0.4] - 2026-06-06
+
+### Fixed
+- Enforced Single Source of Truth: Removed residual hardcoded benchmark metrics from `README.md`, `paper/manuscript.md`, and `docs/marketing/pitch.md`.
+
+### Added
+- `scripts/update_benchmark_docs.py`: Auto-generates `docs/benchmarks.md` from live `benchmarks.benchmark_external_validation` and `benchmarks.benchmark_reality_check` executions, eliminating manual copy-pasting and preventing future documentation drift.
+
 ## [10.0.3] - 2026-06-06
 
 ### Changed

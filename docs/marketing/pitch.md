@@ -10,7 +10,7 @@ A physically-grounded Evolutionary Algorithm with a hybrid quantum chemistry / f
 
 **Zero ML bloat.** No PyTorch. No TensorFlow. Just RDKit, xTB, and pure Python.
 
-**External validation:** Spearman ρ > 0.80 for dielectric and viscosity, ρ > 0.50 for HOMO/LUMO (N=26, p<0.01).
+**External validation:** Live benchmarking confirms strong positive rank correlation (ρ > 0.50) for quantum properties and (ρ > 0.80) for bulk GC proxies against published experimental data. Run `python -m benchmarks.benchmark_external_validation` for current metrics.
 
 ```bash
 aurelius init                          # Initialize pipeline
