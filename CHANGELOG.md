@@ -1,5 +1,16 @@
 # Changelog
 
+## [10.0.1] - 2026-06-06
+
+### Changed
+- Consolidated `docs/marketing/` into a single `pitch.md` to reduce architectural surface area (Net Progress simplicity cost).
+
+### Added
+- Included `examples/mixtures.smi` and updated README Quick Start to demonstrate v10.0 binary mixture screening capabilities.
+
+### Fixed
+- Removed hardcoded benchmark metrics from README.md to enforce a Single Source of Truth via executable benchmark scripts.
+
 ## [10.0.0] - 2026-06-11
 
 ### Added

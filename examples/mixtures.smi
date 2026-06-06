@@ -1,0 +1,6 @@
+# High-dielectric + Low-viscosity complementary pair (Synergy expected)
+C1COC(=O)O1|COCCOC|0.5
+# Fluorinated carbonate + Nitrile (High-voltage synergy)
+C1C(F)OC(=O)O1|CC#N|0.3
+# Sulfone + Linear Carbonate (Baseline comparison)
+CS(=O)(=O)C|COC(=O)OC|0.5
