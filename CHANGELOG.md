@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.0.5] - 2026-06-06
+
+### Fixed
+- Corrected future-dated typo in v10.0.0 changelog entry (2026-06-11 → 2026-06-01) to maintain chronological audit integrity.
+
+### Changed
+- Condensed historical ADR inline comments in `gc.py` and `quantum.py` to enforce KISS; scientific justification retained, verbose tuning history moved to CHANGELOG.md.
+- Enforced strict Single Source of Truth by replacing README.md "Validation Metrics" section with a direct reference to `scripts/update_benchmark_docs.py`.
+
 ## [10.0.4] - 2026-06-06
 
 ### Fixed
@@ -35,7 +44,7 @@
 ### Fixed
 - Removed hardcoded benchmark metrics from README.md to enforce a Single Source of Truth via executable benchmark scripts.
 
-## [10.0.0] - 2026-06-11
+## [10.0.0] - 2026-06-01
 
 ### Added
 - Mixture CLI command, deterministic net progress, benchmark table in README

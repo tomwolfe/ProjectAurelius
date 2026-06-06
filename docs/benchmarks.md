@@ -54,17 +54,17 @@
          Known set mean Aurelius Score: 57.00
 
   [2/4] Running 5-generation discovery loop...
-         Done in 20.3s
+         Done in 21.1s
          Total screened: 40
 
   [3/4] Analyzing top discoveries...
-         Top 50 discoveries: mean score=85.07
-         Unique scaffolds in top 50: 33
-         Novel scaffolds (not in known set): 33 (100.0%)
+         Top 50 discoveries: mean score=85.00
+         Unique scaffolds in top 50: 38
+         Novel scaffolds (not in known set): 38 (100.0%)
 
   [4/4] Verifying assertions...
 
-         Score gap: top discoveries (85.07) - known (57.00) = +28.07
+         Score gap: top discoveries (85.00) - known (57.00) = +28.00
          PASSED: Discoveries score higher than known commercial set.
 
          Novel scaffold ratio: 100.0% (target >80%)

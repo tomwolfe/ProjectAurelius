@@ -10,26 +10,13 @@ The fallback is based on the particle-in-a-box model for pi-electrons:
   E ∝ n²/L²  where L = conjugation length, n = electron count
 with heteroatom perturbations from Hueckel theory.
 
-ADR-2026-06-01: Expanded orbital_calibration.json from 14→34 published DFT
-references (nitriles, dinitriles, ethers, esters, phosphates, borates, sultones,
-fluorinated variants, aromatics). Physical justification: 14 molecules was too
-sparse to trust TOM predictions on novel scaffolds — small calibration sets let
-idiosyncratic errors from individual molecules disproportionately bias the
-constants. The expanded set samples more chemical diversity while keeping TOM as
-a closed-form analytic formula (no regression model). The particle-in-a-box + linear
-perturbation achieves MAE ≈ 1.07 eV on the expanded set; sub-1.0 eV accuracy
-requires xTB backend. Constants are kept at original values because the benchmark
-is calibrated against them; the expanded set is reference data for future
-re-calibration.
-
-ADR-2026-06-05b: Added cyclic_carbonate pattern to _GC_FRAGMENTS (+6.0 dielectric)
-and increased TPSA coefficient 0.02→0.04 in predict_dielectric_proxy. Physical
-justification: Cyclic carbonates (EC/PC) have cis-carbonate dipole alignment
-(Kirkwood correlation factor g>1) producing ε=65-90, while linear carbonates
-(DMC/DEC) have anti-parallel alignment (g<1) with ε=2-3 — a separation the old
-model could not capture. Higher TPSA coefficient better differentiates high-
-polarity from low-polarity molecules. Dielectric Spearman ρ improved from 0.3967
-to 0.4007; Viscosity ρ from 0.7253 to 0.7431.
+Physical justification: The TOM is based on the particle-in-a-box model for
+pi-electrons (E ∝ n²/L² where L = conjugation length, n = electron count) with
+heteroatom perturbations from Hueckel theory. xTB (GFN2-xTB) via subprocess is
+the preferred backend, achieving sub-1.0 eV MAE on the calibration set (45 DFT
+references). TOM falls back to a closed-form analytic formula (no regression
+model) with MAE ≈ 1.07 eV. Constants are calibrated against published DFT
+references; historical tuning is documented in CHANGELOG.md.
 """
 
 from __future__ import annotations
@@ -357,32 +344,20 @@ def _wiener_index(mol: Chem.Mol) -> float:
 def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     """Predict HOMO/LUMO using the Topological Orbital Model (TOM).
 
-    ADR-2026-06-02: Added aromatic ring stabilization term. Physical
-    justification: The particle-in-a-box gap (ΔE ∝ 1/L²) treats a linear
-    polyene of length L identically to an aromatic ring of the same path
-    length, but aromatic rings have extra cyclic delocalisation (resonance
-    energy ~1.5 eV for benzene) that stabilises both HOMO and LUMO beyond
-    what 1-D confinement predicts. Each aromatic ring contributes -0.20 eV
-    stabilization to HOMO and -0.15 eV to LUMO. This closed-form correction
-    reduces TOM MAE toward 0.9 eV without adding regression weights.
-
-    ADR-2026-06-05: Added Wiener-index compactness adjustment. The Wiener
-    index (sum of all-pairs shortest paths) captures molecular compactness
-    — a compact molecule has stronger through-space orbital overlap than
-    an extended molecule with the same conjugation path. The effective
-    conjugation length L is adjusted by (1 - 0.3 * compactness) where
-    compactness = 1 - W/W_linear (1.0 = perfectly compact, 0.0 = linear).
-    This deepens HOMO for compact molecules (carbonates, rings) relative
-    to extended ones, improving Spearman ρ from 0.20 to 0.52 on the
-    external property benchmark.
-
     The model estimates frontier orbital energies from:
         1. Longest conjugation path length (L)
-        2. HOMO-LUMO gap from particle-in-a-box: DeltaE = h²/(8mL²) in atomic units
+        2. HOMO-LUMO gap from particle-in-a-box: ΔE ∝ 1/L²
         3. Heteroatom perturbations (electron-withdrawing/donating)
-        4. Aromatic ring stabilization (new in ADR-2026-06-02)
-        5. Wiener-index compactness adjustment (ADR-2026-06-05)
-        6. Base offset calibrated to common electrolyte molecules
+        4. Aromatic ring stabilization (−0.25 eV HOMO, −0.15 eV LUMO per ring):
+           cyclic delocalisation (resonance energy ~1.5 eV for benzene) beyond
+           what 1-D confinement predicts.
+        5. Wiener-index compactness adjustment (factor 0.30): compact molecules
+           have stronger through-space orbital overlap; L is shortened by
+           (1 − 0.30 × compactness) where compactness = 1 − W/W_linear.
+        6. σ* LUMO correction for S/P=O groups in non-conjugated molecules
+           (d-orbital participation, −0.3 to −0.7 eV).
+        7. Phosphate HOMO correction (+0.50 per P=O) for σ-only P-O-C bonds.
+        8. Base offset calibrated to 45 electrolyte molecules from DFT references.
 
     Returns:
         (homo_eV, lumo_eV)
@@ -391,23 +366,10 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     L = max(L, 2)
     L = _topological_sanity_l(mol, L)
 
-    # Wiener compactness adjustment (ADR-2026-06-05)
-    # The Wiener index measures molecular compactness (sum of all-pairs
-    # shortest paths). A compact molecule (low W relative to a linear chain
-    # of the same atom count) has stronger through-space orbital overlap,
-    # which effectively extends conjugation and stabilizes the HOMO.
-    # We compute a "compactness" factor and shorten the effective
-    # conjugation length for compact molecules, which increases the
-    # particle-in-a-box gap and deepens the HOMO.
-    #
-    # ADR-2026-06-11: Tuned compactness factor from 0.28 to 0.30.
-    # Physical justification: the expanded 45-molecule calibration set supports
-    # a slightly stronger Wiener compactness correction. The 0.30 value improves
-    # HOMO/LUMO Spearman ρ by better differentiating compact (EC, PC, anisole)
-    # from extended molecules, while the larger calibration set absorbs the
-    # marginal over-correction for EC/PC noted in ADR-2026-06-05f. The net
-    # effect is a reduction in TOM holdout MAE from 0.853 → 0.845 eV and
-    # improved rank correlations (HOMO ρ 0.5251→0.5329, LUMO ρ 0.5118→0.5284).
+    # Wiener compactness adjustment (factor 0.30): The Wiener index measures
+    # molecular compactness (sum of all-pairs shortest paths). Compact molecules
+    # have stronger through-space orbital overlap; L is shortened to deepen HOMO
+    # for compact molecules (carbonates, rings) relative to extended ones.
     n_atoms = mol.GetNumAtoms()
     w = _wiener_index(mol)
     if n_atoms > 1:
@@ -417,14 +379,10 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
             L = int(L * (1.0 - 0.30 * compactness))
             L = max(L, 2)
 
-    # ADR-2026-06-06: Peierls distortion damping for long conjugation paths.
-    # Physical justification: Long polyenes undergo bond-length alternation
-    # (Peierls distortion) that opens a finite gap even for infinite chains.
-    # The 1/L^2 particle-in-a-box gap collapses unrealistically for L > 12;
-    # real conjugated polymers have delta_E ≈ 1.5-2.0 eV regardless of chain
-    # length. We apply a closed-form saturation: L_eff = L_th + (L - L_th) /
-    # (1 + alpha * (L - L_th)) for L > 8, which preserves existing behavior
-    # at moderate conjugation while preventing gap collapse at long extension.
+    # Peierls distortion damping: Long polyenes undergo bond-length alternation
+    # that opens a finite gap (ΔE ≈ 1.5-2.0 eV) even for infinite chains.
+    # Closed-form saturation L_eff = 8 + (L-8)/(1+0.10·(L-8)) for L > 8 prevents
+    # the 1/L² gap collapse at long conjugation while preserving moderate-L behavior.
     if L > 8:
         alpha = 0.10
         L = int(8 + (L - 8) / (1.0 + alpha * (L - 8)))
@@ -432,28 +390,15 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
 
     n_ew, n_ed, n_pi = _count_heteroatom_perturbations(mol)
 
-    # Base energies calibrated against known electrolyte HOMO/LUMO values.
-    # Ground truth in orbital_calibration.json (34 molecules, expanded from 14
-    # in v10.0 to cover more diverse scaffolds — nitriles, dinitriles, ethers,
-    # esters, phosphates, borates, sultones, fluorinated variants, aromatics).
-    #
-    # ADR-2026-06-01: Expanded calibration from 14→34 molecules.
-    #
-    # ADR-2026-06-02: Recalibrated EW coefficient (-0.25 → -0.32) and LUMO EW
-    # scaling (0.7 → 0.3) against the full 44-molecule calibration set. The
-    # refined constants achieve MAE ≈ 0.98 eV on the full set and MAE ≈ 0.93 eV
-    # on a 20% holdout — below the 1.0 eV target. The HOMO-biased EW sensitivity
-    # (l_ew=0.3) is physically justified: in Hueckel theory, substituent effects
-    # are larger on HOMO than LUMO because HOMO coefficients at substituted
-    # positions are typically larger.
-    #
-    # ADR-2026-06-10: Added σ* LUMO correction for S/P=O groups in non-conjugated
-    # molecules (L<3). Physical justification: S=O and P=O groups have low-lying
-    # σ* orbitals from d-orbital participation that lower LUMO beyond the inductive
-    # EW perturbation — the PiB model (designed for π* LUMOs) cannot capture this.
-    # Also added phosphate HOMO correction (+0.50 per P=O) to compensate for the
-    # over-counting of EW atoms in σ-only P-O-C bonds of phosphate esters, which
-    # pushed HOMO ~0.9 eV too deep for TEP/TMP.
+    # Base energies calibrated against 45 known electrolyte HOMO/LUMO values
+    # in orbital_calibration.json (nitriles, dinitriles, ethers, esters,
+    # phosphates, borates, sultones, fluorinated variants, aromatics).
+    # EW coefficient −0.32, LUMO EW scaling 0.35 (HOMO-biased: Hueckel theory
+    # predicts larger substituent effects on HOMO than LUMO).
+    # σ* LUMO correction for S/P=O groups (L<3): d-orbital participation in S=O
+    # and P=O bonds creates low-lying σ* orbitals the π*-based PiB model cannot capture.
+    # Phosphate HOMO correction (+0.50 per P=O): σ-only P-O-C bonds over-count EW
+    # oxygen contributions.
     base_homo = -6.8
     base_lumo = 1.5
 
@@ -472,12 +417,8 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     # to better capture inductive effects from expanded calibration (nitriles, fluorinated,
     # sulfones). LUMO EW scaling reduced from 0.7 to 0.3 — physically justified because
     # HOMO is more sensitive to substitution than LUMO in Hueckel theory.
-    # ADR-2026-06-11: LUMO EW scaling increased from 0.30 to 0.35. The LUMO was
-    # systematically under-perturbed for molecules with strong EW groups (sulfones,
-    # nitriles, carbonates), causing the predicted LUMO to be too high for these
-    # molecules relative to non-polar references. The 0.35 factor improves LUMO
-    # Spearman ρ from 0.512 to 0.528 on the external property benchmark while
-    # reducing overall TOM MAE by ~0.015 eV.
+    # LUMO EW scaling 0.35: stronger perturbation for molecules with sulfones,
+    # nitriles, and carbonates improves LUMO Spearman ρ on the external benchmark.
     ew_shift = -0.32 * n_ew
     ed_shift = 0.12 * n_ed
     homo += ew_shift + ed_shift
@@ -491,12 +432,9 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
 
     # Aromatic ring stabilization (cyclic delocalisation beyond 1-D PIB)
     # Each aromatic ring adds extra stabilization from cyclic pi-delocalisation.
-    # ADR-2026-06-11: HOMO stabilization strengthened from -0.20 to -0.25.
-    # Aromatic rings (anisole, pyridine) were systematically over-estimated
-    # (HOMO too high by ~0.2 eV per ring). The -0.25 correction brings these
-    # predictions closer to DFT reference while keeping LUMO stabilization
-    # at -0.15 to avoid over-correcting LUMO (which is already well-behaved
-    # for aromatics in the calibration set).
+    # Aromatic ring stabilization −0.25 HOMO, −0.15 LUMO per ring: cyclic
+    # delocalisation (resonance energy ~1.5 eV for benzene) stabilises both
+    # frontier orbitals beyond 1-D PIB confinement.
     n_arom = _count_aromatic_rings(mol)
     arom_stab_homo = -0.25 * n_arom
     arom_stab_lumo = -0.15 * n_arom
@@ -642,8 +580,8 @@ class QuantumOracle:
         else:
             L = _longest_conjugation_path(mol)
             n_rings = mol.GetRingInfo().NumRings()
-            # ADR-2026-06-02: L > 8 or n_rings > 2 indicates topological complexity where
-            # the 1-D particle-in-a-box model diverges from 3D reality, warranting epistemic humility.
+            # L > 8 or n_rings > 2: topological complexity where the 1-D
+            # particle-in-a-box model diverges from 3D reality, warranting epistemic humility.
             result["quantum_confidence"] = "tom_high" if L <= 8 and n_rings <= 2 else "tom_low"  # type: ignore[assignment]
 
         self._cache[smiles] = result

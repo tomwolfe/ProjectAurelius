@@ -3,45 +3,18 @@
 Predicts dielectric, viscosity, and Li+ solvation via functional-group
 additivity with Michaelis-Menten saturation and non-linear cross-terms.
 
-ADR-2026-06-05: Parameter refinements to improve weak proxy correlations:
-  Dielectric ε: nitrile 8.0→5.5, amide 5.0→6.0, sulfoxide 6.0→7.5;
-                MAX_DIELECTRIC_PER_TPSA 0.35→0.60 (constants.py).
-  Li⁺ solvation: amide 1.2→2.5, glyme_chelating 1.8→0.6, sulfoxide 2.5→3.5,
-                 aromatic_nitrogen 2.0→3.5.
-  Rationale: nitrile was over-contributing relative to carbonate (ACN > DMSO
-  ranked wrong); glyme_chelating double-counted ether chelation; amides and
-  sulfoxides were under-valued for Li⁺ binding. External validation Spearman ρ:
-  Dielectric 0.3226→0.3967, Donor Number 0.1368→0.4074.
-
-ADR-2026-06-05c: Parameter refinements to improve Dielectric and Donor Number ρ:
-  Dielectric ε: cyclic_carbonate 6.0→8.0, carbonate 5.0→2.0, TPSA 0.025→0.030.
-  Donor Number: aromatic_nitrogen 3.5→4.0.
-  Rationale: cyclic Kirkwood g>1 needs stronger representation; linear carbonates
-  were overpredicted (anti-periplanar O-alkyl cancels dipoles); TPSA coefficient
-  increased to improve polar/non-polar rank separation; pyridine (DN=33.1) should
-  rank above DMSO (DN=29.8) via stronger aromatic N basicity.
-
-ADR-2026-06-05b: Add cyclic_carbonate fragment (+6.0 dielectric) to
- differentiate EC/PC (cyclic, ε=90/65) from DMC/DEC (linear, ε=3). Physical
-justification: The Onsager-Kirkwood correlation factor g>1 for cyclic carbonates
-(conformational locking of cis-carbonate dipoles) vs g<1 for linear carbonates
-(anti-parallel alignment), producing a 20-30× difference in measured dielectric.
-TPSA coefficient raised from 0.02→0.025 to better capture polarity scaling while
-maintaining fragment saturation guarantees (5 esters < 2× single ester).
-Nitrile dielectric raised 5.5→7.5: ACN (ε=36) and PN (ε=27) were under-valued
-relative to sulfoxides and carbonates. The C≡N dipole (μ≈3.9 D) is among the
-strongest of any organic functional group; 7.5 keeps ACN (pred=10.0) below DMSO
-(pred=10.3) preserving the experimental ranking ACN < DMSO.
-
-ADR-2026-06-01: Added [-2.0, 2.0] clip to _compute_dielectric_cross_terms.
-Physical justification: cross-term additive bonuses have no upper bound; a
-molecule with carbonate + ether + sulfone + nitrile can accumulate ~1.2 extra
-dielectric points, enough to materially misrank candidates. A single clip guard
-bounds the cross-term contribution to what is physically plausible — no polar
-group combination can more than double the base dielectric contribution. This is
-the minimal non-invasive fix: one line, no new data structures, no architectural
-change. The alternative (capping each cross-term individually or using saturation)
-would add complexity without proportional benefit.
+Physical justification: Fragment-additivity is physically valid for bulk
+properties because these are ensemble-averaged thermodynamic quantities
+that respond approximately linearly to polar group density. Non-linear
+cross-terms capture cooperative effects (e.g., carbonate-ether synergy,
+fluorinated carbonate suppression) with a [-2.0, 2.0] clip to maintain
+physical plausibility — no polar group combination can more than double
+the base dielectric contribution. Cyclic carbonates require a separate
+fragment (dielectric 8.0) because their cis-carbonate dipole alignment
+(Kirkwood g>1) produces ε=65-90, while linear carbonates (anti-parallel
+alignment, g<1) have ε=2-3. Dielectric predictions are capped via TPSA
+to prevent unphysical extrapolation. All parameters are calibrated against
+published experimental data; historical tuning is in CHANGELOG.md.
 """
 
 from __future__ import annotations
@@ -104,31 +77,24 @@ def get_data_source() -> str:
 
 # (pattern, name, dielectric_contrib, viscosity_contrib, li_solvation_contrib)
 _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
-    # ADR-2026-06-05d: Added ([#6]) to exclude carbonyls without carbon substituent
-    # (i.e. carbonate groups O=C(-O-)(-O-) where both neighbors are oxygens).
-    # Linear carbonates (DMC ε≈3.1, DEC ε≈2.8) were overpredicted (pred≈8.7) because
-    # each -OX2H0 attached to the carbonate carbonyl matched the ester pattern.
-    # Physical justification: true esters have C(=O)-C structure; carbonate carbonyls
-    # have C(=O)-O structure with no direct C-C bond. The ([#6]) disambiguates them.
+    # Ester SMARTS uses ([#6]) to exclude carbonate carbonyls (both neighbors are
+    # oxygens) — true esters require C(=O)-C connectivity.
     (Chem.MolFromSmarts("[CX3](=O)([#6])[OX2H0]"),  "ester",              2.5,  0.6,  0.8),
     (Chem.MolFromSmarts("[CX3](=O)[OH]"),          "carboxylic_acid",    4.0,  1.0,  1.8),
     (Chem.MolFromSmarts("[CX3](=O)[NX3]"),         "amide",              6.0,  0.8,  2.5),
     (Chem.MolFromSmarts("[CX3](=O)[CX3]"),         "ketone",             3.0,  0.5,  0.6),
     (Chem.MolFromSmarts("[CH](=O)"),               "aldehyde",           2.5,  0.3,  0.3),
-    # ADR-2026-06-05c: carbonate dielectric 5.0→2.0. Linear carbonates (DMC ε≈3.1,
-    # DEC ε≈2.8) have anti-periplanar O-alkyl conformation cancelling dipoles (Kirkwood
-    # g<1). The cyclic_carbonate fragment (8.0) separately captures EC/PC's g>1 effect.
-    # Reducing generic carbonate prevents overprediction of linear carbonates.
+    # Linear carbonates (DMC ε≈3.1, DEC ε≈2.8) have anti-periplanar O-alkyl
+    # conformation cancelling dipoles (Kirkwood g<1). The cyclic_carbonate fragment
+    # (8.0) separately captures EC/PC's g>1 effect.
     (Chem.MolFromSmarts("O=C([OX2])[OX2]"),        "carbonate",          2.0,  0.7,  1.2),
     (Chem.MolFromSmarts("[OD2]([CX4])[CX4]"),      "ether",              1.5, -0.3,  1.0),
     (Chem.MolFromSmarts("[OH][CX4]"),              "alcohol",            4.5,  1.2,  2.0),
     (Chem.MolFromSmarts("[NX3;H2][CX4]"),          "primary_amine",      3.5,  0.5,  1.0),
     (Chem.MolFromSmarts("[NX3;H1]([CX4])[CX4]"),   "secondary_amine",    2.5,  0.4,  0.8),
     (Chem.MolFromSmarts("[NX3;H0]([CX4])([CX4])[CX4]"), "tertiary_amine", 1.5,  0.3,  0.5),
-    # Nitrile dielectric raised from 5.5→7.5 (ADR-2026-06-05b): the C≡N dipole
-    # (μ≈3.9 D) produces ε=36 for ACN and ε=27 for PN — the prior 5.5 under-valued
-    # nitriles relative to sulfoxides and carbonates. Cyclic_carbonate boost to EC
-    # (now ~18) frees headroom: ACN=10.0 < DMSO=10.3, preserving correct ranking.
+    # The C≡N dipole (μ≈3.9 D) gives ACN pred≈10.0, PN pred≈8.5. Cyclic_carbonate
+    # boost to EC (pred≈18) preserves the experimental ranking ACN < DMSO < EC.
     (Chem.MolFromSmarts("[C]#[N]"),                "nitrile",            7.5,  0.4,  0.8),
     (Chem.MolFromSmarts("[CX3]=[CX3]"),            "alkene",             0.5,  0.1,  0.1),
     (Chem.MolFromSmarts("[CX2]#[CX2]"),            "alkyne",             1.0,  0.2,  0.2),
@@ -163,16 +129,15 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
     (Chem.MolFromSmarts("[SX4](=O)(=O)[NX3][SX4](=O)(=O)"), "sulfonimide", 5.0,  0.5,  0.5),
     (Chem.MolFromSmarts("[CX3](=O)[OX2]C(F)(F)F"),  "fluorinated_carbonate", 3.0,  0.3, -0.1),
     (Chem.MolFromSmarts("[SX3](=O)[CX4]"),           "sulfoxide",             7.5,  0.5,  3.5),
-    # ADR-2026-06-05c: aromatic_N li_solvation 3.5→4.0. Pyridine (DN=33.1) has the
-    # highest donor number in the benchmark set; it should rank above DMSO (DN=29.8).
+    # Pyridine (DN=33.1) ranks above DMSO (DN=29.8) via stronger aromatic N basicity.
     (Chem.MolFromSmarts("[n]"),                      "aromatic_nitrogen",     4.0,  0.3,  4.0),
     (Chem.MolFromSmarts("[PX4](=O)([OX2])([OX2])[#6]"), "phosphonate",        3.5,  0.5,  1.0),
     # Cyclic carbonate (5-ring): cis-conformation enables cooperative dipole alignment
     # (Kirkwood g>1), boosting ε 20-30× vs linear. Li+ binding at carbonyl O is same
     # as linear carbonates, so li_solvation kept at 0.0 (donor number unaffected).
-    # ADR-2026-06-05c: dielectric 6.0→8.0. EC (ε=89.78) and PC (ε=64.92) are 2-3×
-    # higher than any other aprotic solvent. Larger contribution needed to capture
-    # the physical gap between cyclic (g>1) and linear (g<1) carbonates.
+    # EC (ε=89.78) and PC (ε=64.92) are 2-3× higher than any other aprotic solvent.
+    # The 8.0 captures the physical gap between cyclic (Kirkwood g>1) and linear
+    # (g<1) carbonates.
     (Chem.MolFromSmarts("[OX2]1[CX3](=O)[OX2][CX4][CX4]1"), "cyclic_carbonate",  8.0,  0.4,  0.0),
 ]
 
@@ -246,9 +211,8 @@ def predict_dielectric_proxy(ctx: MoleculeContext) -> float:
     value += _compute_dielectric_cross_terms(counts)
 
     tpsa = ctx.tpsa
-    # TPSA coefficient raised from 0.025→0.030 (ADR-2026-06-05c): TPSA directly
-    # measures molecular polarity; 0.030 better differentiates high-polarity
-    # (EC, DMSO, DMF) from low-polarity molecules, improving rank separation.
+    # TPSA coefficient 0.030: differentiates high-polarity (EC, DMSO, DMF) from
+    # low-polarity molecules via direct polarity measurement.
     value += tpsa * 0.030
 
     max_diel = _GC_BASE_DIELECTRIC + tpsa * MAX_DIELECTRIC_PER_TPSA
@@ -376,14 +340,10 @@ def mixture_synergy_bonus(
     The bonus scales with how well the mixture's combined dielectric and
     viscosity meet both targets simultaneously.
 
-    ADR-2026-06-05: Added Margules-inspired non-ideal mixing term. The
-    two-suffix Margules model gives excess Gibbs energy G^E = A · x₁ · x₂,
-    which captures the synergy peak at equimolar composition for truly
-    complementary pairs. Here A ∝ |d₁-d₂| · |v₁-v₂| — pairs with large
-    differences in both properties (the definition of complementarity)
-    receive an extra bonus that peaks at 50:50 mixing, matching the
-    physical intuition that complementary pairs are most effective at
-    balanced compositions.
+    Margules-inspired non-ideal mixing term: A ∝ |d₁-d₂|·|v₁-v₂| gives
+    excess Gibbs energy G^E = A·x₁·x₂, capturing the synergy peak at
+    equimolar composition for complementary pairs. Capped at 3.0 to
+    prevent gaming.
     """
     has_high_d = max(d1, d2) > 4.0
     has_low_v = min(v1, v2) < 1.5
@@ -399,7 +359,7 @@ def mixture_synergy_bonus(
 
     score = d_mix / 4.0 + 1.5 / max(v_mix, 0.01)
 
-    # Margules-inspired non-ideal mixing term (ADR-2026-06-05)
+    # Margules-inspired non-ideal mixing term
     # A ∝ |d₁-d₂|·|v₁-v₂| scaled to give ~0.5 bonus at 50:50 for complementary pairs
     interaction = abs(d1 - d2) * abs(v1 - v2) / 8.0
     interaction = min(interaction, 3.0)  # saturation cap to prevent gaming

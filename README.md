@@ -107,14 +107,7 @@ particle-in-a-box and Hückel theory. TOM estimates HOMO/LUMO from:
 - Wiener-index compactness adjustment (deepens HOMO for compact molecules)
 - Nitrile C≡N π* correction (−0.70 eV per C≡N)
 
-## Validation Metrics
-
-*Do not trust hardcoded numbers. Live benchmark results are auto-generated at `docs/benchmarks.md`:*
-
-```bash
-python scripts/update_benchmark_docs.py  # Regenerate docs/benchmarks.md
-cat docs/benchmarks.md                   # View live results
-```
+**Validation Metrics:** Live, auto-generated benchmark results are the single source of truth. Run `python scripts/update_benchmark_docs.py` and view `docs/benchmarks.md` for current metrics.
 
 ## Anti-Gaming Constraints
 
