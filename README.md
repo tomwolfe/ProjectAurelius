@@ -99,15 +99,7 @@ Install the xTB binary from https://xtb-docs.readthedocs.io and ensure it's on y
 The oracle will automatically detect and use it.
 
 ### Fallback: Topological Orbital Model (TOM)
-When xTB is unavailable, the oracle falls back to a **Topological Orbital Model** based on
-particle-in-a-box and Hückel theory. TOM estimates HOMO/LUMO from:
-- Longest conjugation path length (non-linear 1/L² gap scaling)
-- Heteroatom perturbation analysis
-- Inductive effects from fluorine, sulfone, CF₃ groups
-- Wiener-index compactness adjustment (deepens HOMO for compact molecules)
-- Nitrile C≡N π* correction (−0.70 eV per C≡N)
-
-**Validation Metrics:** Live, auto-generated benchmark results are the single source of truth. Run `python scripts/update_benchmark_docs.py` and view `docs/benchmarks.md` for current metrics.
+When xTB is unavailable, the oracle falls back to a **Topological Orbital Model (TOM)**. This closed-form physical model estimates HOMO/LUMO using conjugation path length, heteroatom perturbations, and topological compactness. For detailed mathematical formulations and calibration metrics, see [`paper/manuscript.md`](paper/manuscript.md) and [`docs/benchmarks.md`](docs/benchmarks.md).
 
 ## Anti-Gaming Constraints
 

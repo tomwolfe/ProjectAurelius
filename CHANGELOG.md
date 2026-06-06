@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.0.7] - 2026-06-06
+
+### Fixed
+- Enforced fail-fast behavior in `test_net_progress.py` if `radon` is missing, preventing silent bypass of complexity cost checks.
+
+### Changed
+- Streamlined `README.md` Quantum Backend section to high-level summaries, deferring deep technical details to `paper/manuscript.md` (KISS compliance).
+- Refactored `top_mixtures` post-loop analysis in `agent/loop.py` into a dedicated helper function to improve single-responsibility.
+
 ## [10.0.6] - 2026-06-06
 
 ### Changed

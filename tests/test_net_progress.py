@@ -68,7 +68,10 @@ def _count_cyclomatic_violations() -> int:
     try:
         from radon.complexity import cc_visit
     except ImportError:
-        return 0
+        raise ImportError(
+            "radon is required for Net Progress complexity checks. "
+            "Install via: pip install radon"
+        )
 
     excluded = {"chem_utils.py", "dependencies.py", "__init__.py", "__main__.py",
                 "reporting.py"}
