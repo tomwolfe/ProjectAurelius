@@ -25,6 +25,7 @@ def main() -> None:
 
     ext_val = _capture("benchmarks.benchmark_external_validation")
     reality = _capture("benchmarks.benchmark_reality_check")
+    mixture = _capture("benchmarks.benchmark_mixture_synergy")
 
     parts = [
         "# Live Benchmark Results\n",
@@ -39,6 +40,11 @@ def main() -> None:
         "## Reality Check: EA Discoveries vs. Known Electrolytes\n",
         "```text\n",
         reality,
+        "```\n",
+        "\n",
+        "## Mixture Synergy Validation\n",
+        "```text\n",
+        mixture,
         "```\n",
     ]
 

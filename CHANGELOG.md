@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.0.6] - 2026-06-06
+
+### Changed
+- Enforced Single Source of Truth: Added `benchmark_mixture_synergy.py` to `scripts/update_benchmark_docs.py` auto-generation pipeline.
+- CI Enforcement: Added atomic git-diff check in `.github/workflows/ci.yml` to prevent silent documentation drift of `docs/benchmarks.md`.
+- Refactored Net Progress normalization constants into `src/aurelius/constants.py` with explicit architectural justification to prevent future YAGNI violations (CI gaming).
+
 ## [10.0.5] - 2026-06-06
 
 ### Fixed

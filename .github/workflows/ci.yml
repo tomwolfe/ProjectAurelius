@@ -149,11 +149,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run External Validation Benchmark
-        run: python -m benchmarks.benchmark_external_validation
-
-      - name: Run Reality Check Benchmark
-        run: python -m benchmarks.benchmark_reality_check
+      - name: Update and Verify Benchmark Documentation
+        run: |
+          python scripts/update_benchmark_docs.py
+          git diff --exit-code docs/benchmarks.md || (echo "ERROR: docs/benchmarks.md is out of date. Run 'python scripts/update_benchmark_docs.py' and commit the changes." && exit 1)
 
   test-philosophy:
     name: Philosophy Gates (Net Progress & External Validation)

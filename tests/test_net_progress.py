@@ -27,6 +27,12 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
+from aurelius.constants import (
+    NET_PROGRESS_ARCH_NORM,
+    NET_PROGRESS_CC_NORM,
+    NET_PROGRESS_DEP_NORM,
+    NET_PROGRESS_LOC_NORM,
+)
 from aurelius.scoring.oracle.gc import predict_dielectric_proxy, predict_viscosity_proxy
 from aurelius.scoring.oracle.quantum import (
     predict_tom_orbitals,
@@ -335,15 +341,10 @@ class TestNetProgress:
         holdout_gen = _compute_holdout_generalization()
         trend_recovery = _compute_experimental_trend_recovery()
 
-        LOC_NORM = 5000.0
-        CC_NORM = 5.0
-        DEP_NORM = 10.0
-        ARCH_NORM = 50.0
-
-        sim_loc = min(1.0, loc / LOC_NORM)
-        sim_cc = min(1.0, cc_violations / CC_NORM)
-        sim_dep = min(1.0, n_deps / DEP_NORM)
-        sim_arch = min(1.0, arch_surface / ARCH_NORM)
+        sim_loc = min(1.0, loc / NET_PROGRESS_LOC_NORM)
+        sim_cc = min(1.0, cc_violations / NET_PROGRESS_CC_NORM)
+        sim_dep = min(1.0, n_deps / NET_PROGRESS_DEP_NORM)
+        sim_arch = min(1.0, arch_surface / NET_PROGRESS_ARCH_NORM)
         simplicity_cost = (
             0.30 * sim_loc
             + 0.20 * sim_cc

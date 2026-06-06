@@ -342,3 +342,14 @@ COMMERCIAL_BUILDING_BLOCK_SMILES: tuple[str, ...] = (
     "FC(F)(F)S(=O)(=O)C(F)(F)F",         # Trifluoromethanesulfonic anhydride like
 
 )
+
+# ---------------------------------------------------------------------------
+# Net Progress Normalization Constants
+# ---------------------------------------------------------------------------
+# Ceilings for Net Progress simplicity cost normalization. Chosen to reflect
+# the approximate upper bound of a lean, maintainable v10.x codebase.
+# Adjust ONLY if a fundamental architectural shift is approved.
+NET_PROGRESS_LOC_NORM: float = 5000.0
+NET_PROGRESS_CC_NORM: float = 5.0
+NET_PROGRESS_DEP_NORM: float = 10.0
+NET_PROGRESS_ARCH_NORM: float = 50.0
