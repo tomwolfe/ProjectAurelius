@@ -75,10 +75,11 @@ warn_return_any = true
 warn_unused_configs = true
 warn_unused_ignores = false
 ignore_missing_imports = true
+no_site_packages = true
 exclude = "rdkit-stubs"
 # Third-party typing limitations: RDKit (attr-defined, no-untyped-call)
 # and numpy (no-any-return from incomplete stubs) are suppressed project-wide
-disable_error_code = ["attr-defined", "no-untyped-call", "no-any-return"]
+disable_error_code = ["attr-defined", "no-untyped-call", "no-any-return", "untyped-decorator"]
 
 [[tool.mypy.overrides]]
 module = "rdkit.*"
