@@ -30,9 +30,9 @@
   │ HOMO                 │   26        │ +0.5251  │ 0.0059 ** │
   │   top: Anisole                   pred=-3.742 exp=-5.900 │
   │   bot: FEC                       pred=-8.230 exp=-7.900 │
-  │ LUMO                 │   26        │ +0.5364  │ 0.0047 ** │
+  │ LUMO                 │   26        │ +0.5378  │ 0.0046 ** │
   │   top: THF                       pred=1.388 exp=1.500 │
-  │   bot: Anisole                   pred=-2.390 exp=-1.500 │
+  │   bot: VC                        pred=-2.384 exp=-1.500 │
   └──────────────────────┴────────────┴──────────┴───────────┘
 
   Significance: * p<0.05  ** p<0.01  *** p<0.001
@@ -54,17 +54,17 @@
          Known set mean Aurelius Score: 56.24
 
   [2/4] Running 5-generation discovery loop...
-         Done in 19.5s
+         Done in 31.4s
          Total screened: 40
 
   [3/4] Analyzing top discoveries...
-         Top 50 discoveries: mean score=85.25
-         Unique scaffolds in top 50: 37
-         Novel scaffolds (not in known set): 37 (100.0%)
+         Top 50 discoveries: mean score=85.18
+         Unique scaffolds in top 50: 38
+         Novel scaffolds (not in known set): 38 (100.0%)
 
   [4/4] Verifying assertions...
 
-         Score gap: top discoveries (85.25) - known (56.24) = +29.01
+         Score gap: top discoveries (85.18) - known (56.24) = +28.94
          PASSED: Discoveries score higher than known commercial set.
 
          Novel scaffold ratio: 100.0% (target >80%)

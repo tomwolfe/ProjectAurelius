@@ -16,6 +16,9 @@ from aurelius.scoring.oracle.gc import (
     _GC_BASE_VISCOSITY,
     _GC_FRAGMENTS,
     _GC_SATURATION_K,
+    _UQ_PENALTY,
+    _UQ_THRESHOLD_FRACTION,
+    GcUqEnsemble,
     _compute_dielectric_cross_terms,
     _count_branch_points,
     _count_fragments,
@@ -55,10 +58,19 @@ from aurelius.scoring.oracle.quantum import (
     predict_tom_orbitals,
     run_xtb_batch,
 )
+from aurelius.scoring.oracle.surrogate import (
+    _SURROGATE_HOMO_THRESHOLD,
+    _SURROGATE_PENALTY,
+    SurrogateQuantumOracle,
+)
 
 __all__ = [
     "PropertyOracle",
     "QuantumOracle",
+    "SurrogateQuantumOracle",
+    "GcUqEnsemble",
+    "_SURROGATE_HOMO_THRESHOLD",
+    "_SURROGATE_PENALTY",
     "compute_gc_domain_penalty",
     "compute_quantum_domain_penalty",
     "get_data_source",
@@ -85,6 +97,8 @@ __all__ = [
     "_GC_BASE_VISCOSITY",
     "_GC_SATURATION_K",
     "_saturate_contrib",
+    "_UQ_PENALTY",
+    "_UQ_THRESHOLD_FRACTION",
     "_HAS_XTB",
     "_find_xtb_binary",
     "_generate_xyz",

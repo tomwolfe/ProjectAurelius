@@ -785,6 +785,43 @@ class TestBuildingBlockGrounding:
             f"({covered_count}/{len(candidates)}). Target >80%."
         )
 
+    def test_high_scoring_ungrounded_penalized_below_viability(self):
+        """A high-scoring (>=65) but synthetically ungrounded 'Frankenstein' molecule
+        must be penalized by the 0.8x multiplicative penalty in _apply_penalties
+        when combined_grounding_score < 0.6, dropping it below the viability threshold (50.0).
+
+        Uses a large conjugated aromatic molecule with unusual BRICS fragments
+        that scores well on properties but has low commercial precursor coverage.
+        """
+        from aurelius.agent.mutation.brics import combined_grounding_score
+        from aurelius.constants import DISCOVERY_THRESHOLD, VIABILITY_THRESHOLD
+
+        pipeline = AureliusPipeline()
+        pipeline.initialize()
+
+        mol = Chem.MolFromSmiles("C1=CC=C2C(=C1)C(=O)C3=C(C2=O)C4=C(C=C3)C5=C(C=C4)C(=O)C6=CC=CC(=C6)C5=O")
+        if mol is None:
+            return
+        ctx = MoleculeContext.from_smiles(Chem.MolToSmiles(mol))
+        if ctx is None:
+            return
+
+        grounding = combined_grounding_score(mol)
+        if grounding >= 0.6:
+            return
+
+        result = pipeline.screen_molecule(ctx)
+        score = result.get("score", {})
+        total_score = score.get("total_score", 0.0)
+
+        if total_score >= DISCOVERY_THRESHOLD:
+            assert total_score < VIABILITY_THRESHOLD, (
+                f"Ungrounded molecule scored {total_score:.1f} (>=65)"
+                f" with grounding {grounding:.3f} (<0.6) but was not penalized"
+                f" below {VIABILITY_THRESHOLD}. The 0.8x penalty in _apply_penalties"
+                f" should have reduced it."
+            )
+
 
 # ---------------------------------------------------------------------------
 # G. Global Novelty Gate — Reject Trivial Commercial Variants

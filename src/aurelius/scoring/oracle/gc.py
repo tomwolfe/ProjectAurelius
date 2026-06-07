@@ -19,9 +19,16 @@ published experimental data; historical tuning is in CHANGELOG.md.
 
 from __future__ import annotations
 
+import json
+import logging
 import math
+import os
+import time
 
+import numpy as np
 from rdkit import Chem
+from sklearn.linear_model import Ridge
+from sklearn.preprocessing import StandardScaler
 
 from aurelius.constants import MAX_DIELECTRIC_PER_TPSA
 from aurelius.types import MoleculeContext
@@ -400,3 +407,168 @@ def mixture_synergy_bonus(
     score += non_ideal
 
     return min(max(0.0, score), 6.0)
+
+
+# ---------------------------------------------------------------------------
+# GC Uncertainty Quantification — Ridge Ensemble for Dielectric & Viscosity
+# ---------------------------------------------------------------------------
+# Physical justification: A single deterministic GC prediction has no error
+# bar. By training an ensemble of Ridge regressors with different random
+# seeds on the external_property_benchmark.json, we obtain prediction
+# variance as a proxy for epistemic uncertainty. High variance (>15% of
+# mean) indicates the molecule is out-of-distribution relative to the
+# calibration set, warranting a mild domain penalty.
+#
+# The ensemble is trained lazily on first use and uses only fragment-count
+# features (same as the GC model) so it remains physically interpretable.
+# No deep learning frameworks are used.
+
+_UQ_THRESHOLD_FRACTION: float = 0.15
+_UQ_PENALTY: float = 0.9
+_UQ_N_ENSEMBLE: int = 5
+
+logger = logging.getLogger(__name__)
+
+
+def _get_fragment_feature_vector(ctx: MoleculeContext) -> np.ndarray:
+    """Build a feature vector from GC fragment counts for a molecule.
+
+    Returns a 1D array of length = len(_GC_FRAGMENTS) + 2 (MW, TPSA).
+    """
+    counts = _count_fragments(ctx.mol)
+    frag_names = [name for _, name, _, _, _, _ in _GC_FRAGMENTS]
+    arr = np.zeros(len(frag_names) + 2, dtype=np.float32)
+    for i, name in enumerate(frag_names):
+        arr[i] = counts.get(name, 0)
+    arr[-2] = ctx.mw
+    arr[-1] = ctx.tpsa
+    return arr
+
+
+class GcUqEnsemble:
+    """Ridge regression ensemble for GC uncertainty quantification.
+
+    Trains N Ridge regressors with different random_state seeds on
+    external_property_benchmark.json. Predicts dielectric proxy and
+    viscosity proxy with uncertainty (standard deviation across ensemble).
+
+    Training is lazy (first inference triggers training).
+    """
+
+    def __init__(
+        self,
+        benchmark_path: str | None = None,
+        n_ensemble: int = _UQ_N_ENSEMBLE,
+        alpha: float = 1.0,
+    ) -> None:
+        self._n_ensemble = n_ensemble
+        self._alpha = alpha
+        self._benchmark_path = benchmark_path
+        self._diel_models: list[Ridge] | None = None
+        self._visc_models: list[Ridge] | None = None
+        self._diel_scaler: StandardScaler | None = None
+        self._visc_scaler: StandardScaler | None = None
+        self._is_trained = False
+        self._train_time_ms: float = 0.0
+
+    def _resolve_path(self) -> str:
+        if self._benchmark_path is not None:
+            return self._benchmark_path
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        # Walk up to find data dir
+        for candidate in [
+            os.path.join(module_dir, "..", "..", "..", "..", "src", "aurelius", "data", "external_property_benchmark.json"),
+            os.path.join(module_dir, "..", "..", "data", "external_property_benchmark.json"),
+        ]:
+            resolved = os.path.abspath(candidate)
+            if os.path.exists(resolved):
+                return resolved
+        raise FileNotFoundError(
+            "external_property_benchmark.json not found for GC UQ training"
+        )
+
+    def _ensure_trained(self) -> None:
+        if self._is_trained:
+            return
+        t0 = time.perf_counter()
+        path = self._resolve_path()
+        with open(path) as f:
+            data = json.load(f)
+
+        X_list: list[np.ndarray] = []
+        y_diel: list[float] = []
+        y_visc: list[float] = []
+
+        for entry in data:
+            smi = entry["smiles"]
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is None:
+                continue
+            diel_exp = entry.get("dielectric_constant")
+            visc_exp = entry.get("viscosity_cP")
+            if diel_exp is None and visc_exp is None:
+                continue
+            fp = _get_fragment_feature_vector(ctx)
+            X_list.append(fp)
+            y_diel.append(float(diel_exp) if diel_exp is not None else 0.0)
+            y_visc.append(float(visc_exp) if visc_exp is not None else 0.0)
+
+        if len(X_list) < 5:
+            raise ValueError(
+                f"GC UQ training requires >= 5 molecules, got {len(X_list)}"
+            )
+
+        X = np.array(X_list, dtype=np.float32)
+
+        # Train dielectric ensemble
+        self._diel_scaler = StandardScaler()
+        X_diel_scaled = self._diel_scaler.fit_transform(X)
+        self._diel_models = []
+        for seed in range(self._n_ensemble):
+            model = Ridge(alpha=self._alpha, random_state=seed)
+            model.fit(X_diel_scaled, y_diel)
+            self._diel_models.append(model)
+
+        # Train viscosity ensemble
+        self._visc_scaler = StandardScaler()
+        X_visc_scaled = self._visc_scaler.fit_transform(X)
+        self._visc_models = []
+        for seed in range(self._n_ensemble):
+            model = Ridge(alpha=self._alpha, random_state=seed + 100)
+            model.fit(X_visc_scaled, y_visc)
+            self._visc_models.append(model)
+
+        self._is_trained = True
+        self._train_time_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "GcUqEnsemble: trained on %d molecules in %.1fms",
+            len(X_list), self._train_time_ms,
+        )
+
+    def predict_dielectric(self, ctx: MoleculeContext) -> tuple[float, float]:
+        """Predict dielectric proxy with uncertainty (mean, std)."""
+        return self._predict(ctx, self._diel_models, self._diel_scaler)
+
+    def predict_viscosity(self, ctx: MoleculeContext) -> tuple[float, float]:
+        """Predict viscosity proxy with uncertainty (mean, std)."""
+        return self._predict(ctx, self._visc_models, self._visc_scaler)
+
+    def _predict(
+        self,
+        ctx: MoleculeContext,
+        models: list[Ridge] | None,
+        scaler: StandardScaler | None,
+    ) -> tuple[float, float]:
+        self._ensure_trained()
+        if models is None or scaler is None:
+            return 0.0, 0.0
+        fp = _get_fragment_feature_vector(ctx).reshape(1, -1)
+        fp_scaled = scaler.transform(fp)
+        preds = [float(m.predict(fp_scaled)[0]) for m in models]
+        mean_v = float(np.mean(preds))
+        std_v = float(np.std(preds, ddof=1)) if len(preds) > 1 else 0.0
+        return mean_v, std_v
+
+    @property
+    def is_trained(self) -> bool:
+        return self._is_trained

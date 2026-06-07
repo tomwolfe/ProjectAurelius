@@ -92,6 +92,75 @@ class TestTournamentSelection:
         assert len(selected_high) == 3
 
 
+class TestParetoFront:
+    """Tests for Pareto-front extraction."""
+
+    def test_empty_input_returns_empty(self):
+        from aurelius.agent.selection import extract_pareto_front
+        assert extract_pareto_front([]) == []
+
+    def test_single_solution_is_pareto(self):
+        from aurelius.agent.selection import extract_pareto_front
+        mock = [{"lumo_eV": 1.0, "dielectric_proxy": 5.0, "viscosity_proxy": 2.0}]
+        front = extract_pareto_front(mock)
+        assert len(front) == 1
+
+    def test_dominated_solution_excluded(self):
+        from aurelius.agent.selection import extract_pareto_front
+        solutions = [
+            {"lumo_eV": 1.0, "dielectric_proxy": 5.0, "viscosity_proxy": 2.0},
+            {"lumo_eV": 0.5, "dielectric_proxy": 3.0, "viscosity_proxy": 4.0},
+        ]
+        front = extract_pareto_front(solutions)
+        assert len(front) == 1
+        assert front[0]["lumo_eV"] == 1.0
+
+    def test_non_dominated_both_kept(self):
+        from aurelius.agent.selection import extract_pareto_front
+        solutions = [
+            {"lumo_eV": 1.0, "dielectric_proxy": 3.0, "viscosity_proxy": 2.0},
+            {"lumo_eV": 0.5, "dielectric_proxy": 5.0, "viscosity_proxy": 2.0},
+        ]
+        front = extract_pareto_front(solutions)
+        assert len(front) == 2
+
+    def test_viscosity_minimization_respected(self):
+        from aurelius.agent.selection import extract_pareto_front
+        solutions = [
+            {"lumo_eV": 1.0, "dielectric_proxy": 5.0, "viscosity_proxy": 2.0},
+            {"lumo_eV": 1.0, "dielectric_proxy": 5.0, "viscosity_proxy": 5.0},
+        ]
+        front = extract_pareto_front(solutions)
+        assert len(front) == 1
+        assert front[0]["viscosity_proxy"] == 2.0
+
+    def test_three_way_tradeoff(self):
+        from aurelius.agent.selection import extract_pareto_front
+        solutions = [
+            {"lumo_eV": -1.0, "dielectric_proxy": 8.0, "viscosity_proxy": 1.5},
+            {"lumo_eV": 0.0, "dielectric_proxy": 5.0, "viscosity_proxy": 1.0},
+            {"lumo_eV": -2.0, "dielectric_proxy": 3.0, "viscosity_proxy": 0.5},
+        ]
+        front = extract_pareto_front(solutions)
+        assert len(front) >= 1
+
+    def test_handles_screening_result_objects(self):
+        from aurelius.agent.selection import extract_pareto_front
+        from dataclasses import dataclass
+
+        @dataclass
+        class MockResult:
+            lumo_eV: float
+            dielectric_proxy: float
+            viscosity_proxy: float
+
+        results = [
+            MockResult(lumo_eV=1.0, dielectric_proxy=5.0, viscosity_proxy=2.0),
+            MockResult(lumo_eV=0.5, dielectric_proxy=3.0, viscosity_proxy=4.0),
+        ]
+        front = extract_pareto_front(results)
+        assert len(front) == 1
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

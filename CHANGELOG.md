@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.1.0] - 2026-06-07
+
+### Added
+- **Phase 1 — Lightweight Quantum Surrogate:** `SurrogateQuantumOracle` (scikit-learn `RandomForestRegressor`) pre-filters EA candidates using ECFP4 fingerprints to predict HOMO/LUMO. Molecules with surrogate HOMO > -5.0 eV receive a 0.5x multiplicative penalty and skip the full xTB/TOM oracle, saving compute. Training is lazy (< 2s) and inference is < 1ms per molecule.
+- **Phase 2 — Retrosynthetic Pathway Validation:** Stricter BRICS building-block grounding penalty. Molecules scoring >= 65.0 (DISCOVERY_THRESHOLD) with `combined_grounding_score < 0.6` receive an additional 0.8x penalty, ensuring top discoveries are grounded in commercial precursors.
+- **Phase 3 — Explicit Pareto-Front Tracking:** `extract_pareto_front()` in `agent/selection.py` identifies non-dominated solutions (maximize LUMO, maximize dielectric, minimize viscosity) from the top 100 discoveries. The Pareto-optimal subset is saved as `pareto_optimal_discoveries` in `run_summary.json`.
+- **Phase 4 — Statistical Uncertainty Quantification for GC:** `GcUqEnsemble` trains 5 Ridge regressors on `external_property_benchmark.json` to predict dielectric/viscosity with uncertainty. When ensemble standard deviation exceeds 15% of the mean prediction, a 0.9x domain penalty is applied and a "High UQ Variance" warning is appended to `domain_reason`.
+
 ## [10.0.7] - 2026-06-06
 
 ### Fixed

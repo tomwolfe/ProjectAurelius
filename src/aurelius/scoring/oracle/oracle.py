@@ -17,6 +17,9 @@ from typing import Any
 
 from aurelius.scoring.oracle.gc import (
     _DATA_SOURCE,
+    _UQ_PENALTY,
+    _UQ_THRESHOLD_FRACTION,
+    GcUqEnsemble,
     compute_gc_domain_penalty,
     predict_ced_proxy,
     predict_dielectric_proxy,
@@ -28,6 +31,7 @@ from aurelius.scoring.oracle.quantum import (
     QuantumOracle,
     compute_quantum_domain_penalty,
 )
+from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
@@ -43,13 +47,84 @@ class PropertyOracle:
       - Li+ Solvation proxy: GC fragment-additivity
     """
 
-    def __init__(self, use_xtb: bool = True) -> None:
+    def __init__(
+        self,
+        use_xtb: bool = True,
+        use_surrogate: bool = True,
+        use_gc_uq: bool = True,
+    ) -> None:
         self._quantum = QuantumOracle(use_xtb=use_xtb)
+        self._use_surrogate = use_surrogate
+        self._surrogate: SurrogateQuantumOracle | None = (
+            SurrogateQuantumOracle() if use_surrogate else None
+        )
+        self._use_gc_uq = use_gc_uq
+        self._gc_uq: GcUqEnsemble | None = GcUqEnsemble() if use_gc_uq else None
         self._cache: dict[str, dict[str, Any]] = {}
+        self._n_surrogate_skips = 0
 
     @property
     def quantum_method(self) -> str:
         return self._quantum.method
+
+    def _run_surrogate(self, ctx: MoleculeContext) -> tuple[float, float, float, bool]:
+        """Run surrogate pre-filter. Returns (surrogate_penalty, s_homo, s_lumo, skip_quantum)."""
+        if self._surrogate is None:
+            return 1.0, -99.0, 99.0, False
+        try:
+            s_homo, s_lumo = self._surrogate.predict(ctx)
+            penalty = self._surrogate.compute_penalty(s_homo)
+            if penalty < 1.0:
+                self._n_surrogate_skips += 1
+                logger.info(
+                    "Surrogate: HOMO=%.3f eV > %.1f threshold — skipping quantum oracle",
+                    s_homo, -5.0,
+                )
+                return penalty, s_homo, s_lumo, True
+            return penalty, s_homo, s_lumo, False
+        except Exception:
+            logger.debug("Surrogate pre-filter unavailable")
+            return 1.0, -99.0, 99.0, False
+
+    def _compute_quantum(self, ctx: MoleculeContext, skip_quantum: bool, s_homo: float, s_lumo: float) -> tuple[float, float, float, str, Any]:
+        """Compute or skip quantum evaluation."""
+        if skip_quantum:
+            gap = s_lumo - s_homo
+            return s_homo, s_lumo, gap, "surrogate", "surrogate"
+        qr = self._quantum.evaluate(ctx.mol)
+        gap = qr["lumo_eV"] - qr["homo_eV"]
+        return qr["homo_eV"], qr["lumo_eV"], gap, self._quantum.method, qr.get("quantum_confidence", "unknown")
+
+    def _compute_uq_penalty(self, ctx: MoleculeContext) -> float:
+        """Compute GC uncertainty penalty."""
+        if self._gc_uq is None:
+            return 1.0
+        try:
+            _diel_mean, diel_std = self._gc_uq.predict_dielectric(ctx)
+            _visc_mean, visc_std = self._gc_uq.predict_viscosity(ctx)
+            if diel_std > max(1.0, abs(_diel_mean)) * _UQ_THRESHOLD_FRACTION:
+                return _UQ_PENALTY
+            if visc_std > max(1.0, abs(_visc_mean)) * _UQ_THRESHOLD_FRACTION:
+                return _UQ_PENALTY
+        except Exception:
+            logger.debug("GC UQ unavailable")
+        return 1.0
+
+    def _build_domain(self, ctx: MoleculeContext, skip_quantum: bool, surrogate_penalty: float, s_homo: float, uq_penalty: float) -> tuple[float, str, bool]:
+        """Build domain penalty and reason string."""
+        q_penalty, q_reason = (1.0, "skipped — surrogate") if skip_quantum else compute_quantum_domain_penalty(ctx)
+        gc_penalty, gc_reason = compute_gc_domain_penalty(ctx)
+        domain_penalty = min(q_penalty, gc_penalty, surrogate_penalty, uq_penalty)
+        reasons: list[str] = []
+        if q_penalty < 1.0 and not skip_quantum:
+            reasons.append(f"quantum: {q_reason}")
+        if gc_penalty < 1.0:
+            reasons.append(f"GC: {gc_reason}")
+        if surrogate_penalty < 1.0:
+            reasons.append(f"surrogate: HOMO={s_homo:.2f} eV > threshold")
+        if uq_penalty < 1.0:
+            reasons.append("High UQ Variance")
+        return domain_penalty, "; ".join(reasons) if reasons else _DATA_SOURCE, domain_penalty >= 0.85
 
     def evaluate(self, ctx: MoleculeContext) -> dict[str, Any]:
         if not isinstance(ctx, MoleculeContext):
@@ -57,15 +132,13 @@ class PropertyOracle:
                 f"PropertyOracle.evaluate() requires a MoleculeContext, got {type(ctx).__name__}. "
                 "Use MoleculeContext.from_smiles() to parse SMILES first."
             )
-
         smiles = ctx.smiles
         if smiles in self._cache:
             return self._cache[smiles]
 
-        quantum_result = self._quantum.evaluate(ctx.mol)
-        homo = quantum_result["homo_eV"]
-        lumo = quantum_result["lumo_eV"]
-        gap = lumo - homo
+        surrogate_penalty, s_homo, s_lumo, skip_quantum = self._run_surrogate(ctx)
+        homo, lumo, gap, quantum_method, quantum_confidence_val = self._compute_quantum(ctx, skip_quantum, s_homo, s_lumo)
+        uq_penalty = self._compute_uq_penalty(ctx)
 
         dielectric = predict_dielectric_proxy(ctx)
         viscosity = predict_viscosity_proxy(ctx)
@@ -73,17 +146,9 @@ class PropertyOracle:
         ced = predict_ced_proxy(ctx)
         conductivity = predict_ionic_conductivity_proxy(dielectric, viscosity, li_solvation)
 
-        # Domain of applicability penalties
-        q_penalty, q_reason = compute_quantum_domain_penalty(ctx)
-        gc_penalty, gc_reason = compute_gc_domain_penalty(ctx)
-        domain_penalty = min(q_penalty, gc_penalty)
-        domain_reasons: list[str] = []
-        if q_penalty < 1.0:
-            domain_reasons.append(f"quantum: {q_reason}")
-        if gc_penalty < 1.0:
-            domain_reasons.append(f"GC: {gc_reason}")
-        domain_applicable = domain_penalty >= 0.85
-        domain_reason_str = "; ".join(domain_reasons) if domain_reasons else _DATA_SOURCE
+        domain_penalty, domain_reason_str, domain_applicable = self._build_domain(
+            ctx, skip_quantum, surrogate_penalty, s_homo, uq_penalty,
+        )
 
         result: dict[str, Any] = {
             "homo_eV": round(homo, 4),
@@ -97,10 +162,11 @@ class PropertyOracle:
             "domain_applicable": domain_applicable,
             "domain_reason": domain_reason_str,
             "domain_penalty": round(domain_penalty, 4),
-            "quantum_method": self._quantum.method,
-            "quantum_confidence": quantum_result.get("quantum_confidence", "unknown"),
+            "quantum_method": quantum_method,
+            "quantum_confidence": quantum_confidence_val,
         }
-
+        if self._surrogate is not None:
+            result["surrogate_skipped"] = skip_quantum
         self._cache[smiles] = result
         return result
 

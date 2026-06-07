@@ -93,6 +93,71 @@ def tournament_select(
     return selected
 
 
+def _extract_objectives(r: Any) -> tuple[float, float, float] | None:
+    """Extract (lumo, dielectric, -viscosity) tuple from a result object or dict."""
+    try:
+        if hasattr(r, 'lumo_eV') and hasattr(r, 'dielectric_proxy') and hasattr(r, 'viscosity_proxy'):
+            return (float(r.lumo_eV), float(r.dielectric_proxy), -float(r.viscosity_proxy))
+    except (AttributeError, TypeError):
+        pass
+    try:
+        lumo = r.get('lumo_eV', -99.0)
+        diel = r.get('dielectric_proxy', 0.0)
+        visc = r.get('viscosity_proxy', 99.0)
+        if lumo is not None and diel is not None and visc is not None:
+            return (float(lumo), float(diel), -float(visc))
+    except (AttributeError, TypeError):
+        pass
+    return None
+
+
+def _dominates(a: tuple[float, float, float], b: tuple[float, float, float]) -> bool:
+    """Returns True if a dominates b (a >= b in all objectives, > in at least one)."""
+    return all(ai >= bi for ai, bi in zip(a, b, strict=False)) and any(
+        ai > bi for ai, bi in zip(a, b, strict=False)
+    )
+
+
+def _non_dominated_indices(objectives: list[tuple[float, float, float]]) -> set[int]:
+    """Return indices of non-dominated solutions."""
+    pareto: set[int] = set()
+    for i in range(len(objectives)):
+        dominated = False
+        for j in range(len(objectives)):
+            if i != j and _dominates(objectives[j], objectives[i]):
+                dominated = True
+                break
+        if not dominated:
+            pareto.add(i)
+    return pareto
+
+
+def extract_pareto_front(results: list[Any]) -> list[Any]:
+    """Identify Pareto-optimal solutions from screening results.
+
+    Objectives (all to be maximized — viscosity is negated):
+      1. Maximise lumo_eV (SEI formation)
+      2. Maximise dielectric_proxy (salt dissociation)
+      3. Maximise -viscosity_proxy (low viscosity = high ion mobility)
+
+    Uses a simple non-dominated sorting algorithm (pure Python, O(n²)).
+    Returns the subset of results that are Pareto-optimal (non-dominated).
+    """
+    if not results:
+        return []
+
+    obj_list: list[tuple[float, float, float]] = []
+    valid_indices: list[int] = []
+    for i, r in enumerate(results):
+        obj = _extract_objectives(r)
+        if obj is not None:
+            obj_list.append(obj)
+            valid_indices.append(i)
+
+    pareto_indices = _non_dominated_indices(obj_list)
+    return [results[valid_indices[i]] for i in sorted(pareto_indices)]
+
+
 def compute_pairwise_diversity(contexts: list[MoleculeContext]) -> float:
     """Compute mean Tanimoto dissimilarity (1 - similarity) across contexts."""
     if len(contexts) < 2:

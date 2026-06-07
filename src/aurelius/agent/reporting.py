@@ -18,6 +18,7 @@ from typing import Any
 
 import numpy as np
 
+from aurelius.agent.selection import extract_pareto_front
 from aurelius.agent.state import LoopState, check_score_plateau, check_structural_saturation
 from aurelius.types import ScreeningResult
 
@@ -111,6 +112,20 @@ def generate_run_summary(
             for d in sorted(discoveries, key=lambda r: -r.total_score)[:50]
         ],
         "all_results_count": len(all_results),
+        "pareto_optimal_discoveries": [
+            {
+                "smiles": d.smiles,
+                "total_score": d.total_score,
+                "homo_eV": d.homo_eV,
+                "lumo_eV": d.lumo_eV,
+                "dielectric_proxy": d.dielectric_proxy,
+                "viscosity_proxy": d.viscosity_proxy,
+            }
+            for d in sorted(
+                extract_pareto_front(sorted(discoveries, key=lambda r: -r.total_score)[:100]),
+                key=lambda r: -r.total_score,
+            )
+        ],
     }
 
     if top_mixtures:

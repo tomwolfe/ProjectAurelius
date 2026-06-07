@@ -29,6 +29,7 @@ from aurelius.constants import (
     CED_SIGMOID_STEEPNESS,
     CED_TARGET,
     DIELECTRIC_TARGET,
+    DISCOVERY_THRESHOLD,
     HOMO_THRESHOLD,
     LI_SOLVATION_TARGET,
     LUMO_TARGET,
@@ -569,6 +570,13 @@ class AureliusPipeline:
             al_corrosion_penalty = AureliusPipeline._check_al_corrosion_risk(ctx.mol)
         total_score *= al_corrosion_penalty
         total_score *= AureliusPipeline._check_building_block_grounding(ctx.mol)
+
+        if total_score >= DISCOVERY_THRESHOLD:
+            from aurelius.agent.mutation.brics import combined_grounding_score
+            grounding = combined_grounding_score(ctx.mol)
+            if grounding < 0.6:
+                total_score *= 0.8
+
         return total_score
 
     @staticmethod
