@@ -430,6 +430,129 @@ def _wiener_index(mol: Chem.Mol) -> float:
     return float(total)
 
 
+def _apply_wiener_compactness(mol: Chem.Mol, L: int) -> int:
+    """Adjust conjugation length L based on Wiener-index molecular compactness.
+
+    Physical basis: Compact molecules (low Wiener index per atom) have stronger
+    through-space orbital overlap, effectively shortening the conjugation path.
+    L is reduced by up to 30% based on compactness = 1 - W/W_linear.
+    """
+    n_atoms = mol.GetNumAtoms()
+    w = _wiener_index(mol)
+    if n_atoms <= 1:
+        return L
+    w_linear = n_atoms * (n_atoms * n_atoms - 1) / 6.0
+    if w_linear <= 0:
+        return L
+    compactness = max(0.0, 1.0 - w / w_linear)
+    L = int(L * (1.0 - 0.30 * compactness))
+    return max(L, 2)
+
+
+def _apply_peierls_damping(L: int) -> int:
+    """Apply Peierls distortion damping to prevent 1/L² gap collapse for L > 8.
+
+    Physical basis: Long polyenes undergo bond-length alternation that opens a
+    finite gap (ΔE ≈ 1.5-2.0 eV) even for infinite chains. The closed-form
+    saturation L_eff = 8 + (L-8)/(1+0.10·(L-8)) preserves moderate-L behavior.
+    """
+    if L <= 8:
+        return L
+    alpha = 0.10
+    L = int(8 + (L - 8) / (1.0 + alpha * (L - 8)))
+    return max(L, 2)
+
+
+def _compute_tom_base_energies(L: int) -> tuple[float, float]:
+    """Compute base HOMO/LUMO from conjugation length using particle-in-a-box.
+
+    The gap scales as ΔE = 37.6 / L² (eV). For L < 3, uses fixed base values.
+    Base offsets calibrated against orbital_calibration.json (45 references).
+    """
+    base_homo = -6.8
+    base_lumo = 1.5
+    if L >= 3:
+        gap = 37.6 / (L * L)
+        mid = (base_homo + base_lumo) / 2.0
+        return mid - gap / 2.0, mid + gap / 2.0
+    return base_homo, base_lumo
+
+
+def _apply_heteroatom_perturbations(n_ew: int, n_ed: int, homo: float, lumo: float) -> tuple[float, float]:
+    """Apply Hueckel-like heteroatom corrections to HOMO/LUMO.
+
+    Electron-withdrawing groups stabilise both orbitals; electron-donating
+    groups destabilise. EW coefficient -0.32, LUMO EW scaling 0.35 (HOMO-biased).
+    """
+    ew_shift = -0.32 * n_ew
+    ed_shift = 0.12 * n_ed
+    return homo + ew_shift + ed_shift, lumo + ew_shift * 0.35 + ed_shift * 0.5
+
+
+def _apply_fluorine_correction(mol: Chem.Mol, homo: float, lumo: float) -> tuple[float, float]:
+    """Apply fluorine inductive withdrawal correction (-0.15 eV per F)."""
+    n_f = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
+    f_shift = -0.15 * n_f
+    return homo + f_shift, lumo + f_shift
+
+
+def _apply_aromatic_stabilization(mol: Chem.Mol, homo: float, lumo: float) -> tuple[float, float]:
+    """Apply aromatic ring stabilization (-0.25 HOMO, -0.15 LUMO per ring).
+
+    Physical basis: Cyclic delocalisation (resonance energy ~1.5 eV for benzene)
+    stabilises both frontier orbitals beyond 1-D PIB confinement.
+    """
+    n_arom = _count_aromatic_rings(mol)
+    return homo + -0.25 * n_arom, lumo + -0.15 * n_arom
+
+
+def _apply_nitrile_correction(mol: Chem.Mol, lumo: float) -> float:
+    """Apply nitrile C≡N π* LUMO lowering (-0.70 eV per nitrile).
+
+    Physical basis: The C≡N π* orbital is ~0.7-1.0 eV lower than the general
+    N perturbation predicts.
+    """
+    n_nitrile = len(mol.GetSubstructMatches(NITRILE_PATTERN))
+    return lumo + -0.70 * n_nitrile
+
+
+def _apply_phosphate_correction(mol: Chem.Mol, homo: float) -> float:
+    """Apply phosphate HOMO correction (+0.50 per P=O) for σ-only P-O-C bonds.
+
+    Physical basis: σ-only P-O-C oxygen EW contributions are over-counted;
+    +0.50 corrects ~2/3 of the over-counting (~0.96 eV for trialkyl phosphates).
+    """
+    n_phosphate = len(mol.GetSubstructMatches(_PHOSPHATE_PATTERN))
+    return homo + 0.50 * n_phosphate
+
+
+def _apply_sigma_star_correction(mol: Chem.Mol, L: int, lumo: float) -> float:
+    """Apply σ* LUMO correction for non-conjugated S/P=O groups (d-orbital participation).
+
+    Physical basis: S=O and P=O bonds have low-lying σ* orbitals from d-orbital
+    participation that lower LUMO by 0.3-0.7 eV. Applied only for L<3 where the
+    LUMO is σ* (not π*) character.
+    """
+    if L >= 3:
+        return lumo
+    for _spattern, _sname, _sshift in _SIGMA_STAR_LUMO:
+        if len(mol.GetSubstructMatches(_spattern)) > 0:
+            lumo += _sshift
+    return lumo
+
+
+def _apply_cross_conjugation_penalty(mol: Chem.Mol, lumo: float) -> float:
+    """Apply cross-conjugation penalty (+0.30 eV to LUMO).
+
+    Physical basis: Cross-conjugated systems disrupt pi-delocalisation; the
+    1D particle-in-a-box overestimates the gap. Widening by +0.30 eV corrects
+    for this overestimation (e.g., divinyl ketone, benzophenone).
+    """
+    if _is_cross_conjugated(mol):
+        return lumo + 0.30
+    return lumo
+
+
 def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     """Predict HOMO/LUMO using the Topological Orbital Model (TOM).
 
@@ -437,16 +560,12 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
         1. Longest conjugation path length (L)
         2. HOMO-LUMO gap from particle-in-a-box: ΔE ∝ 1/L²
         3. Heteroatom perturbations (electron-withdrawing/donating)
-        4. Aromatic ring stabilization (−0.25 eV HOMO, −0.15 eV LUMO per ring):
-           cyclic delocalisation (resonance energy ~1.5 eV for benzene) beyond
-           what 1-D confinement predicts.
-        5. Wiener-index compactness adjustment (factor 0.30): compact molecules
-           have stronger through-space orbital overlap; L is shortened by
-           (1 − 0.30 × compactness) where compactness = 1 − W/W_linear.
+        4. Aromatic ring stabilization (−0.25 eV HOMO, −0.15 eV LUMO per ring)
+        5. Wiener-index compactness adjustment (factor 0.30)
         6. σ* LUMO correction for S/P=O groups in non-conjugated molecules
-           (d-orbital participation, −0.3 to −0.7 eV).
-        7. Phosphate HOMO correction (+0.50 per P=O) for σ-only P-O-C bonds.
+        7. Phosphate HOMO correction (+0.50 per P=O) for σ-only P-O-C bonds
         8. Base offset calibrated to 45 electrolyte molecules from DFT references.
+        9. Cross-conjugation penalty for branched pi-systems.
 
     Returns:
         (homo_eV, lumo_eV)
@@ -454,111 +573,18 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     L = _longest_conjugation_path(mol)
     L = max(L, 2)
     L = _topological_sanity_l(mol, L)
+    L = _apply_wiener_compactness(mol, L)
+    L = _apply_peierls_damping(L)
 
-    # Wiener compactness adjustment (factor 0.30): The Wiener index measures
-    # molecular compactness (sum of all-pairs shortest paths). Compact molecules
-    # have stronger through-space orbital overlap; L is shortened to deepen HOMO
-    # for compact molecules (carbonates, rings) relative to extended ones.
-    n_atoms = mol.GetNumAtoms()
-    w = _wiener_index(mol)
-    if n_atoms > 1:
-        w_linear = n_atoms * (n_atoms * n_atoms - 1) / 6.0
-        if w_linear > 0:
-            compactness = max(0.0, 1.0 - w / w_linear)
-            L = int(L * (1.0 - 0.30 * compactness))
-            L = max(L, 2)
-
-    # Peierls distortion damping: Long polyenes undergo bond-length alternation
-    # that opens a finite gap (ΔE ≈ 1.5-2.0 eV) even for infinite chains.
-    # Closed-form saturation L_eff = 8 + (L-8)/(1+0.10·(L-8)) for L > 8 prevents
-    # the 1/L² gap collapse at long conjugation while preserving moderate-L behavior.
-    if L > 8:
-        alpha = 0.10
-        L = int(8 + (L - 8) / (1.0 + alpha * (L - 8)))
-        L = max(L, 2)
-
-    n_ew, n_ed, n_pi = _count_heteroatom_perturbations(mol)
-
-    # Base energies calibrated against 45 known electrolyte HOMO/LUMO values
-    # in orbital_calibration.json (nitriles, dinitriles, ethers, esters,
-    # phosphates, borates, sultones, fluorinated variants, aromatics).
-    # EW coefficient −0.32, LUMO EW scaling 0.35 (HOMO-biased: Hueckel theory
-    # predicts larger substituent effects on HOMO than LUMO).
-    # σ* LUMO correction for S/P=O groups (L<3): d-orbital participation in S=O
-    # and P=O bonds creates low-lying σ* orbitals the π*-based PiB model cannot capture.
-    # Phosphate HOMO correction (+0.50 per P=O): σ-only P-O-C bonds over-count EW
-    # oxygen contributions.
-    base_homo = -6.8
-    base_lumo = 1.5
-
-    if L >= 3:
-        gap = 37.6 / (L * L)
-        mid = (base_homo + base_lumo) / 2.0
-        homo = mid - gap / 2.0
-        lumo = mid + gap / 2.0
-    else:
-        homo = base_homo
-        lumo = base_lumo
-
-    # Heteroatom perturbations (Hueckel-like correction)
-    # Calibrated against orbital_calibration.json (44 molecules) to achieve MAE < 1.0 eV
-    # ADR-2026-06-02: Refined constants. EW coefficient strengthened from -0.25 to -0.32
-    # to better capture inductive effects from expanded calibration (nitriles, fluorinated,
-    # sulfones). LUMO EW scaling reduced from 0.7 to 0.3 — physically justified because
-    # HOMO is more sensitive to substitution than LUMO in Hueckel theory.
-    # LUMO EW scaling 0.35: stronger perturbation for molecules with sulfones,
-    # nitriles, and carbonates improves LUMO Spearman ρ on the external benchmark.
-    ew_shift = -0.32 * n_ew
-    ed_shift = 0.12 * n_ed
-    homo += ew_shift + ed_shift
-    lumo += ew_shift * 0.35 + ed_shift * 0.5
-
-    # Fluorine correction (strong inductive withdrawal, stabilises both)
-    n_f = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
-    f_shift = -0.15 * n_f
-    homo += f_shift
-    lumo += f_shift
-
-    # Aromatic ring stabilization (cyclic delocalisation beyond 1-D PIB)
-    # Each aromatic ring adds extra stabilization from cyclic pi-delocalisation.
-    # Aromatic ring stabilization −0.25 HOMO, −0.15 LUMO per ring: cyclic
-    # delocalisation (resonance energy ~1.5 eV for benzene) stabilises both
-    # frontier orbitals beyond 1-D PIB confinement.
-    n_arom = _count_aromatic_rings(mol)
-    arom_stab_homo = -0.25 * n_arom
-    arom_stab_lumo = -0.15 * n_arom
-    homo += arom_stab_homo
-    lumo += arom_stab_lumo
-
-    # Nitrile triple bond LUMO correction (low-lying π* orbital of C≡N)
-    # The C≡N π* is ~0.7-1.0 eV lower than the general N perturbation predicts
-    n_nitrile = len(mol.GetSubstructMatches(NITRILE_PATTERN))
-    lumo += -0.70 * n_nitrile
-
-    # Phosphate HOMO correction (compensates for over-counted σ-only P-O-C oxygen EW)
-    # Physical justification: The TOM counts all P-O-C oxygens as EW (-0.32 each),
-    # but in σ-only environments their inductive effect is attenuated through two
-    # sigma bonds (P-O-C). The +0.50 per P(=O) group corrects ~2/3 of the
-    # over-counting, which was ~0.96 eV for trialkyl phosphates.
-    n_phosphate = len(mol.GetSubstructMatches(_PHOSPHATE_PATTERN))
-    homo += 0.50 * n_phosphate
-
-    # σ* LUMO correction for non-conjugated S/P=O groups (d-orbital participation)
-    # Physical justification: S=O and P=O bonds have low-lying σ* orbitals from
-    # d-orbital participation that lower LUMO by 0.3-0.7 eV. The PiB model (designed
-    # for π* LUMOs) does not capture this effect. Applied only for L<3 where the
-    # LUMO is σ* (not π*) character.
-    if L < 3:
-        for _spattern, _sname, _sshift in _SIGMA_STAR_LUMO:
-            if len(mol.GetSubstructMatches(_spattern)) > 0:
-                lumo += _sshift
-
-    # Cross-conjugation penalty: Cross-conjugated systems (conjugated atom with >2
-    # conjugated neighbors) disrupt pi-delocalisation, which the 1D particle-in-a-box
-    # model overestimates. Increasing LUMO by +0.3 eV widens the gap to correct for
-    # this overestimation (e.g., divinyl ketone, benzophenone).
-    if _is_cross_conjugated(mol):
-        lumo += 0.30
+    n_ew, n_ed, _ = _count_heteroatom_perturbations(mol)
+    homo, lumo = _compute_tom_base_energies(L)
+    homo, lumo = _apply_heteroatom_perturbations(n_ew, n_ed, homo, lumo)
+    homo, lumo = _apply_fluorine_correction(mol, homo, lumo)
+    homo, lumo = _apply_aromatic_stabilization(mol, homo, lumo)
+    lumo = _apply_nitrile_correction(mol, lumo)
+    homo = _apply_phosphate_correction(mol, homo)
+    lumo = _apply_sigma_star_correction(mol, L, lumo)
+    lumo = _apply_cross_conjugation_penalty(mol, lumo)
 
     return homo, lumo
 

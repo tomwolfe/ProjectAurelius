@@ -459,6 +459,40 @@ class DiscoveryLoop:
 
         return result_contexts, all_scores
 
+    def _process_single_candidate(
+        self, ctx: MoleculeContext, result_map: dict[str, Any]
+    ) -> tuple[float, dict[str, Any]] | None:
+        """Evaluate a single candidate, record results, and return score data.
+
+        Returns (total_score, tier2_dict) on success, None to skip.
+        """
+        result = self._screen_molecule(ctx)
+        if result is None:
+            return None
+
+        score_data = result.get("score")
+        if score_data is None:
+            return None
+
+        smi = ctx.smiles
+        self.engine.add_to_db(smi)
+
+        total_score = score_data.get("total_score", 0.0)
+        self.engine.record_reaction_success(smi, total_score)
+
+        t2 = result.get("tier2", {}) or {}
+        result_map[smi] = t2
+        novelty = self._compute_novelty(ctx)
+        sub_scores = score_data.get("sub_scores", {})
+
+        sr = self._build_screening_result(smi, total_score, score_data, t2, novelty, ctx, sub_scores)
+        if self._is_discovery(total_score, score_data):
+            self.state.add_discovery(sr)
+            log.info("  ** DISCOVERY ** %s (score=%.1f)", smi, total_score)
+
+        self.state.add_result(sr)
+        return total_score, t2
+
     def _evaluate_and_select(
         self,
         valid_contexts: list[MoleculeContext],
@@ -469,33 +503,12 @@ class DiscoveryLoop:
         result_map: dict[str, Any] = {}
 
         for ctx in valid_contexts:
-            result = self._screen_molecule(ctx)
-            if result is None:
+            processed = self._process_single_candidate(ctx, result_map)
+            if processed is None:
                 continue
-
-            score_data = result.get("score")
-            if score_data is None:
-                continue
-
-            smi = ctx.smiles
-            self.engine.add_to_db(smi)
-
-            total_score = score_data.get("total_score", 0.0)
-            self.engine.record_reaction_success(smi, total_score)
+            total_score = processed[0]
             all_scores.append(total_score)
             result_contexts.append(ctx)
-
-            t2 = result.get("tier2", {}) or {}
-            result_map[smi] = t2
-            novelty = self._compute_novelty(ctx)
-            sub_scores = score_data.get("sub_scores", {})
-
-            sr = self._build_screening_result(smi, total_score, score_data, t2, novelty, ctx, sub_scores)
-            if self._is_discovery(total_score, score_data):
-                self.state.add_discovery(sr)
-                log.info("  ** DISCOVERY ** %s (score=%.1f)", smi, total_score)
-
-            self.state.add_result(sr)
 
         mix_contexts, mix_scores = self._evaluate_mixture_pairs(valid_contexts, result_map)
         result_contexts.extend(mix_contexts)

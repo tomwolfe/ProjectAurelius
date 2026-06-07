@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.1.1] - 2026-06-07
+
+### Changed
+- Refactored `predict_tom_orbitals` in `quantum.py`: extracted sequential correction blocks into discrete single-responsibility helper functions (`_apply_wiener_compactness`, `_apply_peierls_damping`, `_compute_tom_base_energies`, `_apply_heteroatom_perturbations`, `_apply_fluorine_correction`, `_apply_aromatic_stabilization`, `_apply_nitrile_correction`, `_apply_phosphate_correction`, `_apply_sigma_star_correction`, `_apply_cross_conjugation_penalty`) to reduce cyclomatic complexity.
+- Refactored `DiscoveryLoop._evaluate_and_select` in `loop.py`: extracted single-candidate evaluation and recording into `_process_single_candidate` helper to enforce Single Responsibility Principle.
+- Dependency audit completed: confirmed all third-party imports map to the 10 listed dependencies; no accidental unlisted imports.
+
 ## [10.1.0] - 2026-06-07
 
 ### Added
