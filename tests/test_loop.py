@@ -53,11 +53,11 @@ class TestDiscoveryLoop:
 
         assert len(state._all_scores) == 0  # scores are tracked via record_batch now
 
-    def test_seed_pool_evolves_with_high_scores(self):
+    def test_seed_pool_evolves_with_high_scores(self, tmp_path):
         """High-scoring molecules should feed back into the seed pool."""
         mock_pipeline = _make_mock_pipeline()
         mock_engine = _make_mock_engine()
-        state = _make_loop_state("/tmp/test_checkpoint_seed.json")
+        state = _make_loop_state(str(tmp_path / "checkpoint_seed.json"))
 
         loop = DiscoveryLoop(
             pipeline=mock_pipeline,
