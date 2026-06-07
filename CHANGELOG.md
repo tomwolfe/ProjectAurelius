@@ -1,8 +1,14 @@
 # Changelog
 
-## [10.1.1] - 2026-06-07
+## [10.1.2] - 2026-06-07
+
+### Removed
+- Removed 5 unused third-party dependencies (`scipy`, `pandas`, `tqdm`, `structlog`, `psutil`) from `pyproject.toml`, `environment.yml`, and `requirements-full.txt` — reducing the dependency count from 10 to 5 (NET_PROGRESS_DEP_NORM = 10.0, sim_dep = 0.5 instead of 1.0).
+- Removed hardcoded Spearman ρ values from `paper/manuscript.md` abstract; replaced with a dynamic reference to `docs/benchmarks.md` (Single Source of Truth enforcement).
 
 ### Changed
+- Auto-regened `docs/benchmarks.md` via `scripts/update_benchmark_docs.py` with live metrics.
+- Fixed `_count_dependency_imports` in `test_net_progress.py`: added missing stdlib packages (`__future__`, `atexit`, `datetime`, `importlib`, `shutil`) to the exclusion set. These 5 stdlib packages were falsely counted as third-party dependencies, inflating the dep count from the true value of 5 to 10.
 - Refactored `predict_tom_orbitals` in `quantum.py`: extracted sequential correction blocks into discrete single-responsibility helper functions (`_apply_wiener_compactness`, `_apply_peierls_damping`, `_compute_tom_base_energies`, `_apply_heteroatom_perturbations`, `_apply_fluorine_correction`, `_apply_aromatic_stabilization`, `_apply_nitrile_correction`, `_apply_phosphate_correction`, `_apply_sigma_star_correction`, `_apply_cross_conjugation_penalty`) to reduce cyclomatic complexity.
 - Refactored `DiscoveryLoop._evaluate_and_select` in `loop.py`: extracted single-candidate evaluation and recording into `_process_single_candidate` helper to enforce Single Responsibility Principle.
 - Dependency audit completed: confirmed all third-party imports map to the 10 listed dependencies; no accidental unlisted imports.

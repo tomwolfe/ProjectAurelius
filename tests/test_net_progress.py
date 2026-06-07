@@ -98,7 +98,8 @@ def _count_dependency_imports() -> int:
               "collections", "functools", "itertools", "pathlib", "copy", "inspect",
               "logging", "contextlib", "subprocess", "tempfile", "threading",
               "concurrent", "dataclasses", "warnings", "pickle", "enum", "hashlib",
-              "textwrap", "bisect", "random"}
+              "textwrap", "bisect", "random", "__future__", "atexit", "datetime",
+              "importlib", "shutil"}
     deps: set[str] = set()
     for root, _dirs, files in os.walk(SRC_DIR):
         for fn in files:
