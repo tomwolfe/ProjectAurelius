@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from aurelius.scoring.oracle.gc import (
     _CROSS_TERMS,
+    _GC_BASE_CED,
     _GC_BASE_DIELECTRIC,
     _GC_BASE_LI_SOLVATION,
     _GC_BASE_VISCOSITY,
@@ -23,6 +24,7 @@ from aurelius.scoring.oracle.gc import (
     compute_gc_domain_penalty,
     get_data_source,
     mixture_synergy_bonus,
+    predict_ced_proxy,
     predict_dielectric_proxy,
     predict_ionic_conductivity_proxy,
     predict_li_solvation_proxy,
@@ -51,6 +53,7 @@ from aurelius.scoring.oracle.quantum import (
     compute_quantum_domain_penalty,
     has_xtb,
     predict_tom_orbitals,
+    run_xtb_batch,
 )
 
 __all__ = [
@@ -60,6 +63,7 @@ __all__ = [
     "compute_quantum_domain_penalty",
     "get_data_source",
     "has_xtb",
+    "predict_ced_proxy",
     "predict_dielectric_proxy",
     "predict_viscosity_proxy",
     "predict_li_solvation_proxy",
@@ -75,6 +79,7 @@ __all__ = [
     "_count_stereocenters",
     "_compute_dielectric_cross_terms",
     "_CROSS_TERMS",
+    "_GC_BASE_CED",
     "_GC_BASE_DIELECTRIC",
     "_GC_BASE_LI_SOLVATION",
     "_GC_BASE_VISCOSITY",
@@ -94,4 +99,5 @@ __all__ = [
     "_count_heteroatom_perturbations",
     "_count_aromatic_rings",
     "_wiener_index",
+    "run_xtb_batch",
 ]

@@ -26,11 +26,14 @@ from aurelius.constants import (
     AL_CORROSION_LUMO_THRESHOLD,
     AL_CORROSION_MIN_FLUORINE,
     AL_CORROSION_PENALTY_FACTOR,
+    CED_SIGMOID_STEEPNESS,
+    CED_TARGET,
     DIELECTRIC_TARGET,
     HOMO_THRESHOLD,
     LI_SOLVATION_TARGET,
     LUMO_TARGET,
     SA_THRESHOLD,
+    SCORE_WEIGHT_CED,
     SCORE_WEIGHT_DIELECTRIC,
     SCORE_WEIGHT_HOMO,
     SCORE_WEIGHT_LI_SOLVATION,
@@ -116,6 +119,9 @@ _OBJECTIVES: list[Objective] = [
     Objective("li_solvation_reward", "li_solvation_proxy", SCORE_WEIGHT_LI_SOLVATION,
               lambda v: _gaussian(v, LI_SOLVATION_TARGET, 1.0),
               failure_reason_template="li_solvation_proxy={value:.3f} (poor Li+ binding)"),
+    Objective("ced_reward", "ced_proxy", SCORE_WEIGHT_CED,
+              lambda v: _sigmoid(v, CED_TARGET, CED_SIGMOID_STEEPNESS),
+              failure_reason_template="CED proxy={value:.3f} (poor SEI mechanical robustness)"),
     Objective("sa_penalty", "sa_score", SCORE_WEIGHT_SA,
               lambda v: _sigmoid(v, SA_THRESHOLD, 2.0, False),
               failure_reason_template="SA score={value:.2f} (hard to synthesize)"),
@@ -237,6 +243,7 @@ class AureliusPipeline:
             dielectric_proxy = oracle_result.get("dielectric_proxy", 0.0)
             viscosity_proxy = oracle_result.get("viscosity_proxy", 99.0)
             li_solvation_proxy = oracle_result.get("li_solvation_proxy", 0.0)
+            ced_proxy = oracle_result.get("ced_proxy", 0.0)
 
             domain_penalty = oracle_result.get("domain_penalty", 1.0)
 
@@ -247,6 +254,7 @@ class AureliusPipeline:
                 "dielectric_proxy": dielectric_proxy,
                 "viscosity_proxy": viscosity_proxy,
                 "li_solvation_proxy": li_solvation_proxy,
+                "ced_proxy": ced_proxy,
                 "domain_applicable": oracle_result.get("domain_applicable", True),
                 "domain_reason": oracle_result.get("domain_reason", ""),
                 "domain_penalty": domain_penalty,
@@ -264,6 +272,7 @@ class AureliusPipeline:
             dielectric_proxy=dielectric_proxy,
             viscosity_proxy=viscosity_proxy,
             li_solvation_proxy=li_solvation_proxy,
+            ced_proxy=ced_proxy,
             ctx=ctx,
             quantum_confidence=quantum_confidence,
         )
@@ -448,6 +457,7 @@ class AureliusPipeline:
         dielectric_proxy: float = 0.0,
         viscosity_proxy: float = 99.0,
         li_solvation_proxy: float = 0.0,
+        ced_proxy: float = 0.0,
         ctx: MoleculeContext | None = None,
         quantum_confidence: str = "unknown",
     ) -> dict[str, Any]:
@@ -487,6 +497,7 @@ class AureliusPipeline:
             "dielectric_proxy": dielectric_proxy,
             "viscosity_proxy": viscosity_proxy,
             "li_solvation_proxy": li_solvation_proxy,
+            "ced_proxy": ced_proxy,
         }
 
         sub_scores: dict[str, float] = {}

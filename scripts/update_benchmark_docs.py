@@ -18,14 +18,30 @@ def _capture(module: str) -> str:
     )
 
 
+def _run_script(script_path: str) -> str:
+    return subprocess.check_output(
+        [sys.executable, script_path],
+        cwd=Path(__file__).resolve().parent.parent,
+        text=True,
+    )
+
+
 def main() -> None:
     docs_dir = Path(__file__).resolve().parent.parent / "docs"
     docs_dir.mkdir(exist_ok=True)
     output_file = docs_dir / "benchmarks.md"
+    brief_file = docs_dir / "synthesis_brief.md"
 
     ext_val = _capture("benchmarks.benchmark_external_validation")
     reality = _capture("benchmarks.benchmark_reality_check")
     mixture = _capture("benchmarks.benchmark_mixture_synergy")
+
+    # Generate synthesis brief
+    script_path = str(Path(__file__).resolve().parent / "generate_synthesis_brief.py")
+    try:
+        _run_script(script_path)
+    except Exception as exc:
+        print(f"Warning: synthesis brief generation failed: {exc}", file=sys.stderr)
 
     parts = [
         "# Live Benchmark Results\n",
@@ -51,7 +67,15 @@ def main() -> None:
     with open(output_file, "w") as f:
         f.writelines(parts)
 
+    if brief_file.exists():
+        with open(brief_file) as f:
+            brief_content = f.read()
+        with open(output_file, "a") as f:
+            f.write("\n## Synthesis Target Brief\n\n")
+            f.write("*Auto-generated — see [synthesis_brief.md](synthesis_brief.md) for full table.*\n")
+
     print(f"Successfully updated {output_file}")
+    print(f"Synthesis brief: {brief_file}")
 
 
 if __name__ == "__main__":

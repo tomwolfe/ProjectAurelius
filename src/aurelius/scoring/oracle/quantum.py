@@ -21,10 +21,13 @@ references; historical tuning is documented in CHANGELOG.md.
 
 from __future__ import annotations
 
+import atexit
+import concurrent.futures
 import contextlib
 import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 
@@ -49,7 +52,21 @@ def _find_xtb_binary() -> str | None:
     return None
 
 
-_HAS_XTB: bool = _find_xtb_binary() is not None
+# Module-level caches for xTB binary path and temp workspace
+_XTB_BIN: str | None = _find_xtb_binary()
+_HAS_XTB: bool = _XTB_BIN is not None
+_XTB_BASE_TEMP: str | None = (
+    tempfile.mkdtemp(prefix="aurelius_xtb_pool_") if _HAS_XTB else None
+)
+
+
+@atexit.register
+def _cleanup_xtb_workspace() -> None:
+    """Remove the shared xTB temp workspace on interpreter exit."""
+    global _XTB_BASE_TEMP
+    if _XTB_BASE_TEMP is not None and os.path.exists(_XTB_BASE_TEMP):
+        shutil.rmtree(_XTB_BASE_TEMP, ignore_errors=True)
+        _XTB_BASE_TEMP = None
 
 
 def has_xtb() -> bool:
@@ -118,30 +135,74 @@ def _generate_xyz_geometry_optimized(mol: Chem.RWMol) -> str:
 
 
 def _run_xtb(xyz_content: str, workdir: str | None = None) -> dict[str, float] | None:
-    """Run xTB single-point calculation and parse HOMO/LUMO from output."""
+    """Run xTB single-point calculation and parse HOMO/LUMO from output.
+
+    Uses the module-level cached binary path and shared temp workspace
+    to avoid per-call binary discovery and repeated temp dir creation.
+    """
+    if _XTB_BIN is None:
+        return None
     if workdir is None:
-        workdir = tempfile.mkdtemp(prefix="aurelius_xtb_")
+        base = _XTB_BASE_TEMP or tempfile.gettempdir()
+        workdir = tempfile.mkdtemp(dir=base, prefix="mol_")
 
     xyz_path = os.path.join(workdir, "input.xyz")
     with open(xyz_path, "w") as f:
         f.write(xyz_content)
 
-    xtb_bin = _find_xtb_binary()
-    if xtb_bin is None:
-        return None
-
     try:
         result = subprocess.run(
-            [xtb_bin, "--gfn", "2", "--sp", xyz_path],
+            [_XTB_BIN, "--gfn", "2", "--sp", xyz_path],
             cwd=workdir,
             capture_output=True, text=True, timeout=120,
         )
-        output = result.stdout
+        return _parse_xtb_output(result.stdout)
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError) as exc:
         logger.debug("xTB run failed: %s", exc)
         return None
 
-    return _parse_xtb_output(output)
+
+def run_xtb_batch(
+    xyz_list: list[str], max_workers: int = 4
+) -> list[dict[str, float] | None]:
+    """Run multiple xTB single-point calculations in parallel.
+
+    Uses a ThreadPoolExecutor to overlap subprocess I/O. Subprocess calls
+    release the GIL, so threading is effective for xTB batch execution
+    without the overhead of process pool serialization.
+
+    Args:
+        xyz_list: List of XYZ-format molecular geometry strings.
+        max_workers: Maximum parallel xTB processes (default 4).
+
+    Returns:
+        List of result dicts in the same order as xyz_list. Each entry is
+        None if xTB failed or is unavailable.
+    """
+    if _XTB_BIN is None:
+        return [None] * len(xyz_list)
+
+    base = _XTB_BASE_TEMP or tempfile.gettempdir()
+    workdirs = [
+        tempfile.mkdtemp(dir=base, prefix=f"batch_{i}_")
+        for i in range(len(xyz_list))
+    ]
+
+    results: list[dict[str, float] | None] = [None] * len(xyz_list)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        future_map: dict[concurrent.futures.Future[dict[str, float] | None], int] = {
+            pool.submit(_run_xtb, xyz, wd): i
+            for i, (xyz, wd) in enumerate(zip(xyz_list, workdirs))
+        }
+        for future in concurrent.futures.as_completed(future_map):
+            idx = future_map[future]
+            try:
+                results[idx] = future.result()
+            except Exception as exc:
+                logger.debug("xTB batch item %d failed: %s", idx, exc)
+                results[idx] = None
+
+    return results
 
 
 _XTB_HOMO_RE = re.compile(r"HOMO\s*:\s*([-+]?\d+\.?\d*)\s*eV")
@@ -217,6 +278,34 @@ def _is_conjugated_bond(mol: Chem.Mol, i: int, j: int) -> bool:
     a1 = mol.GetAtomWithIdx(i)
     a2 = mol.GetAtomWithIdx(j)
     return bool(a1.GetIsAromatic() or a2.GetIsAromatic())
+
+
+def _is_cross_conjugated(mol: Chem.Mol) -> bool:
+    """Check if molecule contains a cross-conjugated pi system.
+
+    Physical basis: Cross-conjugation occurs when a conjugated atom has >2
+    conjugated neighbors with at least 2 of those being non-oxygen (carbon)
+    conjugated substituents. This excludes normal resonance in esters and
+    carbonates (O-C(=O)-O) where oxygen lone-pair donation creates partial
+    double-bond character but does NOT disrupt linear pi-delocalisation.
+    True cross-conjugation (e.g., divinyl ketone C=CC(=O)C=C, benzophenone
+    O=C(c1ccccc1)c1ccccc1) branches the pi system, which the 1D
+    particle-in-a-box model overestimates.
+
+    Returns:
+        True if any atom has >2 conjugated neighbors with >=2 non-oxygen.
+    """
+    for atom in mol.GetAtoms():
+        n_conj = 0
+        n_conj_carbon = 0
+        for nb in atom.GetNeighbors():
+            if _is_conjugated_bond(mol, atom.GetIdx(), nb.GetIdx()):
+                n_conj += 1
+                if nb.GetAtomicNum() == 6:
+                    n_conj_carbon += 1
+        if n_conj > 2 and n_conj_carbon >= 2:
+            return True
+    return False
 
 
 # Heteroatom perturbation parameters for the Topological Orbital Model (TOM).
@@ -463,6 +552,13 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
         for _spattern, _sname, _sshift in _SIGMA_STAR_LUMO:
             if len(mol.GetSubstructMatches(_spattern)) > 0:
                 lumo += _sshift
+
+    # Cross-conjugation penalty: Cross-conjugated systems (conjugated atom with >2
+    # conjugated neighbors) disrupt pi-delocalisation, which the 1D particle-in-a-box
+    # model overestimates. Increasing LUMO by +0.3 eV widens the gap to correct for
+    # this overestimation (e.g., divinyl ketone, benzophenone).
+    if _is_cross_conjugated(mol):
+        lumo += 0.30
 
     return homo, lumo
 

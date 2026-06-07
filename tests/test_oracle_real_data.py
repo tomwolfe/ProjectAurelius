@@ -20,6 +20,7 @@ from aurelius.scoring.oracle import (
     QuantumOracle,
     _count_fragments,
     get_data_source,
+    predict_ced_proxy,
     predict_dielectric_proxy,
     predict_tom_orbitals,
 )
@@ -56,6 +57,7 @@ def test_oracle_evaluate_returns_all_properties(oracle: PropertyOracle) -> None:
     assert "dielectric_proxy" in result
     assert "viscosity_proxy" in result
     assert "li_solvation_proxy" in result
+    assert "ced_proxy" in result
     assert "domain_applicable" in result
     assert "quantum_method" in result
 
@@ -166,6 +168,30 @@ def test_tpsa_capped_dielectric_prevents_stacking(oracle: PropertyOracle) -> Non
     assert stacked_diel <= single_diel * 2.0 + 2.0, (
         "TPSA cap should prevent linear stacking of dielectric contribution"
     )
+
+
+# ---------------------------------------------------------------------------
+# CED Proxy Tests
+# ---------------------------------------------------------------------------
+
+
+def test_ced_proxy_rigid_outranks_flexible() -> None:
+    """Rigid cyclic molecules with polar groups should have higher CED
+    than flexible linear carbonates. Sulfolane (cyclic sulfone) has strong
+    intermolecular cohesion vs DMC (linear carbonate, flexible)."""
+    sulfolane_ced = predict_ced_proxy(_ctx("C1CS(=O)(=O)CC1"))
+    dmc_ced = predict_ced_proxy(_ctx("COC(=O)OC"))
+    assert sulfolane_ced > dmc_ced, (
+        f"Sulfolane CED ({sulfolane_ced:.3f}) should exceed DMC CED ({dmc_ced:.3f})"
+    )
+
+
+def test_ced_proxy_plausible_range() -> None:
+    """CED proxy should be in a physically plausible range."""
+    ethanol_ced = predict_ced_proxy(_ctx("CCO"))
+    assert 1.0 <= ethanol_ced <= 15.0, f"Ethanol CED {ethanol_ced} out of range"
+    water_ced = predict_ced_proxy(_ctx("O"))
+    assert 1.0 <= water_ced <= 15.0, f"Water CED {water_ced} out of range"
 
 
 # ---------------------------------------------------------------------------
@@ -285,3 +311,39 @@ def test_tom_fluorine_correction() -> None:
     # CF3 is strongly EW - should lower both HOMO and LUMO
     assert cf3_h < ethane_h, f"CF3 HOMO {cf3_h} should be lower than ethane {ethane_h}"
     assert cf3_l < ethane_l, f"CF3 LUMO {cf3_l} should be lower than ethane {ethane_l}"
+
+
+# ---------------------------------------------------------------------------
+# xTB Batch Execution Performance Tests
+# ---------------------------------------------------------------------------
+
+
+def test_xtb_batch_returns_list() -> None:
+    """run_xtb_batch should return a list equal to input length."""
+    from aurelius.scoring.oracle.quantum import run_xtb_batch
+
+    xyz_list = ["3\n\nC 0 0 0\nH 1 0 0\nH 0 1 0"]
+    result = run_xtb_batch(xyz_list)
+    assert isinstance(result, list)
+    assert len(result) == 1
+
+
+def test_xtb_batch_empty_input() -> None:
+    """Empty input list should return empty list."""
+    from aurelius.scoring.oracle.quantum import run_xtb_batch
+
+    result = run_xtb_batch([])
+    assert result == []
+
+
+def test_xtb_batch_without_xtb() -> None:
+    """Without xTB binary, batch should return Nones without crashing."""
+    from aurelius.scoring.oracle.quantum import has_xtb, run_xtb_batch
+
+    if has_xtb():
+        pytest.skip("xTB is available — run this test where xTB is absent")
+
+    xyz_list = ["3\n\nC 0 0 0\nH 1 0 0\nH 0 1 0"] * 5
+    result = run_xtb_batch(xyz_list)
+    assert len(result) == 5
+    assert all(r is None for r in result)

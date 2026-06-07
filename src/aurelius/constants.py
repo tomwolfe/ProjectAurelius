@@ -113,7 +113,10 @@ SCORE_WEIGHT_LI_SOLVATION: float = 0.20
 """Weight for Li+ solvation energy proxy — penalises binding that is too tight
 (poor transference number) or too weak (poor conductivity)."""
 
-SCORE_WEIGHT_SA: float = 0.09
+SCORE_WEIGHT_CED: float = 0.05
+"""Weight for cohesive energy density (CED) proxy — SEI mechanical robustness."""
+
+SCORE_WEIGHT_SA: float = 0.04
 """Weight for synthetic accessibility penalty.
 
 Note: Al corrosion penalty is applied as a strict multiplicative factor
@@ -210,6 +213,22 @@ LI_SOLVATION_TARGET: float = 3.5
 
 LI_SOLVATION_SIGMA: float = 1.0
 """Gaussian width for Li+ solvation reward. sigma=1.0 rewards proxy in [2.5, 4.5]."""
+
+# ---------------------------------------------------------------------------
+# Cohesive Energy Density (CED) Proxy Thresholds
+# ---------------------------------------------------------------------------
+# Physical basis: CED measures the mechanical robustness of the SEI layer.
+# CED = sum(molar attraction constants)^2 / molar volume. A higher CED proxy
+# indicates stronger intermolecular cohesion, which translates to a more
+# mechanically stable, defect-resistant SEI. The target of 5.0 corresponds
+# to the approximate CED of sulfolane, a known SEI-forming additive with
+# excellent mechanical properties.
+
+CED_TARGET: float = 5.0
+"""Target CED proxy value for mechanically robust SEI formation."""
+
+CED_SIGMOID_STEEPNESS: float = 1.5
+"""Steepness of the sigmoid reward for CED proxy above target."""
 
 # ---------------------------------------------------------------------------
 # Electrolyte-Like Filter Thresholds (Mutation Engine)

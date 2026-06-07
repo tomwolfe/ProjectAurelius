@@ -73,3 +73,42 @@ class TestOracleCalibration:
         assert gap_benzene < gap_butadiene, (
             f"Benzene gap {gap_benzene:.3f} should be < butadiene gap {gap_butadiene:.3f}"
         )
+
+    def test_tom_cross_conjugation_widens_gap(self):
+        """Cross-conjugated systems should have wider gaps than linear systems
+        of similar atom count due to disrupted pi-delocalisation."""
+        # Divinyl ketone (cross-conjugated): central C=O has 3 conjugated neighbors
+        divinyl_ketone_h, divinyl_ketone_l = predict_tom_orbitals(
+            Chem.MolFromSmiles("C=CC(=O)C=C")
+        )
+        # 1,3,5-hexatriene (linear conjugated): same number of pi-electrons
+        hexatriene_h, hexatriene_l = predict_tom_orbitals(
+            Chem.MolFromSmiles("C=CC=CC=C")
+        )
+
+        gap_cross = divinyl_ketone_l - divinyl_ketone_h
+        gap_linear = hexatriene_l - hexatriene_h
+
+        assert gap_cross > gap_linear, (
+            f"Cross-conjugated divinyl ketone gap ({gap_cross:.3f}) should be "
+            f"> linear hexatriene gap ({gap_linear:.3f})"
+        )
+
+    def test_tom_cross_conjugation_benzophenone(self):
+        """Benzophenone (cross-conjugated via carbonyl C) should have wider gap
+        than linearly conjugated diphenyl butadiene of similar size."""
+        benzophenone_h, benzophenone_l = predict_tom_orbitals(
+            Chem.MolFromSmiles("O=C(c1ccccc1)c1ccccc1")
+        )
+        # 1,4-diphenyl-1,3-butadiene: linear conjugation through 4 sp2 carbons
+        diphenyl_butadiene_h, diphenyl_butadiene_l = predict_tom_orbitals(
+            Chem.MolFromSmiles("c1ccccc1C=CC=Cc2ccccc2")
+        )
+
+        gap_bp = benzophenone_l - benzophenone_h
+        gap_dpb = diphenyl_butadiene_l - diphenyl_butadiene_h
+
+        assert gap_bp > gap_dpb, (
+            f"Benzophenone gap ({gap_bp:.3f}) should be > "
+            f"diphenyl butadiene gap ({gap_dpb:.3f})"
+        )

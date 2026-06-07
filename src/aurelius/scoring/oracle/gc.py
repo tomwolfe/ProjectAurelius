@@ -75,75 +75,76 @@ def get_data_source() -> str:
 # Fragment-Additivity (Group-Contribution) Models — Bulk Properties Only
 # ---------------------------------------------------------------------------
 
-# (pattern, name, dielectric_contrib, viscosity_contrib, li_solvation_contrib)
-_GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float]] = [
+# (pattern, name, dielectric_contrib, viscosity_contrib, li_solvation_contrib, ced_contrib)
+_GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float, float]] = [
     # Ester SMARTS uses ([#6]) to exclude carbonate carbonyls (both neighbors are
     # oxygens) — true esters require C(=O)-C connectivity.
-    (Chem.MolFromSmarts("[CX3](=O)([#6])[OX2H0]"),  "ester",              2.5,  0.6,  0.8),
-    (Chem.MolFromSmarts("[CX3](=O)[OH]"),          "carboxylic_acid",    4.0,  1.0,  1.8),
-    (Chem.MolFromSmarts("[CX3](=O)[NX3]"),         "amide",              6.0,  0.8,  2.5),
-    (Chem.MolFromSmarts("[CX3](=O)[CX3]"),         "ketone",             3.0,  0.5,  0.6),
-    (Chem.MolFromSmarts("[CH](=O)"),               "aldehyde",           2.5,  0.3,  0.3),
+    (Chem.MolFromSmarts("[CX3](=O)([#6])[OX2H0]"),  "ester",              2.5,  0.6,  0.8,  2.0),
+    (Chem.MolFromSmarts("[CX3](=O)[OH]"),          "carboxylic_acid",    4.0,  1.0,  1.8,  5.0),
+    (Chem.MolFromSmarts("[CX3](=O)[NX3]"),         "amide",              6.0,  0.8,  2.5,  6.0),
+    (Chem.MolFromSmarts("[CX3](=O)[CX3]"),         "ketone",             3.0,  0.5,  0.6,  3.0),
+    (Chem.MolFromSmarts("[CH](=O)"),               "aldehyde",           2.5,  0.3,  0.3,  2.5),
     # Linear carbonates (DMC ε≈3.1, DEC ε≈2.8) have anti-periplanar O-alkyl
     # conformation cancelling dipoles (Kirkwood g<1). The cyclic_carbonate fragment
     # (8.0) separately captures EC/PC's g>1 effect.
-    (Chem.MolFromSmarts("O=C([OX2])[OX2]"),        "carbonate",          2.0,  0.7,  1.2),
-    (Chem.MolFromSmarts("[OD2]([CX4])[CX4]"),      "ether",              1.5, -0.3,  1.0),
-    (Chem.MolFromSmarts("[OH][CX4]"),              "alcohol",            4.5,  1.2,  2.0),
-    (Chem.MolFromSmarts("[NX3;H2][CX4]"),          "primary_amine",      3.5,  0.5,  1.0),
-    (Chem.MolFromSmarts("[NX3;H1]([CX4])[CX4]"),   "secondary_amine",    2.5,  0.4,  0.8),
-    (Chem.MolFromSmarts("[NX3;H0]([CX4])([CX4])[CX4]"), "tertiary_amine", 1.5,  0.3,  0.5),
+    (Chem.MolFromSmarts("O=C([OX2])[OX2]"),        "carbonate",          2.0,  0.7,  1.2,  3.0),
+    (Chem.MolFromSmarts("[OD2]([CX4])[CX4]"),      "ether",              1.5, -0.3,  1.0,  1.5),
+    (Chem.MolFromSmarts("[OH][CX4]"),              "alcohol",            4.5,  1.2,  2.0,  5.0),
+    (Chem.MolFromSmarts("[NX3;H2][CX4]"),          "primary_amine",      3.5,  0.5,  1.0,  4.0),
+    (Chem.MolFromSmarts("[NX3;H1]([CX4])[CX4]"),   "secondary_amine",    2.5,  0.4,  0.8,  3.0),
+    (Chem.MolFromSmarts("[NX3;H0]([CX4])([CX4])[CX4]"), "tertiary_amine", 1.5,  0.3,  0.5,  2.0),
     # The C≡N dipole (μ≈3.9 D) gives ACN pred≈10.0, PN pred≈8.5. Cyclic_carbonate
     # boost to EC (pred≈18) preserves the experimental ranking ACN < DMSO < EC.
-    (Chem.MolFromSmarts("[C]#[N]"),                "nitrile",            7.5,  0.4,  0.8),
-    (Chem.MolFromSmarts("[CX3]=[CX3]"),            "alkene",             0.5,  0.1,  0.1),
-    (Chem.MolFromSmarts("[CX2]#[CX2]"),            "alkyne",             1.0,  0.2,  0.2),
-    (Chem.MolFromSmarts("[c]"),                    "aromatic_carbon",    0.5,  0.5,  0.1),
-    (Chem.MolFromSmarts("[F]"),                    "fluorine",           0.0,  0.1, -0.5),
-    (Chem.MolFromSmarts("[Cl]"),                   "chlorine",           0.5,  0.2, -0.3),
-    (Chem.MolFromSmarts("[Br]"),                   "bromine",            0.5,  0.3, -0.2),
-    (Chem.MolFromSmarts("S(=O)(=O)[CX4]"),         "sulfone",            5.0,  0.5,  1.0),
-    (Chem.MolFromSmarts("S(=O)(=O)[OX2]"),         "sulfonate",          5.5,  0.6,  1.2),
-    (Chem.MolFromSmarts("S(=O)(=O)F"),             "sulfonyl_fluoride",  4.0,  0.4,  0.5),
+    (Chem.MolFromSmarts("[C]#[N]"),                "nitrile",            7.5,  0.4,  0.8,  5.0),
+    (Chem.MolFromSmarts("[CX3]=[CX3]"),            "alkene",             0.5,  0.1,  0.1,  0.5),
+    (Chem.MolFromSmarts("[CX2]#[CX2]"),            "alkyne",             1.0,  0.2,  0.2,  1.0),
+    (Chem.MolFromSmarts("[c]"),                    "aromatic_carbon",    0.5,  0.5,  0.1,  2.0),
+    (Chem.MolFromSmarts("[F]"),                    "fluorine",           0.0,  0.1, -0.5,  0.0),
+    (Chem.MolFromSmarts("[Cl]"),                   "chlorine",           0.5,  0.2, -0.3,  1.0),
+    (Chem.MolFromSmarts("[Br]"),                   "bromine",            0.5,  0.3, -0.2,  1.0),
+    (Chem.MolFromSmarts("S(=O)(=O)[CX4]"),         "sulfone",            5.0,  0.5,  1.0,  6.0),
+    (Chem.MolFromSmarts("S(=O)(=O)[OX2]"),         "sulfonate",          5.5,  0.6,  1.2,  6.0),
+    (Chem.MolFromSmarts("S(=O)(=O)F"),             "sulfonyl_fluoride",  4.0,  0.4,  0.5,  5.0),
     # Cyclic sulfone (5-ring): S in 5-membered ring (sulfolane). Ring rigidity increases
     # viscosity significantly vs acyclic sulfones. Dielectric ~44 for sulfolane.
     # NOTE: These are incremental corrections OVER the general "sulfone"/"sulfonate" fragments
     # which already match the cyclic S(=O)(=O) group. Small values prevent double-counting.
-    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][CX4]1"), "cyclic_sulfone_5", 0.5, 1.0, 0.2),
+    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][CX4]1"), "cyclic_sulfone_5", 0.5, 1.0, 0.2, 1.0),
     # Cyclic sulfone (6-ring): slightly less ring strain than 5-ring
-    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][CX4][CX4]1"), "cyclic_sulfone_6", 0.3, 0.8, 0.1),
+    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][CX4][CX4]1"), "cyclic_sulfone_6", 0.3, 0.8, 0.1, 0.5),
     # Sultone (5-ring cyclic sulfonate ester): S-O-C in ring (e.g., 1,3-propane sultone).
     # The S-O-C ester linkage adds extra dielectric vs acyclic sulfonate.
-    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][OX2]1"), "sultone_5", 0.5, 0.6, 0.3),
+    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][OX2]1"), "sultone_5", 0.5, 0.6, 0.3, 0.5),
     # Sultone (6-ring): larger ring, less strain
-    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][CX4][OX2]1"), "sultone_6", 0.3, 0.4, 0.2),
-    (Chem.MolFromSmarts("[PX4](=O)([OX2])([OX2])[OX2]"), "phosphate",    4.0,  0.8,  1.5),
-    (Chem.MolFromSmarts("[C](F)(F)F"),             "trifluoromethyl",    0.5,  0.2, -0.3),
-    (Chem.MolFromSmarts("[C](F)(F)"),              "difluoromethylene",  0.3,  0.1, -0.2),
-    (Chem.MolFromSmarts("[BX3]([OX2])"),           "boronate",           2.0,  0.7,  1.0),
-    (Chem.MolFromSmarts("[BX4]([OX2])([OX2])([OX2])[OX2]"), "borate",    3.0,  0.6,  1.5),
-    (Chem.MolFromSmarts("[S]([CX4])[CX4]"),        "thioether",          1.0,  0.2,  0.3),
-    (Chem.MolFromSmarts("[F][CX4][OX2][CX4]"),     "fluorinated_ether",  1.0,  0.0, -0.2),
-    (Chem.MolFromSmarts("[PX4](=N)([OX2])([OX2])[OX2]"), "phosphazene",  3.5,  0.4,  0.8),
-    (Chem.MolFromSmarts("[OX2][CX4][CX4][OX2]"),   "glyme_chelating",    2.0,  0.1,  0.6),
-    (Chem.MolFromSmarts("[SX4](=O)(=O)[NX3][SX4](=O)(=O)"), "sulfonimide", 5.0,  0.5,  0.5),
-    (Chem.MolFromSmarts("[CX3](=O)[OX2]C(F)(F)F"),  "fluorinated_carbonate", 3.0,  0.3, -0.1),
-    (Chem.MolFromSmarts("[SX3](=O)[CX4]"),           "sulfoxide",             7.5,  0.5,  3.5),
+    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][CX4][OX2]1"), "sultone_6", 0.3, 0.4, 0.2, 0.3),
+    (Chem.MolFromSmarts("[PX4](=O)([OX2])([OX2])[OX2]"), "phosphate",    4.0,  0.8,  1.5,  5.0),
+    (Chem.MolFromSmarts("[C](F)(F)F"),             "trifluoromethyl",    0.5,  0.2, -0.3,  0.5),
+    (Chem.MolFromSmarts("[C](F)(F)"),              "difluoromethylene",  0.3,  0.1, -0.2,  0.3),
+    (Chem.MolFromSmarts("[BX3]([OX2])"),           "boronate",           2.0,  0.7,  1.0,  3.0),
+    (Chem.MolFromSmarts("[BX4]([OX2])([OX2])([OX2])[OX2]"), "borate",    3.0,  0.6,  1.5,  3.5),
+    (Chem.MolFromSmarts("[S]([CX4])[CX4]"),        "thioether",          1.0,  0.2,  0.3,  1.0),
+    (Chem.MolFromSmarts("[F][CX4][OX2][CX4]"),     "fluorinated_ether",  1.0,  0.0, -0.2,  1.0),
+    (Chem.MolFromSmarts("[PX4](=N)([OX2])([OX2])[OX2]"), "phosphazene",  3.5,  0.4,  0.8,  3.5),
+    (Chem.MolFromSmarts("[OX2][CX4][CX4][OX2]"),   "glyme_chelating",    2.0,  0.1,  0.6,  2.0),
+    (Chem.MolFromSmarts("[SX4](=O)(=O)[NX3][SX4](=O)(=O)"), "sulfonimide", 5.0,  0.5,  0.5,  5.0),
+    (Chem.MolFromSmarts("[CX3](=O)[OX2]C(F)(F)F"),  "fluorinated_carbonate", 3.0,  0.3, -0.1,  3.0),
+    (Chem.MolFromSmarts("[SX3](=O)[CX4]"),           "sulfoxide",             7.5,  0.5,  3.5,  6.0),
     # Pyridine (DN=33.1) ranks above DMSO (DN=29.8) via stronger aromatic N basicity.
-    (Chem.MolFromSmarts("[n]"),                      "aromatic_nitrogen",     4.0,  0.3,  4.0),
-    (Chem.MolFromSmarts("[PX4](=O)([OX2])([OX2])[#6]"), "phosphonate",        3.5,  0.5,  1.0),
+    (Chem.MolFromSmarts("[n]"),                      "aromatic_nitrogen",     4.0,  0.3,  4.0,  4.0),
+    (Chem.MolFromSmarts("[PX4](=O)([OX2])([OX2])[#6]"), "phosphonate",        3.5,  0.5,  1.0,  3.5),
     # Cyclic carbonate (5-ring): cis-conformation enables cooperative dipole alignment
     # (Kirkwood g>1), boosting ε 20-30× vs linear. Li+ binding at carbonyl O is same
     # as linear carbonates, so li_solvation kept at 0.0 (donor number unaffected).
     # EC (ε=89.78) and PC (ε=64.92) are 2-3× higher than any other aprotic solvent.
     # The 8.0 captures the physical gap between cyclic (Kirkwood g>1) and linear
     # (g<1) carbonates.
-    (Chem.MolFromSmarts("[OX2]1[CX3](=O)[OX2][CX4][CX4]1"), "cyclic_carbonate",  8.0,  0.4,  0.0),
+    (Chem.MolFromSmarts("[OX2]1[CX3](=O)[OX2][CX4][CX4]1"), "cyclic_carbonate",  8.0,  0.4,  0.0,  4.0),
 ]
 
 _GC_BASE_DIELECTRIC: float = 1.9
 _GC_BASE_VISCOSITY: float = 0.1
 _GC_BASE_LI_SOLVATION: float = 1.0
+_GC_BASE_CED: float = 2.0
 
 # Saturation parameter for GC fragment additivity.
 _GC_SATURATION_K: float = 0.693  # ln(2), half-max at count=1
@@ -157,7 +158,7 @@ def _saturate_contrib(count: int, max_contrib: float) -> float:
 def _count_fragments(mol: Chem.Mol) -> dict[str, int]:
     """Count occurrences of each pre-compiled fragment pattern in a molecule."""
     counts: dict[str, int] = {}
-    for pattern, name, _dd, _dv, _ls in _GC_FRAGMENTS:
+    for pattern, name, _dd, _dv, _ls, _dc in _GC_FRAGMENTS:
         matches = mol.GetSubstructMatches(pattern)
         counts[name] = len(matches)
     return counts
@@ -204,7 +205,7 @@ def predict_dielectric_proxy(ctx: MoleculeContext) -> float:
     mol = ctx.mol
     counts = _count_fragments(mol)
     value = _GC_BASE_DIELECTRIC
-    for _smarts, _name, dd, _dv, _ls in _GC_FRAGMENTS:
+    for _smarts, _name, dd, _dv, _ls, _dc in _GC_FRAGMENTS:
         n = counts.get(_name, 0)
         value += _saturate_contrib(n, dd * 2.0)
 
@@ -241,7 +242,7 @@ def predict_viscosity_proxy(ctx: MoleculeContext) -> float:
     mol = ctx.mol
     counts = _count_fragments(mol)
     value = _GC_BASE_VISCOSITY
-    for _smarts, _name, _dd, dv, _ls in _GC_FRAGMENTS:
+    for _smarts, _name, _dd, dv, _ls, _dc in _GC_FRAGMENTS:
         n = counts.get(_name, 0)
         value += _saturate_contrib(n, dv * 2.0)
 
@@ -264,13 +265,45 @@ def predict_li_solvation_proxy(ctx: MoleculeContext) -> float:
     mol = ctx.mol
     counts = _count_fragments(mol)
     value = _GC_BASE_LI_SOLVATION
-    for _smarts, _name, _dd, _dv, ls in _GC_FRAGMENTS:
+    for _smarts, _name, _dd, _dv, ls, _dc in _GC_FRAGMENTS:
         n = counts.get(_name, 0)
         value += _saturate_contrib(n, ls * 2.0)
 
     mw = ctx.mw
     value += max(0.0, (mw - 50.0)) * 0.002
     return max(0.5, value)
+
+
+def predict_ced_proxy(ctx: MoleculeContext) -> float:
+    """Predict a Cohesive Energy Density (CED) proxy via fragment-additivity.
+
+    Physical justification: CED = (sum of molar attraction constants)^2 / molar
+    volume. The fragment-additivity approach sums polar-group contributions to
+    intermolecular cohesion (dipole-dipole, H-bonding, pi-stacking). Rigid
+    cyclic molecules with polar groups (sulfolane, EC) score higher than
+    flexible linear molecules because their conformational rigidity prevents
+    dipole cancellation (Kirkwood g>1 effect). A Michaelis-Menten saturation
+    prevents unphysical stacking of many polar groups — five sulfones do not
+    produce five times the CED of one.
+    """
+    mol = ctx.mol
+    counts = _count_fragments(mol)
+    value = _GC_BASE_CED
+    for _smarts, _name, _dd, _dv, _ls, dc in _GC_FRAGMENTS:
+        n = counts.get(_name, 0)
+        value += _saturate_contrib(n, dc * 2.0)
+
+    # Ring rigidity bonus: each ring (except aromatic) adds rigidity that
+    # prevents dipole cancellation, boosting effective CED.
+    ring_info = mol.GetRingInfo()
+    n_rings = ring_info.NumRings()
+    n_arom_rings = sum(
+        1 for ring in ring_info.AtomRings()
+        if all(mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring)
+    )
+    value += max(0, n_rings - n_arom_rings) * 0.3
+
+    return max(1.0, min(15.0, value))
 
 
 def predict_ionic_conductivity_proxy(
