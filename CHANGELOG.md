@@ -1,5 +1,11 @@
 # Changelog
 
+## [10.1.3] - 2026-06-07
+
+### Fixed
+- Fixed O(N×M) duplicate-checking anti-pattern in `DiscoveryLoop._filter_candidates` by adding a `_seen_smiles: set[str]` field to `LoopState` and replacing the list comprehension with an O(1) set lookup.
+- Fixed SSOT bug in `DiscoveryLoop._make_mixture_context` where `ctx_a.smiles` was mutated to a mixture SMILES while `ctx_a.mol` remained a single component, risking cache corruption in `PropertyOracle`. The mutation was removed; the correct mixture SMILES is already passed downstream.
+
 ## [10.1.2] - 2026-06-07
 
 ### Removed

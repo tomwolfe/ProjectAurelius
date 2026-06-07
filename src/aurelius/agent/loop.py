@@ -299,7 +299,7 @@ class DiscoveryLoop:
         invalid_count = 0
 
         for smi in candidates:
-            if any(r["smiles"] == smi for r in self.state._all_results):
+            if smi in self.state._seen_smiles:
                 invalid_count += 1
                 continue
             if is_mixture_smiles(smi):
@@ -339,7 +339,6 @@ class DiscoveryLoop:
             return None
         if not ctx_b.is_valid_electrolyte_mol():
             return None
-        ctx_a.smiles = mixture_smi
         return ctx_a
 
     def _compute_novelty(self, ctx: MoleculeContext) -> float | None:

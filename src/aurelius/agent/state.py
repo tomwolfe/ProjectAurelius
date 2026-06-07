@@ -71,6 +71,7 @@ class LoopState:
 
     # --- Result tracking (single source of truth) ---
     _all_results: list[dict[str, Any]] = field(default_factory=list)
+    _seen_smiles: set[str] = field(default_factory=set)
 
     # --- Scaffold tracking ---
     scaffolds_per_batch: list[list[str]] = field(default_factory=list)
@@ -155,6 +156,7 @@ class LoopState:
                 self.last_updated = data.get("last_updated")
                 self.discoveries = data.get("discoveries", [])
                 self._all_results = data.get("_all_results", [])
+                self._seen_smiles = set(r.get("smiles", "") for r in data.get("_all_results", []))
             except (json.JSONDecodeError, KeyError, TypeError, OSError):
                 pass
 
@@ -188,6 +190,7 @@ class LoopState:
         self.discoveries = self.discoveries[:_MAX_DISCOVERIES]
 
     def add_result(self, sr: Any) -> None:
+        self._seen_smiles.add(sr.smiles)
         self._all_results.append({
             "smiles": sr.smiles,
             "total_score": sr.total_score,
@@ -220,6 +223,7 @@ class LoopState:
         self.invalid_discarded = 0
         self.discoveries.clear()
         self._all_results.clear()
+        self._seen_smiles.clear()
         self.save()
 
 
