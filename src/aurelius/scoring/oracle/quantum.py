@@ -592,10 +592,10 @@ def _apply_torsional_strain_penalty(mol: Chem.Mol, L: int) -> int:
     conjugation path. This prevents false-positive narrow gaps for sterically
     hindered conjugated molecules (e.g., bulky biphenyl derivatives).
 
-    Uses RDKit's ETKDG conformer generation and GetDihedralDeg to detect
-    non-planar conjugated dihedrals. For each conjugated bond with flanking
-    conjugated neighbors, the dihedral angle is measured. If any exceeds 30 deg,
-    L is reduced by 30% (floor 2).
+    Uses RDKit's ETKDGv3 conformer generation with useRandomCoords and UFF
+    relaxation (maxIts=500) to escape local minima for sterically hindered
+    molecules. For each conjugated bond with flanking neighbors, the dihedral
+    angle is measured. If any exceeds 30 deg, L is reduced by 30% (floor 2).
     """
     if L <= 2:
         return L
@@ -604,12 +604,14 @@ def _apply_torsional_strain_penalty(mol: Chem.Mol, L: int) -> int:
     mol_copy = Chem.RWMol(mol)
     mol_copy.UpdatePropertyCache()
     try:
+        mol_copy = Chem.AddHs(mol_copy)
         params = AllChem.ETKDGv3()
         params.randomSeed = 42
         params.useRandomCoords = True
         result = AllChem.EmbedMolecule(mol_copy, params)
         if result != 0:
             return L
+        AllChem.UFFOptimizeMolecule(mol_copy, maxIters=500)
         conf = mol_copy.GetConformer()
     except Exception:
         return L

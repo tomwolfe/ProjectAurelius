@@ -268,7 +268,9 @@ def functional_group_coverage(mol: Chem.Mol) -> float:
 # Maximum BRICS disconnection depth before a linear penalty kicks in.
 # Physical basis: Each BRICS disconnection corresponds to a synthetic step.
 # Beyond 2 steps, the synthetic cost grows linearly, making the molecule
-# uneconomical for kilogram-scale manufacturing.
+# uneconomical for kilogram-scale manufacturing. This prevents the EA
+# from favoring molecules requiring >2 synthetic steps from commercial
+# precursors, which would be impractical for bulk electrolyte synthesis.
 _MAX_BRICS_DEPTH: int = 2
 _BRICS_DEPTH_PENALTY_PER_STEP: float = 0.1
 

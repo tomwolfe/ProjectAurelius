@@ -364,7 +364,33 @@ COMMERCIAL_BUILDING_BLOCK_SMILES: tuple[str, ...] = (
     "FC(F)(F)CO",            # Trifluoroethanol
     "FC(F)(F)C(F)(F)CO",     # Perfluoropropanol
     "FC(F)(F)S(=O)(=O)C(F)(F)F",         # Trifluoromethanesulfonic anhydride like
-
+    # Fluorinated alcohols
+    "FC(F)(F)C(O)C(F)(F)F",              # Hexafluoroisopropanol (HFIP)
+    "FC(F)(F)CC(F)(F)CO",                # 2,2,3,3-Tetrafluoro-1,4-butanediol
+    "FC(F)(F)C(F)(F)C(F)(F)CO",          # 2,2,3,3,4,4,5,5-Octafluoro-1-pentanol
+    # Cyclic sulfates / sultones
+    "O=S1(=O)OCCO1",                     # Ethylene sulfate (cyclic)
+    "O=S1(=O)OCCCO1",                    # 1,3-Propylene sulfate
+    "O=S1(=O)CCCCO1",                    # 1,4-Butylene sulfate
+    # Branched carbonates
+    "CC(C)OC(=O)OC(C)C",                 # Diisopropyl carbonate
+    "CC(C)(C)OC(=O)OC(C)(C)C",           # Di-tert-butyl carbonate
+    "CC(C)OC(=O)OCC",                    # Ethyl isopropyl carbonate
+    # Dinitriles / aromatic nitriles
+    "N#CCCC#N",                          # Adiponitrile
+    "N#CCCCC#N",                         # Pimelonitrile
+    "N#CCCCCC#N",                        # Suberonitrile
+    "N#Cc1ccccc1",                       # Benzonitrile
+    "N#CCc1ccccc1",                      # Phenylacetonitrile
+    # Fluorinated / aromatic sulfones
+    "CCS(=O)(=O)C(F)(F)F",               # Ethyl trifluoromethyl sulfone
+    "O=S(=O)(c1ccccc1)c1ccccc1",         # Diphenyl sulfone
+    # Organophosphates
+    "COP(=O)(OC)OC",                     # Trimethyl phosphate
+    "CCOP(=O)(OCC)OCC",                  # Triethyl phosphate
+    # Glyme ethers / specialty
+    "COCCOCCOC",                         # Triglyme
+    "CC1CCCO1",                          # 2-Methyltetrahydrofuran
 )
 
 # ---------------------------------------------------------------------------

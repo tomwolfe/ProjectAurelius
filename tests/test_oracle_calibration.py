@@ -144,6 +144,34 @@ class TestOracleCalibration:
             f"widens the particle-in-a-box gap"
         )
 
+    def test_torsional_strain_ortho_substituted(self):
+        """Ortho-substituted biphenyls must have effective conjugation length
+        reduced by the torsional strain penalty, widening the HOMO-LUMO gap
+        via the particle-in-a-box scaling (ΔE ∝ 1/L²).
+
+        2,2',6,6'-Tetramethylbiphenyl has four ortho methyl groups forcing
+        a large dihedral angle (>60°) between rings. The penalty should
+        reduce L and the reduced L should produce a wider base gap.
+        """
+        hindered = Chem.MolFromSmiles("Cc1cccc(C)c1c2c(C)cccc2C")
+        assert hindered is not None
+        h_L_raw = _longest_conjugation_path(hindered)
+        h_L_penalized = _apply_torsional_strain_penalty(hindered, h_L_raw)
+        assert h_L_penalized < h_L_raw, (
+            f"Torsional penalty should reduce L for ortho-substituted biphenyl: "
+            f"{h_L_penalized} >= {h_L_raw}"
+        )
+        from aurelius.scoring.oracle.quantum import _compute_tom_base_energies
+        base_raw_h, base_raw_l = _compute_tom_base_energies(h_L_raw)
+        base_pen_h, base_pen_l = _compute_tom_base_energies(h_L_penalized)
+        gap_raw = base_raw_l - base_raw_h
+        gap_pen = base_pen_l - base_pen_h
+        assert gap_pen > gap_raw, (
+            f"Base gap after penalty ({gap_pen:.3f}) should be wider than "
+            f"base gap without penalty ({gap_raw:.3f}) because reducing L "
+            f"widens the particle-in-a-box gap"
+        )
+
     def test_tom_cross_conjugation_benzophenone(self):
         """Benzophenone (cross-conjugated via carbonyl C) should have wider gap
         than linearly conjugated diphenyl butadiene of similar size."""
