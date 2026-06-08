@@ -1,46 +1,1256 @@
 [
-  {"smiles": "C1COC(=O)O1",       "name": "EC",       "homo_eV": -7.6, "lumo_eV": -0.8},
-  {"smiles": "COC(=O)OC",         "name": "DMC",      "homo_eV": -7.8, "lumo_eV": -0.5},
-  {"smiles": "COCCOC",            "name": "DME",      "homo_eV": -7.2, "lumo_eV":  1.2},
-  {"smiles": "COC(=O)OCC",        "name": "EMC",      "homo_eV": -7.6, "lumo_eV": -0.6},
-  {"smiles": "CC1COC(=O)O1",      "name": "PC",       "homo_eV": -7.5, "lumo_eV": -0.7},
-  {"smiles": "CCOC(=O)OCC",       "name": "DEC",      "homo_eV": -7.7, "lumo_eV": -0.5},
-  {"smiles": "C1C(F)OC(=O)O1",    "name": "FEC",      "homo_eV": -7.9, "lumo_eV": -0.9},
-  {"smiles": "C1=COC(=O)O1",      "name": "VC",       "homo_eV": -6.5, "lumo_eV": -1.5},
-  {"smiles": "C1CCOC1",           "name": "THF",      "homo_eV": -7.0, "lumo_eV":  1.5},
-  {"smiles": "CC#N",              "name": "ACN",      "homo_eV": -7.8, "lumo_eV":  0.8},
-  {"smiles": "CS(=O)C",           "name": "DMSO",     "homo_eV": -6.8, "lumo_eV":  0.5},
-  {"smiles": "C1CS(=O)(=O)CC1",   "name": "Sulfolane","homo_eV": -7.6, "lumo_eV": -0.3},
-  {"smiles": "CCOCC",             "name": "DEE",      "homo_eV": -7.1, "lumo_eV":  1.4},
-  {"smiles": "O=C1CCCO1",         "name": "GBL",      "homo_eV": -7.4, "lumo_eV": -0.6},
-  {"smiles": "CCC#N",             "name": "PN",       "homo_eV": -7.7, "lumo_eV":  0.9},
-  {"smiles": "N#CCCCC#N",         "name": "Glutaronitrile", "homo_eV": -7.8, "lumo_eV": -0.3},
-  {"smiles": "N#CCCCCC#N",        "name": "Adiponitrile", "homo_eV": -7.8, "lumo_eV": -0.2},
-  {"smiles": "C1COCO1",           "name": "DOL",      "homo_eV": -7.0, "lumo_eV":  1.4},
-  {"smiles": "COCCOCCOC",         "name": "Diglyme",  "homo_eV": -6.9, "lumo_eV":  1.2},
-  {"smiles": "CC(=O)OCC",         "name": "EA",       "homo_eV": -7.5, "lumo_eV":  0.7},
-  {"smiles": "CC(=O)OC",          "name": "MA",       "homo_eV": -7.6, "lumo_eV":  0.7},
-  {"smiles": "O=S1(=O)CCCO1",     "name": "PS",       "homo_eV": -7.5, "lumo_eV": -0.8},
-  {"smiles": "CN1CCCC1=O",        "name": "NMP",      "homo_eV": -6.9, "lumo_eV":  0.5},
-  {"smiles": "CN(C)C=O",          "name": "DMF",      "homo_eV": -7.0, "lumo_eV":  0.6},
-  {"smiles": "CCOP(=O)(OCC)OCC",  "name": "TEP",      "homo_eV": -7.5, "lumo_eV":  0.5},
-  {"smiles": "COc1ccccc1",        "name": "Anisole",  "homo_eV": -5.9, "lumo_eV":  0.5},
-  {"smiles": "FCC#N",             "name": "FCAN",     "homo_eV": -7.9, "lumo_eV":  0.0},
-  {"smiles": "FC(F)(F)C#N",       "name": "TFCAN",    "homo_eV": -8.2, "lumo_eV": -0.5},
-  {"smiles": "O=C1OC(C(F)(F)F)CO1", "name": "TFPC",  "homo_eV": -7.8, "lumo_eV": -1.0},
-  {"smiles": "CC(C)OC(=O)OC(C)C", "name": "DIPC",     "homo_eV": -7.5, "lumo_eV": -0.4},
-  {"smiles": "CS(=O)(=O)CC#N",    "name": "MSACN",    "homo_eV": -7.7, "lumo_eV": -0.5},
-  {"smiles": "c1ccncc1",          "name": "Pyridine", "homo_eV": -6.5, "lumo_eV":  0.8},
-  {"smiles": "COB(OC)OC",         "name": "TMB",      "homo_eV": -7.3, "lumo_eV":  1.0},
-  {"smiles": "FC(F)(F)S(=O)(=O)C(F)(F)F", "name": "TFSI-core", "homo_eV": -8.5, "lumo_eV": -1.2},
-  {"smiles": "C1COC1", "name": "EO", "homo_eV": -7.3, "lumo_eV": 1.8},
-  {"smiles": "N#CCC#N", "name": "Succinonitrile", "homo_eV": -7.6, "lumo_eV": -0.3},
-  {"smiles": "O=C1OCCCO1", "name": "1,3-PC", "homo_eV": -7.5, "lumo_eV": -0.6},
-  {"smiles": "COP(=O)(OC)OC", "name": "TMP", "homo_eV": -7.5, "lumo_eV": 0.5},
-  {"smiles": "FC(F)(F)S(=O)(=O)NS(=O)(=O)C(F)(F)F", "name": "TFSI-H", "homo_eV": -8.5, "lumo_eV": -1.2},
-  {"smiles": "CCOB(OCC)OCC", "name": "TEB", "homo_eV": -7.4, "lumo_eV": 1.1},
-  {"smiles": "O=C1OC2(CO2)C=C1", "name": "VEC", "homo_eV": -6.8, "lumo_eV": -1.0},
-  {"smiles": "CC(C)OC(=O)OC(C)(C)C", "name": "TBIPC", "homo_eV": -7.4, "lumo_eV": -0.4},
-  {"smiles": "O=C1C=CC(=O)O1", "name": "Maleic_anhydride", "homo_eV": -6.7, "lumo_eV": -1.3},
-  {"smiles": "CCOCCOCC", "name": "Diethoxyethane", "homo_eV": -7.0, "lumo_eV": 1.3}
+  {
+    "smiles": "C1COC(=O)O1",
+    "name": "EC",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "COC(=O)OC",
+    "name": "DMC",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "COCCOC",
+    "name": "DME",
+    "homo_eV": -7.2,
+    "lumo_eV": 1.2
+  },
+  {
+    "smiles": "COC(=O)OCC",
+    "name": "EMC",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "CC1COC(=O)O1",
+    "name": "PC",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.7
+  },
+  {
+    "smiles": "CCOC(=O)OCC",
+    "name": "DEC",
+    "homo_eV": -7.7,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "C1C(F)OC(=O)O1",
+    "name": "FEC",
+    "homo_eV": -7.9,
+    "lumo_eV": -0.9
+  },
+  {
+    "smiles": "C1=COC(=O)O1",
+    "name": "VC",
+    "homo_eV": -6.5,
+    "lumo_eV": -1.5
+  },
+  {
+    "smiles": "C1CCOC1",
+    "name": "THF",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.5
+  },
+  {
+    "smiles": "CC#N",
+    "name": "ACN",
+    "homo_eV": -7.8,
+    "lumo_eV": 0.8
+  },
+  {
+    "smiles": "CS(=O)C",
+    "name": "DMSO",
+    "homo_eV": -6.8,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "C1CS(=O)(=O)CC1",
+    "name": "Sulfolane",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "CCOCC",
+    "name": "DEE",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "O=C1CCCO1",
+    "name": "GBL",
+    "homo_eV": -7.4,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "CCC#N",
+    "name": "PN",
+    "homo_eV": -7.7,
+    "lumo_eV": 0.9
+  },
+  {
+    "smiles": "N#CCCCC#N",
+    "name": "Glutaronitrile",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "N#CCCCCC#N",
+    "name": "Adiponitrile",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.2
+  },
+  {
+    "smiles": "C1COCO1",
+    "name": "DOL",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "COCCOCCOC",
+    "name": "Diglyme",
+    "homo_eV": -6.9,
+    "lumo_eV": 1.2
+  },
+  {
+    "smiles": "CC(=O)OCC",
+    "name": "EA",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.7
+  },
+  {
+    "smiles": "CC(=O)OC",
+    "name": "MA",
+    "homo_eV": -7.6,
+    "lumo_eV": 0.7
+  },
+  {
+    "smiles": "O=S1(=O)CCCO1",
+    "name": "PS",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "CN1CCCC1=O",
+    "name": "NMP",
+    "homo_eV": -6.9,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "CN(C)C=O",
+    "name": "DMF",
+    "homo_eV": -7.0,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CCOP(=O)(OCC)OCC",
+    "name": "TEP",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "COc1ccccc1",
+    "name": "Anisole",
+    "homo_eV": -5.9,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "FCC#N",
+    "name": "FCAN",
+    "homo_eV": -7.9,
+    "lumo_eV": 0.0
+  },
+  {
+    "smiles": "FC(F)(F)C#N",
+    "name": "TFCAN",
+    "homo_eV": -8.2,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "O=C1OC(C(F)(F)F)CO1",
+    "name": "TFPC",
+    "homo_eV": -7.8,
+    "lumo_eV": -1.0
+  },
+  {
+    "smiles": "CC(C)OC(=O)OC(C)C",
+    "name": "DIPC",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "CS(=O)(=O)CC#N",
+    "name": "MSACN",
+    "homo_eV": -7.7,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "c1ccncc1",
+    "name": "Pyridine",
+    "homo_eV": -6.5,
+    "lumo_eV": 0.8
+  },
+  {
+    "smiles": "COB(OC)OC",
+    "name": "TMB",
+    "homo_eV": -7.3,
+    "lumo_eV": 1.0
+  },
+  {
+    "smiles": "FC(F)(F)S(=O)(=O)C(F)(F)F",
+    "name": "TFSI-core",
+    "homo_eV": -8.5,
+    "lumo_eV": -1.2
+  },
+  {
+    "smiles": "C1COC1",
+    "name": "EO",
+    "homo_eV": -7.3,
+    "lumo_eV": 1.8
+  },
+  {
+    "smiles": "N#CCC#N",
+    "name": "Succinonitrile",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "O=C1OCCCO1",
+    "name": "1,3-PC",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "COP(=O)(OC)OC",
+    "name": "TMP",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "FC(F)(F)S(=O)(=O)NS(=O)(=O)C(F)(F)F",
+    "name": "TFSI-H",
+    "homo_eV": -8.5,
+    "lumo_eV": -1.2
+  },
+  {
+    "smiles": "CCOB(OCC)OCC",
+    "name": "TEB",
+    "homo_eV": -7.4,
+    "lumo_eV": 1.1
+  },
+  {
+    "smiles": "O=C1OC2(CO2)C=C1",
+    "name": "VEC",
+    "homo_eV": -6.8,
+    "lumo_eV": -1.0
+  },
+  {
+    "smiles": "CC(C)OC(=O)OC(C)(C)C",
+    "name": "TBIPC",
+    "homo_eV": -7.4,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "O=C1C=CC(=O)O1",
+    "name": "Maleic_anhydride",
+    "homo_eV": -6.7,
+    "lumo_eV": -1.3
+  },
+  {
+    "smiles": "CCOCCOCC",
+    "name": "Diethoxyethane",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "COCCOCCOCCOC",
+    "name": "Tetraglyme",
+    "homo_eV": -6.8,
+    "lumo_eV": 1.2
+  },
+  {
+    "smiles": "COCC(C)OC",
+    "name": "Propylene_glycol_DME",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "CCOC(C)OC",
+    "name": "Asymmetric_ether",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "CCOCCOC",
+    "name": "Diethylene_glycol_diethyl",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "COCCOC(C)C",
+    "name": "Isopropyl_diglyme",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "CC(C)OCCOC(C)C",
+    "name": "Diisopropyl_diglyme",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "CCOC(C)OC(C)C",
+    "name": "Branched_diether",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "CC(C)(C)OCCOC(C)(C)C",
+    "name": "Di_tert_butyl_diglyme",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "COC1CCCCC1",
+    "name": "Cyclohexyl_methyl_ether",
+    "homo_eV": -6.8,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "CCOC1CCCCC1",
+    "name": "Cyclohexyl_ethyl_ether",
+    "homo_eV": -6.8,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "COC1CCOCC1",
+    "name": "THP_methyl_ether",
+    "homo_eV": -6.9,
+    "lumo_eV": 1.2
+  },
+  {
+    "smiles": "COC1CCCO1",
+    "name": "THF_methyl_ether",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "CCOC1CCOCC1",
+    "name": "THP_ethyl_ether",
+    "homo_eV": -6.9,
+    "lumo_eV": 1.2
+  },
+  {
+    "smiles": "CCOCCOCCOCC",
+    "name": "Triethylene_glycol_diethyl",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "CCCOC(=O)OCC",
+    "name": "Ethyl_propyl_carbonate",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "CCCCOC(=O)OCC",
+    "name": "Butyl_ethyl_carbonate",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "CCCOC(=O)OCCC",
+    "name": "Dipropyl_carbonate",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "CCCCOC(=O)OCCCC",
+    "name": "Dibutyl_carbonate",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "CC(C)COC(=O)OCC(C)C",
+    "name": "Diisobutyl_carbonate",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "CC(C)COC(=O)OC(C)C",
+    "name": "Diisopropyl_carbonate",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "CC1(C)COC(=O)O1",
+    "name": "Butylene_carbonate",
+    "homo_eV": -7.4,
+    "lumo_eV": -0.7
+  },
+  {
+    "smiles": "CCC1COC(=O)O1",
+    "name": "Ethyl_EC",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.7
+  },
+  {
+    "smiles": "O=C1OC=CCO1",
+    "name": "Vinyl_EC",
+    "homo_eV": -6.7,
+    "lumo_eV": -1.2
+  },
+  {
+    "smiles": "CC1(C)OC(=O)OC1(C)C",
+    "name": "Tetramethyl_EC",
+    "homo_eV": -7.3,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "CC(C)C1COC(=O)O1",
+    "name": "Isopropyl_EC",
+    "homo_eV": -7.4,
+    "lumo_eV": -0.7
+  },
+  {
+    "smiles": "N#CCCCCCC#N",
+    "name": "Pimelonitrile",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.2
+  },
+  {
+    "smiles": "N#CCCCCCCC#N",
+    "name": "Suberonitrile",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.1
+  },
+  {
+    "smiles": "N#CCCCCCCCC#N",
+    "name": "Azelaonitrile",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.1
+  },
+  {
+    "smiles": "N#CCCCCCCCCC#N",
+    "name": "Sebaconitrile",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.1
+  },
+  {
+    "smiles": "N#CC1CCCCC1C#N",
+    "name": "1,2-Dicyanocyclohexane",
+    "homo_eV": -7.7,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "CC(C)(C#N)C#N",
+    "name": "Dimethylmalononitrile",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "N#CCCOCCC#N",
+    "name": "Oxydipropionitrile",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "N#CCOCC#N",
+    "name": "Oxydiacetonitrile",
+    "homo_eV": -7.7,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "CCC(C#N)C#N",
+    "name": "Ethyl_malononitrile",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "CCCC(C#N)C#N",
+    "name": "Butyl_malononitrile",
+    "homo_eV": -7.7,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "COC(=O)CCC#N",
+    "name": "Methyl_4-cyanobutanoate",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.0
+  },
+  {
+    "smiles": "CCOC(=O)CCC#N",
+    "name": "Ethyl_3-cyanopropanoate",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.0
+  },
+  {
+    "smiles": "CCS(=O)(=O)CC",
+    "name": "Diethyl_sulfone",
+    "homo_eV": -7.7,
+    "lumo_eV": 0.3
+  },
+  {
+    "smiles": "CCCS(=O)(=O)CCC",
+    "name": "Dipropyl_sulfone",
+    "homo_eV": -7.7,
+    "lumo_eV": 0.3
+  },
+  {
+    "smiles": "CCCCS(=O)(=O)CCCC",
+    "name": "Dibutyl_sulfone",
+    "homo_eV": -7.7,
+    "lumo_eV": 0.4
+  },
+  {
+    "smiles": "O=S1(=O)C=CCC1",
+    "name": "Sulfolene_unsaturated",
+    "homo_eV": -6.8,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "CS(=O)(=O)C1CCCCC1",
+    "name": "Methyl_cyclohexyl_sulfone",
+    "homo_eV": -7.6,
+    "lumo_eV": 0.2
+  },
+  {
+    "smiles": "CCS(=O)(=O)c1ccccc1",
+    "name": "Ethyl_phenyl_sulfone",
+    "homo_eV": -6.5,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "CS(=O)(=O)c1ccccc1",
+    "name": "Methyl_phenyl_sulfone",
+    "homo_eV": -6.5,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "CCS(=O)(=O)CCS(=O)(=O)CC",
+    "name": "Ethyl_sulfone_dimer",
+    "homo_eV": -7.7,
+    "lumo_eV": 0.2
+  },
+  {
+    "smiles": "CS(=O)(=O)CCC#N",
+    "name": "Methylsulfonyl_propionitrile",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "CCS(=O)(=O)CCC#N",
+    "name": "Ethylsulfonyl_propionitrile",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "CS(=O)C1CCCCC1",
+    "name": "Methyl_cyclohexyl_sulfoxide",
+    "homo_eV": -6.8,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "CCS(=O)CC",
+    "name": "Diethyl_sulfoxide",
+    "homo_eV": -6.8,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "CCCS(=O)CCC",
+    "name": "Dipropyl_sulfoxide",
+    "homo_eV": -6.8,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CS(=O)c1ccccc1",
+    "name": "Methyl_phenyl_sulfoxide",
+    "homo_eV": -6.3,
+    "lumo_eV": 0.2
+  },
+  {
+    "smiles": "OCCC(F)(F)F",
+    "name": "Trifluoropropanol",
+    "homo_eV": -7.8,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "OCCCC(F)(F)F",
+    "name": "Trifluorobutanol",
+    "homo_eV": -7.8,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "OCCOCCC(F)(F)F",
+    "name": "Fluoroalkyl_ether_alcohol",
+    "homo_eV": -7.7,
+    "lumo_eV": 0.3
+  },
+  {
+    "smiles": "OCC(F)(F)F",
+    "name": "Trifluoroethanol",
+    "homo_eV": -8.0,
+    "lumo_eV": 0.2
+  },
+  {
+    "smiles": "COC(=O)OCC(F)(F)F",
+    "name": "Methyl_trifluoroethyl_carbonate",
+    "homo_eV": -7.9,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "CCOC(=O)OCC(F)(F)F",
+    "name": "Ethyl_trifluoroethyl_carbonate",
+    "homo_eV": -7.9,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "O=C(OCC(F)(F)F)OCC(F)(F)F",
+    "name": "Bis_trifluoroethyl_carbonate",
+    "homo_eV": -8.1,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "OCCOCC(F)(F)F",
+    "name": "Trifluoroethoxyethanol",
+    "homo_eV": -7.7,
+    "lumo_eV": 0.3
+  },
+  {
+    "smiles": "Fc1ccccc1F",
+    "name": "1,2-Difluorobenzene",
+    "homo_eV": -6.2,
+    "lumo_eV": -1.0
+  },
+  {
+    "smiles": "Fc1ccc(F)cc1",
+    "name": "1,4-Difluorobenzene",
+    "homo_eV": -6.3,
+    "lumo_eV": -1.0
+  },
+  {
+    "smiles": "Fc1cc(F)cc(F)c1",
+    "name": "1,3,5-Trifluorobenzene",
+    "homo_eV": -6.5,
+    "lumo_eV": -1.1
+  },
+  {
+    "smiles": "FC(F)(F)CCCC(F)(F)F",
+    "name": "Perfluorohexane_short",
+    "homo_eV": -8.3,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "CCCCC(=O)OCC",
+    "name": "Ethyl_pentanoate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.8
+  },
+  {
+    "smiles": "CCCCCC(=O)OC",
+    "name": "Methyl_hexanoate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.8
+  },
+  {
+    "smiles": "CCOC(=O)C(C)(C)C",
+    "name": "Ethyl_pivalate",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.8
+  },
+  {
+    "smiles": "CCCCOC(=O)CC",
+    "name": "Butyl_propanoate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.8
+  },
+  {
+    "smiles": "CCCOC(=O)CCC",
+    "name": "Propyl_butanoate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.8
+  },
+  {
+    "smiles": "CCOC(=O)CC(C)C",
+    "name": "Ethyl_isovalerate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.8
+  },
+  {
+    "smiles": "CCC(=O)OCC(C)C",
+    "name": "Isobutyl_propanoate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.8
+  },
+  {
+    "smiles": "O=C1CCC(=O)O1",
+    "name": "Succinic_anhydride",
+    "homo_eV": -7.0,
+    "lumo_eV": -0.7
+  },
+  {
+    "smiles": "O=C1CCCC(=O)O1",
+    "name": "Glutaric_anhydride",
+    "homo_eV": -7.0,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "CC(=O)OCCCOC(C)=O",
+    "name": "Propylene_glycol_diacetate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.7
+  },
+  {
+    "smiles": "CC(=O)OCCOC(C)=O",
+    "name": "Ethylene_glycol_diacetate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.7
+  },
+  {
+    "smiles": "CCOC(=O)CCC(=O)OCC",
+    "name": "Diethyl_succinate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "COC(=O)CCCC(=O)OC",
+    "name": "Dimethyl_glutarate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CCOC(=O)CCCC(=O)OCC",
+    "name": "Diethyl_glutarate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "COC(=O)CCCCC(=O)OC",
+    "name": "Dimethyl_adipate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CCOC(=O)CCCCC(=O)OCC",
+    "name": "Diethyl_adipate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CC(=O)OCCOCCOC(C)=O",
+    "name": "Diethylene_glycol_diacetate",
+    "homo_eV": -7.3,
+    "lumo_eV": 0.7
+  },
+  {
+    "smiles": "O=Cc1ccccc1",
+    "name": "Benzaldehyde",
+    "homo_eV": -6.5,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "CC(=O)c1ccccc1",
+    "name": "Acetophenone",
+    "homo_eV": -6.4,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "CC(C)(C)C(=O)c1ccccc1",
+    "name": "tert_Butyl_phenyl_ketone",
+    "homo_eV": -6.4,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "c1ccc2ccccc2c1",
+    "name": "Naphthalene",
+    "homo_eV": -5.8,
+    "lumo_eV": -1.5
+  },
+  {
+    "smiles": "c1ccc2c(c1)ccc1ccccc12",
+    "name": "Anthracene",
+    "homo_eV": -5.5,
+    "lumo_eV": -2.0
+  },
+  {
+    "smiles": "c1cc2ccc3cccc4ccc(c1)c2c34",
+    "name": "Pyrene",
+    "homo_eV": -5.4,
+    "lumo_eV": -2.2
+  },
+  {
+    "smiles": "c1ccc2cc3ccccc3cc2c1",
+    "name": "Phenanthrene",
+    "homo_eV": -5.7,
+    "lumo_eV": -1.6
+  },
+  {
+    "smiles": "c1ccc2c(c1)OCCO2",
+    "name": "1,4-Benzodioxane",
+    "homo_eV": -5.8,
+    "lumo_eV": 0.0
+  },
+  {
+    "smiles": "c1ccc2c(c1)OCO2",
+    "name": "1,3-Benzodioxole",
+    "homo_eV": -5.9,
+    "lumo_eV": 0.0
+  },
+  {
+    "smiles": "OCc1ccccc1",
+    "name": "Benzyl_alcohol",
+    "homo_eV": -6.2,
+    "lumo_eV": 0.2
+  },
+  {
+    "smiles": "CCOc1ccccc1",
+    "name": "Phenetole",
+    "homo_eV": -5.9,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "OCCOc1ccccc1",
+    "name": "2-Phenoxyethanol",
+    "homo_eV": -5.9,
+    "lumo_eV": 0.4
+  },
+  {
+    "smiles": "Nc1ccccc1",
+    "name": "Aniline",
+    "homo_eV": -5.5,
+    "lumo_eV": 0.3
+  },
+  {
+    "smiles": "N#Cc1ccccc1",
+    "name": "Benzonitrile",
+    "homo_eV": -6.7,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "Fc1ccccc1",
+    "name": "Fluorobenzene",
+    "homo_eV": -6.2,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "Clc1ccccc1",
+    "name": "Chlorobenzene",
+    "homo_eV": -6.1,
+    "lumo_eV": -0.7
+  },
+  {
+    "smiles": "COc1ccccc1OC",
+    "name": "1,2-Dimethoxybenzene",
+    "homo_eV": -5.7,
+    "lumo_eV": 0.3
+  },
+  {
+    "smiles": "c1cc[nH]c1",
+    "name": "Pyrrole",
+    "homo_eV": -5.8,
+    "lumo_eV": 0.2
+  },
+  {
+    "smiles": "c1ccc2[nH]ccc2c1",
+    "name": "Indole",
+    "homo_eV": -5.6,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "c1ccc2ncccc2c1",
+    "name": "Quinoline",
+    "homo_eV": -5.9,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "O=c1cc[nH]c(=O)[nH]1",
+    "name": "Uracil",
+    "homo_eV": -6.5,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "Cn1cnc2c1c(=O)[nH]c(=O)n2C",
+    "name": "Caffeine",
+    "homo_eV": -6.3,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "Oc1cccnc1",
+    "name": "4-Hydroxypyridine",
+    "homo_eV": -6.4,
+    "lumo_eV": 0.2
+  },
+  {
+    "smiles": "Oc1ccncc1",
+    "name": "2-Hydroxypyridine",
+    "homo_eV": -6.4,
+    "lumo_eV": 0.2
+  },
+  {
+    "smiles": "O=C1C=CC(=O)N1",
+    "name": "Maleimide",
+    "homo_eV": -6.8,
+    "lumo_eV": -1.0
+  },
+  {
+    "smiles": "O=C1CCC(=O)N1",
+    "name": "Succinimide",
+    "homo_eV": -7.0,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "O=C1CCCN1",
+    "name": "2-Pyrrolidinone",
+    "homo_eV": -7.0,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "OCCO",
+    "name": "Ethylene_glycol",
+    "homo_eV": -7.2,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "OCCCO",
+    "name": "1,3-Propanediol",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "OCCCCCO",
+    "name": "1,5-Pentanediol",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "CC(O)CO",
+    "name": "1,2-Propanediol",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "CC(C)(O)CO",
+    "name": "2,2-Dimethyl_1,3-propanediol",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "OCCOCCO",
+    "name": "Diethylene_glycol",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "OCCOCCOCCO",
+    "name": "Triethylene_glycol",
+    "homo_eV": -6.9,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "OCC(O)CO",
+    "name": "Glycerol",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "CCCCCO",
+    "name": "1-Pentanol",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "CC(C)CCO",
+    "name": "3-Methyl_1-butanol",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "CCCC(C)O",
+    "name": "2-Pentanol",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "CC(C)(C)CO",
+    "name": "Neopentyl_alcohol",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "C1COCCO1",
+    "name": "1,4-Dioxane",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "C1COCCN1",
+    "name": "Morpholine",
+    "homo_eV": -6.8,
+    "lumo_eV": 1.2
+  },
+  {
+    "smiles": "CC1CCCO1",
+    "name": "2-Methyl_THF",
+    "homo_eV": -6.9,
+    "lumo_eV": 1.5
+  },
+  {
+    "smiles": "CC1CCOC1",
+    "name": "3-Methyl_THF",
+    "homo_eV": -6.9,
+    "lumo_eV": 1.5
+  },
+  {
+    "smiles": "CCCOP(=O)(OCCC)OCCC",
+    "name": "Tripropyl_phosphate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "CCCCOP(=O)(OCCCC)OCCCC",
+    "name": "Tributyl_phosphate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "CC(C)OP(=O)(OC(C)C)OC(C)C",
+    "name": "Triisopropyl_phosphate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "CCCOB(OCCC)OCCC",
+    "name": "Tripropyl_borate",
+    "homo_eV": -7.3,
+    "lumo_eV": 1.1
+  },
+  {
+    "smiles": "CCCCOB(OCCCC)OCCCC",
+    "name": "Tributyl_borate",
+    "homo_eV": -7.3,
+    "lumo_eV": 1.1
+  },
+  {
+    "smiles": "CC(C)OB(OC(C)C)OC(C)C",
+    "name": "Triisopropyl_borate",
+    "homo_eV": -7.3,
+    "lumo_eV": 1.1
+  },
+  {
+    "smiles": "CCN(C)C=O",
+    "name": "N-Ethylformamide",
+    "homo_eV": -7.0,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CC(=O)N(C)C",
+    "name": "DMAc",
+    "homo_eV": -6.9,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CCN(CC)C(C)=O",
+    "name": "DEAc",
+    "homo_eV": -6.9,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CC(=O)N1CCOCC1",
+    "name": "N-Acetylmorpholine",
+    "homo_eV": -6.9,
+    "lumo_eV": 0.4
+  },
+  {
+    "smiles": "CC(=O)N1CCCCC1",
+    "name": "N-Acetylpiperidine",
+    "homo_eV": -6.9,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "O=C1CCCCN1",
+    "name": "Valerolactam",
+    "homo_eV": -7.0,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CN(C)C(=O)N(C)C",
+    "name": "Tetramethylurea",
+    "homo_eV": -6.8,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "CNC(=O)N(C)C",
+    "name": "Trimethylurea",
+    "homo_eV": -6.9,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "CC(=O)NC1CCCCC1",
+    "name": "N-Cyclohexylacetamide",
+    "homo_eV": -6.9,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CC(=O)Nc1ccccc1",
+    "name": "Acetanilide",
+    "homo_eV": -6.5,
+    "lumo_eV": 0.0
+  },
+  {
+    "smiles": "O=C1C=CCO1",
+    "name": "2_5H_Furanone",
+    "homo_eV": -6.8,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "CSSC",
+    "name": "Dimethyl_disulfide",
+    "homo_eV": -6.8,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "C1CSSC1",
+    "name": "1,2-Dithiolane",
+    "homo_eV": -6.7,
+    "lumo_eV": 0.4
+  },
+  {
+    "smiles": "C1CSCS1",
+    "name": "1,3-Dithiolane",
+    "homo_eV": -6.8,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "c1ccc2c(c1)sc1ccccc12",
+    "name": "Dibenzothiophene",
+    "homo_eV": -5.9,
+    "lumo_eV": -1.2
+  },
+  {
+    "smiles": "O=C1OC(=O)c2ccccc21",
+    "name": "Phthalic_anhydride",
+    "homo_eV": -6.8,
+    "lumo_eV": -1.2
+  },
+  {
+    "smiles": "CC1CCOC1=O",
+    "name": "Gamma_valerolactone",
+    "homo_eV": -7.2,
+    "lumo_eV": 0.3
+  },
+  {
+    "smiles": "c1ccc(C2CCCCC2)cc1",
+    "name": "Phenylcyclohexane",
+    "homo_eV": -6.2,
+    "lumo_eV": 0.0
+  },
+  {
+    "smiles": "Cc1ccc(C)c(C)c1",
+    "name": "1,2,4-Trimethylbenzene",
+    "homo_eV": -5.9,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "Cc1cc(C)cc(C)c1",
+    "name": "Mesitylene",
+    "homo_eV": -6.0,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "C1CCCCC1",
+    "name": "Cyclohexane",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.5
+  },
+  {
+    "smiles": "CCCCCC",
+    "name": "Hexane",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.5
+  },
+  {
+    "smiles": "C1CC1",
+    "name": "Cyclopropane",
+    "homo_eV": -7.2,
+    "lumo_eV": 1.6
+  },
+  {
+    "smiles": "CC1CCCCC1",
+    "name": "Methylcyclohexane",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.5
+  },
+  {
+    "smiles": "C1CC2CCC1C2",
+    "name": "Decalin",
+    "homo_eV": -6.9,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "COc1ccccc1C",
+    "name": "2-Methylanisole",
+    "homo_eV": -5.8,
+    "lumo_eV": 0.4
+  },
+  {
+    "smiles": "COc1ccc(C)cc1",
+    "name": "4-Methylanisole",
+    "homo_eV": -5.8,
+    "lumo_eV": 0.4
+  },
+  {
+    "smiles": "CCc1ccccc1",
+    "name": "Ethylbenzene",
+    "homo_eV": -6.0,
+    "lumo_eV": -0.2
+  },
+  {
+    "smiles": "CC(C)c1ccccc1",
+    "name": "Cumene",
+    "homo_eV": -6.0,
+    "lumo_eV": -0.2
+  },
+  {
+    "smiles": "N#CCc1ccccc1",
+    "name": "Benzyl_cyanide",
+    "homo_eV": -6.6,
+    "lumo_eV": -0.2
+  },
+  {
+    "smiles": "N#CCCc1ccccc1",
+    "name": "Phenethyl_cyanide",
+    "homo_eV": -6.6,
+    "lumo_eV": -0.2
+  },
+  {
+    "smiles": "CCCCOCCOCCCC",
+    "name": "Dibutyl_ether",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "CC(C)OC(C)C",
+    "name": "Diisopropyl_ether",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "CC(C)(C)OC(C)(C)C",
+    "name": "Di_tert_butyl_ether",
+    "homo_eV": -7.2,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "CC1CCCC(C)O1",
+    "name": "2,5-Dimethyl_THF",
+    "homo_eV": -6.9,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "CC1CCCCO1",
+    "name": "2-Methyl_THF_2",
+    "homo_eV": -6.9,
+    "lumo_eV": 1.5
+  }
 ]

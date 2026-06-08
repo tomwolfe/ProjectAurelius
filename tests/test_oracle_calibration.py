@@ -288,3 +288,42 @@ class TestOracleCalibration:
             f"Expected < 1.5 eV. Cross-conjugated molecules must be correctly "
             f"penalized to maintain generalization."
         )
+
+
+class TestSurrogateCalibration:
+    """SurrogateQuantumOracle must achieve target Spearman rho thresholds.
+
+    The enriched 2060-dim feature vector (ECFP4 + 5 physchem + 7 atom-type
+    descriptors) and expanded training set (>= 150 molecules) should yield
+    Spearman rho >= 0.72 for HOMO and >= 0.65 for LUMO on a 20% holdout.
+    """
+
+    def test_surrogate_spearman_rho_homo(self):
+        from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
+        surrogate = SurrogateQuantumOracle()
+        rho = surrogate.evaluate_holdout_spearman(property="homo")
+        assert rho >= 0.72, (
+            f"Surrogate HOMO Spearman rho = {rho:.4f} < 0.72. "
+            f"Insufficient generalization with enriched feature set."
+        )
+
+    def test_surrogate_spearman_rho_lumo(self):
+        from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
+        surrogate = SurrogateQuantumOracle()
+        rho = surrogate.evaluate_holdout_spearman(property="lumo")
+        assert rho >= 0.65, (
+            f"Surrogate LUMO Spearman rho = {rho:.4f} < 0.65. "
+            f"Insufficient generalization with enriched feature set."
+        )
+
+    def test_surrogate_n_train_minimum(self):
+        from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
+        from aurelius.types import MoleculeContext
+        surrogate = SurrogateQuantumOracle()
+        ctx = MoleculeContext.from_smiles("CCO")
+        assert ctx is not None
+        surrogate.predict(ctx)
+        assert surrogate.n_train >= 150, (
+            f"Surrogate trained on only {surrogate.n_train} molecules; "
+            f"need >= 150 for adequate generalization."
+        )

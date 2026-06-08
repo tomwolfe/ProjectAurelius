@@ -19,7 +19,10 @@ from typing import Any
 
 import numpy as np
 from rdkit import Chem
+from rdkit.Chem import Descriptors, rdMolDescriptors
+from scipy.stats import spearmanr
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
 
 from aurelius.types import MoleculeContext
 
@@ -34,7 +37,22 @@ class SurrogateQuantumOracle:
     """RandomForest surrogate for fast HOMO/LUMO estimation.
 
     Trained lazily on orbital_calibration.json. Training takes < 2s
-    for the calibration set (~45 molecules). Inference is < 1ms per molecule.
+    for the calibration set (~200 molecules). Inference is < 1ms per molecule.
+
+    Uses a 2060-dimensional feature vector:
+      - [0:2048]  ECFP4 binary fingerprint (Morgan radius=2, 2048 bits)
+      - [2048]    Molecular weight
+      - [2049]    MolLogP
+      - [2050]    TPSA
+      - [2051]    Ring count
+      - [2052]    Rotatable bonds
+      - [2053]    Num F atoms
+      - [2054]    Num O atoms
+      - [2055]    Num N atoms
+      - [2056]    Num S atoms
+      - [2057]    Num aromatic rings
+      - [2058]    Fraction sp3
+      - [2059]    Num H-bond acceptors
 
     Usage:
         surrogate = SurrogateQuantumOracle()
@@ -102,6 +120,42 @@ class SurrogateQuantumOracle:
             arr[idx] = 1.0
         return arr
 
+    def _build_feature_vector(self, ctx: MoleculeContext) -> np.ndarray:
+        """Build 2060-dim feature vector from MoleculeContext.
+
+        Layout:
+          - [0:2048]  ECFP4 binary fingerprint (Morgan radius=2, 2048 bits)
+          - [2048]    Molecular weight
+          - [2049]    MolLogP
+          - [2050]    TPSA
+          - [2051]    Ring count
+          - [2052]    Rotatable bonds
+          - [2053]    Num F atoms
+          - [2054]    Num O atoms
+          - [2055]    Num N atoms
+          - [2056]    Num S atoms
+          - [2057]    Num aromatic rings
+          - [2058]    Fraction sp3
+          - [2059]    Num H-bond acceptors
+        """
+        mol = ctx.mol
+        fp_arr = self._fingerprint_array(mol)
+        arr = np.zeros(2060, dtype=np.float32)
+        arr[:2048] = fp_arr
+        arr[2048] = float(Descriptors.ExactMolWt(mol))
+        arr[2049] = float(Descriptors.MolLogP(mol))
+        arr[2050] = float(Descriptors.TPSA(mol))
+        arr[2051] = float(Descriptors.RingCount(mol))
+        arr[2052] = float(Descriptors.NumRotatableBonds(mol))
+        arr[2053] = float(sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 9))
+        arr[2054] = float(sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 8))
+        arr[2055] = float(sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 7))
+        arr[2056] = float(sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 16))
+        arr[2057] = float(rdMolDescriptors.CalcNumAromaticRings(mol))
+        arr[2058] = float(rdMolDescriptors.CalcFractionCSP3(mol))
+        arr[2059] = float(Descriptors.NumHAcceptors(mol))
+        return arr
+
     def _ensure_trained(self) -> None:
         if self._is_trained:
             return
@@ -116,8 +170,10 @@ class SurrogateQuantumOracle:
             mol = Chem.MolFromSmiles(entry["smiles"])
             if mol is None:
                 continue
-            fp_arr = self._fingerprint_array(mol)
-            X_list.append(fp_arr)
+            from aurelius.types import MoleculeContext
+            ctx = MoleculeContext(smiles=entry["smiles"], mol=mol)
+            fv = self._build_feature_vector(ctx)
+            X_list.append(fv)
             y_homo.append(entry["homo_eV"])
             y_lumo.append(entry["lumo_eV"])
 
@@ -160,14 +216,71 @@ class SurrogateQuantumOracle:
         Training happens lazily on first call. Returns both values.
         """
         self._ensure_trained()
-        fp_arr = self._fingerprint_array(ctx.mol).reshape(1, -1)
+        fv = self._build_feature_vector(ctx).reshape(1, -1)
 
         t0 = time.perf_counter()
-        homo = float(self._homo_model.predict(fp_arr)[0])  # type: ignore[union-attr]
-        lumo = float(self._lumo_model.predict(fp_arr)[0])  # type: ignore[union-attr]
+        homo = float(self._homo_model.predict(fv)[0])  # type: ignore[union-attr]
+        lumo = float(self._lumo_model.predict(fv)[0])  # type: ignore[union-attr]
         _inference_ms = (time.perf_counter() - t0) * 1000
 
         return homo, lumo
+
+    def evaluate_holdout_spearman(self, property: str = "homo") -> float:
+        """Compute Spearman rank correlation on a 20% holdout set.
+
+        Parameters
+        ----------
+        property : str
+            "homo" or "lumo" to select which property to evaluate.
+
+        Returns
+        -------
+        float
+            Spearman rho on the holdout set. Returns 0.0 if insufficient data.
+        """
+        data = self._load_data()
+        if len(data) < 10:
+            return 0.0
+
+        indices = list(range(len(data)))
+        train_idx, test_idx = train_test_split(
+            indices, test_size=0.2, random_state=self._random_state,
+        )
+
+        train_data = [data[i] for i in train_idx]
+        holdout_data = [data[i] for i in test_idx]
+
+        surrogate = SurrogateQuantumOracle(
+            n_estimators=self._n_estimators,
+            max_depth=self._max_depth,
+            random_state=self._random_state,
+        )
+        surrogate.set_training_data(train_data)
+        surrogate._ensure_trained()
+
+        y_true: list[float] = []
+        y_pred: list[float] = []
+        for entry in holdout_data:
+            mol = Chem.MolFromSmiles(entry["smiles"])
+            if mol is None:
+                continue
+            ctx = MoleculeContext(smiles=entry["smiles"], mol=mol)
+            try:
+                homo, lumo = surrogate.predict(ctx)
+            except Exception:
+                continue
+            if property == "homo":
+                y_true.append(entry["homo_eV"])
+                y_pred.append(homo)
+            else:
+                y_true.append(entry["lumo_eV"])
+                y_pred.append(lumo)
+
+        if len(y_true) < 5:
+            return 0.0
+
+        rho, _ = spearmanr(y_true, y_pred)
+        return float(rho)
 
     def compute_penalty(self, homo_eV: float) -> float:
         """Return 0.5x penalty if surrogate predicts unstable HOMO (> -5.0 eV)."""
