@@ -235,6 +235,7 @@ class DiscoveryLoop:
         batch_size: int = 50,
         max_wall_time: float = 43200.0,
         wet_lab_feedback: Callable[[list[ScreeningResult], dict[str, float]], None] | None = None,
+        exploration_beta: float = 0.5,
     ) -> None:
         self.pipeline = pipeline
         self.engine = engine
@@ -243,6 +244,7 @@ class DiscoveryLoop:
         self.batch_size = batch_size
         self.max_wall_time = max_wall_time
         self.wet_lab_feedback = wet_lab_feedback
+        self.exploration_beta = exploration_beta
 
     @staticmethod
     def _dict_to_screening(d: dict[str, Any]) -> ScreeningResult:
@@ -272,8 +274,9 @@ class DiscoveryLoop:
 
             force_exploration = self.state.has_scaffold_stagnation(2)
             if force_exploration:
-                log.info("Generation %d: Scaffold stagnation detected — pivoting to BRICS-only exploration.", generation)
+                log.info("Generation %d: Scaffold stagnation detected — pivoting to BRICS-only exploration with UCB active learning.", generation)
                 self._inject_tier0_seeds()
+                self.exploration_beta = 0.5
             candidates = self._generate_candidates(generation, force_exploration=force_exploration)
             valid_contexts, invalid_count = self._filter_candidates(candidates)
 
@@ -648,11 +651,86 @@ class DiscoveryLoop:
         self.state.add_result(sr)
         return total_score, t2
 
+    @staticmethod
+    def _get_uncertainties(
+        pipeline: Any,
+        contexts: list[MoleculeContext],
+    ) -> list[float]:
+        """Compute combined UQ uncertainties for a list of contexts."""
+        gc_uq = getattr(getattr(pipeline, '_oracle', None), '_gc_uq', None)
+        uncertainties: list[float] = []
+        for ctx in contexts:
+            if gc_uq is not None:
+                try:
+                    _, diel_std, _ = gc_uq.predict_dielectric(ctx)
+                    _, visc_std, _ = gc_uq.predict_viscosity(ctx)
+                    uncertainties.append((diel_std + visc_std) / 2.0)
+                except Exception:
+                    uncertainties.append(0.0)
+            else:
+                uncertainties.append(0.0)
+        return uncertainties
+
+    def _select_from_active_learning_queue(
+        self,
+        result_contexts: list[MoleculeContext],
+        all_scores: list[float],
+    ) -> tuple[list[MoleculeContext], list[float]] | None:
+        """If the active learning queue has items, select from it using UCB.
+
+        Returns (selected, scores) or None if the queue is empty.
+        """
+        if not self.state.active_learning_queue:
+            return None
+        queue_set = set(self.state.active_learning_queue)
+        queue_contexts: list[MoleculeContext] = []
+        queue_scores: list[float] = []
+        for ctx, score in zip(result_contexts, all_scores, strict=False):
+            if ctx.smiles in queue_set:
+                queue_contexts.append(ctx)
+                queue_scores.append(score)
+
+        if not queue_contexts:
+            return None
+
+        uncertainties = self._get_uncertainties(self.pipeline, queue_contexts)
+        selected = select_for_active_learning(
+            queue_contexts, queue_scores, uncertainties,
+            batch_size=self.batch_size,
+        )
+        selected_scores = [queue_scores[queue_contexts.index(ctx)] for ctx in selected]
+
+        for ctx in selected:
+            if ctx.smiles in self.state.active_learning_queue:
+                self.state.active_learning_queue.remove(ctx.smiles)
+
+        return selected, selected_scores
+
+    def _ucb_select_all(
+        self,
+        result_contexts: list[MoleculeContext],
+        all_scores: list[float],
+    ) -> tuple[list[MoleculeContext], list[float]]:
+        """UCB-based selection: score + beta * uncertainty for every candidate."""
+        uncertainties = self._get_uncertainties(self.pipeline, result_contexts)
+        selected = select_for_active_learning(
+            result_contexts, all_scores, uncertainties,
+            batch_size=self.batch_size, beta=self.exploration_beta,
+        )
+        selected_scores = [all_scores[result_contexts.index(ctx)] for ctx in selected]
+        return selected, selected_scores
+
     def _evaluate_and_select(
         self,
         valid_contexts: list[MoleculeContext],
     ) -> tuple[list[MoleculeContext], list[float]]:
-        """Evaluate all valid candidates through the Oracle and select the top batch."""
+        """Evaluate all valid candidates through the Oracle and select the top batch.
+
+        When exploration_beta > 0, uses UCB-based selection (score + beta * uncertainty)
+        instead of raw tournament selection, biasing toward high-uncertainty regions
+        to maximise information gain. This is triggered automatically when scaffold
+        stagnation is detected, or can be forced via the exploration_beta parameter.
+        """
         all_scores: list[float] = []
         result_contexts: list[MoleculeContext] = []
         result_map: dict[str, Any] = {}
@@ -672,45 +750,14 @@ class DiscoveryLoop:
         if not result_contexts:
             return [], []
 
-        # Active learning queue: evaluate and select high-uncertainty candidates
-        # using UCB acquisition to prioritise information gain.
-        if self.state.active_learning_queue:
-            queue_set = set(self.state.active_learning_queue)
-            queue_contexts: list[MoleculeContext] = []
-            queue_scores: list[float] = []
-            for ctx, score in zip(result_contexts, all_scores, strict=False):
-                if ctx.smiles in queue_set:
-                    queue_contexts.append(ctx)
-                    queue_scores.append(score)
+        # Prioritise active learning queue, then exploration, then default
+        al_result = self._select_from_active_learning_queue(result_contexts, all_scores)
+        if al_result is not None:
+            return al_result
 
-            if queue_contexts:
-                gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
-                uncertainties: list[float] = []
-                for ctx in queue_contexts:
-                    if gc_uq is not None:
-                        try:
-                            _, diel_std, _ = gc_uq.predict_dielectric(ctx)
-                            _, visc_std, _ = gc_uq.predict_viscosity(ctx)
-                            uncertainties.append((diel_std + visc_std) / 2.0)
-                        except Exception:
-                            uncertainties.append(0.0)
-                    else:
-                        uncertainties.append(0.0)
+        if self.exploration_beta > 0 and len(result_contexts) > self.batch_size:
+            return self._ucb_select_all(result_contexts, all_scores)
 
-                selected = select_for_active_learning(
-                    queue_contexts, queue_scores, uncertainties,
-                    batch_size=self.batch_size,
-                )
-                selected_scores = [queue_scores[queue_contexts.index(ctx)] for ctx in selected]
-
-                # Clear selected items from the queue after selection
-                for ctx in selected:
-                    if ctx.smiles in self.state.active_learning_queue:
-                        self.state.active_learning_queue.remove(ctx.smiles)
-
-                return selected, selected_scores
-
-        # Fall through to standard tournament selection when no queue items
         if len(result_contexts) <= self.batch_size:
             return result_contexts, all_scores
 
@@ -719,7 +766,7 @@ class DiscoveryLoop:
         return selected, selected_scores
 
     def _evolve_seed_pool(self, batch_contexts: list[MoleculeContext], batch_scores: list[float]) -> None:
-        """Feed high-scoring molecules back into the seed pool."""
+        """Feed high-scoring molecules back into the seed pool and expand commercial precursors."""
         for ctx, sc in zip(batch_contexts, batch_scores, strict=False):
             if sc < 65.0 or is_mixture_smiles(ctx.smiles):
                 continue
@@ -729,6 +776,14 @@ class DiscoveryLoop:
                 self.engine.seed_pool.append(smi)
                 existing.add(smi)
             self.engine.harvest_fragments(smi, score=sc)
+
+            from rdkit.Chem import BRICS
+            try:
+                for fs in BRICS.BRICSDecompose(ctx.mol):
+                    self.engine.add_commercial_fragment(fs, sc)
+            except Exception:
+                pass
+
         if len(self.engine.seed_pool) > 200:
             self.engine.seed_pool = self.engine.seed_pool[-200:]
         self.state.seed_pool_size = len(self.engine.seed_pool)

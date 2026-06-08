@@ -258,6 +258,10 @@ class SurrogateQuantumOracle:
         surrogate.set_training_data(train_data)
         surrogate._ensure_trained()
 
+        key_map = {"homo": "homo_eV", "lumo": "lumo_eV"}
+        index_map = {"homo": 0, "lumo": 1}
+        key = key_map[property]
+        pred_index = index_map[property]
         y_true: list[float] = []
         y_pred: list[float] = []
         for entry in holdout_data:
@@ -266,15 +270,11 @@ class SurrogateQuantumOracle:
                 continue
             ctx = MoleculeContext(smiles=entry["smiles"], mol=mol)
             try:
-                homo, lumo = surrogate.predict(ctx)
+                pred = surrogate.predict(ctx)
+                y_true.append(entry[key])
+                y_pred.append(pred[pred_index])
             except Exception:
                 continue
-            if property == "homo":
-                y_true.append(entry["homo_eV"])
-                y_pred.append(homo)
-            else:
-                y_true.append(entry["lumo_eV"])
-                y_pred.append(lumo)
 
         if len(y_true) < 5:
             return 0.0

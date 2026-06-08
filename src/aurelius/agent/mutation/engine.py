@@ -195,6 +195,27 @@ class MutationEngine:
             except Exception:
                 pass
 
+    def add_commercial_fragment(self, fragment_smiles: str, score: float) -> None:
+        """Dynamically expand the commercial building block pool with high-scoring fragments.
+
+        When a molecule achieves a high score (>65.0), its BRICS fragments may be
+        added to the running commercial precursor pool, enabling the EA to propose
+        novel scaffolds built from successful discoveries rather than the static seed set.
+        This prevents the "drift" problem where novel scaffolds are penalised simply
+        because their specific BRICS cut does not map to the initial commercial library.
+
+        Args:
+            fragment_smiles: Fragment SMILES string (may contain BRICS dummy atoms).
+            score: The discovery score that triggered the expansion. Only fragments
+                from high-scoring molecules (>= 65.0) are added.
+        """
+        if score < 65.0:
+            return
+        from aurelius.agent.mutation.brics import _strip_brics_dummies
+        core = _strip_brics_dummies(fragment_smiles)
+        if core is not None and core not in self._known_smiles:
+            self._known_smiles.add(core)
+
     # ------------------------------------------------------------------
     # Novelty — delegated to NoveltyValidator
     # ------------------------------------------------------------------

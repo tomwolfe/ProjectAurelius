@@ -15,9 +15,12 @@ from rdkit import Chem
 
 from aurelius.scoring.oracle.quantum import (
     _apply_cross_conjugation_penalty,
+    _apply_peierls_damping,
     _apply_torsional_strain_penalty,
+    _apply_wiener_compactness,
     _is_cross_conjugated,
     _longest_conjugation_path,
+    _wiener_index,
     predict_tom_orbitals,
 )
 
@@ -259,7 +262,7 @@ class TestOracleCalibration:
         )
 
     def test_tom_holdout_mae_below_threshold(self, calibration_data):
-        """TOM holdout MAE must remain < 1.5 eV.
+        """TOM holdout MAE must remain < 1.2 eV.
 
         Uses an 80/20 holdout split of orbital_calibration.json (same
         methodology as _compute_holdout_generalization in test_net_progress.py)
@@ -283,10 +286,86 @@ class TestOracleCalibration:
             errors.append((homo_err + lumo_err) / 2.0)
 
         mae = sum(errors) / len(errors)
-        assert mae < 1.5, (
+        assert mae < 1.2, (
             f"TOM holdout MAE is {mae:.4f} eV. "
-            f"Expected < 1.5 eV. Cross-conjugated molecules must be correctly "
-            f"penalized to maintain generalization."
+            f"Expected < 1.2 eV after Peierls damping and Wiener compactness corrections."
+        )
+
+
+class TestTOMCorrections:
+    """TOM correction functions must behave as expected."""
+
+    def test_peierls_damping(self):
+        """Peierls damping must produce a wider gap for long polyenes (L > 8)
+        than pure 1/L² scaling predicts, reflecting the finite-gap saturation."""
+        from aurelius.scoring.oracle.quantum import _compute_tom_base_energies
+
+        # Use decapentaene (10 conjugated carbons) to ensure L > 8
+        decapentaene = Chem.MolFromSmiles("C=CC=CC=CC=CC=C")
+        assert decapentaene is not None
+        L_raw = _longest_conjugation_path(decapentaene)
+        L_damped = _apply_peierls_damping(L_raw)
+
+        assert L_raw > 8, f"Decapentaene should have L > 8, got L={L_raw}"
+
+        h_raw, l_raw = _compute_tom_base_energies(L_raw)
+        h_damped, l_damped = _compute_tom_base_energies(L_damped)
+        gap_raw = l_raw - h_raw
+        gap_damped = l_damped - h_damped
+
+        assert gap_damped > gap_raw, (
+            f"Peierls damping should widen the gap: raw={gap_raw:.4f} vs damped={gap_damped:.4f}"
+        )
+
+        # Verify saturation: L_damped should be < L_raw for long polyenes
+        assert L_damped < L_raw, (
+            f"Peierls damping should reduce L for long polyenes: {L_damped} >= {L_raw}"
+        )
+
+        # Verify no change for short conjugation (L <= 8)
+        butadiene = Chem.MolFromSmiles("C=CC=C")
+        assert butadiene is not None
+        L_but = _longest_conjugation_path(butadiene)
+        assert L_but <= 8, "Butadiene should have L <= 8"
+        L_but_damped = _apply_peierls_damping(L_but)
+        assert L_but_damped == L_but, (
+            f"Peierls damping should not affect L <= 8: {L_but_damped} != {L_but}"
+        )
+
+    def test_wiener_compactness(self):
+        """Cyclic conjugated systems should have deeper HOMO than linear analogs
+        of similar length due to Wiener-compactness correction."""
+        benzene = Chem.MolFromSmiles("c1ccccc1")
+        assert benzene is not None
+        hexatriene = Chem.MolFromSmiles("C=CC=CC=C")
+        assert hexatriene is not None
+
+        L_benz = _longest_conjugation_path(benzene)
+        L_hex = _longest_conjugation_path(hexatriene)
+
+        # Both should have similar conjugation lengths
+        assert abs(L_benz - L_hex) <= 1, (
+            f"Benzene L={L_benz} and hexatriene L={L_hex} should be similar"
+        )
+
+        # Wiener index of benzene should be lower (more compact) than hexatriene
+        w_benz = _wiener_index(benzene)
+        w_hex = _wiener_index(hexatriene)
+        assert w_benz < w_hex, (
+            f"Benzene Wiener index {w_benz:.0f} should be < hexatriene {w_hex:.0f}"
+        )
+
+        # Apply compactness correction — benzene should have larger reduction
+        L_benz_adj = _apply_wiener_compactness(benzene, L_benz)
+        L_hex_adj = _apply_wiener_compactness(hexatriene, L_hex)
+
+        compactness_factor_benz = L_benz_adj / L_benz
+        compactness_factor_hex = L_hex_adj / L_hex
+
+        assert compactness_factor_benz < compactness_factor_hex, (
+            f"Benzene compactness factor {compactness_factor_benz:.4f} should be "
+            f"less than hexatriene {compactness_factor_hex:.4f} "
+            f"(benzene is more compact)"
         )
 
 

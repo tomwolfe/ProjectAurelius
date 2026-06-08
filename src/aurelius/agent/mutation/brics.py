@@ -339,7 +339,8 @@ def _compute_brics_depth(mol: Chem.Mol, max_iter: int = 5) -> int:
 
 def combined_grounding_score(mol: Chem.Mol) -> float:
     """Combined grounding score: max of BRICS coverage and functional-group coverage,
-    with a linear penalty for excessive BRICS disconnection depth.
+    with a linear penalty for excessive BRICS disconnection depth, adjusted by
+    retrosynthetic reaction rule feasibility.
 
     Uses the maximum of the two coverage metrics so that a molecule with a
     novel BRICS scaffold but fully commercial functional groups is not unduly
@@ -351,6 +352,12 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
     coverage score (clamped to min 0.0). This ensures that economically viable
     molecules (2 or fewer synthetic steps from commercial precursors) are
     preferred over deeper retrosynthetic paths.
+
+    Additionally, a retrosynthetic reaction rule check is performed. If none of
+    the molecule's bond-forming motifs match a known high-yield reaction SMARTS
+    (weight >= 0.8), a mild penalty of 0.1x is applied. This prevents the EA
+    from proposing molecules whose fragments are individually commercial but
+    cannot be realistically coupled at scale.
     """
     brics_cov = brics_building_block_coverage(mol)
     fg_cov = functional_group_coverage(mol)
@@ -360,4 +367,11 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
     if depth > _MAX_BRICS_DEPTH:
         penalty = _BRICS_DEPTH_PENALTY_PER_STEP * (depth - _MAX_BRICS_DEPTH)
         base = max(0.0, base - penalty)
+
+    # Retrosynthetic reaction rule feasibility check
+    from aurelius.agent.mutation.reaction_rules import check_retrosynthetic_feasibility
+    rx_score = check_retrosynthetic_feasibility(mol)
+    if rx_score < 0.8:
+        base *= 0.9
+
     return base
