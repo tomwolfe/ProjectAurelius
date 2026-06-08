@@ -583,7 +583,9 @@ def _conjugated_bond_deviation(
         return None
 
 
-def _apply_torsional_strain_penalty(mol: Chem.Mol, L: int) -> int:
+def _apply_torsional_strain_penalty(
+    mol: Chem.Mol, L: int, xyz_content: str | None = None
+) -> int:
     """Reduce effective conjugation length L if conjugated system is non-planar.
 
     Physical basis: The particle-in-a-box model assumes a perfectly planar
@@ -592,10 +594,11 @@ def _apply_torsional_strain_penalty(mol: Chem.Mol, L: int) -> int:
     conjugation path. This prevents false-positive narrow gaps for sterically
     hindered conjugated molecules (e.g., bulky biphenyl derivatives).
 
-    Uses RDKit's ETKDGv3 conformer generation with useRandomCoords and UFF
-    relaxation (maxIts=500) to escape local minima for sterically hindered
-    molecules. For each conjugated bond with flanking neighbors, the dihedral
-    angle is measured. If any exceeds 30 deg, L is reduced by 30% (floor 2).
+    When xyz_content is provided, uses those coordinates directly (from a
+    specific conformer). Otherwise generates a conformer via ETKDGv3 with
+    useRandomCoords and UFF relaxation (maxIts=500) to escape local minima.
+    For each conjugated bond with flanking neighbors, the dihedral angle is
+    measured. If any exceeds 30 deg, L is reduced by 30% (floor 2).
     """
     if L <= 2:
         return L
@@ -605,13 +608,23 @@ def _apply_torsional_strain_penalty(mol: Chem.Mol, L: int) -> int:
     mol_copy.UpdatePropertyCache()
     try:
         mol_copy = Chem.AddHs(mol_copy)
-        params = AllChem.ETKDGv3()
-        params.randomSeed = 42
-        params.useRandomCoords = True
-        result = AllChem.EmbedMolecule(mol_copy, params)
-        if result != 0:
-            return L
-        AllChem.UFFOptimizeMolecule(mol_copy, maxIters=500)
+        if xyz_content is not None:
+            lines = xyz_content.strip().split('\n')
+            n_atoms_xyz = int(lines[0].strip())
+            conf = Chem.Conformer(n_atoms_xyz)
+            for i in range(n_atoms_xyz):
+                parts = lines[i + 2].strip().split()
+                x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+                conf.SetAtomPosition(i, Chem.rdGeometry.Point3D(x, y, z))
+            mol_copy.AddConformer(conf)
+        else:
+            params = AllChem.ETKDGv3()
+            params.randomSeed = 42
+            params.useRandomCoords = True
+            result = AllChem.EmbedMolecule(mol_copy, params)
+            if result != 0:
+                return L
+            AllChem.UFFOptimizeMolecule(mol_copy, maxIters=500)
         conf = mol_copy.GetConformer()
     except Exception:
         return L
@@ -735,6 +748,41 @@ def _apply_cross_conjugation_penalty(mol: Chem.Mol, lumo: float) -> float:
     return lumo
 
 
+def _evaluate_tom_single_conformer(
+    mol: Chem.Mol, xyz_content: str | None = None
+) -> tuple[float, float]:
+    """Evaluate TOM for a single conformer with optional geometry-dependent penalty.
+
+    Extracted from ``predict_tom_orbitals`` to enable Boltzmann-weighted
+    averaging over multiple conformers without code duplication.
+
+    Args:
+        mol: RDKit molecule.
+        xyz_content: Optional XYZ string for conformer-specific torsional analysis.
+
+    Returns:
+        (homo_eV, lumo_eV)
+    """
+    L = _longest_conjugation_path(mol)
+    L = max(L, 2)
+    L = _topological_sanity_l(mol, L)
+    L = _apply_wiener_compactness(mol, L)
+    L = _apply_torsional_strain_penalty(mol, L, xyz_content)
+    L = _apply_peierls_damping(L)
+
+    n_ew, n_ed, _ = _count_heteroatom_perturbations(mol)
+    homo, lumo = _compute_tom_base_energies(L)
+    homo, lumo = _apply_heteroatom_perturbations(n_ew, n_ed, homo, lumo)
+    homo, lumo = _apply_fluorine_correction(mol, homo, lumo)
+    homo, lumo = _apply_aromatic_stabilization(mol, homo, lumo)
+    lumo = _apply_nitrile_correction(mol, lumo)
+    homo = _apply_phosphate_correction(mol, homo)
+    lumo = _apply_sigma_star_correction(mol, L, lumo)
+    lumo = _apply_cross_conjugation_penalty(mol, lumo)
+
+    return homo, lumo
+
+
 def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     """Predict HOMO/LUMO using the Topological Orbital Model (TOM).
 
@@ -749,27 +797,30 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
         8. Base offset calibrated to 45 electrolyte molecules from DFT references.
         9. Cross-conjugation penalty for branched pi-systems.
 
+    Uses Boltzmann-weighted averaging over the top 3 conformers to stabilise
+    predictions for sterically hindered, flexible conjugated systems.
+
     Returns:
         (homo_eV, lumo_eV)
     """
-    L = _longest_conjugation_path(mol)
-    L = max(L, 2)
-    L = _topological_sanity_l(mol, L)
-    L = _apply_wiener_compactness(mol, L)
-    L = _apply_torsional_strain_penalty(mol, L)
-    L = _apply_peierls_damping(L)
+    conformers = _generate_multi_xyz(mol, n_conformers=3)
+    if not conformers:
+        return _evaluate_tom_single_conformer(mol)
 
-    n_ew, n_ed, _ = _count_heteroatom_perturbations(mol)
-    homo, lumo = _compute_tom_base_energies(L)
-    homo, lumo = _apply_heteroatom_perturbations(n_ew, n_ed, homo, lumo)
-    homo, lumo = _apply_fluorine_correction(mol, homo, lumo)
-    homo, lumo = _apply_aromatic_stabilization(mol, homo, lumo)
-    lumo = _apply_nitrile_correction(mol, lumo)
-    homo = _apply_phosphate_correction(mol, homo)
-    lumo = _apply_sigma_star_correction(mol, L, lumo)
-    lumo = _apply_cross_conjugation_penalty(mol, lumo)
+    top = conformers[:3]
+    energies = [e for _, e in top]
+    weights = _boltzmann_weights(energies)
 
-    return homo, lumo
+    homo_vals: list[float] = []
+    lumo_vals: list[float] = []
+    for xyz, _ in top:
+        h, l = _evaluate_tom_single_conformer(mol, xyz)
+        homo_vals.append(h)
+        lumo_vals.append(l)
+
+    homo_w = sum(w * h for w, h in zip(weights, homo_vals))
+    lumo_w = sum(w * l for w, l in zip(weights, lumo_vals))
+    return homo_w, lumo_w
 
 
 # ---------------------------------------------------------------------------

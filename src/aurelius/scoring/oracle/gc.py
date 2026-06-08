@@ -210,6 +210,14 @@ def _compute_dielectric_cross_terms(counts: dict[str, int]) -> float:
     for frag_a, frag_b, boost, _desc in _CROSS_TERMS:
         if counts.get(frag_a, 0) > 0 and counts.get(frag_b, 0) > 0:
             correction += boost
+
+    if (
+        counts.get("carbonate", 0) > 0
+        and counts.get("ether", 0) > 0
+        and (counts.get("fluorine", 0) > 0 or counts.get("trifluoromethyl", 0) > 0)
+    ):
+        correction += 0.4
+
     return max(-2.0, min(2.0, correction))
 
 
