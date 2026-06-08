@@ -95,6 +95,13 @@ def generate_run_summary(
     except Exception:
         log.warning("GC UQ ensemble unavailable — skipping uncertainty weighting", exc_info=True)
 
+    def _ucb_sort_key(d: ScreeningResult) -> float:
+        if d.smiles in uq_data:
+            return -uq_data[d.smiles]["uncertainty_weighted_score"]
+        return -d.total_score
+
+    top_discoveries.sort(key=_ucb_sort_key)
+
     def _discovery_entry(d: ScreeningResult) -> dict[str, Any]:
         entry: dict[str, Any] = {
             "smiles": d.smiles,
@@ -170,7 +177,7 @@ def generate_run_summary(
             }
             for d in sorted(
                 extract_pareto_front(sorted(discoveries, key=lambda r: -r.total_score)[:100]),
-                key=lambda r: -r.total_score,
+                key=_ucb_sort_key,
             )
         ],
     }

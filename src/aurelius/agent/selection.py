@@ -203,6 +203,59 @@ def extract_pareto_front(results: list[Any]) -> list[Any]:
     return [results[valid_indices[i]] for i in sorted(pareto_indices)]
 
 
+def _normalize_uncertainties(uncertainties: list[float]) -> list[float]:
+    """Min-max normalize uncertainties to [0, 1]."""
+    if not uncertainties:
+        return []
+    min_u = min(uncertainties)
+    max_u = max(uncertainties)
+    if max_u - min_u < 1e-12:
+        return [0.5] * len(uncertainties)
+    return [(u - min_u) / (max_u - min_u) for u in uncertainties]
+
+
+def select_for_active_learning(
+    contexts: list[MoleculeContext],
+    scores: list[float],
+    uncertainties: list[float],
+    batch_size: int = 10,
+    beta: float = 0.5,
+) -> list[MoleculeContext]:
+    """Select candidates for active learning using UCB acquisition.
+
+    Normalises uncertainties to [0, 1], then computes
+    UCB = score + beta * normalised_uncertainty, and returns the top
+    ``batch_size`` unique candidates. Prioritises molecules the model
+    is most uncertain about (high epistemic uncertainty) for wet-lab
+    validation, maximising information gain per experiment.
+
+    Args:
+        contexts: Candidate molecules.
+        scores: Raw total scores for each candidate.
+        uncertainties: Epistemic uncertainty (e.g., combined diel+visc std).
+        batch_size: Number of candidates to select.
+        beta: Exploration weight. Higher values favour high-uncertainty
+            molecules over high-scoring ones.
+
+    Returns:
+        Top ``batch_size`` unique candidates ordered by UCB score descending.
+    """
+    if not contexts or not scores:
+        return []
+
+    norm_uncertainties = _normalize_uncertainties(uncertainties)
+    ucb_scores = [s + beta * u for s, u in zip(scores, norm_uncertainties, strict=False)]
+
+    # Deduplicate by SMILES while keeping highest UCB per molecule
+    seen: dict[str, tuple[float, MoleculeContext]] = {}
+    for ctx, ucb in zip(contexts, ucb_scores, strict=False):
+        if ctx.smiles not in seen or ucb > seen[ctx.smiles][0]:
+            seen[ctx.smiles] = (ucb, ctx)
+
+    ranked = sorted(seen.values(), key=lambda x: -x[0])
+    return [ctx for _, ctx in ranked[:batch_size]]
+
+
 def compute_pairwise_diversity(contexts: list[MoleculeContext]) -> float:
     """Compute mean Tanimoto dissimilarity (1 - similarity) across contexts."""
     if len(contexts) < 2:
