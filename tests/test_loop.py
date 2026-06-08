@@ -87,10 +87,10 @@ class TestDiscoveryLoop:
         # Trigger initial training via prediction
         ctx = MoleculeContext.from_smiles("COC(=O)OC")
         assert ctx is not None
-        diel_mean, diel_std = ensemble.predict_dielectric(ctx)
+        diel_mean, diel_std, _ = ensemble.predict_dielectric(ctx)
         assert ensemble.is_trained is True, "Should be trained after first prediction"
 
-        initial_visc_mean, initial_visc_std = ensemble.predict_viscosity(ctx)
+        initial_visc_mean, initial_visc_std, _ = ensemble.predict_viscosity(ctx)
 
         # Append empirical data for this molecule (simulating wet-lab feedback)
         feedback_data = [
@@ -148,7 +148,7 @@ class TestDiscoveryLoop:
         # Initial prediction on a known molecule
         ctx = MoleculeContext.from_smiles("COC(=O)OC")
         assert ctx is not None
-        diel_mean, diel_std = ensemble.predict_dielectric(ctx)
+        diel_mean, diel_std, _ = ensemble.predict_dielectric(ctx)
 
         # Append empirical data (simulating wet-lab feedback)
         feedback = [
@@ -161,7 +161,7 @@ class TestDiscoveryLoop:
         ensemble.append_empirical_data(feedback)
 
         # Retrain and verify variance decreases
-        retrain_mean, retrain_std = ensemble.predict_dielectric(ctx)
+        retrain_mean, retrain_std, _ = ensemble.predict_dielectric(ctx)
         assert retrain_std <= diel_std + 0.01, (
             f"Dielectric variance should not increase after retraining: "
             f"{retrain_std:.6f} > {diel_std:.6f} + 0.01"

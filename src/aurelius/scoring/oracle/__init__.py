@@ -60,7 +60,6 @@ from aurelius.scoring.oracle.quantum import (
     predict_tom_orbitals,
     run_xtb_batch,
 )
-from aurelius.scoring.oracle.gnn_surrogate import GNNQuantumOracle
 from aurelius.scoring.oracle.surrogate import (
     _SURROGATE_HOMO_THRESHOLD,
     _SURROGATE_PENALTY,

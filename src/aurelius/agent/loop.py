@@ -591,6 +591,20 @@ class DiscoveryLoop:
         if score_data is None:
             return None
 
+        gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
+        if gc_uq is not None:
+            from aurelius.scoring.oracle.gc import _UQ_THRESHOLD_FRACTION
+            try:
+                _diel_mean, diel_std, _ = gc_uq.predict_dielectric(ctx)
+                _visc_mean, visc_std, _ = gc_uq.predict_viscosity(ctx)
+                if (diel_std > max(1.0, abs(_diel_mean)) * _UQ_THRESHOLD_FRACTION or
+                    visc_std > max(1.0, abs(_visc_mean)) * _UQ_THRESHOLD_FRACTION):
+                    if smi not in self.state.active_learning_queue:
+                        self.state.active_learning_queue.append(smi)
+                        log.info("  Added %s to active learning queue (high UQ variance)", smi)
+            except Exception:
+                pass
+
         self.engine.add_to_db(smi)
 
         total_score = score_data.get("total_score", 0.0)
