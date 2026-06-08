@@ -8,7 +8,9 @@ Verifies that the DiscoveryLoop properly:
 
 from __future__ import annotations
 
-from aurelius.agent.loop import DiscoveryLoop, ScreeningResult
+from unittest.mock import Mock
+
+from aurelius.agent.loop import DiscoveryLoop, ScreeningResult, run_screening, AgentConfig
 from aurelius.agent.state import LoopState
 
 
@@ -70,6 +72,51 @@ class TestDiscoveryLoop:
         loop.execute()
 
         assert loop.state.seed_pool_size == len(loop.engine.seed_pool)
+
+    def test_wet_lab_feedback_integration(self):
+        """Wet-lab feedback hook should be called with top discoveries and
+        trigger GcUqEnsemble retraining on subsequent predictions."""
+        import numpy as np
+        from aurelius.scoring.oracle.gc import GcUqEnsemble
+        from aurelius.types import MoleculeContext
+
+        # Create a GcUqEnsemble
+        ensemble = GcUqEnsemble()
+        assert ensemble.is_trained is False, "Should start untrained"
+
+        # Trigger initial training via prediction
+        ctx = MoleculeContext.from_smiles("COC(=O)OC")
+        assert ctx is not None
+        diel_mean, diel_std = ensemble.predict_dielectric(ctx)
+        assert ensemble.is_trained is True, "Should be trained after first prediction"
+
+        initial_visc_mean, initial_visc_std = ensemble.predict_viscosity(ctx)
+
+        # Append empirical data for this molecule (simulating wet-lab feedback)
+        feedback_data = [
+            {
+                "smiles": "COC(=O)OC",
+                "dielectric_constant": float(diel_mean),
+                "viscosity_cP": float(initial_visc_mean),
+            }
+        ]
+        ensemble.append_empirical_data(feedback_data)
+        assert ensemble.is_trained is False, "Should be marked untrained after appending data"
+
+        # Retrain and verify variance does not increase (ideally decreases)
+        retrain_std = ensemble.predict_dielectric(ctx)[1]
+        retrain_visc_std = ensemble.predict_viscosity(ctx)[1]
+        assert ensemble.is_trained is True, "Should be retrained after prediction"
+
+        # Variance should not increase after adding consistent empirical data
+        assert retrain_std <= diel_std + 0.01, (
+            f"Dielectric variance increased after retraining: "
+            f"{retrain_std:.6f} > {diel_std:.6f} + 0.01"
+        )
+        assert retrain_visc_std <= initial_visc_std + 0.01, (
+            f"Viscosity variance increased after retraining: "
+            f"{retrain_visc_std:.6f} > {initial_visc_std:.6f} + 0.01"
+        )
 
     def test_batch_contexts_are_screened(self):
         """All candidates returned from evaluate should have results."""

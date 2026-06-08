@@ -15,6 +15,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from rdkit import Chem
+
+from aurelius.constants import (
+    SEI_LUMO_LOWER,
+    SEI_LUMO_UPPER,
+    SEI_MOTIF_PENALTY_FACTOR,
+    STABLE_SEI_MOTIFS,
+)
 from aurelius.scoring.oracle.gc import (
     _DATA_SOURCE,
     _UQ_PENALTY,
@@ -35,6 +43,30 @@ from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
+
+
+def _evaluate_sei_motif(ctx: MoleculeContext, lumo: float) -> tuple[float, str]:
+    """Check if a molecule has known stable SEI-forming motifs.
+
+    Physical basis: A molecule with LUMO in the SEI formation window
+    (> SEI_LUMO_LOWER and < SEI_LUMO_UPPER) is thermodynamically capable
+    of reductive decomposition to form an SEI. However, without known
+    stable SEI-forming functional groups (e.g., cyclic carbonates, CF3,
+    sultones), the resulting SEI may be unstable or poorly passivating.
+    This check penalises molecules in the SEI window that lack these motifs.
+
+    Returns:
+        (penalty_multiplier, reason_string)
+        Multiplier in [SEI_MOTIF_PENALTY_FACTOR, 1.0]; 1.0 = has stable motif or
+        LUMO outside SEI window.
+    """
+    if not (SEI_LUMO_LOWER < lumo < SEI_LUMO_UPPER):
+        return 1.0, ""
+    mol = ctx.mol
+    for pattern in STABLE_SEI_MOTIFS:
+        if pattern is not None and mol.HasSubstructMatch(pattern):
+            return 1.0, ""
+    return SEI_MOTIF_PENALTY_FACTOR, "Lacks stable SEI-forming motif"
 
 
 class PropertyOracle:
@@ -149,6 +181,15 @@ class PropertyOracle:
         domain_penalty, domain_reason_str, domain_applicable = self._build_domain(
             ctx, skip_quantum, surrogate_penalty, s_homo, uq_penalty,
         )
+
+        sei_penalty, sei_reason = _evaluate_sei_motif(ctx, lumo)
+        if sei_penalty < 1.0:
+            domain_penalty *= sei_penalty
+            if domain_reason_str and domain_reason_str != _DATA_SOURCE:
+                domain_reason_str += "; " + sei_reason
+            else:
+                domain_reason_str = sei_reason
+            domain_applicable = domain_penalty >= 0.85
 
         result: dict[str, Any] = {
             "homo_eV": round(homo, 4),

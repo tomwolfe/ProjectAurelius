@@ -546,6 +546,7 @@ class GcUqEnsemble:
         benchmark_path: str | None = None,
         n_ensemble: int = _UQ_N_ENSEMBLE,
         alpha: float = 1.0,
+        empirical_data: list[dict] | None = None,
     ) -> None:
         self._n_ensemble = n_ensemble
         self._alpha = alpha
@@ -556,6 +557,21 @@ class GcUqEnsemble:
         self._visc_scaler: StandardScaler | None = None
         self._is_trained = False
         self._train_time_ms: float = 0.0
+        self._empirical_data: list[dict] = empirical_data if empirical_data is not None else []
+
+    def append_empirical_data(self, new_data: list[dict]) -> None:
+        """Append empirical wet-lab feedback data and flag the ensemble for retraining.
+
+        Each entry should be a dict with at minimum a 'smiles' key, and optionally
+        'dielectric_constant' and/or 'viscosity_cP' keys matching the benchmark format.
+
+        After appending, self._is_trained is set to False, causing _ensure_trained()
+        to lazily retrain the Ridge ensemble on the expanded dataset during the next
+        prediction call. This enables the UQ ensemble to learn from real-world data
+        and reduce prediction variance for the fed-back molecules.
+        """
+        self._empirical_data.extend(new_data)
+        self._is_trained = False
 
     def _resolve_path(self) -> str:
         if self._benchmark_path is not None:
@@ -587,6 +603,23 @@ class GcUqEnsemble:
 
         for entry in data:
             smi = entry["smiles"]
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is None:
+                continue
+            diel_exp = entry.get("dielectric_constant")
+            visc_exp = entry.get("viscosity_cP")
+            if diel_exp is None and visc_exp is None:
+                continue
+            fp = _get_fragment_feature_vector(ctx)
+            X_list.append(fp)
+            y_diel.append(float(diel_exp) if diel_exp is not None else 0.0)
+            y_visc.append(float(visc_exp) if visc_exp is not None else 0.0)
+
+        # Include empirical wet-lab feedback data if available
+        for entry in self._empirical_data:
+            smi = entry.get("smiles", "")
+            if not smi:
+                continue
             ctx = MoleculeContext.from_smiles(smi)
             if ctx is None:
                 continue

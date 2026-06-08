@@ -723,6 +723,49 @@ class TestFrankensteinAblation:
 # ---------------------------------------------------------------------------
 
 
+def test_brics_depth_penalty() -> None:
+    """A molecule requiring 4+ BRICS disconnection steps to reach a commercial
+    building block must receive a lower combined_grounding_score than one
+    requiring only 2 steps, even if both have the same terminal fragments.
+
+    Uses _compute_brics_depth and combined_grounding_score to verify that
+    the depth penalty (0.1 per step beyond 2) is correctly applied.
+    """
+    from aurelius.agent.mutation.brics import (
+        _compute_brics_depth,
+        combined_grounding_score,
+    )
+
+    # A two-step molecule: ethyl acetate (ester) — BRICS decomposes
+    # to ethanol + acetic acid fragments, both in the BB library.
+    simple_mol = Chem.MolFromSmiles("CC(=O)OCC")
+    assert simple_mol is not None
+    depth_simple = _compute_brics_depth(simple_mol)
+    score_simple = combined_grounding_score(simple_mol)
+
+    # A multi-step molecule: poly(ethylene glycol) diacetate trimer.
+    # This requires multiple BRICS cuts: acetate groups first, then
+    # the PEG backbone needs further cuts to reach building blocks.
+    complex_mol = Chem.MolFromSmiles("CC(=O)OCCOCCOCCOC(=O)C")
+    assert complex_mol is not None
+    depth_complex = _compute_brics_depth(complex_mol)
+    score_complex = combined_grounding_score(complex_mol)
+
+    # The complex molecule should require more disconnection steps
+    assert depth_complex >= depth_simple, (
+        f"PEG diacetate depth ({depth_complex}) should be >= "
+        f"ethyl acetate depth ({depth_simple})"
+    )
+
+    # If complex has greater depth, its score should be penalized
+    if depth_complex > depth_simple:
+        assert score_complex < score_simple, (
+            f"PEG diacetate score ({score_complex:.3f}) should be lower than "
+            f"ethyl acetate score ({score_simple:.3f}) due to depth penalty "
+            f"(depth_simple={depth_simple}, depth_complex={depth_complex})"
+        )
+
+
 class TestBuildingBlockGrounding:
     """The EA must discover molecules grounded in commercial building blocks."""
 

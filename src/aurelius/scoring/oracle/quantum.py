@@ -449,6 +449,86 @@ def _apply_wiener_compactness(mol: Chem.Mol, L: int) -> int:
     return max(L, 2)
 
 
+def _conjugated_bond_deviation(
+    mol: Chem.Mol, conf: Chem.Conformer, i: int, j: int
+) -> float | None:
+    """Measure the torsional deviation from planarity for a conjugated bond (i-j).
+
+    Finds flanking conjugated neighbors on both sides of the bond and returns
+    the minimum angular deviation from 0° or 180° (planar). Returns None if
+    suitable flanking atoms cannot be found.
+    """
+    from rdkit.Chem import rdMolTransforms
+
+    ai = mol.GetAtomWithIdx(i)
+    aj = mol.GetAtomWithIdx(j)
+    ni = None
+    for nb in ai.GetNeighbors():
+        n_idx = nb.GetIdx()
+        if n_idx != j and _is_conjugated_bond(mol, i, n_idx):
+            ni = n_idx
+            break
+    nj = None
+    for nb in aj.GetNeighbors():
+        n_idx = nb.GetIdx()
+        if n_idx != i and _is_conjugated_bond(mol, j, n_idx):
+            nj = n_idx
+            break
+    if ni is None or nj is None:
+        return None
+    try:
+        dihedral = abs(rdMolTransforms.GetDihedralDeg(conf, ni, i, j, nj))
+        return min(dihedral, abs(180.0 - dihedral))
+    except Exception:
+        return None
+
+
+def _apply_torsional_strain_penalty(mol: Chem.Mol, L: int) -> int:
+    """Reduce effective conjugation length L if conjugated system is non-planar.
+
+    Physical basis: The particle-in-a-box model assumes a perfectly planar
+    conjugated system. Torsional strain (dihedral > 30°) between adjacent
+    conjugated atoms breaks pi-orbital overlap, effectively shortening the
+    conjugation path. This prevents false-positive narrow gaps for sterically
+    hindered conjugated molecules (e.g., bulky biphenyl derivatives).
+
+    Uses RDKit's ETKDG conformer generation and GetDihedralDeg to detect
+    non-planar conjugated dihedrals. For each conjugated bond with flanking
+    conjugated neighbors, the dihedral angle is measured. If any exceeds 30 deg,
+    L is reduced by 30% (floor 2).
+    """
+    if L <= 2:
+        return L
+    from rdkit.Chem import AllChem
+
+    mol_copy = Chem.RWMol(mol)
+    mol_copy.UpdatePropertyCache()
+    try:
+        params = AllChem.ETKDGv3()
+        params.randomSeed = 42
+        params.useRandomCoords = True
+        result = AllChem.EmbedMolecule(mol_copy, params)
+        if result != 0:
+            return L
+        conf = mol_copy.GetConformer()
+    except Exception:
+        return L
+
+    max_deviation = 0.0
+    for bond in mol.GetBonds():
+        if not bond.GetIsConjugated():
+            continue
+        deviation = _conjugated_bond_deviation(
+            mol, conf, bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        )
+        if deviation is not None and deviation > max_deviation:
+            max_deviation = deviation
+
+    if max_deviation > 30.0:
+        L = max(2, int(L * 0.7))
+    return L
+
+
 def _apply_peierls_damping(L: int) -> int:
     """Apply Peierls distortion damping to prevent 1/L² gap collapse for L > 8.
 
@@ -574,6 +654,7 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     L = max(L, 2)
     L = _topological_sanity_l(mol, L)
     L = _apply_wiener_compactness(mol, L)
+    L = _apply_torsional_strain_penalty(mol, L)
     L = _apply_peierls_damping(L)
 
     n_ew, n_ed, _ = _count_heteroatom_perturbations(mol)

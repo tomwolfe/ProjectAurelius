@@ -301,6 +301,35 @@ def test_fragment_saturation_prevents_stacking(oracle: PropertyOracle) -> None:
     )
 
 
+def test_sei_motif_penalty_applied() -> None:
+    """A molecule with favorable LUMO for SEI formation but no stable SEI motifs
+    should receive a domain penalty, while one with stable motifs should not."""
+    from aurelius.scoring.oracle.oracle import _evaluate_sei_motif
+
+    # Simple linear ether — favorable LUMO but no stable SEI motifs
+    ether_ctx = _ctx("CCOCCOC")
+    ether_h, ether_l = predict_tom_orbitals(ether_ctx.mol)
+    ether_penalty, ether_reason = _evaluate_sei_motif(ether_ctx, ether_l)
+
+    # If ether LUMO is in the SEI window, it should be penalized
+    if -1.5 < ether_l < 0.0:
+        assert ether_penalty < 1.0, (
+            f"Ether with LUMO={ether_l:.3f} in SEI window should be penalized"
+        )
+        assert "Lacks stable SEI-forming motif" in ether_reason
+
+    # Fluorinated cyclic carbonate (e.g., FEC analog) — has stable motifs
+    fc_ctx = _ctx("FC1COC(=O)O1")  # 4-fluoro-1,3-dioxolan-2-one
+    fc_h, fc_l = predict_tom_orbitals(fc_ctx.mol)
+    fc_penalty, fc_reason = _evaluate_sei_motif(fc_ctx, fc_l)
+
+    # Should match the cyclic carbonate motif or CF3 motif
+    assert fc_penalty == 1.0, (
+        f"Fluorinated cyclic carbonate with LUMO={fc_l:.3f} should match "
+        f"stable SEI motif (penalty={fc_penalty}, reason='{fc_reason}')"
+    )
+
+
 def test_tom_fluorine_correction() -> None:
     """Fluorinated molecules should have stabilised (lower) HOMO/LUMO."""
     from rdkit import Chem

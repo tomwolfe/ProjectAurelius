@@ -265,14 +265,85 @@ def functional_group_coverage(mol: Chem.Mol) -> float:
     return commercial / present
 
 
+# Maximum BRICS disconnection depth before a linear penalty kicks in.
+# Physical basis: Each BRICS disconnection corresponds to a synthetic step.
+# Beyond 2 steps, the synthetic cost grows linearly, making the molecule
+# uneconomical for kilogram-scale manufacturing.
+_MAX_BRICS_DEPTH: int = 2
+_BRICS_DEPTH_PENALTY_PER_STEP: float = 0.1
+
+
+def _compute_brics_depth(mol: Chem.Mol, max_iter: int = 5) -> int:
+    """Compute the maximum BRICS disconnection depth to reach commercial building blocks.
+
+    Recursively decomposes the molecule using BRICS. At each level, fragments
+    are checked against the commercial building block library. If any fragment
+    at a given depth does NOT match a commercial building block, it is further
+    decomposed (depth + 1). Returns the maximum depth needed for all fragments
+    to resolve to commercial building blocks.
+
+    A depth of 0 means the molecule itself is a commercial building block.
+    """
+    def _recurse(frag_smi: str, current_depth: int) -> int:
+        if current_depth >= max_iter:
+            return current_depth
+        core_smi = _strip_brics_dummies(frag_smi)
+        if core_smi is None:
+            return current_depth
+        core_ctx = MoleculeContext.from_smiles(core_smi)
+        if core_ctx is None:
+            return current_depth
+        for bb in _BB_MOLS:
+            if core_ctx.mol.HasSubstructMatch(bb) or bb.HasSubstructMatch(core_ctx.mol):
+                return current_depth
+        try:
+            sub_frags = list(BRICS.BRICSDecompose(core_ctx.mol))
+        except Exception:
+            return current_depth
+        if not sub_frags:
+            return current_depth
+        max_d = current_depth
+        for sf in sub_frags:
+            d = _recurse(sf, current_depth + 1)
+            if d > max_d:
+                max_d = d
+        return max_d
+
+    try:
+        frags = list(BRICS.BRICSDecompose(mol))
+    except Exception:
+        return 0
+    if not frags:
+        return 0
+    max_depth = 0
+    for f in frags:
+        d = _recurse(f, 1)
+        if d > max_depth:
+            max_depth = d
+    return max_depth
+
+
 def combined_grounding_score(mol: Chem.Mol) -> float:
-    """Combined grounding score: max of BRICS coverage and functional-group coverage.
+    """Combined grounding score: max of BRICS coverage and functional-group coverage,
+    with a linear penalty for excessive BRICS disconnection depth.
 
     Uses the maximum of the two coverage metrics so that a molecule with a
     novel BRICS scaffold but fully commercial functional groups is not unduly
     penalised. This is the minimal relaxation needed to enable scaffold hopping
     while maintaining synthetic feasibility.
+
+    If the BRICS disconnection depth exceeds _MAX_BRICS_DEPTH, a linear penalty
+    of _BRICS_DEPTH_PENALTY_PER_STEP per excess step is subtracted from the
+    coverage score (clamped to min 0.0). This ensures that economically viable
+    molecules (2 or fewer synthetic steps from commercial precursors) are
+    preferred over deeper retrosynthetic paths.
     """
     brics_cov = brics_building_block_coverage(mol)
     fg_cov = functional_group_coverage(mol)
-    return max(brics_cov, fg_cov)
+    base = max(brics_cov, fg_cov)
+
+    depth = _compute_brics_depth(mol)
+    if depth > _MAX_BRICS_DEPTH:
+        penalty = _BRICS_DEPTH_PENALTY_PER_STEP * (depth - _MAX_BRICS_DEPTH)
+        base = max(0.0, base - penalty)
+    return base

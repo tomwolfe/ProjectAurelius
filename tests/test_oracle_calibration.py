@@ -12,7 +12,11 @@ import os
 import pytest
 from rdkit import Chem
 
-from aurelius.scoring.oracle.quantum import predict_tom_orbitals
+from aurelius.scoring.oracle.quantum import (
+    _apply_torsional_strain_penalty,
+    _longest_conjugation_path,
+    predict_tom_orbitals,
+)
 
 
 @pytest.fixture(scope="module")
@@ -92,6 +96,49 @@ class TestOracleCalibration:
         assert gap_cross > gap_linear, (
             f"Cross-conjugated divinyl ketone gap ({gap_cross:.3f}) should be "
             f"> linear hexatriene gap ({gap_linear:.3f})"
+        )
+
+    def test_tom_torsional_strain_penalty(self):
+        """The torsional strain penalty should reduce effective conjugation length
+        for sterically hindered conjugated molecules.
+
+        A sterically hindered biphenyl derivative (2,2',6,6'-tetramethylbiphenyl)
+        has large dihedral angles between rings, reducing pi-orbital overlap.
+        Its effective L should be reduced by the penalty, while a planar molecule
+        like butadiene should have minimal reduction.
+        """
+        # Butadiene (planar, short conjugated diene)
+        butadiene = Chem.MolFromSmiles("C=CC=C")
+        assert butadiene is not None
+        b_L_raw = _longest_conjugation_path(butadiene)
+        b_L_penalized = _apply_torsional_strain_penalty(butadiene, b_L_raw)
+        # Butadiene is planar — penalty should not reduce L (or minimal)
+        assert b_L_penalized == b_L_raw, (
+            f"Butadiene L should not change with penalty: "
+            f"{b_L_penalized} != {b_L_raw}"
+        )
+
+        # Sterically hindered: 2,2',6,6'-tetramethylbiphenyl
+        hindered = Chem.MolFromSmiles("Cc1cccc(C)c1c2c(C)cccc2C")
+        assert hindered is not None
+        h_L_raw = _longest_conjugation_path(hindered)
+        h_L_penalized = _apply_torsional_strain_penalty(hindered, h_L_raw)
+        # The hindered molecule should have its L reduced by the penalty
+        assert h_L_penalized < h_L_raw, (
+            f"Torsional penalty should reduce L for twisted molecule: "
+            f"{h_L_penalized} >= {h_L_raw}"
+        )
+
+        # Verify that reducing L widens the base gap (ΔE ∝ 1/L²)
+        from aurelius.scoring.oracle.quantum import _compute_tom_base_energies
+        base_raw_h, base_raw_l = _compute_tom_base_energies(h_L_raw)
+        base_pen_h, base_pen_l = _compute_tom_base_energies(h_L_penalized)
+        gap_raw = base_raw_l - base_raw_h
+        gap_pen = base_pen_l - base_pen_h
+        assert gap_pen > gap_raw, (
+            f"Base gap after penalty ({gap_pen:.3f}) should be wider than "
+            f"base gap without penalty ({gap_raw:.3f}) because reducing L "
+            f"widens the particle-in-a-box gap"
         )
 
     def test_tom_cross_conjugation_benzophenone(self):

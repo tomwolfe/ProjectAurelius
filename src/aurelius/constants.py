@@ -368,6 +368,40 @@ COMMERCIAL_BUILDING_BLOCK_SMILES: tuple[str, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# Stable SEI-Forming Motifs — Substructure Patterns
+# ---------------------------------------------------------------------------
+# Physical basis: Certain functional groups are empirically known to form
+# stable Solid-Electrolyte Interphase (SEI) layers in lithium-ion batteries.
+# Molecules containing these motifs are more likely to produce a durable,
+# low-impedance SEI. This is used as a SMARTS-based motif check in the
+# PropertyOracle — no BDE (Bond Dissociation Energy) calculation is needed.
+#
+# STABLE_SEI_MOTIFS: Pre-compiled SMARTS patterns for motifs that correlate
+# with stable SEI formation in the literature:
+#   1. CF3 (fluorinated carbon) — forms LiF-rich SEI
+#   2. Cyclic carbonate (e.g., EC, PC) — the canonical SEI-forming motif
+#   3. Sultone (5-ring cyclic sulfonate ester) — HF-scavenger, stable SEI
+
+STABLE_SEI_MOTIFS: tuple[Chem.Mol, ...] = (
+    Chem.MolFromSmarts("[C](F)(F)F"),                          # fluorinated carbon (CF3)
+    Chem.MolFromSmarts("[OX2]1[CX3](=O)[OX2][CX4][CX4]1"),    # cyclic carbonate (5-ring)
+    Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][OX2]1"),# sultone (5-ring)
+)
+
+# SEI formation LUMO window
+# Physical basis: LUMO in [-1.5, 0.0] eV vs vacuum corresponds to
+# SEI formation at ~1.5-3.0 V vs Li/Li+. Molecules with LUMO in this
+# window are thermodynamically capable of reductive SEI formation.
+SEI_LUMO_LOWER: float = -1.5
+"""Lower bound of SEI formation LUMO window (eV)."""
+SEI_LUMO_UPPER: float = 0.0
+"""Upper bound of SEI formation LUMO window (eV)."""
+
+SEI_MOTIF_PENALTY_FACTOR: float = 0.85
+"""Multiplicative penalty applied when a molecule has LUMO in the SEI
+formation window but lacks any known stable SEI-forming motif."""
+
+# ---------------------------------------------------------------------------
 # Net Progress Normalization Constants
 # ---------------------------------------------------------------------------
 # Ceilings for Net Progress simplicity cost normalization. Chosen to reflect

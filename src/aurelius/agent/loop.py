@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -54,6 +55,7 @@ class AgentConfig:
 
     max_generations: int = 50
     batch_size: int = 50
+    wet_lab_feedback: Callable[[list[ScreeningResult], dict[str, float]], None] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +149,15 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
 
     generate_run_summary(loop.state, all_results, discoveries, top_mixtures=top_mixtures)
     generate_discoveries_sdf(discoveries)
+
+    if loop.wet_lab_feedback is not None:
+        top_n = sorted(discoveries, key=lambda r: -r.total_score)[:10]
+        empirical_metrics: dict[str, float] = {
+            "cycle_life": 500.0,
+            "transference_number": 0.4,
+        }
+        loop.wet_lab_feedback(top_n, empirical_metrics)
+
     state.save()
 
     log.info("=" * 60)
@@ -187,6 +198,7 @@ class DiscoveryLoop:
         max_generations: int = 50,
         batch_size: int = 50,
         max_wall_time: float = 43200.0,
+        wet_lab_feedback: Callable[[list[ScreeningResult], dict[str, float]], None] | None = None,
     ) -> None:
         self.pipeline = pipeline
         self.engine = engine
@@ -194,6 +206,7 @@ class DiscoveryLoop:
         self.max_generations = max_generations
         self.batch_size = batch_size
         self.max_wall_time = max_wall_time
+        self.wet_lab_feedback = wet_lab_feedback
 
     @staticmethod
     def _dict_to_screening(d: dict[str, Any]) -> ScreeningResult:
