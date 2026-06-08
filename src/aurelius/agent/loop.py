@@ -641,14 +641,7 @@ class DiscoveryLoop:
 
         gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
         if gc_uq is not None:
-            try:
-                _, _, diel_high = gc_uq.predict_dielectric(ctx)
-                _, _, visc_high = gc_uq.predict_viscosity(ctx)
-                if (diel_high or visc_high) and smi not in self.state.active_learning_queue:
-                    self.state.active_learning_queue.append(smi)
-                    log.info("  Added %s to active learning queue (high UQ)", smi)
-            except Exception:
-                pass
+            self._check_uq_and_queue(smi, gc_uq)
 
         self.engine.add_to_db(smi)
 
@@ -667,6 +660,31 @@ class DiscoveryLoop:
 
         self.state.add_result(sr)
         return total_score, t2
+
+    def _check_uq_and_queue(self, smi: str, gc_uq: Any) -> None:
+        """Add molecule to active learning queue if GC UQ variance exceeds threshold.
+
+        If the ensemble predicts std > 15% of the mean for either dielectric
+        or viscosity, the SMILES is queued for real QuantumOracle evaluation
+        instead of being evaluated via surrogate.
+        """
+        try:
+            _, _, diel_high = gc_uq.predict_dielectric(
+                MoleculeContext.from_smiles(smi),
+            )
+        except Exception:
+            return
+
+        try:
+            _, _, visc_high = gc_uq.predict_viscosity(
+                MoleculeContext.from_smiles(smi),
+            )
+        except Exception:
+            return
+
+        if (diel_high or visc_high) and smi not in self.state.active_learning_queue:
+            self.state.active_learning_queue.append(smi)
+            log.info("  Added %s to active learning queue (high UQ)", smi)
 
     @staticmethod
     def _get_uncertainties(

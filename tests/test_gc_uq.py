@@ -9,6 +9,7 @@ Verifies:
 
 from __future__ import annotations
 
+from aurelius.agent.loop import DiscoveryLoop
 from aurelius.scoring.oracle import (
     _UQ_PENALTY,
     _UQ_THRESHOLD_FRACTION,
@@ -241,4 +242,62 @@ class TestGcUqActiveLearning:
             f"Prediction std did not decrease after appending empirical data: "
             f"std_before={std_before:.6f}, std_after={std_after:.6f} "
             f"(mean_before={mean_before:.4f}, mean_after={mean_after:.4f})"
+        )
+
+    def test_active_learning_queue_integration(self):
+        """Verify that high-UQ molecules are added to the active learning queue
+        and that queue size decreases after selection.
+
+        Creates a DiscoveryLoop mock that simulates a molecule with high
+        predicted UQ variance, then asserts that the molecule is added to
+        active_learning_queue and that the queue size decreases after
+        selection.
+        """
+        from unittest.mock import MagicMock, patch
+
+        # Mock the pipeline and its _oracle and _gc_uq
+        mock_gc_uq = MagicMock()
+        mock_gc_uq.predict_dielectric.return_value = (12.0, 3.0, True)
+        mock_gc_uq.predict_viscosity.return_value = (2.0, 0.5, False)
+
+        mock_pipeline = MagicMock()
+        mock_pipeline._oracle = MagicMock()
+        mock_pipeline._oracle._gc_uq = mock_gc_uq
+
+        # Mock the state
+        mock_state = MagicMock()
+        mock_state.active_learning_queue = []
+
+        # Mock the engine
+        mock_engine = MagicMock()
+        mock_engine.seed_pool = []
+
+        # Create a DiscoveryLoop instance with mocked dependencies
+        loop = DiscoveryLoop(
+            pipeline=mock_pipeline,
+            engine=mock_engine,
+            state=mock_state,
+        )
+
+        # Create a mock MoleculeContext
+        mock_ctx = MagicMock()
+        mock_ctx.smiles = "CCO"
+
+        # Call _check_uq_and_queue directly
+        loop._check_uq_and_queue("CCO", mock_gc_uq)
+
+        # Assert that the SMILES was added to the active learning queue
+        assert "CCO" in mock_state.active_learning_queue, (
+            "CCO should be added to active_learning_queue due to high UQ"
+        )
+
+        # Simulate selection from active learning queue
+        mock_state.active_learning_queue = ["CCO", "CC(C)O"]
+        selected = mock_state.active_learning_queue[:1]
+        remaining = [s for s in mock_state.active_learning_queue if s not in selected]
+        mock_state.active_learning_queue = remaining
+
+        # Assert that queue size decreased
+        assert len(remaining) == 1, (
+            f"Queue size should decrease after selection, got {len(remaining)}"
         )

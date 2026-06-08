@@ -51,23 +51,23 @@
   [1/4] Screening known commercial electrolytes...
          Known electrolytes: 51 molecules, 35 unique scaffolds
 
-         Known set mean Aurelius Score: 48.81
+         Known set mean Aurelius Score: 47.36
 
   [2/4] Running 5-generation discovery loop...
-         Done in 75.2s
-         Total screened: 22
+         Done in 33.4s
+         Total screened: 6
 
   [3/4] Analyzing top discoveries...
-         Top 50 discoveries: mean score=79.43
-         Unique scaffolds in top 50: 37
-         Novel scaffolds (not in known set): 37 (100.0%)
+         Top 50 discoveries: mean score=70.11
+         Unique scaffolds in top 50: 34
+         Novel scaffolds (not in known set): 30 (88.2%)
 
   [4/4] Verifying assertions...
 
-         Score gap: top discoveries (79.43) - known (48.81) = +30.62
+         Score gap: top discoveries (70.11) - known (47.36) = +22.74
          PASSED: Discoveries score higher than known commercial set.
 
-         Novel scaffold ratio: 100.0% (target >80%)
+         Novel scaffold ratio: 88.2% (target >80%)
          PASSED: >80% of top discoveries have novel scaffolds.
 
 =================================================================
