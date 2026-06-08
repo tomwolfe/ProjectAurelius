@@ -6,14 +6,15 @@ Gate 1 of the self-verification loop:
 Measures Spearman rank correlation between oracle predictions and published
 experimental values for dielectric constant, viscosity, donor number, HOMO, and LUMO.
 
-Current Spearman ρ from external_property_benchmark.json (v10.0.0):
-  Dielectric: ρ = +0.85 (strong)  — ester SMARTS disambiguation (ADR-2026-06-05d)
-  Viscosity:  ρ = +0.80 (strong)  — GC + MW/branching trends + ester fix
-  HOMO:       ρ = +0.51 (moderate) — TOM Wiener compactness + heteroatom pert.
-  LUMO:       ρ = +0.50 (moderate) — TOM calibration + π* nitrile correction
-  Donor Nb:   ρ = +0.70 (strong)  — GC with sulfoxide, arom N, ester disambiguation
+Current Spearman ρ from external_property_benchmark.json (v10.1.0):
+  Dielectric: ρ > 0.70 (strong)  — GC fragment-additivity + TPSA cap
+  Viscosity:  ρ > 0.50 (moderate) — GC + MW/branching trends
+  HOMO:       ρ > 0.50 (moderate) — TOM Wiener compactness + heteroatom pert.
+  LUMO:       ρ > 0.50 (moderate) — TOM calibration + heteroatom corrections
+  Donor Nb:   ρ > 0.50 (moderate) — GC with sulfoxide, arom N, ester disambiguation
 
-Thresholds set to prevent REGRESSION below baseline (not demand perfection).
+Thresholds enforce ρ > 0.50 minimum for all properties (Phase 1 acceptance
+criteria), with tighter targets for bulk properties where GC physics is strongest.
 """
 
 from __future__ import annotations
@@ -33,11 +34,11 @@ BENCHMARK_PATH = os.path.join(
 )
 
 THRESHOLDS: dict[str, float] = {
-    "dielectric_constant": 0.0,
-    "viscosity_cP": 0.40,
-    "homo_eV": 0.0,
-    "lumo_eV": 0.40,
-    "donor_number": 0.0,
+    "dielectric_constant": 0.70,
+    "viscosity_cP": 0.50,
+    "homo_eV": 0.50,
+    "lumo_eV": 0.50,
+    "donor_number": 0.50,
 }
 
 PROPERTY_MAP: dict[str, str] = {
@@ -183,7 +184,7 @@ def test_external_validation_donor_number(pipeline):
 
 def test_benchmark_has_minimum_molecules():
     benchmark = _load_benchmark()
-    assert len(benchmark) >= 15, (
-        f"External benchmark has only {len(benchmark)} entries; need >= 15 "
-        f"for statistically meaningful validation."
+    assert len(benchmark) >= 60, (
+        f"External benchmark has only {len(benchmark)} entries; need >= 60 "
+        f"for statistically meaningful validation (Phase 1 requirement)."
     )

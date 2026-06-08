@@ -754,11 +754,13 @@ class GcUqEnsemble:
 
     def predict_dielectric(self, ctx: MoleculeContext) -> tuple[float, float, bool]:
         """Predict dielectric proxy with uncertainty (mean, std, high_uncertainty)."""
+        self._ensure_trained()
         mean, std = self._predict(ctx, self._diel_models, self._diel_scaler)
         return mean, std, std > abs(mean) * _UQ_THRESHOLD_FRACTION
 
     def predict_viscosity(self, ctx: MoleculeContext) -> tuple[float, float, bool]:
         """Predict viscosity proxy with uncertainty (mean, std, high_uncertainty)."""
+        self._ensure_trained()
         mean, std = self._predict(ctx, self._visc_models, self._visc_scaler)
         return mean, std, std > abs(mean) * _UQ_THRESHOLD_FRACTION
 
@@ -768,7 +770,6 @@ class GcUqEnsemble:
         models: list[RandomForestRegressor] | None,
         scaler: StandardScaler | None,
     ) -> tuple[float, float]:
-        self._ensure_trained()
         if models is None or scaler is None:
             return 0.0, 0.0
         fp = _get_fragment_feature_vector(ctx).reshape(1, -1)

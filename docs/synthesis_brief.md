@@ -12,7 +12,7 @@ Maps top-10 EA discoveries to commercially available precursors.
 | 4 | `N#CCS(=O)(=O)F` | 87.6 | 100% | `CS(=O)(=O)F` | direct coupling |
 | 5 | `CCOCCS(=O)(=O)F` | 87.6 | 100% | `CS(=O)(=O)F` | direct coupling |
 | 6 | `CCOCCS(=O)(=O)CF` | 86.9 | 100% | `CS(=O)(=O)C` | direct coupling |
-| 7 | `N#CCOC(=O)CC#N` | 86.3 | 100% | `CCC#N; CC#N` | ether linker; ester linker; ketone linker; methylene linker; ethoxy linker; sulfone linker |
+| 7 | `N#CCOC(=O)CC#N` | 86.3 | 100% | `CC#N; CCC#N` | ether linker; ester linker; ketone linker; methylene linker; ethoxy linker; sulfone linker |
 | 8 | `N#CCS(=O)(=O)CF` | 86.1 | 100% | `CS(=O)(=O)CC#N` | direct coupling |
-| 9 | `N#CCOC(=O)F` | 85.1 | 100% | `C=O; CC#N` | ether linker; ester linker; ketone linker; methylene linker; ethoxy linker; sulfone linker |
+| 9 | `N#CCOC(=O)F` | 85.1 | 100% | `CC#N; C=O` | ether linker; ester linker; ketone linker; methylene linker; ethoxy linker; sulfone linker |
 | 10 | `COC(C)(C)S(=O)(=O)F` | 85.1 | 100% | `CO; CS(=O)(=O)F` | direct coupling |

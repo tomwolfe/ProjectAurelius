@@ -196,3 +196,52 @@ class TestGcUqActiveLearning:
             f"high_uncertainty={high_uq} does not match expected={expected_high} "
             f"(mean={mean:.4f}, std={std:.4f})"
         )
+
+    def test_append_empirical_data_reduces_variance(self):
+        """Appending empirical data and retraining reduces prediction std.
+
+        When a molecule is fed back as empirical data and the ensemble is
+        retrained, all ensemble members train on that exact data point,
+        reducing inter-model variance (std) for that molecule compared to
+        the pre-feedback state where it was only predicted via interpolation.
+
+        Uses n_ensemble=10 with 3 copies of feedback to create a strong
+        enough signal for the RF bootstrap to reduce ensemble variance.
+        """
+        ensemble = GcUqEnsemble(n_ensemble=10)
+        ctx = MoleculeContext.from_smiles("C1CCCCO1")
+        assert ctx is not None
+
+        # Record pre-feedback prediction
+        mean_before, std_before, _ = ensemble.predict_dielectric(ctx)
+
+        assert ensemble.is_trained
+        assert std_before > 0.0, (
+            f"Expected non-zero std for OOD molecule, got {std_before}"
+        )
+
+        # Append multiple copies of the empirical data for the same molecule.
+        # Having 3 copies amplifies the signal in each bootstrap sample,
+        # forcing all ensemble members to converge on the same prediction.
+        mean_rounded = round(mean_before, 2)
+        copies = [
+            {"smiles": "C1CCCCO1",
+             "dielectric_constant": mean_rounded,
+             "viscosity_cP": 1.0}
+            for _ in range(3)
+        ]
+        ensemble.append_empirical_data(copies)
+        assert not ensemble.is_trained
+
+        # Retrain and predict again
+        mean_after, std_after, _ = ensemble.predict_dielectric(ctx)
+        assert ensemble.is_trained
+        assert std_after >= 0.0
+
+        # Std must decrease: adding multiple copies of the molecule to the
+        # training set forces all ensemble members to converge on that point
+        assert std_after < std_before, (
+            f"Prediction std did not decrease after appending empirical data: "
+            f"std_before={std_before:.6f}, std_after={std_after:.6f} "
+            f"(mean_before={mean_before:.4f}, mean_after={mean_after:.4f})"
+        )

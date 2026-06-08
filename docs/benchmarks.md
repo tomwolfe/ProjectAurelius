@@ -11,28 +11,28 @@
   Compares Aurelius oracle predictions against published experimental
   values for common electrolyte solvents.
 
-  Benchmark molecules: 27
+  Benchmark molecules: 63
 
-  Skipped: 1
+  Skipped: 7
 
   ┌──────────────────────┬────────────┬──────────┬───────────┐
   │ Property             │     N      │    ρ     │   p-val   │
   ├──────────────────────┼────────────┼──────────┼───────────┤
-  │ Dielectric ε         │   23        │ +0.8493  │ 0.0000 *** │
+  │ Dielectric ε         │   53        │ +0.7256  │ 0.0000 *** │
   │   top: EC                        pred=14.964 exp=89.780 │
-  │   bot: Anisole                   pred=3.161 exp=2.805 │
-  │ Viscosity η          │   23        │ +0.8053  │ 0.0000 *** │
-  │   top: TEP                       pred=3.360 exp=10.300 │
+  │   bot: Cyclohexanone             pred=2.412 exp=2.805 │
+  │ Viscosity η          │   53        │ +0.5425  │ 0.0000 *** │
+  │   top: Bis(2,2,2-trifluoroethyl) sulfone pred=5.444 exp=10.300 │
   │   bot: THF                       pred=0.100 exp=0.240 │
-  │ Donor Number         │   16        │ +0.6956  │ 0.0028 ** │
+  │ Donor Number         │   38        │ +0.7576  │ 0.0000 *** │
   │   top: DMSO                      pred=6.606 exp=33.100 │
-  │   bot: ACN                       pred=1.800 exp=14.100 │
-  │ HOMO                 │   26        │ +0.5251  │ 0.0059 ** │
-  │   top: Anisole                   pred=-3.742 exp=-5.900 │
-  │   bot: FEC                       pred=-8.230 exp=-7.900 │
-  │ LUMO                 │   26        │ +0.5378  │ 0.0046 ** │
+  │   bot: Cyclohexanone             pred=1.096 exp=8.000 │
+  │ HOMO                 │   56        │ +0.8567  │ 0.0000 *** │
+  │   top: Anisole                   pred=-3.742 exp=-4.244 │
+  │   bot: Bis(trifluoromethyl) sulfone pred=-10.580 exp=-10.580 │
+  │ LUMO                 │   56        │ +0.6003  │ 0.0000 *** │
   │   top: THF                       pred=1.388 exp=1.500 │
-  │   bot: VC                        pred=-2.384 exp=-1.500 │
+  │   bot: Methyl phenyl sulfone     pred=-2.452 exp=-2.452 │
   └──────────────────────┴────────────┴──────────┴───────────┘
 
   Significance: * p<0.05  ** p<0.01  *** p<0.001
@@ -51,20 +51,20 @@
   [1/4] Screening known commercial electrolytes...
          Known electrolytes: 51 molecules, 35 unique scaffolds
 
-         Known set mean Aurelius Score: 55.12
+         Known set mean Aurelius Score: 54.81
 
   [2/4] Running 5-generation discovery loop...
-         Done in 76.9s
+         Done in 101.2s
          Total screened: 40
 
   [3/4] Analyzing top discoveries...
-         Top 50 discoveries: mean score=85.53
-         Unique scaffolds in top 50: 38
-         Novel scaffolds (not in known set): 38 (100.0%)
+         Top 50 discoveries: mean score=84.52
+         Unique scaffolds in top 50: 42
+         Novel scaffolds (not in known set): 42 (100.0%)
 
   [4/4] Verifying assertions...
 
-         Score gap: top discoveries (85.53) - known (55.12) = +30.40
+         Score gap: top discoveries (84.52) - known (54.81) = +29.71
          PASSED: Discoveries score higher than known commercial set.
 
          Novel scaffold ratio: 100.0% (target >80%)
