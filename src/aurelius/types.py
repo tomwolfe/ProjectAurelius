@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any
+from typing import Any, TypedDict
 
 import numpy as np
 from rdkit import Chem
@@ -30,6 +30,21 @@ MIXTURE_SEPARATOR: str = "|"
 
 # Return type for parsed mixtures: binary -> (a, b, frac_a) or ternary -> (a, b, c, frac_a, frac_b)
 ParsedMixture = tuple[str, str, float] | tuple[str, str, str, float, float]
+
+
+class EmpiricalFeedbackEntry(TypedDict):
+    """Empirical wet-lab feedback entry for GC UQ ensemble retraining.
+
+    Each entry maps a SMILES string to its experimentally measured
+    dielectric constant and viscosity values. Used by
+    ``GcUqEnsemble.append_empirical_data()`` to retrain the UQ ensemble
+    with real-world data, reducing prediction uncertainty for fed-back
+    molecules.
+    """
+
+    smiles: str
+    dielectric_constant: float
+    viscosity_cP: float
 
 
 @dataclass(frozen=True)
@@ -226,6 +241,7 @@ def format_mixture_smiles(
 
 
 __all__ = [
+    "EmpiricalFeedbackEntry",
     "MoleculeContext",
     "ParsedMixture",
     "ScreeningResult",

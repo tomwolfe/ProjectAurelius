@@ -30,7 +30,11 @@ from typing import Any
 
 from aurelius.agent.mutation import MutationEngine
 from aurelius.agent.reporting import generate_discoveries_sdf, generate_run_summary
-from aurelius.agent.selection import compute_pairwise_diversity, tournament_select
+from aurelius.agent.selection import (
+    compute_pairwise_diversity,
+    select_for_active_learning,
+    tournament_select,
+)
 from aurelius.agent.state import LoopState
 from aurelius.constants import DISCOVERY_THRESHOLD
 from aurelius.pipeline import AureliusPipeline
@@ -450,6 +454,30 @@ class DiscoveryLoop:
             return -1, -1
         return best_diel[0], best_visc[0]
 
+    def apply_wet_lab_feedback(self, feedback_data: list[dict[str, Any]]) -> None:
+        """Apply empirical wet-lab feedback to retrain the GC UQ ensemble.
+
+        Feeds experimentally measured dielectric and viscosity values back
+        into ``GcUqEnsemble`` via ``append_empirical_data()``, which flags
+        the ensemble for lazy retraining on the next prediction call. This
+        allows the UQ model to learn from real-world data and reduce
+        prediction uncertainty for fed-back molecules.
+
+        Args:
+            feedback_data: List of dicts, each containing ``smiles``,
+                ``dielectric_constant``, and ``viscosity_cP`` keys matching
+                the ``EmpiricalFeedbackEntry`` TypedDict.
+        """
+        gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
+        if gc_uq is None:
+            log.warning("Cannot apply wet-lab feedback: GcUqEnsemble not available")
+            return
+        gc_uq.append_empirical_data(feedback_data)
+        log.info(
+            "Applied wet-lab feedback with %d entries — GcUqEnsemble flagged for retrain",
+            len(feedback_data),
+        )
+
     def _evaluate_mixture_pairs(
         self,
         valid_contexts: list[MoleculeContext],
@@ -593,15 +621,12 @@ class DiscoveryLoop:
 
         gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
         if gc_uq is not None:
-            from aurelius.scoring.oracle.gc import _UQ_THRESHOLD_FRACTION
             try:
-                _diel_mean, diel_std, _ = gc_uq.predict_dielectric(ctx)
-                _visc_mean, visc_std, _ = gc_uq.predict_viscosity(ctx)
-                if (diel_std > max(1.0, abs(_diel_mean)) * _UQ_THRESHOLD_FRACTION or
-                    visc_std > max(1.0, abs(_visc_mean)) * _UQ_THRESHOLD_FRACTION):
-                    if smi not in self.state.active_learning_queue:
-                        self.state.active_learning_queue.append(smi)
-                        log.info("  Added %s to active learning queue (high UQ variance)", smi)
+                _, _, diel_high = gc_uq.predict_dielectric(ctx)
+                _, _, visc_high = gc_uq.predict_viscosity(ctx)
+                if (diel_high or visc_high) and smi not in self.state.active_learning_queue:
+                    self.state.active_learning_queue.append(smi)
+                    log.info("  Added %s to active learning queue (high UQ)", smi)
             except Exception:
                 pass
 
@@ -647,6 +672,45 @@ class DiscoveryLoop:
         if not result_contexts:
             return [], []
 
+        # Active learning queue: evaluate and select high-uncertainty candidates
+        # using UCB acquisition to prioritise information gain.
+        if self.state.active_learning_queue:
+            queue_set = set(self.state.active_learning_queue)
+            queue_contexts: list[MoleculeContext] = []
+            queue_scores: list[float] = []
+            for ctx, score in zip(result_contexts, all_scores, strict=False):
+                if ctx.smiles in queue_set:
+                    queue_contexts.append(ctx)
+                    queue_scores.append(score)
+
+            if queue_contexts:
+                gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
+                uncertainties: list[float] = []
+                for ctx in queue_contexts:
+                    if gc_uq is not None:
+                        try:
+                            _, diel_std, _ = gc_uq.predict_dielectric(ctx)
+                            _, visc_std, _ = gc_uq.predict_viscosity(ctx)
+                            uncertainties.append((diel_std + visc_std) / 2.0)
+                        except Exception:
+                            uncertainties.append(0.0)
+                    else:
+                        uncertainties.append(0.0)
+
+                selected = select_for_active_learning(
+                    queue_contexts, queue_scores, uncertainties,
+                    batch_size=self.batch_size,
+                )
+                selected_scores = [queue_scores[queue_contexts.index(ctx)] for ctx in selected]
+
+                # Clear selected items from the queue after selection
+                for ctx in selected:
+                    if ctx.smiles in self.state.active_learning_queue:
+                        self.state.active_learning_queue.remove(ctx.smiles)
+
+                return selected, selected_scores
+
+        # Fall through to standard tournament selection when no queue items
         if len(result_contexts) <= self.batch_size:
             return result_contexts, all_scores
 
