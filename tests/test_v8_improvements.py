@@ -170,6 +170,32 @@ class TestAntiGaming:
         assert ctx is not None
         assert engine._is_electrolyte_like(ctx) is False
 
+    def test_rejects_reductive_cleavage_sec(self):
+        """Molecule with secondary O-alkyl carbonate/ester should be rejected."""
+        engine = MutationEngine(seed_smiles=["CC"])
+        # Isopropyl methyl carbonate — branched secondary O-alkyl prone to CO₂ loss
+        ctx = MoleculeContext.from_smiles("COC(=O)OC(C)C")
+        assert ctx is not None
+        assert engine._is_electrolyte_like(ctx) is False
+
+    def test_rejects_reductive_cleavage_tert(self):
+        """Molecule with tertiary O-alkyl carbonate/ester should be rejected."""
+        engine = MutationEngine(seed_smiles=["CC"])
+        # tert-Butyl methyl carbonate — highly branched, prone to reductive cleavage
+        ctx = MoleculeContext.from_smiles("COC(=O)OC(C)(C)C")
+        assert ctx is not None
+        assert engine._is_electrolyte_like(ctx) is False
+
+    def test_allows_fluorinated_branched_carbonate(self):
+        """Fluorinated branched carbonate should pass despite branching."""
+        engine = MutationEngine(seed_smiles=["CC"])
+        # Hexafluoroisopropyl methyl carbonate — fluorination stabilises the C-O bond
+        ctx = MoleculeContext.from_smiles("COC(=O)OC(C(F)(F)F)C(F)(F)F")
+        assert ctx is not None
+        assert engine._is_electrolyte_like(ctx) is True, (
+            "Fluorinated branched carbonate should be allowed"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Scaffold Tracking Tests

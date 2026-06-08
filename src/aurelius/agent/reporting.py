@@ -20,7 +20,8 @@ import numpy as np
 
 from aurelius.agent.selection import extract_pareto_front
 from aurelius.agent.state import LoopState, check_score_plateau, check_structural_saturation
-from aurelius.types import ScreeningResult
+from aurelius.scoring.oracle.gc import GcUqEnsemble
+from aurelius.types import MoleculeContext, ScreeningResult
 
 
 def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str:
@@ -66,6 +67,57 @@ def generate_run_summary(
     if not reasons:
         reasons.append("partial convergence — volume threshold met but some criteria pending")
 
+    top_discoveries = sorted(discoveries, key=lambda r: -r.total_score)
+
+    # Epistemic uncertainty for wet-lab prioritisation
+    # Physical basis: molecules with high GC prediction uncertainty (std >> 15% of
+    # mean) are out-of-distribution relative to the calibration set. Prioritising
+    # these for experimental validation yields the highest information gain per
+    # wet-lab hour — active learning without robotic automation.
+    uq_data: dict[str, dict[str, float]] = {}
+    try:
+        uq_ensemble = GcUqEnsemble()
+        for d in top_discoveries[:20]:
+            ctx = MoleculeContext.from_smiles(d.smiles)
+            if ctx is None:
+                continue
+            diel_mean, diel_std = uq_ensemble.predict_dielectric(ctx)
+            visc_mean, visc_std = uq_ensemble.predict_viscosity(ctx)
+            uq_weight = 1.0 + (diel_std / max(1.0, abs(diel_mean)))
+            uq_weight += visc_std / max(1.0, abs(visc_mean))
+            uq_data[d.smiles] = {
+                "diel_mean": diel_mean,
+                "diel_std": diel_std,
+                "visc_mean": visc_mean,
+                "visc_std": visc_std,
+                "uncertainty_weighted_score": d.total_score * uq_weight,
+            }
+    except Exception:
+        log.warning("GC UQ ensemble unavailable — skipping uncertainty weighting", exc_info=True)
+
+    def _discovery_entry(d: ScreeningResult) -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "smiles": d.smiles,
+            "total_score": d.total_score,
+            "homo_eV": d.homo_eV,
+            "lumo_eV": d.lumo_eV,
+            "dielectric_proxy": d.dielectric_proxy,
+            "viscosity_proxy": d.viscosity_proxy,
+            "li_solvation_proxy": d.li_solvation_proxy,
+            "sa_score": d.sa_score,
+            "sub_scores": d.sub_scores,
+            "is_viable": d.is_viable,
+            "rejection_reasons": d.rejection_reasons,
+            "novelty_to_seed": d.novelty_to_seed,
+        }
+        if d.smiles in uq_data:
+            entry["diel_std"] = uq_data[d.smiles]["diel_std"]
+            entry["visc_std"] = uq_data[d.smiles]["visc_std"]
+            entry["uncertainty_weighted_score"] = round(
+                uq_data[d.smiles]["uncertainty_weighted_score"], 4
+            )
+        return entry
+
     summary: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
         "pipeline": "Project Aurelius v10.0 — Multi-Objective Electrolyte Discovery Engine",
@@ -94,23 +146,7 @@ def generate_run_summary(
             ),
         },
         "new_scaffolds_per_batch": [len(s) for s in state.scaffolds_per_batch],
-        "discoveries": [
-            {
-                "smiles": d.smiles,
-                "total_score": d.total_score,
-                "homo_eV": d.homo_eV,
-                "lumo_eV": d.lumo_eV,
-                "dielectric_proxy": d.dielectric_proxy,
-                "viscosity_proxy": d.viscosity_proxy,
-                "li_solvation_proxy": d.li_solvation_proxy,
-                "sa_score": d.sa_score,
-                "sub_scores": d.sub_scores,
-                "is_viable": d.is_viable,
-                "rejection_reasons": d.rejection_reasons,
-                "novelty_to_seed": d.novelty_to_seed,
-            }
-            for d in sorted(discoveries, key=lambda r: -r.total_score)[:50]
-        ],
+        "discoveries": [_discovery_entry(d) for d in top_discoveries[:50]],
         "all_results_count": len(all_results),
         "pareto_optimal_discoveries": [
             {
@@ -120,6 +156,17 @@ def generate_run_summary(
                 "lumo_eV": d.lumo_eV,
                 "dielectric_proxy": d.dielectric_proxy,
                 "viscosity_proxy": d.viscosity_proxy,
+                **(
+                    {
+                        "diel_std": uq_data[d.smiles]["diel_std"],
+                        "visc_std": uq_data[d.smiles]["visc_std"],
+                        "uncertainty_weighted_score": round(
+                            uq_data[d.smiles]["uncertainty_weighted_score"], 4
+                        ),
+                    }
+                    if d.smiles in uq_data
+                    else {}
+                ),
             }
             for d in sorted(
                 extract_pareto_front(sorted(discoveries, key=lambda r: -r.total_score)[:100]),

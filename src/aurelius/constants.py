@@ -273,6 +273,11 @@ ELECTROCHEMICALLY_UNSTABLE_PATTERNS: list[tuple[Chem.Mol, str]] = [
     (Chem.MolFromSmarts("[CH2]1[CH2][CH2][CH2]1"), "cyclobutane"),
     (Chem.MolFromSmarts("[CX3](=[OX1])[F,Cl,Br,I]"), "acyl_halide"),
     (Chem.MolFromSmarts("[C]=[C]=[O]"), "terminal_ketene"),
+    # Reductive cleavage motifs for linear carbonates/esters with branched
+    # O-alkyl groups that stabilise the radical formed after one-electron
+    # reduction, promoting C-O bond cleavage and CO₂ evolution.
+    (Chem.MolFromSmarts("[CX3](=[OX1])[OX2][CH]([CH3])[CH3]"), "reductive_carbonate_cleavage_sec"),
+    (Chem.MolFromSmarts("[CX3](=[OX1])[OX2][C]([CH3])([CH3])[CH3]"), "reductive_carbonate_cleavage_tert"),
 ]
 
 # Individual pre-compiled patterns for chem_utils.py SA score
