@@ -195,6 +195,40 @@ def test_ced_proxy_plausible_range() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Gas Evolution Proxy Tests
+# ---------------------------------------------------------------------------
+
+
+def test_gas_evolution_proxy_linear_vs_cyclic() -> None:
+    """Linear carbonates (e.g., DMC) should have higher gas evolution proxy
+    than cyclic carbonates (e.g., EC). Linear carbonates have acyclic
+    vulnerable ester arms that undergo reductive CO₂ evolution, while
+    cyclic carbonates are ring-constrained."""
+    from aurelius.scoring.oracle import predict_gas_evolution_proxy
+
+    dmc_proxy = predict_gas_evolution_proxy(_ctx("COC(=O)OC"))
+    ec_proxy = predict_gas_evolution_proxy(_ctx("C1COC(=O)O1"))
+    assert dmc_proxy > ec_proxy, (
+        f"DMC gas evolution proxy ({dmc_proxy:.3f}) should exceed "
+        f"EC proxy ({ec_proxy:.3f})"
+    )
+
+
+def test_gas_evolution_proxy_fluorination_mitigation() -> None:
+    """A fluorinated linear carbonate should have a lower gas evolution proxy
+    than its non-fluorinated counterpart. Fluorination replaces vulnerable
+    C-H bonds with C-F bonds, reducing the acyclic vulnerable ester count."""
+    from aurelius.scoring.oracle import predict_gas_evolution_proxy
+
+    dmc_proxy = predict_gas_evolution_proxy(_ctx("COC(=O)OC"))
+    fluorinated_proxy = predict_gas_evolution_proxy(_ctx("COC(=O)OC(F)(F)F"))
+    assert dmc_proxy > fluorinated_proxy, (
+        f"DMC proxy ({dmc_proxy:.3f}) should exceed fluorinated "
+        f"carbonate proxy ({fluorinated_proxy:.3f})"
+    )
+
+
+# ---------------------------------------------------------------------------
 # QuantumOracle Tests
 # ---------------------------------------------------------------------------
 

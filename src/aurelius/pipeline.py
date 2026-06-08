@@ -37,6 +37,7 @@ from aurelius.constants import (
     SA_THRESHOLD,
     SCORE_WEIGHT_CED,
     SCORE_WEIGHT_DIELECTRIC,
+    SCORE_WEIGHT_GAS_EVOLUTION,
     SCORE_WEIGHT_HOMO,
     SCORE_WEIGHT_LI_SOLVATION,
     SCORE_WEIGHT_LUMO,
@@ -71,6 +72,7 @@ from aurelius.scoring.oracle import (
     _compute_sei_fracture_toughness_proxy,
     mixture_synergy_bonus,
     mixture_synergy_bonus_ternary,
+    predict_gas_evolution_proxy,
     predict_mixture_dielectric,
     predict_mixture_li_solvation,
     predict_mixture_viscosity,
@@ -135,6 +137,9 @@ _OBJECTIVES: list[Objective] = [
     Objective("sa_penalty", "sa_score", SCORE_WEIGHT_SA,
               lambda v: _sigmoid(v, SA_THRESHOLD, 2.0, False),
               failure_reason_template="SA score={value:.2f} (hard to synthesize)"),
+    Objective("gas_evolution_penalty", "gas_evolution_proxy", SCORE_WEIGHT_GAS_EVOLUTION,
+              lambda v: _sigmoid(v, 0.5, 2.0, False),
+              failure_reason_template="gas_evolution_proxy={value:.3f} (high degradation risk)"),
 ]
 
 
@@ -260,6 +265,7 @@ class AureliusPipeline:
             domain_penalty = oracle_result.get("domain_penalty", 1.0)
 
             sei_fracture_toughness_proxy = _compute_sei_fracture_toughness_proxy(ctx)
+            gas_evolution_proxy = predict_gas_evolution_proxy(ctx)
 
             t2_result = {
                 "homo_eV": homo_eV,
@@ -271,6 +277,7 @@ class AureliusPipeline:
                 "li_dissociation_proxy": li_dissociation_proxy,
                 "ced_proxy": ced_proxy,
                 "sei_fracture_toughness_proxy": sei_fracture_toughness_proxy,
+                "gas_evolution_proxy": gas_evolution_proxy,
                 "domain_applicable": oracle_result.get("domain_applicable", True),
                 "domain_reason": oracle_result.get("domain_reason", ""),
                 "domain_penalty": domain_penalty,
@@ -290,6 +297,7 @@ class AureliusPipeline:
             li_solvation_proxy=li_solvation_proxy,
             ced_proxy=ced_proxy,
             sei_fracture_toughness_proxy=sei_fracture_toughness_proxy,
+            gas_evolution_proxy=gas_evolution_proxy,
             ctx=ctx,
             quantum_confidence=quantum_confidence,
         )
@@ -578,6 +586,7 @@ class AureliusPipeline:
         li_solvation_proxy: float = 0.0,
         ced_proxy: float = 0.0,
         sei_fracture_toughness_proxy: float = 0.0,
+        gas_evolution_proxy: float = 0.0,
         ctx: MoleculeContext | None = None,
         quantum_confidence: str = "unknown",
     ) -> dict[str, Any]:
@@ -619,6 +628,7 @@ class AureliusPipeline:
             "li_solvation_proxy": li_solvation_proxy,
             "ced_proxy": ced_proxy,
             "sei_fracture_toughness_proxy": sei_fracture_toughness_proxy,
+            "gas_evolution_proxy": gas_evolution_proxy,
         }
 
         sub_scores: dict[str, float] = {}

@@ -113,10 +113,10 @@ SCORE_WEIGHT_LI_SOLVATION: float = 0.20
 """Weight for Li+ solvation energy proxy — penalises binding that is too tight
 (poor transference number) or too weak (poor conductivity)."""
 
-SCORE_WEIGHT_CED: float = 0.03
+SCORE_WEIGHT_CED: float = 0.01
 """Weight for cohesive energy density (CED) proxy — SEI mechanical robustness."""
 
-SCORE_WEIGHT_SA: float = 0.02
+SCORE_WEIGHT_SA: float = 0.01
 """Weight for synthetic accessibility penalty.
 
 Note: Al corrosion penalty is applied as a strict multiplicative factor
@@ -256,6 +256,20 @@ HYDROLYTICALLY_UNSTABLE_PATTERNS: list[tuple[Chem.Mol, str, float]] = [
     (Chem.MolFromSmarts("[#6][CX3](=[OX1])[OX2][CX3](=[OX1])[#6]"), "geminal_diester", 0.2),
     (Chem.MolFromSmarts("[CX3](=[OX1])[F,Cl,Br,I]"), "acyl_halide", 0.4),
     (Chem.MolFromSmarts("[C]=[C]=[O]"), "terminal_ketene", 0.5),
+]
+
+# Gas-evolution-prone motifs for reductive gas generation proxy
+# Physical basis: Linear carbonates decompose via one-electron reduction
+# to liberate CO₂, while vulnerable acyclic ester arms with C-H bonds
+# are susceptible to radical-mediated gas evolution. Cyclic carbonates
+# (EC, PC) are excluded because their ring-constrained decomposition
+# produces desirable SEI components with less gas. Fluorination of the
+# alkyl chain mitigates gas generation by eliminating the vulnerable
+# C-H bonds (replaced by C-F).
+# Format: (pattern, name, penalty_weight)
+_GC_GAS_EVOLUTION_PATTERNS: list[tuple[Chem.Mol, str, float]] = [
+    (Chem.MolFromSmarts("O=C([OX2])[OX2]"), "carbonate", 1.5),
+    (Chem.MolFromSmarts("[C;!R;H1,H2,H3][OX2][CX3](=[OX1])"), "acyclic_vulnerable_ester", 0.5),
 ]
 
 # Acyl halide pattern — highly reactive toward hydrolysis, toxic
@@ -476,8 +490,12 @@ SEI_FRACTURE_SIGMOID_STEEPNESS: float = 1.5
 # SA (soft filter), and Viscosity (mechanical property overlap).
 # Weights sum to 1.0 across all SCORE_WEIGHT_*.
 
-SCORE_WEIGHT_SEI_FRACTURE: float = 0.08
+SCORE_WEIGHT_SEI_FRACTURE: float = 0.06
 """Weight for SEI fracture toughness proxy — mechanical robustness of SEI."""
+
+SCORE_WEIGHT_GAS_EVOLUTION: float = 0.05
+"""Weight for gas evolution penalty — penalises molecules prone to reductive
+gas generation (CO₂/CO from linear carbonates and vulnerable esters)."""
 
 # ---------------------------------------------------------------------------
 # Net Progress Normalization Constants

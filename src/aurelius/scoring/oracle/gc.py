@@ -31,6 +31,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 
 from aurelius.constants import (
+    _GC_GAS_EVOLUTION_PATTERNS,
     ACRYLATE_CROSSLINK_PATTERN,
     MAX_DIELECTRIC_PER_TPSA,
     SULTONE_CROSSLINK_PATTERN,
@@ -374,6 +375,28 @@ def predict_ced_proxy(ctx: MoleculeContext) -> float:
     value += max(0, n_rings - n_arom_rings) * 0.3
 
     return max(1.0, min(15.0, value))
+
+
+def predict_gas_evolution_proxy(ctx: MoleculeContext) -> float:
+    """Predict reductive gas evolution risk via fragment-additivity.
+
+    Physical justification: Linear carbonates and vulnerable acyclic esters
+    undergo one-electron reduction at the anode, generating CO₂/CO gas via
+    radical-mediated C-O bond cleavage. The proxy sums saturated pattern
+    contributions, where higher = worse (greater gas evolution risk).
+    Cyclic carbonates (EC, PC) are excluded by the acyclic constraint on
+    the vulnerable ester pattern. Fluorination mitigates risk by replacing
+    vulnerable C-H bonds with C-F bonds (no change in the base carbonate
+    contribution, but fewer vulnerable acyclic matches).
+    """
+    total = 0.0
+    for pattern, _name, weight in _GC_GAS_EVOLUTION_PATTERNS:
+        if pattern is None:
+            continue
+        n = len(ctx.mol.GetSubstructMatches(pattern))
+        total += _saturate_contrib(n, weight)
+
+    return total
 
 
 def _compute_sei_fracture_toughness_proxy(ctx: MoleculeContext) -> float:
