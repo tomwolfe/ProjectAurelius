@@ -7,13 +7,16 @@ values from orbital_calibration.json and enforces MAE < 1.5 eV.
 from __future__ import annotations
 
 import json
+import math
 import os
 
 import pytest
 from rdkit import Chem
 
 from aurelius.scoring.oracle.quantum import (
+    _apply_cross_conjugation_penalty,
     _apply_torsional_strain_penalty,
+    _is_cross_conjugated,
     _longest_conjugation_path,
     predict_tom_orbitals,
 )
@@ -158,4 +161,102 @@ class TestOracleCalibration:
         assert gap_bp > gap_dpb, (
             f"Benzophenone gap ({gap_bp:.3f}) should be > "
             f"diphenyl butadiene gap ({gap_dpb:.3f})"
+        )
+
+    def test_cross_conjugation_lumo_penalty_applied(self):
+        """Cross-conjugated molecules must receive +0.30 eV LUMO penalty.
+
+        Benzophenone (O=C(c1ccccc1)c1ccccc1) has a carbonyl carbon with three
+        conjugated neighbors (O, two aromatic C atoms), triggering the
+        cross-conjugation penalty. The _apply_cross_conjugation_penalty function
+        should add exactly +0.30 eV to the LUMO for such molecules.
+        """
+        benzophenone = Chem.MolFromSmiles("O=C(c1ccccc1)c1ccccc1")
+        assert benzophenone is not None
+        assert _is_cross_conjugated(benzophenone), (
+            "Benzophenone should be detected as cross-conjugated"
+        )
+
+        _, lumo_before = predict_tom_orbitals(benzophenone)
+
+        # Recompute without the penalty to verify the +0.30 eV shift.
+        # Simulate the TOM pipeline up to cross-conjugation.
+        from aurelius.scoring.oracle.quantum import (
+            _apply_aromatic_stabilization,
+            _apply_fluorine_correction,
+            _apply_heteroatom_perturbations,
+            _apply_nitrile_correction,
+            _apply_peierls_damping,
+            _apply_phosphate_correction,
+            _apply_sigma_star_correction,
+            _apply_torsional_strain_penalty,
+            _apply_wiener_compactness,
+            _compute_tom_base_energies,
+            _count_heteroatom_perturbations,
+            _longest_conjugation_path,
+            _topological_sanity_l,
+        )
+        L = _longest_conjugation_path(benzophenone)
+        L = max(L, 2)
+        L = _topological_sanity_l(benzophenone, L)
+        L = _apply_wiener_compactness(benzophenone, L)
+        L = _apply_torsional_strain_penalty(benzophenone, L)
+        L = _apply_peierls_damping(L)
+        n_ew, n_ed, _ = _count_heteroatom_perturbations(benzophenone)
+        homo, lumo = _compute_tom_base_energies(L)
+        homo, lumo = _apply_heteroatom_perturbations(n_ew, n_ed, homo, lumo)
+        homo, lumo = _apply_fluorine_correction(benzophenone, homo, lumo)
+        homo, lumo = _apply_aromatic_stabilization(benzophenone, homo, lumo)
+        lumo = _apply_nitrile_correction(benzophenone, lumo)
+        homo = _apply_phosphate_correction(benzophenone, homo)
+        lumo = _apply_sigma_star_correction(benzophenone, L, lumo)
+
+        # Now apply the cross-conjugation penalty
+        lumo_with_penalty = _apply_cross_conjugation_penalty(benzophenone, lumo)
+
+        assert math.isclose(lumo_with_penalty, lumo + 0.30, rel_tol=1e-6), (
+            f"Cross-conjugation penalty should add +0.30 eV to LUMO: "
+            f"lumo={lumo:.4f}, lumo_with_penalty={lumo_with_penalty:.4f}, "
+            f"expected={lumo + 0.30:.4f}"
+        )
+
+        # Also verify a non-cross-conjugated molecule (DMC) does NOT get the penalty
+        dmc = Chem.MolFromSmiles("COC(=O)OC")
+        assert dmc is not None
+        assert not _is_cross_conjugated(dmc), (
+            "DMC should NOT be detected as cross-conjugated"
+        )
+        assert _apply_cross_conjugation_penalty(dmc, -0.5) == -0.5, (
+            "Non-cross-conjugated molecule should not get LUMO penalty"
+        )
+
+    def test_tom_holdout_mae_below_threshold(self, calibration_data):
+        """TOM holdout MAE must remain < 1.5 eV.
+
+        Uses an 80/20 holdout split of orbital_calibration.json (same
+        methodology as _compute_holdout_generalization in test_net_progress.py)
+        to verify that TOM generalises to unseen scaffolds.
+        """
+        import random
+        random.seed(42)
+        indices = list(range(len(calibration_data)))
+        random.shuffle(indices)
+        n_holdout = max(1, int(len(calibration_data) * 0.20))
+        holdout_idx = set(indices[:n_holdout])
+        holdout = [calibration_data[i] for i in holdout_idx]
+
+        errors = []
+        for entry in holdout:
+            mol = Chem.MolFromSmiles(entry["smiles"])
+            assert mol is not None, f"Invalid SMILES: {entry['smiles']}"
+            homo_pred, lumo_pred = predict_tom_orbitals(mol)
+            homo_err = abs(homo_pred - entry["homo_eV"])
+            lumo_err = abs(lumo_pred - entry["lumo_eV"])
+            errors.append((homo_err + lumo_err) / 2.0)
+
+        mae = sum(errors) / len(errors)
+        assert mae < 1.5, (
+            f"TOM holdout MAE is {mae:.4f} eV. "
+            f"Expected < 1.5 eV. Cross-conjugated molecules must be correctly "
+            f"penalized to maintain generalization."
         )

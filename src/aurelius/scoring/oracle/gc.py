@@ -27,7 +27,7 @@ import time
 
 import numpy as np
 from rdkit import Chem
-from sklearn.linear_model import Ridge
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 
 from aurelius.constants import MAX_DIELECTRIC_PER_TPSA
@@ -578,18 +578,20 @@ def mixture_synergy_bonus_ternary(
 
 
 # ---------------------------------------------------------------------------
-# GC Uncertainty Quantification — Ridge Ensemble for Dielectric & Viscosity
+# GC Uncertainty Quantification — Random Forest Ensemble for Dielectric & Viscosity
 # ---------------------------------------------------------------------------
 # Physical justification: A single deterministic GC prediction has no error
-# bar. By training an ensemble of Ridge regressors with different random
-# seeds on the external_property_benchmark.json, we obtain prediction
-# variance as a proxy for epistemic uncertainty. High variance (>15% of
-# mean) indicates the molecule is out-of-distribution relative to the
-# calibration set, warranting a mild domain penalty.
+# bar. By training an ensemble of RandomForestRegressor models with different
+# random seeds on the external_property_benchmark.json, we capture non-linear
+# fragment interactions (e.g., cooperative dielectric enhancement) that linear
+# Ridge regression cannot model. The prediction variance across ensemble members
+# serves as a proxy for epistemic uncertainty. High variance (>15% of mean)
+# indicates the molecule is out-of-distribution relative to the calibration set,
+# warranting a mild domain penalty.
 #
-# The ensemble is trained lazily on first use and uses only fragment-count
-# features (same as the GC model) so it remains physically interpretable.
-# No deep learning frameworks are used.
+# n_estimators=50 and max_depth=5 prevent overfitting on the small benchmark
+# dataset (~25 molecules) while still capturing physically meaningful non-linear
+# effects. No deep learning frameworks are used.
 
 _UQ_THRESHOLD_FRACTION: float = 0.15
 _UQ_PENALTY: float = 0.9
@@ -614,11 +616,13 @@ def _get_fragment_feature_vector(ctx: MoleculeContext) -> np.ndarray:
 
 
 class GcUqEnsemble:
-    """Ridge regression ensemble for GC uncertainty quantification.
+    """Random Forest ensemble for GC uncertainty quantification.
 
-    Trains N Ridge regressors with different random_state seeds on
-    external_property_benchmark.json. Predicts dielectric proxy and
-    viscosity proxy with uncertainty (standard deviation across ensemble).
+    Trains N RandomForestRegressor models with different random_state seeds on
+    external_property_benchmark.json. Captures non-linear fragment interactions
+    while n_estimators=50 and max_depth=5 prevent overfitting on the small
+    benchmark dataset. Predicts dielectric proxy and viscosity proxy with
+    uncertainty (standard deviation across ensemble).
 
     Training is lazy (first inference triggers training).
     """
@@ -633,8 +637,8 @@ class GcUqEnsemble:
         self._n_ensemble = n_ensemble
         self._alpha = alpha
         self._benchmark_path = benchmark_path
-        self._diel_models: list[Ridge] | None = None
-        self._visc_models: list[Ridge] | None = None
+        self._diel_models: list[RandomForestRegressor] | None = None
+        self._visc_models: list[RandomForestRegressor] | None = None
         self._diel_scaler: StandardScaler | None = None
         self._visc_scaler: StandardScaler | None = None
         self._is_trained = False
@@ -721,12 +725,14 @@ class GcUqEnsemble:
 
     def _train_ensemble(
         self, X: np.ndarray, y: list[float], seed_offset: int
-    ) -> tuple[StandardScaler, list[Ridge]]:
+    ) -> tuple[StandardScaler, list[RandomForestRegressor]]:
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
-        models: list[Ridge] = []
+        models: list[RandomForestRegressor] = []
         for seed in range(self._n_ensemble):
-            model = Ridge(alpha=self._alpha, random_state=seed + seed_offset)
+            model = RandomForestRegressor(
+                n_estimators=50, max_depth=5, random_state=seed + seed_offset
+            )
             model.fit(X_scaled, y)
             models.append(model)
         return scaler, models
@@ -759,7 +765,7 @@ class GcUqEnsemble:
     def _predict(
         self,
         ctx: MoleculeContext,
-        models: list[Ridge] | None,
+        models: list[RandomForestRegressor] | None,
         scaler: StandardScaler | None,
     ) -> tuple[float, float]:
         self._ensure_trained()
