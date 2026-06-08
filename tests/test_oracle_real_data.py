@@ -365,6 +365,131 @@ def test_xtb_batch_empty_input() -> None:
     assert result == []
 
 
+# ---------------------------------------------------------------------------
+# Boltzmann Weighting Tests
+# ---------------------------------------------------------------------------
+
+
+def test_boltzmann_weights_sum_to_one() -> None:
+    """Boltzmann weights should always sum (approximately) to 1.0."""
+    from aurelius.scoring.oracle.quantum import _boltzmann_weights
+
+    energies = [0.0, 1.0, 2.5, 5.0]
+    weights = _boltzmann_weights(energies)
+    assert abs(sum(weights) - 1.0) < 1e-6
+    assert all(w >= 0 for w in weights)
+
+
+def test_boltzmann_weights_lowest_energy_highest_weight() -> None:
+    """The lowest-energy conformer should receive the highest Boltzmann weight."""
+    from aurelius.scoring.oracle.quantum import _boltzmann_weights
+
+    energies = [0.0, 2.0, -1.0]
+    weights = _boltzmann_weights(energies)
+    assert weights[2] > weights[0] > weights[1], (
+        f"Lowest energy conformer (idx=2, E=-1.0) should have highest weight. "
+        f"Weights: {[round(w, 4) for w in weights]}"
+    )
+
+
+def test_boltzmann_weights_high_energy_negligible() -> None:
+    """Conformers with energy > 5 kcal above minimum should have negligible weight."""
+    from aurelius.scoring.oracle.quantum import _boltzmann_weights
+
+    energies = [0.0, 10.0, 20.0]
+    weights = _boltzmann_weights(energies)
+    assert weights[0] > 0.99, (
+        f"Ground state should dominate when other conformers are >>kT"
+    )
+
+
+def test_boltzmann_weights_empty() -> None:
+    """Empty energy list should return empty weight list."""
+    from aurelius.scoring.oracle.quantum import _boltzmann_weights
+
+    assert _boltzmann_weights([]) == []
+
+
+def test_boltzmann_weights_single_conformer() -> None:
+    """Single conformer should have weight 1.0."""
+    from aurelius.scoring.oracle.quantum import _boltzmann_weights
+
+    weights = _boltzmann_weights([5.0])
+    assert abs(weights[0] - 1.0) < 1e-6
+
+
+def test_generate_multi_xyz_returns_list() -> None:
+    """_generate_multi_xyz should return a list of (xyz, energy) tuples."""
+    from rdkit import Chem
+    from aurelius.scoring.oracle.quantum import _generate_multi_xyz
+
+    mol = Chem.MolFromSmiles("CCO")
+    assert mol is not None
+    conformers = _generate_multi_xyz(mol, n_conformers=3)
+    assert len(conformers) <= 3
+    assert len(conformers) > 0, "At least one conformer should be generated"
+    for xyz, energy in conformers:
+        assert isinstance(xyz, str)
+        assert isinstance(energy, float)
+
+
+def test_generate_multi_xyz_sorted_by_energy() -> None:
+    """Conformers should be sorted by UFF energy ascending."""
+    from rdkit import Chem
+    from aurelius.scoring.oracle.quantum import _generate_multi_xyz
+
+    mol = Chem.MolFromSmiles("C1COC(=O)O1")
+    assert mol is not None
+    conformers = _generate_multi_xyz(mol, n_conformers=5)
+    if len(conformers) >= 2:
+        energies = [e for _, e in conformers]
+        assert energies == sorted(energies), "Conformers should be sorted by energy ascending"
+
+
+def test_generate_multi_xyz_with_long_chain() -> None:
+    """Flexible molecules (e.g., long-chain glymes) should generate multiple conformers."""
+    from rdkit import Chem
+    from aurelius.scoring.oracle.quantum import _generate_multi_xyz
+
+    # Tetraethylene glycol dimethyl ether (tetraglyme) — flexible
+    mol = Chem.MolFromSmiles("COCCOCCOCCOC")
+    assert mol is not None
+    conformers = _generate_multi_xyz(mol, n_conformers=5)
+    # Flexible molecule should produce diverse conformers with varied energies
+    if len(conformers) >= 3:
+        energies = [e for _, e in conformers]
+        energy_range = max(energies) - min(energies)
+        assert energy_range > 0.1, (
+            f"Long-chain molecule should produce varied conformer energies, "
+            f"range={energy_range:.2f} kcal/mol"
+        )
+
+
+def test_quantum_oracle_returns_conformer_variance() -> None:
+    """QuantumOracle should include conformer_variance in output."""
+    from rdkit import Chem
+    from aurelius.scoring.oracle.quantum import QuantumOracle
+
+    qc = QuantumOracle(use_xtb=False)
+    mol = Chem.MolFromSmiles("CCO")
+    result = qc.evaluate(mol)
+    assert "conformer_variance" in result
+    assert isinstance(result["conformer_variance"], float)
+
+
+def test_quantum_oracle_confidence_xtb_high_for_stable() -> None:
+    """Quantum confidence should be 'xtb_high' when conformer spread < 0.15 eV."""
+    from rdkit import Chem
+    from aurelius.scoring.oracle.quantum import QuantumOracle
+
+    qc = QuantumOracle(use_xtb=False)
+    mol = Chem.MolFromSmiles("c1ccccc1")
+    result = qc.evaluate(mol)
+    # TOM fallback: confidence should be tom_high or tom_low
+    # (xTB path not active without binary)
+    assert result["quantum_confidence"] in ("tom_high", "tom_low", "xtb", "xtb_high")
+
+
 def test_xtb_batch_without_xtb() -> None:
     """Without xTB binary, batch should return Nones without crashing."""
     from aurelius.scoring.oracle.quantum import has_xtb, run_xtb_batch

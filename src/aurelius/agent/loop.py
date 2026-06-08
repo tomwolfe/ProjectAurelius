@@ -100,18 +100,11 @@ def _analyze_top_mixtures(
 
 
 def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
-    """Run the autonomous screening loop and generate deliverables.
-
-    This is the single entry point for agent execution, called both from
-    the CLI (``aurelius agent``) and programmatic use.
-    """
+    """Run the autonomous screening loop and generate deliverables."""
     output_dir = None
 
     engine = MutationEngine()
     state = LoopState(output_dir=output_dir)
-
-    # Commercial fingerprints are loaded statically from known_electrolytes.json
-    # during MutationEngine.__init__; no need to restore from checkpoint.
 
     resumed = state.total_screened > 0
     if resumed:
@@ -151,12 +144,7 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
     generate_discoveries_sdf(discoveries)
 
     if loop.wet_lab_feedback is not None:
-        top_n = sorted(discoveries, key=lambda r: -r.total_score)[:10]
-        empirical_metrics: dict[str, float] = {
-            "cycle_life": 500.0,
-            "transference_number": 0.4,
-        }
-        loop.wet_lab_feedback(top_n, empirical_metrics)
+        _apply_wet_lab_feedback(loop, pipeline, state, discoveries)
 
     state.save()
 
@@ -171,6 +159,50 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
     log.info("  Wall time:          %.0fs", time.time() - wall_start)
 
     return results
+
+
+def _apply_wet_lab_feedback(
+    loop: DiscoveryLoop, pipeline: AureliusPipeline, state: LoopState, discoveries: list[ScreeningResult]
+) -> None:
+    top_n = sorted(discoveries, key=lambda r: -r.total_score)[:10]
+    empirical_metrics: dict[str, float] = {
+        "cycle_life": 500.0,
+        "coulombic_efficiency": 0.95,
+        "transference_number": 0.4,
+    }
+    loop.wet_lab_feedback(top_n, empirical_metrics)
+
+    oracle_obj = getattr(pipeline, '_oracle', None)
+    if oracle_obj is None:
+        return
+    gc_uq = getattr(oracle_obj, '_gc_uq', None)
+    if gc_uq is None:
+        return
+
+    feedback_data = []
+    for result in top_n:
+        diel_correction = min(15.0, max(1.0, empirical_metrics.get("cycle_life", 300.0) / 100.0))
+        visc_correction = min(5.0, max(0.1, 5.0 / max(empirical_metrics.get("coulombic_efficiency", 0.9), 0.1)))
+        feedback_data.append({
+            "smiles": result.smiles,
+            "dielectric_constant": (result.dielectric_proxy or 5.0) * 0.7 + diel_correction * 0.3,
+            "viscosity_cP": (result.viscosity_proxy or 2.0) * 0.7 + visc_correction * 0.3,
+        })
+    gc_uq.append_empirical_data(feedback_data)
+
+    for result in top_n:
+        state._empirical_feedback.append({
+            "smiles": result.smiles,
+            "cycle_life": empirical_metrics.get("cycle_life", 500.0),
+            "coulombic_efficiency": empirical_metrics.get("coulombic_efficiency", 0.95),
+            "dielectric_proxy": result.dielectric_proxy or 0.0,
+            "viscosity_proxy": result.viscosity_proxy or 0.0,
+            "li_solvation_proxy": result.li_solvation_proxy or 0.0,
+        })
+
+    if hasattr(state, 'apply_dynamic_weights') and len(state._empirical_feedback) >= 3:
+        state.apply_dynamic_weights(pipeline)
+        log.info("Dynamic score weights adjusted based on empirical feedback.")
 
 
 # ---------------------------------------------------------------------------

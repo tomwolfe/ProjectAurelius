@@ -32,6 +32,7 @@ from aurelius.scoring.oracle.gc import (
     predict_ced_proxy,
     predict_dielectric_proxy,
     predict_ionic_conductivity_proxy,
+    predict_li_dissociation_proxy,
     predict_li_solvation_proxy,
     predict_viscosity_proxy,
 )
@@ -39,6 +40,7 @@ from aurelius.scoring.oracle.quantum import (
     QuantumOracle,
     compute_quantum_domain_penalty,
 )
+from aurelius.scoring.oracle.gnn_surrogate import GNNQuantumOracle
 from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
 from aurelius.types import MoleculeContext
 
@@ -73,10 +75,15 @@ class PropertyOracle:
     """Multi-objective property oracle with a hybrid physics model.
 
     Architecture:
-      - HOMO / LUMO / Gap: QuantumOracle (xTB preferred, TOM fallback)
+      - HOMO / LUMO / Gap: QuantumOracle (xTB preferred, GNN surrogate,
+        TOM tertiary fallback)
       - Dielectric proxy: GC fragment-additivity + TPSA-based cap
       - Viscosity proxy: GC fragment-additivity + MW + rotatable bonds
       - Li+ Solvation proxy: GC fragment-additivity
+
+    The GNN surrogate (GNNQuantumOracle) sits between xTB and TOM:
+    when xTB is unavailable, the GNN surrogate is tried first, falling
+    back to TOM only if the GNN model is not loaded.
     """
 
     def __init__(
@@ -84,16 +91,20 @@ class PropertyOracle:
         use_xtb: bool = True,
         use_surrogate: bool = True,
         use_gc_uq: bool = True,
+        use_gnn: bool = True,
     ) -> None:
         self._quantum = QuantumOracle(use_xtb=use_xtb)
         self._use_surrogate = use_surrogate
         self._surrogate: SurrogateQuantumOracle | None = (
             SurrogateQuantumOracle() if use_surrogate else None
         )
+        self._use_gnn = use_gnn
+        self._gnn: GNNQuantumOracle | None = GNNQuantumOracle() if use_gnn else None
         self._use_gc_uq = use_gc_uq
         self._gc_uq: GcUqEnsemble | None = GcUqEnsemble() if use_gc_uq else None
         self._cache: dict[str, dict[str, Any]] = {}
         self._n_surrogate_skips = 0
+        self._n_gnn_calls = 0
 
     @property
     def quantum_method(self) -> str:
@@ -119,13 +130,39 @@ class PropertyOracle:
             return 1.0, -99.0, 99.0, False
 
     def _compute_quantum(self, ctx: MoleculeContext, skip_quantum: bool, s_homo: float, s_lumo: float) -> tuple[float, float, float, str, Any]:
-        """Compute or skip quantum evaluation."""
+        """Compute or skip quantum evaluation.
+
+        Three-tier architecture:
+          1. xTB (via QuantumOracle) — preferred real QM
+          2. GNN surrogate (via GNNQuantumOracle) — lightweight ML fallback
+          3. TOM — closed-form topological fallback (last resort)
+        """
         if skip_quantum:
             gap = s_lumo - s_homo
             return s_homo, s_lumo, gap, "surrogate", "surrogate"
+
+        # Tier 1: xTB (if available)
+        if self._quantum._use_xtb:
+            qr = self._quantum.evaluate(ctx.mol)
+            if "conformer_variance" in qr:
+                gap = qr["lumo_eV"] - qr["homo_eV"]
+                return qr["homo_eV"], qr["lumo_eV"], gap, "xTB (Boltzmann-weighted)", qr.get("quantum_confidence", "xtb")
+
+        # Tier 2: GNN surrogate
+        if self._gnn is not None and self._gnn.is_available:
+            try:
+                gnn_homo, gnn_lumo = self._gnn.predict(ctx)
+                if gnn_homo is not None and gnn_lumo is not None:
+                    self._n_gnn_calls += 1
+                    gap = gnn_lumo - gnn_homo
+                    return gnn_homo, gnn_lumo, gap, "GNN surrogate", "gnn"
+            except Exception:
+                pass
+
+        # Tier 3: TOM fallback
         qr = self._quantum.evaluate(ctx.mol)
         gap = qr["lumo_eV"] - qr["homo_eV"]
-        return qr["homo_eV"], qr["lumo_eV"], gap, self._quantum.method, qr.get("quantum_confidence", "unknown")
+        return qr["homo_eV"], qr["lumo_eV"], gap, "TOM (Topological Orbital Model)", qr.get("quantum_confidence", "tom_low")
 
     def _compute_uq_penalty(self, ctx: MoleculeContext) -> float:
         """Compute GC uncertainty penalty."""
@@ -175,6 +212,7 @@ class PropertyOracle:
         dielectric = predict_dielectric_proxy(ctx)
         viscosity = predict_viscosity_proxy(ctx)
         li_solvation = predict_li_solvation_proxy(ctx)
+        li_dissociation = predict_li_dissociation_proxy(ctx)
         ced = predict_ced_proxy(ctx)
         conductivity = predict_ionic_conductivity_proxy(dielectric, viscosity, li_solvation)
 
@@ -198,6 +236,7 @@ class PropertyOracle:
             "dielectric_proxy": round(dielectric, 4),
             "viscosity_proxy": round(viscosity, 4),
             "li_solvation_proxy": round(li_solvation, 4),
+            "li_dissociation_proxy": round(li_dissociation, 4),
             "ced_proxy": round(ced, 4),
             "conductivity_proxy": round(conductivity, 4),
             "domain_applicable": domain_applicable,

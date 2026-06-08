@@ -33,6 +33,31 @@ def _adjusted_score(idx: int, scores: list[float], fps_list: list[Any], selected
     return scores[idx] * (1.0 - diversity_lambda * max_sim)
 
 
+def _ucb_score(
+    idx: int,
+    scores: list[float],
+    uncertainties: list[float] | None,
+    exploration_beta: float,
+) -> float:
+    """Upper Confidence Bound acquisition score.
+
+    UCB = mean_score + beta * uncertainty_std
+
+    When exploration mode is active (exploration_beta > 0), candidates with
+    high epistemic uncertainty receive a boost relative to their raw score,
+    biasing selection toward molecules the model knows least about. This
+    maximises information gain for wet-lab validation.
+
+    When uncertainties are unavailable, falls back to raw score.
+    """
+    if uncertainties is None or idx >= len(uncertainties):
+        return scores[idx]
+    uncertainty = uncertainties[idx]
+    if uncertainty <= 0.0:
+        return scores[idx]
+    return scores[idx] + exploration_beta * uncertainty
+
+
 def _best_in_tournament(
     tournament: list[int],
     scores: list[float],
@@ -59,12 +84,23 @@ def tournament_select(
     tournament_size: int = 3,
     diversity_lambda: float = 0.3,
     rng_seed: int = 42,
+    exploration_mode: bool = False,
+    uncertainties: list[float] | None = None,
+    exploration_beta: float = 0.5,
 ) -> list[MoleculeContext]:
     """Select a diverse batch of candidates using tournament selection.
 
     Each round picks ``tournament_size`` random candidates and selects the
     best-scoring one, then applies a Tanimoto diversity penalty to avoid
     selecting near-identical molecules.
+
+    When ``exploration_mode`` is True, uses an Upper Confidence Bound (UCB)
+    acquisition function (score + beta * uncertainty) instead of raw scores,
+    prioritising candidates with high epistemic uncertainty to maximise
+    information gain for wet-lab validation. The ``uncertainties`` list
+    should contain combined UQ standard deviations per candidate (e.g.,
+    the mean of normalised dielectic_std and viscosity_std from
+    GcUqEnsemble).
     """
     n = len(contexts)
     if n == 0:
@@ -78,13 +114,22 @@ def tournament_select(
     selected_fps: list[Any] = []
     used_indices: set[int] = set()
 
+    # Use UCB acquisition when in exploration mode
+    effective_scores: list[float] = (
+        [_ucb_score(i, scores, uncertainties, exploration_beta) for i in range(len(scores))]
+        if exploration_mode and uncertainties is not None
+        else scores
+    )
+
     for _ in range(min(batch_size, n)):
         pool = [i for i in range(n) if i not in used_indices]
         if not pool:
             break
 
         tournament = rng.sample(pool, min(tournament_size, len(pool)))
-        best_idx, _ = _best_in_tournament(tournament, scores, fps_list, selected_fps, diversity_lambda)
+        best_idx, _ = _best_in_tournament(
+            tournament, effective_scores, fps_list, selected_fps, diversity_lambda,
+        )
 
         used_indices.add(best_idx)
         selected.append(contexts[best_idx])

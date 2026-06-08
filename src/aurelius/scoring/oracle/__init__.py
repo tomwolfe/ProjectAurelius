@@ -31,6 +31,7 @@ from aurelius.scoring.oracle.gc import (
     predict_ced_proxy,
     predict_dielectric_proxy,
     predict_ionic_conductivity_proxy,
+    predict_li_dissociation_proxy,
     predict_li_solvation_proxy,
     predict_mixture_dielectric,
     predict_mixture_li_solvation,
@@ -59,6 +60,7 @@ from aurelius.scoring.oracle.quantum import (
     predict_tom_orbitals,
     run_xtb_batch,
 )
+from aurelius.scoring.oracle.gnn_surrogate import GNNQuantumOracle
 from aurelius.scoring.oracle.surrogate import (
     _SURROGATE_HOMO_THRESHOLD,
     _SURROGATE_PENALTY,
@@ -79,6 +81,7 @@ __all__ = [
     "predict_ced_proxy",
     "predict_dielectric_proxy",
     "predict_viscosity_proxy",
+    "predict_li_dissociation_proxy",
     "predict_li_solvation_proxy",
     "predict_ionic_conductivity_proxy",
     "predict_tom_orbitals",

@@ -6,6 +6,12 @@ metrics. Convergence logic lives in standalone helper functions.
 
 ADR-2026-06-01: Changed datetime.UTC → datetime.timezone.utc for Python 3.9
 compatibility (datetime.UTC was added in 3.11). No behavioral change.
+
+ADR-2026-06-07: Dynamic score re-weighting. When empirical wet-lab feedback
+is available, LoopState tracks the correlation between each predicted property
+(dielectric, viscosity, Li solvation) and the empirical target metric (e.g.,
+cycle_life). Weights are adjusted proportionally to correlation strength,
+allowing the EA to upweight properties that empirically matter most.
 """
 
 from __future__ import annotations
@@ -26,6 +32,17 @@ if TYPE_CHECKING:
 
 _MAX_DISCOVERIES = 100
 log = logging.getLogger(__name__)
+
+# Default score weight constants (mirrored from constants.py for re-weighting)
+_WEIGHT_KEYS: list[str] = [
+    "SCORE_WEIGHT_LUMO",
+    "SCORE_WEIGHT_HOMO",
+    "SCORE_WEIGHT_DIELECTRIC",
+    "SCORE_WEIGHT_VISCOSITY",
+    "SCORE_WEIGHT_LI_SOLVATION",
+    "SCORE_WEIGHT_CED",
+    "SCORE_WEIGHT_SA",
+]
 
 
 def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str:
@@ -140,6 +157,162 @@ class LoopState:
         return most_common_count >= n_batches
 
     # ------------------------------------------------------------------
+    # Empirical feedback tracking for dynamic re-weighting
+    # ------------------------------------------------------------------
+
+    _empirical_feedback: list[dict[str, Any]] = field(default_factory=list)
+    """Accumulated empirical wet-lab feedback for dynamic weight adjustment.
+    Each entry: {smiles, cycle_life, coulombic_efficiency, dielectric_proxy,
+    viscosity_proxy, li_solvation_proxy}"""
+
+    def record_empirical_feedback(self, feedback: list[dict[str, Any]]) -> None:
+        """Record empirical wet-lab feedback for dynamic weight adjustment.
+
+        Each entry should contain at minimum 'smiles' and 'cycle_life'.
+        Optionally includes predicted properties for correlation analysis.
+        """
+        self._empirical_feedback.extend(feedback)
+
+    def _compute_property_correlations(
+        self,
+    ) -> dict[str, float]:
+        """Compute Pearson correlation between each predicted property
+        and empirical cycle_life.
+
+        Returns a dict mapping property_key -> correlation coefficient
+        (r in [-1, 1]). Higher absolute r means the property is a stronger
+        predictor of empirical cycle_life.
+        """
+        if len(self._empirical_feedback) < 3:
+            return {
+                "dielectric_proxy": 0.0,
+                "viscosity_proxy": 0.0,
+                "li_solvation_proxy": 0.0,
+            }
+
+        props = ["dielectric_proxy", "viscosity_proxy", "li_solvation_proxy"]
+        correlations: dict[str, float] = {}
+        cycle_lives = np.array([e.get("cycle_life", 0.0) for e in self._empirical_feedback])
+
+        for prop in props:
+            values = np.array([e.get(prop, 0.0) for e in self._empirical_feedback])
+            if np.std(values) < 1e-6 or np.std(cycle_lives) < 1e-6:
+                correlations[prop] = 0.0
+            else:
+                corr = np.corrcoef(values, cycle_lives)[0, 1]
+                correlations[prop] = 0.0 if np.isnan(corr) else float(corr)
+
+        return correlations
+
+    def compute_adjusted_weights(
+        self,
+        base_weights: dict[str, float] | None = None,
+        learning_rate: float = 0.1,
+    ) -> dict[str, float]:
+        """Compute dynamically adjusted score weights based on empirical feedback.
+
+        Physical justification: If empirical data shows viscosity is strongly
+        correlated with cycle_life (r > 0.5), the SCORE_WEIGHT_VISCOSITY
+        should increase because viscosity is a more important predictor of
+        real-world battery performance than initially calibrated. Conversely,
+        a property with weak correlation (r < 0.1) has its weight slightly
+        decreased.
+
+        The adjustment uses a soft learning rate to prevent oscillation:
+          new_weight = base_weight + learning_rate * |correlation| * base_weight
+
+        Args:
+            base_weights: Dict of weight_name -> base_value. If None, uses
+                the current aurelius.constants values.
+            learning_rate: Fractional adjustment per feedback cycle (default 0.1).
+
+        Returns:
+            Dict of adjusted weight_name -> new_value. Total still sums to 1.0.
+        """
+        if base_weights is None:
+            from aurelius.constants import (
+                SCORE_WEIGHT_CED,
+                SCORE_WEIGHT_DIELECTRIC,
+                SCORE_WEIGHT_HOMO,
+                SCORE_WEIGHT_LI_SOLVATION,
+                SCORE_WEIGHT_LUMO,
+                SCORE_WEIGHT_SA,
+                SCORE_WEIGHT_VISCOSITY,
+            )
+            base_weights = {
+                "SCORE_WEIGHT_LUMO": SCORE_WEIGHT_LUMO,
+                "SCORE_WEIGHT_HOMO": SCORE_WEIGHT_HOMO,
+                "SCORE_WEIGHT_DIELECTRIC": SCORE_WEIGHT_DIELECTRIC,
+                "SCORE_WEIGHT_VISCOSITY": SCORE_WEIGHT_VISCOSITY,
+                "SCORE_WEIGHT_LI_SOLVATION": SCORE_WEIGHT_LI_SOLVATION,
+                "SCORE_WEIGHT_CED": SCORE_WEIGHT_CED,
+                "SCORE_WEIGHT_SA": SCORE_WEIGHT_SA,
+            }
+
+        correlations = self._compute_property_correlations()
+
+        # Map empirical property names to weight keys
+        prop_to_weight: dict[str, str] = {
+            "dielectric_proxy": "SCORE_WEIGHT_DIELECTRIC",
+            "viscosity_proxy": "SCORE_WEIGHT_VISCOSITY",
+            "li_solvation_proxy": "SCORE_WEIGHT_LI_SOLVATION",
+        }
+
+        adjusted = dict(base_weights)
+        for prop_name, weight_key in prop_to_weight.items():
+            r = correlations.get(prop_name, 0.0)
+            # Use absolute correlation as importance signal
+            importance = abs(r)
+            adjusted[weight_key] = base_weights.get(weight_key, 0.1) * (
+                1.0 + learning_rate * importance
+            )
+
+        # Normalise to sum to 1.0
+        total = sum(adjusted.values())
+        if total > 0.0:
+            adjusted = {k: v / total for k, v in adjusted.items()}
+
+        return adjusted
+
+    def apply_dynamic_weights(self, pipeline: Any) -> None:
+        """Apply dynamically adjusted weights to the pipeline's objectives.
+
+        Updates the SCORE_WEIGHT_* constants in the aurelius.constants module
+        and refreshes the pipeline's _OBJECTIVES list so subsequent scoring
+        uses the adjusted weights.
+
+        Args:
+            pipeline: An AureliusPipeline instance whose objectives will be updated.
+        """
+        adjusted = self.compute_adjusted_weights()
+
+        # Update module-level constants
+        import aurelius.constants as consts
+        for key, value in adjusted.items():
+            if hasattr(consts, key):
+                setattr(consts, key, value)
+
+        # Update pipeline's _OBJECTIVES weights
+        if hasattr(pipeline, '_OBJECTIVES'):
+            for obj in pipeline._OBJECTIVES:
+                weight_key = {
+                    "lumo_reward": "SCORE_WEIGHT_LUMO",
+                    "homo_penalty": "SCORE_WEIGHT_HOMO",
+                    "dielectric_reward": "SCORE_WEIGHT_DIELECTRIC",
+                    "viscosity_penalty": "SCORE_WEIGHT_VISCOSITY",
+                    "li_solvation_reward": "SCORE_WEIGHT_LI_SOLVATION",
+                    "ced_reward": "SCORE_WEIGHT_CED",
+                    "sa_penalty": "SCORE_WEIGHT_SA",
+                }.get(obj.name, "")
+                if weight_key and weight_key in adjusted:
+                    obj.weight = adjusted[weight_key]
+
+        log.info(
+            "Dynamic weights applied: %s",
+            {k: f"{v:.4f}" for k, v in adjusted.items()},
+        )
+
+    # ------------------------------------------------------------------
     # Checkpointing
     # ------------------------------------------------------------------
 
@@ -157,6 +330,7 @@ class LoopState:
                 self.discoveries = data.get("discoveries", [])
                 self._all_results = data.get("_all_results", [])
                 self._seen_smiles = set(r.get("smiles", "") for r in data.get("_all_results", []))
+                self._empirical_feedback = data.get("_empirical_feedback", [])
             except (json.JSONDecodeError, KeyError, TypeError, OSError):
                 pass
 

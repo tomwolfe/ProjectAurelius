@@ -246,21 +246,45 @@ def agent(
 @click.argument("smiles_a")
 @click.argument("smiles_b")
 @click.option("--frac", type=float, default=0.5, help="Volume fraction of component A (0.0 to 1.0)")
-def mixture_cmd(smiles_a: str, smiles_b: str, frac: float) -> None:
-    """Screen a binary electrolyte mixture."""
-    if not (0.0 <= frac <= 1.0):
-        click.echo("Error: --frac must be between 0.0 and 1.0", err=True)
-        sys.exit(1)
+@click.option("--smiles-c", type=str, default=None, help="Third component SMILES (ternary mixture)")
+@click.option("--frac-a", type=float, default=None, help="Volume fraction of component A (ternary)")
+@click.option("--frac-b", type=float, default=None, help="Volume fraction of component B (ternary)")
+def mixture_cmd(smiles_a: str, smiles_b: str, frac: float, smiles_c: str | None, frac_a: float | None, frac_b: float | None) -> None:
+    """Screen a binary or ternary electrolyte mixture.
+
+    Binary: SMILES_A SMILES_B [--frac FRAC]
+    Ternary: SMILES_A SMILES_B --smiles-c SMILES_C --frac-a FRAC_A --frac-b FRAC_B
+    """
     pipeline = _make_pipeline()
     ctx_a = MoleculeContext.from_smiles(smiles_a)
     ctx_b = MoleculeContext.from_smiles(smiles_b)
     if ctx_a is None or ctx_b is None:
         click.echo("Error: Invalid SMILES provided.", err=True)
         sys.exit(1)
-    result = pipeline.screen_mixture(ctx_a, ctx_b, frac)
+
+    if smiles_c is not None:
+        if frac_a is None or frac_b is None:
+            click.echo("Error: --frac-a and --frac-b required for ternary mixtures", err=True)
+            sys.exit(1)
+        if not (0.0 < frac_a < 1.0 and 0.0 < frac_b < 1.0 and frac_a + frac_b < 1.0):
+            click.echo("Error: frac_a and frac_b must be in (0,1) and sum < 1.0", err=True)
+            sys.exit(1)
+        ctx_c = MoleculeContext.from_smiles(smiles_c)
+        if ctx_c is None:
+            click.echo("Error: Invalid SMILES for third component.", err=True)
+            sys.exit(1)
+        result = pipeline.screen_mixture(ctx_a, ctx_b, frac_a, ctx3=ctx_c, frac2=frac_b)
+        label = "Ternary Mixture"
+    else:
+        if not (0.0 <= frac <= 1.0):
+            click.echo("Error: --frac must be between 0.0 and 1.0", err=True)
+            sys.exit(1)
+        result = pipeline.screen_mixture(ctx_a, ctx_b, frac)
+        label = "Binary Mixture"
+
     score = result.get("score", {})
     mix_props = result.get("mixture_properties", {})
-    click.echo(f"\nMixture Aurelius Score: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
+    click.echo(f"\n{label} Aurelius Score: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
     click.echo(f"  Synergy Bonus: {mix_props.get('synergy_bonus', 0.0):.4f}")
     click.echo(f"  Dielectric Proxy: {mix_props.get('dielectric_proxy', 0.0):.2f}")
     click.echo(f"  Viscosity Proxy:  {mix_props.get('viscosity_proxy', 0.0):.2f}")

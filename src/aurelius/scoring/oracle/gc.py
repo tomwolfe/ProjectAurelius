@@ -359,6 +359,88 @@ def predict_ionic_conductivity_proxy(
     return max(0.0, min(10.0, conductivity))
 
 
+def predict_li_dissociation_proxy(
+    ctx: MoleculeContext,
+    salt_type: str = "LiPF6",
+) -> float:
+    """Predict Li-salt dissociation propensity via fragment-additivity.
+
+    Physical justification: Li-salt dissociation into solvent-separated ion
+    pairs (SSIPs) vs contact ion pairs (CIPs) is critical for free charge
+    carrier availability. A molecule with balanced electron-donating (Lewis
+    base) and electron-withdrawing motifs promotes SSIP formation by
+    simultaneously solvating Li+ (via donor motifs) and stabilising the
+    anion (via acceptor/withdrawing motifs). Molecules with very high donor
+    number bind Li+ too tightly (poor transference), while molecules with
+    low donor/acceptor balance cannot dissociate the salt at all.
+
+    The proxy ranges from 0.0 (no dissociation) to ~5.0 (excellent SSIP
+    formation). A score > 2.5 indicates good salt dissociation propensity.
+
+    The salt_type parameter is reserved for future salt-specific corrections
+    (e.g., LiTFSI vs LiPF6 have different dissociation energetics).
+    """
+    counts = _count_fragments(ctx.mol)
+
+    # Donor motifs that solvate Li+ (Lewis base sites)
+    donor_sites: dict[str, float] = {
+        "carbonate": 1.2,
+        "ether": 1.0,
+        "nitrile": 0.8,
+        "sulfone": 0.6,
+        "sulfoxide": 1.5,
+        "alcohol": 1.3,
+        "ester": 0.7,
+        "amide": 1.4,
+        "primary_amine": 1.2,
+        "secondary_amine": 1.0,
+        "phosphate": 0.9,
+        "sulfonate": 0.7,
+        "aromatic_nitrogen": 0.8,
+        "glyme_chelating": 1.5,
+    }
+
+    # Acceptor motifs that stabilise the anion (electron-withdrawing)
+    acceptor_sites: dict[str, float] = {
+        "fluorine": 0.4,
+        "trifluoromethyl": 0.6,
+        "difluoromethylene": 0.3,
+        "sulfone": 0.5,
+        "sulfonyl_fluoride": 0.7,
+        "sulfonimide": 0.8,
+        "nitrile": 0.3,
+    }
+
+    donor_score = sum(
+        donor_sites.get(name, 0.0) * _saturate_contrib(counts.get(name, 0), 2.0)
+        for name in donor_sites
+    )
+    acceptor_score = sum(
+        acceptor_sites.get(name, 0.0) * _saturate_contrib(counts.get(name, 0), 2.0)
+        for name in acceptor_sites
+    )
+
+    base = max(0.0, donor_score + 0.3 * acceptor_score)
+
+    # Penalty for extreme donor dominance (too-tight Li+ binding -> CIP)
+    if donor_score > 4.0 and acceptor_score < 1.0:
+        base *= 0.7
+
+    # Penalty for extreme acceptor dominance (no Li+ solvation)
+    if acceptor_score > donor_score * 2.0:
+        base *= 0.5
+
+    # Imbalance penalty: optimal dissociation requires balanced motifs
+    total = donor_score + acceptor_score
+    if total > 0.0:
+        balance = 1.0 - abs(donor_score - acceptor_score) / total
+    else:
+        balance = 0.0
+    base *= 0.5 + 0.5 * balance
+
+    return max(0.0, min(6.0, base))
+
+
 # ---------------------------------------------------------------------------
 # Mixture Property Prediction — Ideal Thermodynamic Mixing Rules
 # ---------------------------------------------------------------------------
@@ -589,74 +671,74 @@ class GcUqEnsemble:
             "external_property_benchmark.json not found for GC UQ training"
         )
 
-    def _ensure_trained(self) -> None:
-        if self._is_trained:
-            return
-        t0 = time.perf_counter()
-        path = self._resolve_path()
-        with open(path) as f:
-            data = json.load(f)
-
+    def _load_training_data(self) -> tuple[list[np.ndarray], list[float], list[float]]:
         X_list: list[np.ndarray] = []
         y_diel: list[float] = []
         y_visc: list[float] = []
 
-        for entry in data:
-            smi = entry["smiles"]
-            ctx = MoleculeContext.from_smiles(smi)
-            if ctx is None:
-                continue
-            diel_exp = entry.get("dielectric_constant")
-            visc_exp = entry.get("viscosity_cP")
-            if diel_exp is None and visc_exp is None:
-                continue
-            fp = _get_fragment_feature_vector(ctx)
-            X_list.append(fp)
-            y_diel.append(float(diel_exp) if diel_exp is not None else 0.0)
-            y_visc.append(float(visc_exp) if visc_exp is not None else 0.0)
+        path = self._resolve_path()
+        with open(path) as f:
+            data = json.load(f)
 
-        # Include empirical wet-lab feedback data if available
+        for entry in data:
+            pair = self._parse_entry(entry, "smiles")
+            if pair is not None:
+                fp, diel, visc = pair
+                X_list.append(fp)
+                y_diel.append(diel)
+                y_visc.append(visc)
+
         for entry in self._empirical_data:
             smi = entry.get("smiles", "")
             if not smi:
                 continue
-            ctx = MoleculeContext.from_smiles(smi)
-            if ctx is None:
-                continue
-            diel_exp = entry.get("dielectric_constant")
-            visc_exp = entry.get("viscosity_cP")
-            if diel_exp is None and visc_exp is None:
-                continue
-            fp = _get_fragment_feature_vector(ctx)
-            X_list.append(fp)
-            y_diel.append(float(diel_exp) if diel_exp is not None else 0.0)
-            y_visc.append(float(visc_exp) if visc_exp is not None else 0.0)
+            pair = self._parse_entry(entry, smi)
+            if pair is not None:
+                fp, diel, visc = pair
+                X_list.append(fp)
+                y_diel.append(diel)
+                y_visc.append(visc)
 
         if len(X_list) < 5:
             raise ValueError(
                 f"GC UQ training requires >= 5 molecules, got {len(X_list)}"
             )
+        return X_list, y_diel, y_visc
 
+    def _parse_entry(
+        self, entry: dict, smi_key: str
+    ) -> tuple[np.ndarray, float, float] | None:
+        smi = entry[smi_key] if smi_key == "smiles" else smi_key
+        ctx = MoleculeContext.from_smiles(smi)
+        if ctx is None:
+            return None
+        diel_exp = entry.get("dielectric_constant")
+        visc_exp = entry.get("viscosity_cP")
+        if diel_exp is None and visc_exp is None:
+            return None
+        fp = _get_fragment_feature_vector(ctx)
+        return fp, float(diel_exp) if diel_exp is not None else 0.0, float(visc_exp) if visc_exp is not None else 0.0
+
+    def _train_ensemble(
+        self, X: np.ndarray, y: list[float], seed_offset: int
+    ) -> tuple[StandardScaler, list[Ridge]]:
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        models: list[Ridge] = []
+        for seed in range(self._n_ensemble):
+            model = Ridge(alpha=self._alpha, random_state=seed + seed_offset)
+            model.fit(X_scaled, y)
+            models.append(model)
+        return scaler, models
+
+    def _ensure_trained(self) -> None:
+        if self._is_trained:
+            return
+        t0 = time.perf_counter()
+        X_list, y_diel, y_visc = self._load_training_data()
         X = np.array(X_list, dtype=np.float32)
-
-        # Train dielectric ensemble
-        self._diel_scaler = StandardScaler()
-        X_diel_scaled = self._diel_scaler.fit_transform(X)
-        self._diel_models = []
-        for seed in range(self._n_ensemble):
-            model = Ridge(alpha=self._alpha, random_state=seed)
-            model.fit(X_diel_scaled, y_diel)
-            self._diel_models.append(model)
-
-        # Train viscosity ensemble
-        self._visc_scaler = StandardScaler()
-        X_visc_scaled = self._visc_scaler.fit_transform(X)
-        self._visc_models = []
-        for seed in range(self._n_ensemble):
-            model = Ridge(alpha=self._alpha, random_state=seed + 100)
-            model.fit(X_visc_scaled, y_visc)
-            self._visc_models.append(model)
-
+        self._diel_scaler, self._diel_models = self._train_ensemble(X, y_diel, seed_offset=0)
+        self._visc_scaler, self._visc_models = self._train_ensemble(X, y_visc, seed_offset=100)
         self._is_trained = True
         self._train_time_ms = (time.perf_counter() - t0) * 1000
         logger.info(

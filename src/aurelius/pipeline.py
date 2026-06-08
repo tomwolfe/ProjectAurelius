@@ -13,6 +13,7 @@ All stages accept a pre-parsed MoleculeContext to enforce single-point parsing.
 from __future__ import annotations
 
 import logging
+import math
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -65,6 +66,8 @@ from aurelius.constants import (
 from aurelius.scoring.oracle import (
     PropertyOracle,
     mixture_synergy_bonus,
+    mixture_synergy_bonus_ternary,
+    predict_li_dissociation_proxy,
     predict_mixture_dielectric,
     predict_mixture_li_solvation,
     predict_mixture_viscosity,
@@ -244,6 +247,7 @@ class AureliusPipeline:
             dielectric_proxy = oracle_result.get("dielectric_proxy", 0.0)
             viscosity_proxy = oracle_result.get("viscosity_proxy", 99.0)
             li_solvation_proxy = oracle_result.get("li_solvation_proxy", 0.0)
+            li_dissociation_proxy = oracle_result.get("li_dissociation_proxy", 0.0)
             ced_proxy = oracle_result.get("ced_proxy", 0.0)
 
             domain_penalty = oracle_result.get("domain_penalty", 1.0)
@@ -255,6 +259,7 @@ class AureliusPipeline:
                 "dielectric_proxy": dielectric_proxy,
                 "viscosity_proxy": viscosity_proxy,
                 "li_solvation_proxy": li_solvation_proxy,
+                "li_dissociation_proxy": li_dissociation_proxy,
                 "ced_proxy": ced_proxy,
                 "domain_applicable": oracle_result.get("domain_applicable", True),
                 "domain_reason": oracle_result.get("domain_reason", ""),
@@ -297,22 +302,33 @@ class AureliusPipeline:
         ctx1: MoleculeContext,
         ctx2: MoleculeContext,
         frac1: float = 0.5,
+        ctx3: MoleculeContext | None = None,
+        frac2: float | None = None,
     ) -> dict[str, Any]:
-        """Score a binary mixture using ideal mixing rules with synergy bonus.
+        """Score a binary or ternary mixture using thermodynamic mixing rules with synergy bonus.
 
         Evaluates each component individually via screen_molecule, then
         computes mixture dielectric/viscosity using thermodynamic mixing
         rules and applies a non-linear synergy bonus for complementary pairs
         (high-dielectric + low-viscosity).
 
+        For ternary blends, evaluates all three binary pairs within the
+        mixture and applies the dominant synergy bonus via the extended
+        Margules-inspired non-ideal mixing term.
+
         Args:
             ctx1: First component MoleculeContext.
             ctx2: Second component MoleculeContext.
             frac1: Volume fraction of first component.
+            ctx3: Optional third component for ternary mixtures.
+            frac2: Volume fraction of second component (only for ternary).
 
         Returns:
             Dict with component results, mixture properties, and score.
         """
+        if ctx3 is not None and frac2 is not None:
+            return self._screen_ternary_mixture(ctx1, ctx2, ctx3, frac1, frac2)
+
         res1 = self.screen_molecule(ctx1)
         res2 = self.screen_molecule(ctx2)
 
@@ -341,7 +357,6 @@ class AureliusPipeline:
 
         synergy = mixture_synergy_bonus(d1, d2, v1, v2, frac1)
 
-        # Base score from individual component scores weighted average
         s1 = res1.get("score", {}).get("total_score", 0.0)
         s2 = res2.get("score", {}).get("total_score", 0.0)
         weighted_base = frac1 * s1 + f2 * s2
@@ -373,6 +388,98 @@ class AureliusPipeline:
         return {
             "component1": res1,
             "component2": res2,
+            "mixture_properties": mixture_props,
+            "score": score,
+        }
+
+    def _screen_ternary_mixture(
+        self,
+        ctx1: MoleculeContext,
+        ctx2: MoleculeContext,
+        ctx3: MoleculeContext,
+        frac1: float,
+        frac2: float,
+    ) -> dict[str, Any]:
+        """Score a ternary mixture with full three-component synergy.
+
+        Evaluates each component, computes pairwise mixing properties,
+        and applies the ternary Margules-inspired synergy bonus.
+        """
+        res1 = self.screen_molecule(ctx1)
+        res2 = self.screen_molecule(ctx2)
+        res3 = self.screen_molecule(ctx3)
+
+        p1 = res1.get("tier2", {}) or {}
+        p2 = res2.get("tier2", {}) or {}
+        p3 = res3.get("tier2", {}) or {}
+        frac3 = max(0.0, 1.0 - frac1 - frac2)
+
+        d1 = p1.get("dielectric_proxy", 0.0)
+        d2 = p2.get("dielectric_proxy", 0.0)
+        d3 = p3.get("dielectric_proxy", 0.0)
+        v1 = p1.get("viscosity_proxy", 99.0)
+        v2 = p2.get("viscosity_proxy", 99.0)
+        v3 = p3.get("viscosity_proxy", 99.0)
+
+        d_mix = frac1 * d1 + frac2 * d2 + frac3 * d3
+        ln_v = (
+            frac1 * math.log(max(v1, 0.001))
+            + frac2 * math.log(max(v2, 0.001))
+            + frac3 * math.log(max(v3, 0.001))
+        )
+        v_mix = math.exp(ln_v)
+        ls_mix = (
+            frac1 * p1.get("li_solvation_proxy", 0.0)
+            + frac2 * p2.get("li_solvation_proxy", 0.0)
+            + frac3 * p3.get("li_solvation_proxy", 0.0)
+        )
+        h_mix = (
+            frac1 * p1.get("homo_eV", -99.0)
+            + frac2 * p2.get("homo_eV", -99.0)
+            + frac3 * p3.get("homo_eV", -99.0)
+        )
+        l_mix = (
+            frac1 * p1.get("lumo_eV", -99.0)
+            + frac2 * p2.get("lumo_eV", -99.0)
+            + frac3 * p3.get("lumo_eV", -99.0)
+        )
+
+        synergy = mixture_synergy_bonus_ternary(d1, d2, d3, v1, v2, v3, frac1, frac2)
+
+        s1 = res1.get("score", {}).get("total_score", 0.0)
+        s2 = res2.get("score", {}).get("total_score", 0.0)
+        s3 = res3.get("score", {}).get("total_score", 0.0)
+        weighted_base = frac1 * s1 + frac2 * s2 + frac3 * s3
+
+        total = min(100.0, weighted_base + synergy)
+        is_viable = total >= VIABILITY_THRESHOLD
+
+        score: dict[str, Any] = {
+            "total_score": total,
+            "is_viable": is_viable,
+            "synergy_bonus": round(synergy, 4),
+            "weighted_base": round(weighted_base, 4),
+            "sub_scores": {
+                "component1_score": round(s1, 4),
+                "component2_score": round(s2, 4),
+                "component3_score": round(s3, 4),
+            },
+            "rejection_reasons": [],
+        }
+
+        mixture_props: dict[str, float] = {
+            "dielectric_proxy": round(d_mix, 4),
+            "viscosity_proxy": round(v_mix, 4),
+            "li_solvation_proxy": round(ls_mix, 4),
+            "homo_eV": round(h_mix, 4),
+            "lumo_eV": round(l_mix, 4),
+            "synergy_bonus": round(synergy, 4),
+        }
+
+        return {
+            "component1": res1,
+            "component2": res2,
+            "component3": res3,
             "mixture_properties": mixture_props,
             "score": score,
         }

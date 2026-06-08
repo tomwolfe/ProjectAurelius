@@ -9,6 +9,11 @@ class or the mutation engine's fragment pool.
 
 Binary mixtures are represented as compound SMILES: ``SMILES_A|SMILES_B|frac_A``
 where ``frac_A`` is the volume fraction of the first component in [0.1, 0.9].
+
+Ternary mixtures are represented as: ``SMILES_A|SMILES_B|SMILES_C|frac_A|frac_B``
+where ``frac_A`` and ``frac_B`` are the volume fractions of the first two
+components, and the third fraction is ``1.0 - frac_A - frac_B``. All fractions
+must be in (0.0, 1.0) and sum to 1.0.
 """
 
 from __future__ import annotations
@@ -22,6 +27,9 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
 
 MIXTURE_SEPARATOR: str = "|"
+
+# Return type for parsed mixtures: binary -> (a, b, frac_a) or ternary -> (a, b, c, frac_a, frac_b)
+ParsedMixture = tuple[str, str, float] | tuple[str, str, str, float, float]
 
 
 @dataclass(frozen=True)
@@ -40,6 +48,7 @@ class ScreeningResult:
     viscosity_proxy: float | None = None
     li_solvation_proxy: float | None = None
     sa_score: float | None = None
+    li_dissociation_proxy: float | None = None
     sub_scores: dict[str, float] | None = None
 
 
@@ -164,35 +173,61 @@ _MIXTURE_SEP: str = "|"
 
 
 def is_mixture_smiles(smiles: str) -> bool:
-    """Check if a SMILES string represents a binary mixture (contains '|')."""
+    """Check if a SMILES string represents a mixture (binary or ternary, contains '|')."""
     return _MIXTURE_SEP in smiles
 
 
-def parse_mixture_smiles(smiles: str) -> tuple[str, str, float] | None:
-    """Parse a mixture SMILES ``SMILES_A|SMILES_B|frac_A``.
+def parse_mixture_smiles(smiles: str) -> ParsedMixture | None:
+    """Parse a mixture SMILES string.
 
-    Returns (smiles_a, smiles_b, frac_a) or None if parsing fails.
+    Binary: ``SMILES_A|SMILES_B|frac_A`` -> ``(smiles_a, smiles_b, frac_a)``
+    Ternary: ``SMILES_A|SMILES_B|SMILES_C|frac_A|frac_B`` -> ``(smiles_a, smiles_b, smiles_c, frac_a, frac_b)``
+
+    Returns None if parsing fails.
     """
     try:
         parts = smiles.split(_MIXTURE_SEP)
-        if len(parts) != 3:
-            return None
-        smi_a, smi_b, frac_str = parts
-        frac = float(frac_str)
-        if not (0.0 <= frac <= 1.0):
-            return None
-        return smi_a, smi_b, frac
+        if len(parts) == 3:
+            smi_a, smi_b, frac_str = parts
+            frac = float(frac_str)
+            if not (0.0 <= frac <= 1.0):
+                return None
+            return smi_a, smi_b, frac
+        elif len(parts) == 5:
+            smi_a, smi_b, smi_c, frac_a_str, frac_b_str = parts
+            frac_a = float(frac_a_str)
+            frac_b = float(frac_b_str)
+            if not (0.0 <= frac_a <= 1.0 and 0.0 <= frac_b <= 1.0):
+                return None
+            frac_c = 1.0 - frac_a - frac_b
+            if frac_c < 0.0 or frac_c > 1.0:
+                return None
+            return smi_a, smi_b, smi_c, frac_a, frac_b
+        return None
     except (ValueError, TypeError):
         return None
 
 
-def format_mixture_smiles(smi_a: str, smi_b: str, frac_a: float) -> str:
-    """Format a mixture SMILES string."""
+def format_mixture_smiles(
+    smi_a: str,
+    smi_b: str,
+    frac_a: float,
+    smi_c: str | None = None,
+    frac_b: float | None = None,
+) -> str:
+    """Format a mixture SMILES string.
+
+    Binary: ``SMILES_A|SMILES_B|frac_A``
+    Ternary: ``SMILES_A|SMILES_B|SMILES_C|frac_A|frac_B``
+    """
+    if smi_c is not None and frac_b is not None:
+        return f"{smi_a}{_MIXTURE_SEP}{smi_b}{_MIXTURE_SEP}{smi_c}{_MIXTURE_SEP}{frac_a:.4f}{_MIXTURE_SEP}{frac_b:.4f}"
     return f"{smi_a}{_MIXTURE_SEP}{smi_b}{_MIXTURE_SEP}{frac_a:.4f}"
 
 
 __all__ = [
     "MoleculeContext",
+    "ParsedMixture",
     "ScreeningResult",
     "is_mixture_smiles",
     "parse_mixture_smiles",
