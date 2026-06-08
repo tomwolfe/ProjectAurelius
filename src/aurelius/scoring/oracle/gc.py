@@ -746,13 +746,15 @@ class GcUqEnsemble:
             len(X_list), self._train_time_ms,
         )
 
-    def predict_dielectric(self, ctx: MoleculeContext) -> tuple[float, float]:
-        """Predict dielectric proxy with uncertainty (mean, std)."""
-        return self._predict(ctx, self._diel_models, self._diel_scaler)
+    def predict_dielectric(self, ctx: MoleculeContext) -> tuple[float, float, bool]:
+        """Predict dielectric proxy with uncertainty (mean, std, high_uncertainty)."""
+        mean, std = self._predict(ctx, self._diel_models, self._diel_scaler)
+        return mean, std, std > abs(mean) * _UQ_THRESHOLD_FRACTION
 
-    def predict_viscosity(self, ctx: MoleculeContext) -> tuple[float, float]:
-        """Predict viscosity proxy with uncertainty (mean, std)."""
-        return self._predict(ctx, self._visc_models, self._visc_scaler)
+    def predict_viscosity(self, ctx: MoleculeContext) -> tuple[float, float, bool]:
+        """Predict viscosity proxy with uncertainty (mean, std, high_uncertainty)."""
+        mean, std = self._predict(ctx, self._visc_models, self._visc_scaler)
+        return mean, std, std > abs(mean) * _UQ_THRESHOLD_FRACTION
 
     def _predict(
         self,

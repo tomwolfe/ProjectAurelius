@@ -165,6 +165,10 @@ class LoopState:
     Each entry: {smiles, cycle_life, coulombic_efficiency, dielectric_proxy,
     viscosity_proxy, li_solvation_proxy}"""
 
+    active_learning_queue: list[str] = field(default_factory=list)
+    """SMILES strings of high-uncertainty molecules queued for active learning
+    (real QuantumOracle evaluation instead of surrogate)."""
+
     def record_empirical_feedback(self, feedback: list[dict[str, Any]]) -> None:
         """Record empirical wet-lab feedback for dynamic weight adjustment.
 
@@ -331,6 +335,7 @@ class LoopState:
                 self._all_results = data.get("_all_results", [])
                 self._seen_smiles = set(r.get("smiles", "") for r in data.get("_all_results", []))
                 self._empirical_feedback = data.get("_empirical_feedback", [])
+                self.active_learning_queue = data.get("active_learning_queue", [])
             except (json.JSONDecodeError, KeyError, TypeError, OSError):
                 pass
 
@@ -344,6 +349,7 @@ class LoopState:
             "last_updated": datetime.now(UTC).isoformat(),
             "discoveries": self.discoveries,
             "_all_results": self._all_results,
+            "active_learning_queue": self.active_learning_queue,
         }
         tmp_path = self.path + ".tmp"
         with open(tmp_path, "w") as f:
@@ -398,6 +404,7 @@ class LoopState:
         self.discoveries.clear()
         self._all_results.clear()
         self._seen_smiles.clear()
+        self.active_learning_queue.clear()
         self.save()
 
 

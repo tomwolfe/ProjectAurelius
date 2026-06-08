@@ -169,8 +169,8 @@ class PropertyOracle:
         if self._gc_uq is None:
             return 1.0
         try:
-            _diel_mean, diel_std = self._gc_uq.predict_dielectric(ctx)
-            _visc_mean, visc_std = self._gc_uq.predict_viscosity(ctx)
+            _diel_mean, diel_std, _ = self._gc_uq.predict_dielectric(ctx)
+            _visc_mean, visc_std, _ = self._gc_uq.predict_viscosity(ctx)
             if diel_std > max(1.0, abs(_diel_mean)) * _UQ_THRESHOLD_FRACTION:
                 return _UQ_PENALTY
             if visc_std > max(1.0, abs(_visc_mean)) * _UQ_THRESHOLD_FRACTION:

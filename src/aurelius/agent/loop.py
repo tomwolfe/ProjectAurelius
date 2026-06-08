@@ -503,6 +503,74 @@ class DiscoveryLoop:
 
         return result_contexts, all_scores
 
+    def _evaluate_with_real_quantum(
+        self, ctx: MoleculeContext, result_map: dict[str, Any]
+    ) -> tuple[float, dict[str, Any]] | None:
+        """Evaluate a candidate using the real QuantumOracle (bypassing surrogate).
+
+        Used for molecules in the active learning queue to get genuine
+        quantum chemical properties instead of surrogate predictions.
+        """
+        from aurelius.scoring.oracle.gc import (
+            predict_ced_proxy,
+            predict_dielectric_proxy,
+            predict_li_solvation_proxy,
+            predict_viscosity_proxy,
+        )
+        from aurelius.scoring.oracle.quantum import QuantumOracle
+
+        qo = QuantumOracle()
+        qr = qo.evaluate(ctx.mol)
+
+        homo_eV = qr.get("homo_eV", -99.0)
+        lumo_eV = qr.get("lumo_eV", -99.0)
+
+        dielectric = predict_dielectric_proxy(ctx)
+        viscosity = predict_viscosity_proxy(ctx)
+        li_solvation = predict_li_solvation_proxy(ctx)
+        ced = predict_ced_proxy(ctx)
+
+        score = self.pipeline._compute_score(
+            homo_eV=homo_eV, lumo_eV=lumo_eV,
+            dielectric_proxy=dielectric,
+            viscosity_proxy=viscosity,
+            li_solvation_proxy=li_solvation,
+            ced_proxy=ced,
+            ctx=ctx,
+            quantum_confidence="xtb",
+        )
+
+        t2 = {
+            "homo_eV": homo_eV,
+            "lumo_eV": lumo_eV,
+            "gap_eV": qr.get("gap_eV", lumo_eV - homo_eV),
+            "dielectric_proxy": dielectric,
+            "viscosity_proxy": viscosity,
+            "li_solvation_proxy": li_solvation,
+            "ced_proxy": ced,
+        }
+
+        smi = ctx.smiles
+        result_map[smi] = t2
+        self.engine.add_to_db(smi)
+
+        total_score = score.get("total_score", 0.0)
+        self.engine.record_reaction_success(smi, total_score)
+
+        novelty = self._compute_novelty(ctx)
+        sr = self._build_screening_result(
+            smi, total_score, score, t2, novelty, ctx, score.get("sub_scores", {}),
+        )
+        if self._is_discovery(total_score, score):
+            self.state.add_discovery(sr)
+            log.info("  ** DISCOVERY (active learning) ** %s (score=%.1f)", smi, total_score)
+        self.state.add_result(sr)
+        log.info(
+            "  ** ACTIVE LEARNING ** %s evaluated via real QuantumOracle",
+            smi,
+        )
+        return total_score, t2
+
     def _process_single_candidate(
         self, ctx: MoleculeContext, result_map: dict[str, Any]
     ) -> tuple[float, dict[str, Any]] | None:
@@ -510,6 +578,11 @@ class DiscoveryLoop:
 
         Returns (total_score, tier2_dict) on success, None to skip.
         """
+        smi = ctx.smiles
+
+        if smi in self.state.active_learning_queue:
+            return self._evaluate_with_real_quantum(ctx, result_map)
+
         result = self._screen_molecule(ctx)
         if result is None:
             return None
@@ -518,7 +591,6 @@ class DiscoveryLoop:
         if score_data is None:
             return None
 
-        smi = ctx.smiles
         self.engine.add_to_db(smi)
 
         total_score = score_data.get("total_score", 0.0)

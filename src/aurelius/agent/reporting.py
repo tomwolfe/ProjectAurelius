@@ -81,8 +81,8 @@ def generate_run_summary(
             ctx = MoleculeContext.from_smiles(d.smiles)
             if ctx is None:
                 continue
-            diel_mean, diel_std = uq_ensemble.predict_dielectric(ctx)
-            visc_mean, visc_std = uq_ensemble.predict_viscosity(ctx)
+            diel_mean, diel_std, _ = uq_ensemble.predict_dielectric(ctx)
+            visc_mean, visc_std, _ = uq_ensemble.predict_viscosity(ctx)
             uq_weight = 1.0 + (diel_std / max(1.0, abs(diel_mean)))
             uq_weight += visc_std / max(1.0, abs(visc_mean))
             uq_data[d.smiles] = {

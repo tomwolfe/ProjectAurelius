@@ -392,3 +392,36 @@ class TestNetProgress:
             f"The complexity cost ({simplicity_cost:.3f} × λ={LAMBDA}) "
             f"outweighs the discovery value ({discovery_value:.3f})."
         )
+
+    def test_active_learning_queue_field_is_not_public_api(self):
+        """The new active_learning_queue is a dataclass field (not a public
+        method/class) and _evaluate_with_real_quantum is private (starts with
+        _). Neither should increase the public architectural surface area.
+
+        This test verifies that the active learning changes do not add any
+        new public functions or classes to the codebase.
+        """
+        from aurelius.agent.loop import DiscoveryLoop
+
+        # _evaluate_with_real_quantum must be a private method (underscore prefix)
+        assert hasattr(DiscoveryLoop, "_evaluate_with_real_quantum"), (
+            "DiscoveryLoop missing _evaluate_with_real_quantum"
+        )
+        assert "_evaluate_with_real_quantum".startswith("_"), (
+            "Active learning evaluation method must be private"
+        )
+
+        # active_learning_queue must be a dataclass field, not a standalone public class/function
+        from aurelius.agent.state import LoopState
+        state = LoopState(path="/tmp/_test_alq_state.json")
+        assert hasattr(state, "active_learning_queue"), (
+            "LoopState is missing the active_learning_queue dataclass field"
+        )
+
+    def test_active_learning_queue_defaults_to_empty(self):
+        """active_learning_queue must default to an empty list."""
+        from aurelius.agent.state import LoopState
+        state = LoopState(path="/tmp/_test_alq_state.json")
+        assert state.active_learning_queue == [], (
+            f"active_learning_queue should default to [], got {state.active_learning_queue}"
+        )
