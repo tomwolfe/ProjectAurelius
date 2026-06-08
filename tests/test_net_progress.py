@@ -33,7 +33,11 @@ from aurelius.constants import (
     NET_PROGRESS_DEP_NORM,
     NET_PROGRESS_LOC_NORM,
 )
-from aurelius.scoring.oracle.gc import predict_dielectric_proxy, predict_viscosity_proxy
+from aurelius.scoring.oracle.gc import (
+    _compute_sei_fracture_toughness_proxy,
+    predict_dielectric_proxy,
+    predict_viscosity_proxy,
+)
 from aurelius.scoring.oracle.quantum import (
     predict_tom_orbitals,
 )
@@ -319,6 +323,22 @@ def _compute_experimental_trend_recovery() -> float:
     if ctx_gly and ctx_eth:
         total += 1
         if predict_viscosity_proxy(ctx_gly) > predict_viscosity_proxy(ctx_eth):
+            correct += 1
+
+    # SEI fracture trends: rigid cyclic > flexible linear
+    ctx_vec = MoleculeContext.from_smiles("O=C1OC=COC1")
+    ctx_dec = MoleculeContext.from_smiles("CCOC(=O)OCC")
+    if ctx_vec and ctx_dec:
+        total += 1
+        if _compute_sei_fracture_toughness_proxy(ctx_vec) > _compute_sei_fracture_toughness_proxy(ctx_dec):
+            correct += 1
+
+    # SEI fracture trends: cross-linkable > inert
+    ctx_vinyl = MoleculeContext.from_smiles("C=COC(=O)OC")
+    ctx_sat = MoleculeContext.from_smiles("CCOC(=O)OC")
+    if ctx_vinyl and ctx_sat:
+        total += 1
+        if _compute_sei_fracture_toughness_proxy(ctx_vinyl) > _compute_sei_fracture_toughness_proxy(ctx_sat):
             correct += 1
 
     return correct / max(total, 1)

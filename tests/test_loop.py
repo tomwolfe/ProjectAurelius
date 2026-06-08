@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
-from aurelius.agent.loop import DiscoveryLoop, ScreeningResult, run_screening, AgentConfig
+from aurelius.agent.loop import DiscoveryLoop, ScreeningResult
 from aurelius.agent.state import LoopState
 
 
@@ -76,7 +76,6 @@ class TestDiscoveryLoop:
     def test_wet_lab_feedback_integration(self):
         """Wet-lab feedback hook should be called with top discoveries and
         trigger GcUqEnsemble retraining on subsequent predictions."""
-        import numpy as np
         from aurelius.scoring.oracle.gc import GcUqEnsemble
         from aurelius.types import MoleculeContext
 
@@ -170,7 +169,6 @@ class TestDiscoveryLoop:
     def test_dynamic_weight_adjustment(self):
         """LoopState.compute_adjusted_weights should return weights summing
         to 1.0 when empirical feedback is available."""
-        from aurelius.agent.state import LoopState
 
         state = _make_loop_state()
         assert state.compute_adjusted_weights is not None
@@ -193,8 +191,6 @@ class TestDiscoveryLoop:
         a slightly higher-scoring but low-uncertainty molecule when
         exploration mode is active."""
         import numpy as np
-        from rdkit import Chem
-        from rdkit.Chem import AllChem
 
         from aurelius.agent.selection import tournament_select
         from aurelius.types import MoleculeContext
@@ -245,7 +241,6 @@ class TestDiscoveryLoop:
 
 def _make_mock_pipeline():
     """Create a mock pipeline that returns valid screening results."""
-    from unittest.mock import Mock
 
     mock = Mock()
     mock.screen_molecule.return_value = {
@@ -260,7 +255,6 @@ def _make_mock_pipeline():
 
 def _make_mock_engine():
     """Create a mock engine that returns candidate SMILES."""
-    from unittest.mock import Mock
 
     mock = Mock()
     mock.seed_pool = [

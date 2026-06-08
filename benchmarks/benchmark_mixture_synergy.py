@@ -9,6 +9,11 @@ Usage:
     python -m benchmarks.benchmark_mixture_synergy
 """
 
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
 from aurelius.scoring.oracle.gc import mixture_synergy_bonus
 
 

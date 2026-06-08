@@ -106,17 +106,17 @@ SCORE_WEIGHT_HOMO: float = 0.17
 SCORE_WEIGHT_DIELECTRIC: float = 0.17
 """Weight for dielectric-constant (salt dissolution) reward."""
 
-SCORE_WEIGHT_VISCOSITY: float = 0.14
+SCORE_WEIGHT_VISCOSITY: float = 0.10
 """Weight for viscosity (ion mobility) penalty."""
 
 SCORE_WEIGHT_LI_SOLVATION: float = 0.20
 """Weight for Li+ solvation energy proxy — penalises binding that is too tight
 (poor transference number) or too weak (poor conductivity)."""
 
-SCORE_WEIGHT_CED: float = 0.05
+SCORE_WEIGHT_CED: float = 0.03
 """Weight for cohesive energy density (CED) proxy — SEI mechanical robustness."""
 
-SCORE_WEIGHT_SA: float = 0.04
+SCORE_WEIGHT_SA: float = 0.02
 """Weight for synthetic accessibility penalty.
 
 Note: Al corrosion penalty is applied as a strict multiplicative factor
@@ -426,6 +426,58 @@ SEI_LUMO_UPPER: float = 0.0
 SEI_MOTIF_PENALTY_FACTOR: float = 0.85
 """Multiplicative penalty applied when a molecule has LUMO in the SEI
 formation window but lacks any known stable SEI-forming motif."""
+
+# ---------------------------------------------------------------------------
+# SEI Fracture Toughness Proxy — Cross-linking Motif Patterns
+# ---------------------------------------------------------------------------
+# Physical basis: The SEI layer undergoes mechanical stress during anode
+# volume expansion (up to 10% for graphite, >300% for silicon). SEI fracture
+# toughness correlates with molecular rigidity and the presence of
+# polymerizable / cross-linkable functional groups that can form a
+# mechanically robust, defect-resistant SEI network.
+#
+# These SMARTS match motifs known to promote cross-linking or rigid SEI:
+#   1. Vinyl (terminal C=C) — radical-polymerizable, forms cross-linked
+#      poly(vinylene) networks in the SEI
+#   2. Acrylate (C=C-C(=O)-O-) — radical-polymerizable ester, forms
+#      cross-linked polyacrylate SEI layers
+#
+# Sultone (already defined in STABLE_SEI_MOTIFS) is also cross-linkable.
+
+VINYL_CROSSLINK_PATTERN: Chem.Mol = Chem.MolFromSmarts("[CX3]=[CX3]")
+"""Alkene (C=C, including terminal vinyl) — radical-polymerizable cross-linking motif."""
+
+ACRYLATE_CROSSLINK_PATTERN: Chem.Mol = Chem.MolFromSmarts("[CX3](=[OX1])[OX2][CX2]=[CX2]")
+"""Acrylate / enol ester — radical-polymerizable cross-linking motif."""
+
+SULTONE_CROSSLINK_PATTERN: Chem.Mol = Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][OX2]1")
+"""Sultone (5-ring cyclic sulfonate ester) — HF-scavenger and cross-linkable SEI motif."""
+
+# ---------------------------------------------------------------------------
+# SEI Fracture Toughness Proxy — Scoring Thresholds
+# ---------------------------------------------------------------------------
+# Physical basis: The SEI fracture proxy combines molecular rigidity
+# (ring count minus aromatic rings) and cross-linking motif presence into
+# a unitless score. A value >= 4.0 indicates molecules expected to form
+# mechanically robust SEI layers resistant to anode expansion fracture.
+
+SEI_FRACTURE_TARGET: float = 4.0
+"""Target SEI fracture toughness proxy value for a robust SEI layer."""
+
+SEI_FRACTURE_SIGMOID_STEEPNESS: float = 1.5
+"""Steepness of the sigmoid reward for SEI fracture proxy above target."""
+
+# ---------------------------------------------------------------------------
+# SEI Fracture Resolved-score Weight
+# ---------------------------------------------------------------------------
+# Physical basis: SEI fracture toughness is a first-order constraint for
+# battery cycle life — a fractured SEI exposes fresh anode to electrolyte,
+# causing capacity fade. Weight allocated from CED (partial overlap),
+# SA (soft filter), and Viscosity (mechanical property overlap).
+# Weights sum to 1.0 across all SCORE_WEIGHT_*.
+
+SCORE_WEIGHT_SEI_FRACTURE: float = 0.08
+"""Weight for SEI fracture toughness proxy — mechanical robustness of SEI."""
 
 # ---------------------------------------------------------------------------
 # Net Progress Normalization Constants

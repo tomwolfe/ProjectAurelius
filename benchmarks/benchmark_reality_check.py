@@ -55,7 +55,10 @@ SEED_SMILES = [
 
 N_GENERATIONS = 5
 BATCH_SIZE = 8
-WALL_TIME_LIMIT = 120.0
+# Standalone benchmark wall time; docs mode uses a shorter limit (set via
+# the AURELIUS_DOCS_MODE env var in update_benchmark_docs.py).
+_WALL_TIME_DEFAULT = 120.0
+WALL_TIME_LIMIT = float(os.environ.get("AURELIUS_REALITY_WALL_TIME", _WALL_TIME_DEFAULT))
 TOP_N = 50
 
 

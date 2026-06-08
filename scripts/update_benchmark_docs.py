@@ -3,27 +3,67 @@
 
 Usage:
     python scripts/update_benchmark_docs.py
+
+Each benchmark is run with a per-process timeout so the script always
+completes. Timed-out benchmarks produce a warning note in the output
+instead of crashing the entire generation.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+# Per-benchmark timeouts (seconds). The reality check's own wall-time limit
+# is set to 30s via AURELIUS_REALITY_WALL_TIME (vs 120s standalone).
+_TIMEOUTS: dict[str, int] = {
+    "benchmarks.benchmark_external_validation": 60,
+    "benchmarks.benchmark_reality_check": 120,
+    "benchmarks.benchmark_mixture_synergy": 30,
+}
+
+# When running via subprocess we need src/ on sys.path.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_BASE_ENV = os.environ.copy()
+_BASE_ENV.setdefault("PYTHONPATH", str(_PROJECT_ROOT / "src"))
+_BASE_ENV["AURELIUS_DOCS_MODE"] = "1"
+_BASE_ENV["AURELIUS_REALITY_WALL_TIME"] = "30"
+
 
 def _capture(module: str) -> str:
-    return subprocess.check_output(
-        [sys.executable, "-m", module],
-        cwd=Path(__file__).resolve().parent.parent,
-        text=True,
-    )
+    timeout = _TIMEOUTS.get(module, 60)
+    try:
+        return subprocess.check_output(
+            [sys.executable, "-m", module],
+            cwd=_PROJECT_ROOT,
+            text=True,
+            timeout=timeout,
+            env=_BASE_ENV,
+        )
+    except subprocess.TimeoutExpired:
+        return (
+            f"[Benchmark timed out after {timeout}s — "
+            f"rerun manually via `python -m {module}`]"
+        )
+    except subprocess.CalledProcessError as exc:
+        return (
+            f"[Benchmark failed with exit code {exc.returncode} — "
+            f"{exc.stderr or 'no stderr output'}]"
+        )
 
 
 def _run_script(script_path: str) -> str:
-    return subprocess.check_output(
-        [sys.executable, script_path],
-        cwd=Path(__file__).resolve().parent.parent,
-        text=True,
-    )
+    try:
+        return subprocess.check_output(
+            [sys.executable, script_path],
+            cwd=_PROJECT_ROOT,
+            text=True,
+            timeout=60,
+            env=_BASE_ENV,
+        )
+    except Exception as exc:
+        print(f"Warning: {script_path} failed: {exc}", file=sys.stderr)
+        return ""
 
 
 def main() -> None:
@@ -38,10 +78,7 @@ def main() -> None:
 
     # Generate synthesis brief
     script_path = str(Path(__file__).resolve().parent / "generate_synthesis_brief.py")
-    try:
-        _run_script(script_path)
-    except Exception as exc:
-        print(f"Warning: synthesis brief generation failed: {exc}", file=sys.stderr)
+    _run_script(script_path)
 
     parts = [
         "# Live Benchmark Results\n",
@@ -68,8 +105,6 @@ def main() -> None:
         f.writelines(parts)
 
     if brief_file.exists():
-        with open(brief_file) as f:
-            brief_content = f.read()
         with open(output_file, "a") as f:
             f.write("\n## Synthesis Target Brief\n\n")
             f.write("*Auto-generated — see [synthesis_brief.md](synthesis_brief.md) for full table.*\n")

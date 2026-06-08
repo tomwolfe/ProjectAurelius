@@ -399,7 +399,7 @@ def test_boltzmann_weights_high_energy_negligible() -> None:
     energies = [0.0, 10.0, 20.0]
     weights = _boltzmann_weights(energies)
     assert weights[0] > 0.99, (
-        f"Ground state should dominate when other conformers are >>kT"
+        "Ground state should dominate when other conformers are >>kT"
     )
 
 
@@ -421,6 +421,7 @@ def test_boltzmann_weights_single_conformer() -> None:
 def test_generate_multi_xyz_returns_list() -> None:
     """_generate_multi_xyz should return a list of (xyz, energy) tuples."""
     from rdkit import Chem
+
     from aurelius.scoring.oracle.quantum import _generate_multi_xyz
 
     mol = Chem.MolFromSmiles("CCO")
@@ -436,6 +437,7 @@ def test_generate_multi_xyz_returns_list() -> None:
 def test_generate_multi_xyz_sorted_by_energy() -> None:
     """Conformers should be sorted by UFF energy ascending."""
     from rdkit import Chem
+
     from aurelius.scoring.oracle.quantum import _generate_multi_xyz
 
     mol = Chem.MolFromSmiles("C1COC(=O)O1")
@@ -449,6 +451,7 @@ def test_generate_multi_xyz_sorted_by_energy() -> None:
 def test_generate_multi_xyz_with_long_chain() -> None:
     """Flexible molecules (e.g., long-chain glymes) should generate multiple conformers."""
     from rdkit import Chem
+
     from aurelius.scoring.oracle.quantum import _generate_multi_xyz
 
     # Tetraethylene glycol dimethyl ether (tetraglyme) — flexible
@@ -468,6 +471,7 @@ def test_generate_multi_xyz_with_long_chain() -> None:
 def test_quantum_oracle_returns_conformer_variance() -> None:
     """QuantumOracle should include conformer_variance in output."""
     from rdkit import Chem
+
     from aurelius.scoring.oracle.quantum import QuantumOracle
 
     qc = QuantumOracle(use_xtb=False)
@@ -480,6 +484,7 @@ def test_quantum_oracle_returns_conformer_variance() -> None:
 def test_quantum_oracle_confidence_xtb_high_for_stable() -> None:
     """Quantum confidence should be 'xtb_high' when conformer spread < 0.15 eV."""
     from rdkit import Chem
+
     from aurelius.scoring.oracle.quantum import QuantumOracle
 
     qc = QuantumOracle(use_xtb=False)

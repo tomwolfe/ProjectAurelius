@@ -30,7 +30,12 @@ from rdkit import Chem
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 
-from aurelius.constants import MAX_DIELECTRIC_PER_TPSA
+from aurelius.constants import (
+    ACRYLATE_CROSSLINK_PATTERN,
+    MAX_DIELECTRIC_PER_TPSA,
+    SULTONE_CROSSLINK_PATTERN,
+    VINYL_CROSSLINK_PATTERN,
+)
 from aurelius.types import MoleculeContext
 
 _DATA_SOURCE: str = "hybrid (GC bulk + Quantum orbital)"
@@ -369,6 +374,53 @@ def predict_ced_proxy(ctx: MoleculeContext) -> float:
     value += max(0, n_rings - n_arom_rings) * 0.3
 
     return max(1.0, min(15.0, value))
+
+
+def _compute_sei_fracture_toughness_proxy(ctx: MoleculeContext) -> float:
+    """Compute SEI fracture toughness proxy via molecular rigidity and cross-linking potential.
+
+    Physical justification: The SEI layer must withstand mechanical stress
+    from anode volume expansion during cycling. Fracture toughness correlates
+    with molecular rigidity (non-aromatic rings restricting conformational
+    degrees of freedom) and the presence of polymerizable cross-linking motifs
+    (vinyl groups, acrylates, sultones) that can form mechanically robust
+    SEI networks. Flexibility (rotatable bonds) weakens the SEI by allowing
+    dipole cancellation and reducing cohesive packing.
+
+    The proxy ranges from ~0.5 (very flexible, no cross-linking) to ~10+
+    (rigid polycyclic with cross-linkable groups). Values >= 4.0 indicate
+    molecules expected to form mechanically robust SEI layers.
+
+    Cyclomatic complexity: branches are independent linear contributions
+    with early return on None patterns.
+    """
+    mol = ctx.mol
+    base = 1.0
+
+    # Rigidity bonus: each non-aromatic ring adds conformational restriction
+    ring_info = mol.GetRingInfo()
+    n_rings = ring_info.NumRings()
+    n_arom_rings = sum(
+        1 for ring in ring_info.AtomRings()
+        if all(mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring)
+    )
+    n_nonarom_rings = max(0, n_rings - n_arom_rings)
+    base += n_nonarom_rings * 0.5
+
+    # Cross-linking motif bonus: check vinyl, acrylate, and sultone
+    has_vinyl = VINYL_CROSSLINK_PATTERN is not None and mol.HasSubstructMatch(VINYL_CROSSLINK_PATTERN)
+    has_acrylate = (
+        ACRYLATE_CROSSLINK_PATTERN is not None
+        and mol.HasSubstructMatch(ACRYLATE_CROSSLINK_PATTERN)
+    )
+    has_sultone = SULTONE_CROSSLINK_PATTERN is not None and mol.HasSubstructMatch(SULTONE_CROSSLINK_PATTERN)
+    if has_vinyl or has_acrylate or has_sultone:
+        base += 1.5
+
+    # Flexibility penalty: each rotatable bond reduces toughness
+    base -= ctx.rotatable_bonds * 0.2
+
+    return max(0.5, base)
 
 
 def predict_ionic_conductivity_proxy(

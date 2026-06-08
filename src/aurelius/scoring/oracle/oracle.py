@@ -15,8 +15,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from rdkit import Chem
-
 from aurelius.constants import (
     SEI_LUMO_LOWER,
     SEI_LUMO_UPPER,

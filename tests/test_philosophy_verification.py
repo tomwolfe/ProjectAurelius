@@ -719,6 +719,100 @@ class TestFrankensteinAblation:
 
 
 # ---------------------------------------------------------------------------
+# F. SEI Fracture Toughness — Mechanical Robustness Proxy
+# ---------------------------------------------------------------------------
+
+
+class TestSeiFractureToughness:
+    """The SEI fracture toughness proxy must reward molecular rigidity and
+    cross-linking potential while penalising excessive flexibility.
+
+    Physics basis: The SEI layer on a graphite/silicon anode undergoes
+    mechanical stress during volume expansion (up to 10% for graphite,
+    >300% for Si). Molecules with rigid rings and polymerizable motifs
+    (vinyl, acrylate, sultone) form mechanically robust SEI networks that
+    resist fracture. Flexible linear molecules without cross-linking
+    motifs produce fragile SEI layers.
+    """
+
+    def test_rigid_cyclic_outranks_flexible_linear(self) -> None:
+        """Vinyl ethylene carbonate (rigid cyclic + vinyl) must score higher
+        on the SEI fracture proxy than diethyl carbonate (flexible linear)."""
+        from aurelius.scoring.oracle.gc import _compute_sei_fracture_toughness_proxy
+
+        rigid = _compute_sei_fracture_toughness_proxy(
+            MoleculeContext.from_smiles("O=C1OC=COC1")
+        )
+        flexible = _compute_sei_fracture_toughness_proxy(
+            MoleculeContext.from_smiles("CCOC(=O)OCC")
+        )
+        assert rigid > flexible, (
+            f"Rigid cyclic molecule (VEC, {rigid:.3f}) must outrank "
+            f"flexible linear (DEC, {flexible:.3f}) on SEI fracture proxy"
+        )
+
+    def test_cross_linking_motif_bonus(self) -> None:
+        """Molecules with vinyl/acrylate groups receive a cross-linking bonus."""
+        from aurelius.scoring.oracle.gc import _compute_sei_fracture_toughness_proxy
+
+        with_vinyl = _compute_sei_fracture_toughness_proxy(
+            MoleculeContext.from_smiles("C=COC(=O)OC")
+        )
+        without_vinyl = _compute_sei_fracture_toughness_proxy(
+            MoleculeContext.from_smiles("CCOC(=O)OC")
+        )
+        assert with_vinyl > without_vinyl, (
+            f"Vinyl-containing molecule ({with_vinyl:.3f}) must score "
+            f"higher than saturated analogue ({without_vinyl:.3f})"
+        )
+
+    def test_flexibility_penalty(self) -> None:
+        """Molecules with many rotatable bonds receive a flexibility penalty."""
+        from aurelius.scoring.oracle.gc import _compute_sei_fracture_toughness_proxy
+
+        flexible = _compute_sei_fracture_toughness_proxy(
+            MoleculeContext.from_smiles("CCCCCCCCCCCCCCCCCCCC(=O)OC")
+        )
+        rigid = _compute_sei_fracture_toughness_proxy(
+            MoleculeContext.from_smiles("C1COC(=O)O1")
+        )
+        assert rigid > flexible, (
+            f"Rigid EC ({rigid:.3f}) must outrank flexible long-chain "
+            f"carbonate ({flexible:.3f}) on SEI fracture proxy"
+        )
+
+    def test_zero_rings_defaults_to_base(self) -> None:
+        """A molecule with 0 rings, no cross-linking, and minimal flexibility
+        should return approximately the base value (1.0)."""
+        from aurelius.scoring.oracle.gc import _compute_sei_fracture_toughness_proxy
+
+        proxy = _compute_sei_fracture_toughness_proxy(
+            MoleculeContext.from_smiles("COC")
+        )
+        assert proxy >= 0.5, f"Base value should be >= 0.5, got {proxy}"
+        assert proxy <= 2.0, f"Simple DME should not exceed 2.0, got {proxy}"
+
+    def test_pipeline_includes_sei_fracture_subscore(self) -> None:
+        """The pipeline must include a sei_fracture_reward sub-score."""
+        pipeline = AureliusPipeline()
+        pipeline.initialize()
+        ctx = MoleculeContext.from_smiles("C1COC(=O)O1")
+        assert ctx is not None
+        result = pipeline.screen_molecule(ctx)
+        sub_scores = result.get("score", {}).get("sub_scores", {})
+        assert "sei_fracture_reward" in sub_scores, (
+            "Pipeline sub_scores must include sei_fracture_reward"
+        )
+
+    def test_sei_fracture_objective_in_list(self) -> None:
+        """The _OBJECTIVES list must contain the SEI fracture objective."""
+        objective_names = [o.name for o in _OBJECTIVES]
+        assert "sei_fracture_reward" in objective_names, (
+            "_OBJECTIVES must contain sei_fracture_reward"
+        )
+
+
+# ---------------------------------------------------------------------------
 # E. Building-Block Grounding — Novelty vs. Reality Gate
 # ---------------------------------------------------------------------------
 

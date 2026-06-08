@@ -12,15 +12,13 @@ from __future__ import annotations
 
 import time
 
-import numpy as np
-import pytest
 from rdkit import Chem
 
 from aurelius.scoring.oracle import (
-    PropertyOracle,
-    SurrogateQuantumOracle,
     _SURROGATE_HOMO_THRESHOLD,
     _SURROGATE_PENALTY,
+    PropertyOracle,
+    SurrogateQuantumOracle,
 )
 from aurelius.types import MoleculeContext
 
@@ -138,7 +136,9 @@ class TestSurrogateIntegration:
 
         Uses a proper train/holdout split to verify surrogate generalization.
         """
-        import json, os, random
+        import json
+        import os
+        import random
         calib_path = os.path.join(
             os.path.dirname(__file__), "..", "src", "aurelius", "data",
             "orbital_calibration.json",
@@ -185,6 +185,7 @@ class TestSurrogateNoMLBloat:
 
     def test_only_sklearn_used(self):
         import inspect
+
         from aurelius.scoring.oracle import surrogate as surrogate_module
         source = inspect.getsource(surrogate_module)
         for banned in ("torch", "tensorflow", "jax", "keras", "flax"):

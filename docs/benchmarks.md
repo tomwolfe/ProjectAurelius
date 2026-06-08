@@ -21,9 +21,9 @@
   │ Dielectric ε         │   53        │ +0.7256  │ 0.0000 *** │
   │   top: EC                        pred=14.964 exp=89.780 │
   │   bot: Cyclohexanone             pred=2.412 exp=2.805 │
-  │ Viscosity η          │   53        │ +0.5425  │ 0.0000 *** │
-  │   top: Bis(2,2,2-trifluoroethyl) sulfone pred=5.444 exp=10.300 │
-  │   bot: THF                       pred=0.100 exp=0.240 │
+  │ Viscosity η          │   53        │ +0.6748  │ 0.0000 *** │
+  │   top: Bis(2,2,2-trifluoroethyl) sulfone pred=5.994 exp=10.300 │
+  │   bot: DEE                       pred=0.220 exp=0.240 │
   │ Donor Number         │   38        │ +0.7576  │ 0.0000 *** │
   │   top: DMSO                      pred=6.606 exp=33.100 │
   │   bot: Cyclohexanone             pred=1.096 exp=8.000 │
@@ -51,23 +51,23 @@
   [1/4] Screening known commercial electrolytes...
          Known electrolytes: 51 molecules, 35 unique scaffolds
 
-         Known set mean Aurelius Score: 54.81
+         Known set mean Aurelius Score: 48.57
 
   [2/4] Running 5-generation discovery loop...
-         Done in 101.2s
-         Total screened: 40
+         Done in 11.4s
+         Total screened: 16
 
   [3/4] Analyzing top discoveries...
-         Top 50 discoveries: mean score=84.52
-         Unique scaffolds in top 50: 42
-         Novel scaffolds (not in known set): 42 (100.0%)
+         Top 50 discoveries: mean score=67.61
+         Unique scaffolds in top 50: 32
+         Novel scaffolds (not in known set): 28 (87.5%)
 
   [4/4] Verifying assertions...
 
-         Score gap: top discoveries (84.52) - known (54.81) = +29.71
+         Score gap: top discoveries (67.61) - known (48.57) = +19.04
          PASSED: Discoveries score higher than known commercial set.
 
-         Novel scaffold ratio: 100.0% (target >80%)
+         Novel scaffold ratio: 87.5% (target >80%)
          PASSED: >80% of top discoveries have novel scaffolds.
 
 =================================================================

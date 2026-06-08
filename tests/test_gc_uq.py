@@ -9,15 +9,12 @@ Verifies:
 
 from __future__ import annotations
 
-import numpy as np
-import pytest
-
-from aurelius.scoring.oracle.gc import GcUqEnsemble
 from aurelius.scoring.oracle import (
-    PropertyOracle,
     _UQ_PENALTY,
     _UQ_THRESHOLD_FRACTION,
+    PropertyOracle,
 )
+from aurelius.scoring.oracle.gc import GcUqEnsemble
 from aurelius.types import MoleculeContext
 
 

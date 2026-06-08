@@ -145,8 +145,9 @@ class TestParetoFront:
         assert len(front) >= 1
 
     def test_handles_screening_result_objects(self):
-        from aurelius.agent.selection import extract_pareto_front
         from dataclasses import dataclass
+
+        from aurelius.agent.selection import extract_pareto_front
 
         @dataclass
         class MockResult:
