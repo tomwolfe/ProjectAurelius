@@ -30,11 +30,12 @@ class TestSurrogateTraining:
         surrogate = SurrogateQuantumOracle()
         ctx = MoleculeContext.from_smiles("COC(=O)OC")
         assert ctx is not None
-        homo, lumo = surrogate.predict(ctx)
+        homo, lumo, uncertainty = surrogate.predict(ctx)
         assert surrogate.is_trained
         assert surrogate.n_train >= 5
         assert isinstance(homo, float)
         assert isinstance(lumo, float)
+        assert isinstance(uncertainty, float)
         assert homo < 0.0, f"HOMO should be negative, got {homo}"
 
     def test_training_under_two_seconds(self):
@@ -53,7 +54,7 @@ class TestSurrogateTraining:
         surrogate.predict(ctx)  # trigger training
         t0 = time.perf_counter()
         for _ in range(100):
-            surrogate.predict(ctx)
+            homo, lumo, uncertainty = surrogate.predict(ctx)
         avg_ms = (time.perf_counter() - t0) * 10
         assert avg_ms < 5.0, f"Mean inference took {avg_ms:.3f}ms per 100 calls"
 
@@ -64,10 +65,10 @@ class TestSurrogateTraining:
         for smi in smiles_list:
             ctx = MoleculeContext.from_smiles(smi)
             assert ctx is not None
-            homo, lumo = surrogate.predict(ctx)
-            results.append((homo, lumo))
+            homo, lumo, uncertainty = surrogate.predict(ctx)
+            results.append((homo, lumo, uncertainty))
         assert len(results) == len(smiles_list)
-        for homo, lumo in results:
+        for homo, lumo, uncertainty in results:
             assert homo < lumo, f"HOMO ({homo}) must be below LUMO ({lumo})"
 
 
@@ -79,8 +80,8 @@ class TestSurrogatePenalty:
         surrogate = SurrogateQuantumOracle()
         ctx = MoleculeContext.from_smiles("C=CC=CC=C")
         assert ctx is not None, "Hexatriene should parse"
-        homo, _ = surrogate.predict(ctx)
-        penalty = surrogate.compute_penalty(homo)
+        homo, lumo, uncertainty = surrogate.predict(ctx)
+        penalty = surrogate.compute_penalty(homo, uncertainty)
         if homo > _SURROGATE_HOMO_THRESHOLD:
             assert penalty == _SURROGATE_PENALTY, (
                 f"HOMO={homo:.3f} > {_SURROGATE_HOMO_THRESHOLD} should give {_SURROGATE_PENALTY}x penalty"
@@ -91,11 +92,24 @@ class TestSurrogatePenalty:
         surrogate = SurrogateQuantumOracle()
         ctx = MoleculeContext.from_smiles("COC(=O)OC")
         assert ctx is not None
-        homo, _ = surrogate.predict(ctx)
-        penalty = surrogate.compute_penalty(homo)
+        homo, lumo, uncertainty = surrogate.predict(ctx)
+        penalty = surrogate.compute_penalty(homo, uncertainty)
         assert penalty == 1.0, (
             f"HOMO={homo:.3f} should not trigger penalty (got {penalty})"
         )
+
+    def test_high_uncertainty_bypasses_penalty(self):
+        """High uncertainty (>0.5 eV) should return penalty=1.0 regardless of HOMO value."""
+        surrogate = SurrogateQuantumOracle()
+        ctx = MoleculeContext.from_smiles("C=CC=CC=C")
+        assert ctx is not None
+        homo, lumo, uncertainty = surrogate.predict(ctx)
+        penalty = surrogate.compute_penalty(homo, uncertainty)
+        # If uncertainty is high, penalty should be 1.0 (no penalty)
+        if uncertainty > 0.5:
+            assert penalty == 1.0, (
+                f"Penalty should be 1.0 for high uncertainty ({uncertainty:.3f}), got {penalty}"
+            )
 
     def test_surrogate_penalty_applied_in_oracle(self):
         """PropertyOracle with surrogate enabled should apply surrogate penalty."""
@@ -166,7 +180,7 @@ class TestSurrogateIntegration:
             if ctx is None:
                 continue
             try:
-                homo, lumo = surrogate.predict(ctx)
+                homo, lumo, uncertainty = surrogate.predict(ctx)
                 homo_err = abs(homo - entry["homo_eV"])
                 lumo_err = abs(lumo - entry["lumo_eV"])
                 errors.append((homo_err + lumo_err) / 2.0)

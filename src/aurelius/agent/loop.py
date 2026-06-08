@@ -608,11 +608,28 @@ class DiscoveryLoop:
         """Evaluate a single candidate, record results, and return score data.
 
         Returns (total_score, tier2_dict) on success, None to skip.
+
+        Uncertainty-Aware Bypass (Phase 1): If the surrogate predicts high
+        epistemic uncertainty (std dev > 0.5 eV), the candidate is NOT skipped
+        but sent to _evaluate_with_real_quantum for accurate evaluation.
         """
         smi = ctx.smiles
 
         if smi in self.state.active_learning_queue:
             return self._evaluate_with_real_quantum(ctx, result_map)
+
+        # Uncertainty-Aware Bypass: check surrogate uncertainty first
+        try:
+            from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
+            surrogate = SurrogateQuantumOracle()
+            homo, lumo, uncertainty = surrogate.predict(ctx)
+            penalty = surrogate.compute_penalty(homo, uncertainty)
+
+            # If high uncertainty, skip penalty and evaluate with real quantum
+            if penalty == 1.0 and uncertainty > 0.5:
+                return self._evaluate_with_real_quantum(ctx, result_map)
+        except Exception:
+            pass
 
         result = self._screen_molecule(ctx)
         if result is None:

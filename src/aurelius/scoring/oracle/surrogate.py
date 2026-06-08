@@ -210,10 +210,12 @@ class SurrogateQuantumOracle:
             self._n_train, self._train_time_ms,
         )
 
-    def predict(self, ctx: MoleculeContext) -> tuple[float, float]:
-        """Predict (homo_eV, lumo_eV) using the trained surrogate.
+    def predict(self, ctx: MoleculeContext) -> tuple[float, float, float]:
+        """Predict (homo_eV, lumo_eV, uncertainty_score) using the trained surrogate.
 
-        Training happens lazily on first call. Returns both values.
+        Training happens lazily on first call. Returns all three values.
+        uncertainty_score is the standard deviation across RF tree predictions,
+        serving as an epistemic uncertainty proxy.
         """
         self._ensure_trained()
         fv = self._build_feature_vector(ctx).reshape(1, -1)
@@ -223,7 +225,13 @@ class SurrogateQuantumOracle:
         lumo = float(self._lumo_model.predict(fv)[0])  # type: ignore[union-attr]
         _inference_ms = (time.perf_counter() - t0) * 1000
 
-        return homo, lumo
+        # Epistemic uncertainty: std dev across individual tree predictions
+        homo_preds = self._homo_model.estimators_[0].predict(fv)  # type: ignore[union-attr]
+        uncertainty_score = float(
+            np.std([tree.predict(fv)[0] for tree in self._homo_model.estimators_], axis=0),
+        )
+
+        return homo, lumo, uncertainty_score
 
     def evaluate_holdout_spearman(self, property: str = "homo") -> float:
         """Compute Spearman rank correlation on a 20% holdout set.
@@ -282,8 +290,14 @@ class SurrogateQuantumOracle:
         rho, _ = spearmanr(y_true, y_pred)
         return float(rho)
 
-    def compute_penalty(self, homo_eV: float) -> float:
-        """Return 0.5x penalty if surrogate predicts unstable HOMO (> -5.0 eV)."""
+    def compute_penalty(self, homo_eV: float, uncertainty_score: float = 0.0) -> float:
+        """Return 0.5x penalty if surrogate predicts unstable HOMO (> -5.0 eV).
+
+        If uncertainty_score > 0.5 eV (high epistemic uncertainty), returns 1.0
+        (no penalty), forcing the main loop to use the accurate TOM/xTB oracle instead.
+        """
+        if uncertainty_score > 0.5:
+            return 1.0
         if homo_eV > _SURROGATE_HOMO_THRESHOLD:
             return _SURROGATE_PENALTY
         return 1.0
