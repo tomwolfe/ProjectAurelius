@@ -53,6 +53,34 @@ ELECTROLYTE_SMARTS: list[tuple[str, str]] = [
     ("[OH:1]>>[O:1]P(=O)(OC)OC", "Hydroxyl to dimethyl phosphate"),
     ("[C:1]>>[C:1](C)", "Methylation"),
     ("[C:1]>>[C:1]CC", "Ethylation"),
+    # ------------------------------------------------------------------
+    # Scaffold-hopping reactions — modify core ring topology
+    # ------------------------------------------------------------------
+    # These transform 1,4-dioxane (the seed's only ring) into molecules
+    # with different ring scaffolds: 1,4-oxathiane, tetrahydropyran,
+    # morpholine, and linear ethers. Each product has a novel Murcko
+    # scaffold relative to the seed pool.
+    (
+        "[O:1]1[CH2:2][CH2:3][O:4][CH2:5][CH2:6]1>>[S:1]1[CH2:2][CH2:3][O:4][CH2:5][CH2:6]1",
+        "oxygen_to_sulfur_in_dioxane",
+    ),
+    (
+        "[O:1]1[CH2:2][CH2:3][O:4][CH2:5][CH2:6]1>>[CH2:1]1[CH2:2][CH2:3][O:4][CH2:5][CH2:6]1",
+        "oxygen_to_methylene_in_dioxane",
+    ),
+    (
+        "[O:1]1[CH2:2][CH2:3][O:4][CH2:5][CH2:6]1>>[N:1]1[CH2:2][CH2:3][O:4][CH2:5][CH2:6]1",
+        "oxygen_to_amine_in_dioxane",
+    ),
+    (
+        "[O:1]1[CH2:2][CH2:3][O:4][CH2:5][CH2:6]1>>[CH3:7][O:1][CH2:2][CH2:3][O:4][CH2:5][CH2:6][CH3:8]",
+        "dioxane_ring_opening",
+    ),
+    # General functional group transformations
+    # Enables chain elongation and new functionality across seeds
+    ("[CH3:1]>>[CH3:1][CH2:2]", "methyl_to_ethyl"),
+    ("[OH:1]>>[O:1]S(=O)(=O)C", "hydroxyl_to_methyl_sulfonate"),
+    ("[C:1]#[N:2]>>[C:1](=[O:2])[NH2:3]", "nitrile_to_primary_amide"),
 ]
 
 # ---------------------------------------------------------------------------

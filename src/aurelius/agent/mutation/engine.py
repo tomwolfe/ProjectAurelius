@@ -22,6 +22,8 @@ from rdkit import Chem
 from rdkit.Chem import BRICS, AllChem
 
 from aurelius.agent.mutation.brics import (
+    MIN_GROUNDING_SCORE,
+    combined_grounding_score,
     find_complementary_pairs,
     inject_linkers,
 )
@@ -349,6 +351,11 @@ class MutationEngine:
         if not is_electrolyte_like(product_ctx):
             return None
         if self._has_excessive_aliphatic_chain(r_mol):
+            return None
+        # Grounding gate: reject BRICS products where < 40% of fragments
+        # or functional groups map to commercial building blocks. Ensures
+        # novel scaffolds remain synthesizable from catalog precursors.
+        if combined_grounding_score(r_mol) < MIN_GROUNDING_SCORE:
             return None
         return s
 

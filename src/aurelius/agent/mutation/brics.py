@@ -33,6 +33,10 @@ _BRICS_LINKER_FRAGMENTS: list[tuple[str, str]] = [
     ("[1*]C[2*]", "methylene linker"),
     ("[1*]CCO[2*]", "ethoxy linker"),
     ("[1*]S(=O)(=O)[2*]", "sulfone linker"),
+    ("[1*]COC(=O)O[2*]", "cyclic_carbonate_linker"),
+    ("[1*]CCOCC[2*]", "thf_linker"),
+    ("[1*]CS(=O)(=O)CC[2*]", "sulfolane_linker"),
+    ("[1*]CO[2*]", "epoxide_linker"),
 ]
 
 
@@ -273,6 +277,14 @@ def functional_group_coverage(mol: Chem.Mol) -> float:
 # precursors, which would be impractical for bulk electrolyte synthesis.
 _MAX_BRICS_DEPTH: int = 2
 _BRICS_DEPTH_PENALTY_PER_STEP: float = 0.1
+
+# Minimum combined grounding score for BRICS products.
+# Physical justification: At least 40% of the molecule's fragments or
+# functional groups must map to commercial building blocks. This ensures
+# novel-scaffold candidates remain synthesizable from catalog precursors
+# while not strangling genuine scaffold hopping. Too high a threshold (0.7+)
+# collapses the proposal space back to seed-like molecules.
+MIN_GROUNDING_SCORE: float = 0.4
 
 
 def _compute_brics_depth(mol: Chem.Mol, max_iter: int = 5) -> int:
