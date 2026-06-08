@@ -59,7 +59,7 @@ flowchart TD
 | Mutation | SMARTS + BRICS | Targeted electrolyte edits + scaffold hopping |
 | Selection | Tournament Selection | Tanimoto-guided evolutionary diversity pressure + Pareto-optimal subset reporting |
 
-The composite Aurelius Score is computed via Gaussian LUMO reward (SEI formation window), sigmoid HOMO penalty (oxidative stability threshold), sigmoid dielectric/viscosity/Li-solvation/conductivity rewards, and SA score penalty. Tournament selection with a Tanimoto diversity penalty steers each generation away from chemical saturation.
+The composite Aurelius Score is computed via Gaussian LUMO reward (SEI formation window), sigmoid HOMO penalty (oxidative stability threshold), sigmoid dielectric/viscosity rewards, Gaussian Li-solvation reward, and SA score penalty. (The Walden-product conductivity proxy is exposed for inspection but is not a weighted objective in the composite score.) Tournament selection with a Tanimoto diversity penalty steers each generation away from chemical saturation.
 
 ## Installation
 

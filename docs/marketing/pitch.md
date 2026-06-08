@@ -4,7 +4,7 @@
 
 A physically-grounded Evolutionary Algorithm with a hybrid quantum chemistry / fragment-additivity oracle. HOMO/LUMO from xTB (or Topological Orbital Model fallback). Bulk properties — dielectric, viscosity, Li⁺ solvation, conductivity — from interpretable group-contribution additivity.
 
-**Anti-Frankenstein gates.** BRICS recombination can stack ester groups or string 14-carbon chains. Aurelius rejects these explicitly: Michaelis-Menten saturation ceilings, DFS chain-length checks, valence sanity, ring strain limits. Eight topological gates — each a 5-line decorated function.
+**Anti-Frankenstein gates.** BRICS recombination can stack ester groups or string 14-carbon chains. Aurelius rejects these explicitly: Michaelis-Menten saturation ceilings, DFS chain-length checks, valence sanity, ring strain limits. Eleven topological gates — each a 5-line decorated function.
 
 **Self-verifying architecture.** A `Net Progress` objective function penalizes code complexity (lines of code, cyclomatic complexity, dependencies, file count) while rewarding discovery value. The CI test asserts `Net Progress > 0` — every commit must add more science than bloat.
 
