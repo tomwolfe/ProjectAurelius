@@ -292,6 +292,19 @@ def test_quantum_oracle_caching() -> None:
     assert qc.get_cache_size() == 1
 
 
+def test_sulfolane_outranks_diethyl_sulfone_viscosity() -> None:
+    """Cyclic sulfone (sulfolane) should have higher viscosity proxy than
+    its acyclic counterpart (diethyl sulfone) due to ring rigidity."""
+    from aurelius.scoring.oracle.gc import predict_viscosity_proxy
+
+    sulfolane_visc = predict_viscosity_proxy(_ctx("C1CS(=O)(=O)CC1"))
+    diethyl_visc = predict_viscosity_proxy(_ctx("CCS(=O)(=O)CC"))
+    assert sulfolane_visc > diethyl_visc, (
+        f"Sulfolane viscosity ({sulfolane_visc:.3f}) should exceed "
+        f"diethyl sulfone viscosity ({diethyl_visc:.3f})"
+    )
+
+
 def test_predict_tom_orbitals_returns_plausible() -> None:
     """TOM should return physically plausible HOMO/LUMO values."""
     from rdkit import Chem
