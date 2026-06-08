@@ -95,7 +95,7 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float, float]] = [
     # conformation cancelling dipoles (Kirkwood g<1). The cyclic_carbonate fragment
     # (8.0) separately captures EC/PC's g>1 effect.
     (Chem.MolFromSmarts("O=C([OX2])[OX2]"),        "carbonate",          2.0,  0.7,  1.2,  3.0),
-    (Chem.MolFromSmarts("[OD2]([CX4])[CX4]"),      "ether",              1.5, -0.3,  1.0,  1.5),
+    (Chem.MolFromSmarts("[OD2]([CX4])[CX4]"),      "ether",              1.5, -0.4,  1.0,  1.5),
     (Chem.MolFromSmarts("[OH][CX4]"),              "alcohol",            4.5,  1.2,  2.0,  5.0),
     (Chem.MolFromSmarts("[NX3;H2][CX4]"),          "primary_amine",      3.5,  0.5,  1.0,  4.0),
     (Chem.MolFromSmarts("[NX3;H1]([CX4])[CX4]"),   "secondary_amine",    2.5,  0.4,  0.8,  3.0),
@@ -109,7 +109,7 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float, float]] = [
     (Chem.MolFromSmarts("[F]"),                    "fluorine",           0.0,  0.1, -0.5,  0.0),
     (Chem.MolFromSmarts("[Cl]"),                   "chlorine",           0.5,  0.2, -0.3,  1.0),
     (Chem.MolFromSmarts("[Br]"),                   "bromine",            0.5,  0.3, -0.2,  1.0),
-    (Chem.MolFromSmarts("S(=O)(=O)[CX4]"),         "sulfone",            5.0,  0.5,  1.0,  6.0),
+    (Chem.MolFromSmarts("S(=O)(=O)[CX4]"),         "sulfone",            5.0,  0.8,  1.0,  6.0),
     (Chem.MolFromSmarts("S(=O)(=O)[OX2]"),         "sulfonate",          5.5,  0.6,  1.2,  6.0),
     (Chem.MolFromSmarts("S(=O)(=O)F"),             "sulfonyl_fluoride",  4.0,  0.4,  0.5,  5.0),
     # Cyclic sulfone (5-ring): S in 5-membered ring (sulfolane). Ring rigidity increases
@@ -153,7 +153,7 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float, float]] = [
     # EC (ε=89.78) and PC (ε=64.92) are 2-3× higher than any other aprotic solvent.
     # The 8.0 captures the physical gap between cyclic (Kirkwood g>1) and linear
     # (g<1) carbonates.
-    (Chem.MolFromSmarts("[OX2]1[CX3](=O)[OX2][CX4][CX4]1"), "cyclic_carbonate",  8.0,  0.4,  0.0,  4.0),
+    (Chem.MolFromSmarts("[OX2]1[CX3](=O)[OX2][CX4][CX4]1"), "cyclic_carbonate",  8.0,  0.8,  0.0,  4.0),
 ]
 
 _GC_BASE_DIELECTRIC: float = 1.9
@@ -260,6 +260,34 @@ def _count_stereocenters(mol: Chem.Mol) -> int:
     return rdMolDescriptors.CalcNumAtomStereoCenters(mol)
 
 
+def _compute_rigidity_penalty(ctx: MoleculeContext) -> float:
+    """Viscosity penalty for molecular rigidity — restricted conformations
+    increase viscosity beyond fragment-additivity predictions.
+
+    Physical justification: Non-aromatic rings lock torsional degrees of
+    freedom, raising the activation energy for molecular flow. Quaternary
+    sp3 carbons (degree 4) create deeper branching topologies than tertiary
+    branch points, further restricting segmental motion.
+    """
+    mol = ctx.mol
+    ring_info = mol.GetRingInfo()
+    n_rings = ring_info.NumRings()
+    n_arom_rings = sum(
+        1 for ring in ring_info.AtomRings()
+        if all(mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring)
+    )
+    n_nonarom_rings = max(0, n_rings - n_arom_rings)
+
+    n_quat = sum(
+        1 for a in mol.GetAtoms()
+        if a.GetAtomicNum() == 6
+        and a.GetDegree() == 4
+        and a.GetHybridization() == Chem.HybridizationType.SP3
+    )
+
+    return n_nonarom_rings * 1.2 + n_quat * 0.05
+
+
 def predict_viscosity_proxy(ctx: MoleculeContext) -> float:
     """Predict a viscosity proxy via fragment-additivity + branching penalty."""
     mol = ctx.mol
@@ -279,6 +307,8 @@ def predict_viscosity_proxy(ctx: MoleculeContext) -> float:
 
     n_stereo = _count_stereocenters(mol)
     value += n_stereo * 0.05
+
+    value += _compute_rigidity_penalty(ctx)
 
     return max(0.1, value)
 
