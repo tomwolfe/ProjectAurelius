@@ -30,6 +30,74 @@ def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str
     return path
 
 
+def _compute_convergence_reasons(state: LoopState) -> list[str]:
+    plateau = check_score_plateau(state.batch_means)
+    saturation = check_structural_saturation(state.scaffolds_per_batch)
+    reasons = []
+    if plateau:
+        reasons.append("score plateau confirmed")
+    if saturation:
+        reasons.append("structural saturation reached")
+    if not reasons:
+        reasons.append("partial convergence — volume threshold met but some criteria pending")
+    return reasons
+
+
+def _compute_uq_data(top_discoveries: list[ScreeningResult]) -> dict[str, dict[str, float]]:
+    uq_data: dict[str, dict[str, float]] = {}
+    log = logging.getLogger("aurelius_agent")
+    try:
+        uq_ensemble = GcUqEnsemble()
+        for d in top_discoveries[:20]:
+            ctx = MoleculeContext.from_smiles(d.smiles)
+            if ctx is None:
+                continue
+            diel_mean, diel_std, _ = uq_ensemble.predict_dielectric(ctx)
+            visc_mean, visc_std, _ = uq_ensemble.predict_viscosity(ctx)
+            uq_weight = 1.0 + (diel_std / max(1.0, abs(diel_mean)))
+            uq_weight += visc_std / max(1.0, abs(visc_mean))
+            uq_data[d.smiles] = {
+                "diel_mean": diel_mean,
+                "diel_std": diel_std,
+                "visc_mean": visc_mean,
+                "visc_std": visc_std,
+                "uncertainty_weighted_score": d.total_score * uq_weight,
+            }
+    except Exception:
+        log.warning("GC UQ ensemble unavailable — skipping uncertainty weighting", exc_info=True)
+    return uq_data
+
+
+def _ucb_sort_key(d: ScreeningResult, uq_data: dict[str, dict[str, float]]) -> float:
+    if d.smiles in uq_data:
+        return -uq_data[d.smiles]["uncertainty_weighted_score"]
+    return -d.total_score
+
+
+def _discovery_entry(d: ScreeningResult, uq_data: dict[str, dict[str, float]]) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "smiles": d.smiles,
+        "total_score": d.total_score,
+        "homo_eV": d.homo_eV,
+        "lumo_eV": d.lumo_eV,
+        "dielectric_proxy": d.dielectric_proxy,
+        "viscosity_proxy": d.viscosity_proxy,
+        "li_solvation_proxy": d.li_solvation_proxy,
+        "sa_score": d.sa_score,
+        "sub_scores": d.sub_scores,
+        "is_viable": d.is_viable,
+        "rejection_reasons": d.rejection_reasons,
+        "novelty_to_seed": d.novelty_to_seed,
+    }
+    if d.smiles in uq_data:
+        entry["diel_std"] = uq_data[d.smiles]["diel_std"]
+        entry["visc_std"] = uq_data[d.smiles]["visc_std"]
+        entry["uncertainty_weighted_score"] = round(
+            uq_data[d.smiles]["uncertainty_weighted_score"], 4
+        )
+    return entry
+
+
 def generate_run_summary(
     state: LoopState,
     all_results: list[ScreeningResult],
@@ -52,78 +120,19 @@ def generate_run_summary(
         top_mixtures: Optional top-N binary mixture results.
     """
     log = logging.getLogger("aurelius_agent")
-
     path = _resolve_output_path(path, output_dir)
     scores = [r.total_score for r in all_results]
-
-    plateau = check_score_plateau(state.batch_means)
-    saturation = check_structural_saturation(state.scaffolds_per_batch)
-
-    reasons = []
-    if plateau:
-        reasons.append("score plateau confirmed")
-    if saturation:
-        reasons.append("structural saturation reached")
-    if not reasons:
-        reasons.append("partial convergence — volume threshold met but some criteria pending")
+    reasons = _compute_convergence_reasons(state)
 
     top_discoveries = sorted(discoveries, key=lambda r: -r.total_score)
+    uq_data = _compute_uq_data(top_discoveries)
 
-    # Epistemic uncertainty for wet-lab prioritisation
-    # Physical basis: molecules with high GC prediction uncertainty (std >> 15% of
-    # mean) are out-of-distribution relative to the calibration set. Prioritising
-    # these for experimental validation yields the highest information gain per
-    # wet-lab hour — active learning without robotic automation.
-    uq_data: dict[str, dict[str, float]] = {}
-    try:
-        uq_ensemble = GcUqEnsemble()
-        for d in top_discoveries[:20]:
-            ctx = MoleculeContext.from_smiles(d.smiles)
-            if ctx is None:
-                continue
-            diel_mean, diel_std, _ = uq_ensemble.predict_dielectric(ctx)
-            visc_mean, visc_std, _ = uq_ensemble.predict_viscosity(ctx)
-            uq_weight = 1.0 + (diel_std / max(1.0, abs(diel_mean)))
-            uq_weight += visc_std / max(1.0, abs(visc_mean))
-            uq_data[d.smiles] = {
-                "diel_mean": diel_mean,
-                "diel_std": diel_std,
-                "visc_mean": visc_mean,
-                "visc_std": visc_std,
-                "uncertainty_weighted_score": d.total_score * uq_weight,
-            }
-    except Exception:
-        log.warning("GC UQ ensemble unavailable — skipping uncertainty weighting", exc_info=True)
+    top_discoveries.sort(key=lambda d: _ucb_sort_key(d, uq_data))
 
-    def _ucb_sort_key(d: ScreeningResult) -> float:
-        if d.smiles in uq_data:
-            return -uq_data[d.smiles]["uncertainty_weighted_score"]
-        return -d.total_score
-
-    top_discoveries.sort(key=_ucb_sort_key)
-
-    def _discovery_entry(d: ScreeningResult) -> dict[str, Any]:
-        entry: dict[str, Any] = {
-            "smiles": d.smiles,
-            "total_score": d.total_score,
-            "homo_eV": d.homo_eV,
-            "lumo_eV": d.lumo_eV,
-            "dielectric_proxy": d.dielectric_proxy,
-            "viscosity_proxy": d.viscosity_proxy,
-            "li_solvation_proxy": d.li_solvation_proxy,
-            "sa_score": d.sa_score,
-            "sub_scores": d.sub_scores,
-            "is_viable": d.is_viable,
-            "rejection_reasons": d.rejection_reasons,
-            "novelty_to_seed": d.novelty_to_seed,
-        }
-        if d.smiles in uq_data:
-            entry["diel_std"] = uq_data[d.smiles]["diel_std"]
-            entry["visc_std"] = uq_data[d.smiles]["visc_std"]
-            entry["uncertainty_weighted_score"] = round(
-                uq_data[d.smiles]["uncertainty_weighted_score"], 4
-            )
-        return entry
+    pareto_front = sorted(
+        extract_pareto_front(sorted(discoveries, key=lambda r: -r.total_score)[:100]),
+        key=lambda d: _ucb_sort_key(d, uq_data),
+    )
 
     summary: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
@@ -140,8 +149,8 @@ def generate_run_summary(
             "max_score": float(np.max(scores)) if scores else 0.0,
         },
         "convergence": {
-            "score_plateau": plateau,
-            "structural_saturation": saturation,
+            "score_plateau": "score plateau confirmed" in reasons,
+            "structural_saturation": "structural saturation reached" in reasons,
             "new_scaffolds_last_batch": len(state.scaffolds_per_batch[-1])
             if state.scaffolds_per_batch
             else 0,
@@ -153,32 +162,21 @@ def generate_run_summary(
             ),
         },
         "new_scaffolds_per_batch": [len(s) for s in state.scaffolds_per_batch],
-        "discoveries": [_discovery_entry(d) for d in top_discoveries[:50]],
+        "discoveries": [_discovery_entry(d, uq_data) for d in top_discoveries[:50]],
         "all_results_count": len(all_results),
         "pareto_optimal_discoveries": [
-            {
-                "smiles": d.smiles,
-                "total_score": d.total_score,
-                "homo_eV": d.homo_eV,
-                "lumo_eV": d.lumo_eV,
-                "dielectric_proxy": d.dielectric_proxy,
-                "viscosity_proxy": d.viscosity_proxy,
-                **(
-                    {
-                        "diel_std": uq_data[d.smiles]["diel_std"],
-                        "visc_std": uq_data[d.smiles]["visc_std"],
-                        "uncertainty_weighted_score": round(
-                            uq_data[d.smiles]["uncertainty_weighted_score"], 4
-                        ),
-                    }
-                    if d.smiles in uq_data
-                    else {}
-                ),
-            }
-            for d in sorted(
-                extract_pareto_front(sorted(discoveries, key=lambda r: -r.total_score)[:100]),
-                key=_ucb_sort_key,
-            )
+            {**{"smiles": d.smiles, "total_score": d.total_score}, **(
+                {
+                    "diel_std": uq_data[d.smiles]["diel_std"],
+                    "visc_std": uq_data[d.smiles]["visc_std"],
+                    "uncertainty_weighted_score": round(
+                        uq_data[d.smiles]["uncertainty_weighted_score"], 4
+                    ),
+                }
+                if d.smiles in uq_data
+                else {}
+            )}
+            for d in pareto_front
         ],
     }
 
@@ -190,75 +188,62 @@ def generate_run_summary(
     log.info("Run summary written to %s", path)
 
 
+def _embed_3d(mol: Any, ctx: MoleculeContext) -> None:
+    from rdkit.Chem import AllChem
+    try:
+        mol_3d = AllChem.RWMol(ctx.mol)
+        mol_3d.UpdatePropertyCache()
+        mol_h = AllChem.AddHs(mol_3d)
+        params = AllChem.ETKDGv3()
+        params.randomSeed = 42
+        if AllChem.EmbedMolecule(mol_h, params) == -1:
+            mol.SetProp("3D_embed_failed", "True")
+    except Exception:
+        mol.SetProp("3D_embed_failed", "True")
+
+
+def _set_sdf_properties(mol: Any, r: ScreeningResult) -> None:
+    mol.SetProp("SMILES", r.smiles)
+    mol.SetProp("total_score", f"{r.total_score:.2f}")
+    if r.homo_eV is not None:
+        mol.SetProp("homo_eV", f"{r.homo_eV:.4f}")
+        mol.SetProp("lumo_eV", f"{r.lumo_eV:.4f}")
+        gap = r.lumo_eV - r.homo_eV if r.lumo_eV is not None and r.homo_eV is not None else 0.0
+        mol.SetProp("gap_eV", f"{gap:.4f}")
+    if r.dielectric_proxy is not None:
+        mol.SetProp("dielectric_proxy", f"{r.dielectric_proxy:.4f}")
+    if r.viscosity_proxy is not None:
+        mol.SetProp("viscosity_proxy", f"{r.viscosity_proxy:.4f}")
+    if r.li_solvation_proxy is not None:
+        mol.SetProp("li_solvation_proxy", f"{r.li_solvation_proxy:.4f}")
+    if r.sa_score is not None:
+        mol.SetProp("sa_score", f"{r.sa_score:.4f}")
+    if r.novelty_to_seed is not None:
+        mol.SetProp("novelty_to_seed", f"{r.novelty_to_seed:.4f}")
+    if r.sub_scores:
+        for key, val in r.sub_scores.items():
+            mol.SetProp(f"sub_{key}", f"{val:.4f}")
+
+
 def generate_discoveries_sdf(
     discoveries: list[ScreeningResult],
     path: str = "discoveries.sdf",
     output_dir: str | Path | None = None,
 ) -> None:
-    """Write top-50 discoveries to SDF format with multi-objective properties embedded.
-
-    Each SDF entry includes:
-      - SMILES
-      - total_score
-      - homo_eV, lumo_eV, gap_eV
-      - dielectric_proxy, viscosity_proxy
-      - sa_score (RDKit SA score)
-      - novelty_to_seed
-
-    Args:
-        discoveries: List of discovery ScreeningResult objects.
-        path: Output SDF path.
-        output_dir: Directory to write to.
-    """
     path = _resolve_output_path(path, output_dir)
     log = logging.getLogger("aurelius_agent")
 
     from rdkit import Chem
 
-    from aurelius.types import MoleculeContext
-
     top = sorted(discoveries, key=lambda r: -r.total_score)[:50]
-
     writer = Chem.SDWriter(str(path))
     for r in top:
         ctx = MoleculeContext.from_smiles(r.smiles)
         if ctx is None:
             continue
-        mol = ctx.mol
-
-        from rdkit.Chem import AllChem
-        try:
-            mol_3d = Chem.RWMol(ctx.mol)
-            mol_3d.UpdatePropertyCache()
-            mol_h = Chem.AddHs(mol_3d)
-            params = AllChem.ETKDGv3()
-            params.randomSeed = 42
-            if AllChem.EmbedMolecule(mol_h, params) == -1:
-                mol.SetProp("3D_embed_failed", "True")
-        except Exception:
-            mol.SetProp("3D_embed_failed", "True")
-
-        mol.SetProp("SMILES", r.smiles)
-        mol.SetProp("total_score", f"{r.total_score:.2f}")
-        if r.homo_eV is not None:
-            mol.SetProp("homo_eV", f"{r.homo_eV:.4f}")
-            mol.SetProp("lumo_eV", f"{r.lumo_eV:.4f}")
-            gap = r.lumo_eV - r.homo_eV if r.lumo_eV is not None and r.homo_eV is not None else 0.0
-            mol.SetProp("gap_eV", f"{gap:.4f}")
-        if r.dielectric_proxy is not None:
-            mol.SetProp("dielectric_proxy", f"{r.dielectric_proxy:.4f}")
-        if r.viscosity_proxy is not None:
-            mol.SetProp("viscosity_proxy", f"{r.viscosity_proxy:.4f}")
-        if r.li_solvation_proxy is not None:
-            mol.SetProp("li_solvation_proxy", f"{r.li_solvation_proxy:.4f}")
-        if r.sa_score is not None:
-            mol.SetProp("sa_score", f"{r.sa_score:.4f}")
-        if r.novelty_to_seed is not None:
-            mol.SetProp("novelty_to_seed", f"{r.novelty_to_seed:.4f}")
-        if r.sub_scores:
-            for key, val in r.sub_scores.items():
-                mol.SetProp(f"sub_{key}", f"{val:.4f}")
-        writer.write(mol)
+        _embed_3d(ctx.mol, ctx)
+        _set_sdf_properties(ctx.mol, r)
+        writer.write(ctx.mol)
     writer.close()
     log.info("Discoveries SDF written to %s (%d molecules)", path, len(top))
 

@@ -242,6 +242,49 @@ def agent(
     run_screening(cfg)
 
 
+def _validate_component_smiles(smiles_a: str, smiles_b: str) -> tuple[MoleculeContext, MoleculeContext]:
+    ctx_a = MoleculeContext.from_smiles(smiles_a)
+    ctx_b = MoleculeContext.from_smiles(smiles_b)
+    if ctx_a is None or ctx_b is None:
+        click.echo("Error: Invalid SMILES provided.", err=True)
+        sys.exit(1)
+    return ctx_a, ctx_b
+
+
+def _screen_ternary(pipeline: AureliusPipeline, ctx_a: MoleculeContext, ctx_b: MoleculeContext, smiles_c: str, frac_a: float | None, frac_b: float | None) -> tuple[dict, str]:
+    if frac_a is None or frac_b is None:
+        click.echo("Error: --frac-a and --frac-b required for ternary mixtures", err=True)
+        sys.exit(1)
+    if not (0.0 < frac_a < 1.0 and 0.0 < frac_b < 1.0 and frac_a + frac_b < 1.0):
+        click.echo("Error: frac_a and frac_b must be in (0,1) and sum < 1.0", err=True)
+        sys.exit(1)
+    ctx_c = MoleculeContext.from_smiles(smiles_c)
+    if ctx_c is None:
+        click.echo("Error: Invalid SMILES for third component.", err=True)
+        sys.exit(1)
+    result = pipeline.screen_mixture(ctx_a, ctx_b, frac_a, ctx3=ctx_c, frac2=frac_b)
+    return result, "Ternary Mixture"
+
+
+def _screen_binary(pipeline: AureliusPipeline, ctx_a: MoleculeContext, ctx_b: MoleculeContext, frac: float) -> tuple[dict, str]:
+    if not (0.0 <= frac <= 1.0):
+        click.echo("Error: --frac must be between 0.0 and 1.0", err=True)
+        sys.exit(1)
+    result = pipeline.screen_mixture(ctx_a, ctx_b, frac)
+    return result, "Binary Mixture"
+
+
+def _report_mixture_result(result: dict, label: str) -> None:
+    score = result.get("score", {})
+    mix_props = result.get("mixture_properties", {})
+    click.echo(f"\n{label} Aurelius Score: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
+    click.echo(f"  Synergy Bonus: {mix_props.get('synergy_bonus', 0.0):.4f}")
+    click.echo(f"  Dielectric Proxy: {mix_props.get('dielectric_proxy', 0.0):.2f}")
+    click.echo(f"  Viscosity Proxy:  {mix_props.get('viscosity_proxy', 0.0):.2f}")
+    if not score.get("is_viable", False):
+        sys.exit(1)
+
+
 @cli.command("mixture")
 @click.argument("smiles_a")
 @click.argument("smiles_b")
@@ -256,40 +299,14 @@ def mixture_cmd(smiles_a: str, smiles_b: str, frac: float, smiles_c: str | None,
     Ternary: SMILES_A SMILES_B --smiles-c SMILES_C --frac-a FRAC_A --frac-b FRAC_B
     """
     pipeline = _make_pipeline()
-    ctx_a = MoleculeContext.from_smiles(smiles_a)
-    ctx_b = MoleculeContext.from_smiles(smiles_b)
-    if ctx_a is None or ctx_b is None:
-        click.echo("Error: Invalid SMILES provided.", err=True)
-        sys.exit(1)
+    ctx_a, ctx_b = _validate_component_smiles(smiles_a, smiles_b)
 
     if smiles_c is not None:
-        if frac_a is None or frac_b is None:
-            click.echo("Error: --frac-a and --frac-b required for ternary mixtures", err=True)
-            sys.exit(1)
-        if not (0.0 < frac_a < 1.0 and 0.0 < frac_b < 1.0 and frac_a + frac_b < 1.0):
-            click.echo("Error: frac_a and frac_b must be in (0,1) and sum < 1.0", err=True)
-            sys.exit(1)
-        ctx_c = MoleculeContext.from_smiles(smiles_c)
-        if ctx_c is None:
-            click.echo("Error: Invalid SMILES for third component.", err=True)
-            sys.exit(1)
-        result = pipeline.screen_mixture(ctx_a, ctx_b, frac_a, ctx3=ctx_c, frac2=frac_b)
-        label = "Ternary Mixture"
+        result, label = _screen_ternary(pipeline, ctx_a, ctx_b, smiles_c, frac_a, frac_b)
     else:
-        if not (0.0 <= frac <= 1.0):
-            click.echo("Error: --frac must be between 0.0 and 1.0", err=True)
-            sys.exit(1)
-        result = pipeline.screen_mixture(ctx_a, ctx_b, frac)
-        label = "Binary Mixture"
+        result, label = _screen_binary(pipeline, ctx_a, ctx_b, frac)
 
-    score = result.get("score", {})
-    mix_props = result.get("mixture_properties", {})
-    click.echo(f"\n{label} Aurelius Score: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
-    click.echo(f"  Synergy Bonus: {mix_props.get('synergy_bonus', 0.0):.4f}")
-    click.echo(f"  Dielectric Proxy: {mix_props.get('dielectric_proxy', 0.0):.2f}")
-    click.echo(f"  Viscosity Proxy:  {mix_props.get('viscosity_proxy', 0.0):.2f}")
-    if not score.get("is_viable", False):
-        sys.exit(1)
+    _report_mixture_result(result, label)
 
 
 if __name__ == "__main__":

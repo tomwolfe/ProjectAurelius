@@ -20,13 +20,26 @@ from typing import Any
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Descriptors, rdMolDescriptors
-from scipy.stats import spearmanr
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
+
+
+def _spearmanr(x: np.ndarray, y: np.ndarray) -> tuple[float, float]:
+    n = len(x)
+    x_rank = np.empty(n, dtype=np.float64)
+    y_rank = np.empty(n, dtype=np.float64)
+    for i in range(n):
+        x_rank[i] = 1 + np.sum(x < x[i]) + (np.sum(x == x[i]) - 1) / 2
+        y_rank[i] = 1 + np.sum(y < y[i]) + (np.sum(y == y[i]) - 1) / 2
+    x_diff = x_rank - np.mean(x_rank)
+    y_diff = y_rank - np.mean(y_rank)
+    denom = np.sqrt(np.sum(x_diff ** 2)) * np.sqrt(np.sum(y_diff ** 2))
+    rho = float(np.sum(x_diff * y_diff) / denom) if denom > 0 else 0.0
+    return rho, 0.0
 
 _SURROGATE_HOMO_THRESHOLD: float = -5.0
 _SURROGATE_PENALTY: float = 0.5
@@ -287,7 +300,7 @@ class SurrogateQuantumOracle:
         if len(y_true) < 5:
             return 0.0
 
-        rho, _ = spearmanr(y_true, y_pred)
+        rho, _ = _spearmanr(np.array(y_true, dtype=np.float64), np.array(y_pred, dtype=np.float64))
         return float(rho)
 
     def compute_penalty(self, homo_eV: float, uncertainty_score: float = 0.0) -> float:
