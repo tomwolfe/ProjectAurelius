@@ -18,7 +18,7 @@ from pathlib import Path
 # is set to 30s via AURELIUS_REALITY_WALL_TIME (vs 120s standalone).
 _TIMEOUTS: dict[str, int] = {
     "benchmarks.benchmark_external_validation": 60,
-    "benchmarks.benchmark_reality_check": 120,
+    "benchmarks.benchmark_reality_check": 400,
     "benchmarks.benchmark_mixture_synergy": 30,
 }
 
@@ -27,7 +27,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _BASE_ENV = os.environ.copy()
 _BASE_ENV.setdefault("PYTHONPATH", str(_PROJECT_ROOT / "src"))
 _BASE_ENV["AURELIUS_DOCS_MODE"] = "1"
-_BASE_ENV["AURELIUS_REALITY_WALL_TIME"] = "90"
+_BASE_ENV["AURELIUS_REALITY_WALL_TIME"] = "210"
 
 
 def _capture(module: str) -> str:

@@ -245,6 +245,10 @@ class DiscoveryLoop:
         self.max_wall_time = max_wall_time
         self.wet_lab_feedback = wet_lab_feedback
         self.exploration_beta = exploration_beta
+        self._wall_start: float = 0.0
+
+    def _wall_time_exceeded(self) -> bool:
+        return self._wall_start > 0 and time.time() - self._wall_start > self.max_wall_time
 
     @staticmethod
     def _dict_to_screening(d: dict[str, Any]) -> ScreeningResult:
@@ -264,12 +268,11 @@ class DiscoveryLoop:
         )
 
     def execute(self) -> dict[str, Any]:
-        wall_start = time.time()
+        self._wall_start = time.time()
 
         for generation in range(1, self.max_generations + 1):
-            elapsed = time.time() - wall_start
-            if elapsed > self.max_wall_time:
-                log.info("Time cap reached (%.0fs). Exiting loop.", elapsed)
+            if self._wall_time_exceeded():
+                log.info("Time cap reached (%.0fs). Exiting loop.", time.time() - self._wall_start)
                 break
 
             force_exploration = self.state.has_scaffold_stagnation(2)
@@ -548,6 +551,9 @@ class DiscoveryLoop:
             predict_li_solvation_proxy,
             predict_viscosity_proxy,
         )
+        if self._wall_time_exceeded():
+            return None
+
         from aurelius.scoring.oracle.quantum import QuantumOracle
 
         qo = QuantumOracle()
@@ -771,6 +777,9 @@ class DiscoveryLoop:
         result_map: dict[str, Any] = {}
 
         for ctx in valid_contexts:
+            if self._wall_time_exceeded():
+                log.info("Wall time limit reached — stopping evaluation mid-generation.")
+                break
             processed = self._process_single_candidate(ctx, result_map)
             if processed is None:
                 continue

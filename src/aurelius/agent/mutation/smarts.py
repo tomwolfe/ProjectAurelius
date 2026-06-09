@@ -76,6 +76,16 @@ ELECTROLYTE_SMARTS: list[tuple[str, str]] = [
         "[O:1]1[CH2:2][CH2:3][O:4][CH2:5][CH2:6]1>>[CH3:7][O:1][CH2:2][CH2:3][O:4][CH2:5][CH2:6][CH3:8]",
         "dioxane_ring_opening",
     ),
+    # Scaffold-hopping: ring-closure of dimethyl carbonate to ethylene carbonate
+    ("[CH3:1]OC(=O)O[CH3:2]>>[CH2:1]1OC(=O)O[CH2:2]1", "dimethyl_carbonate_to_ec"),
+    (
+        "[O:1]1[CH2:2][CH2:3][O:4][CH2:5][CH2:6]1>>[Se:1]1[CH2:2][CH2:3][O:4][CH2:5][CH2:6]1",
+        "oxygen_to_selenium_in_dioxane",
+    ),
+    (
+        "[O:1]1[CH2:2][CH2:3][O:4][CH2:5][CH2:6]1>>[S:1](=O)1[CH2:2][CH2:3][O:4][CH2:5][CH2:6]1",
+        "oxygen_to_sulfoxide_in_dioxane",
+    ),
     # General functional group transformations
     # Enables chain elongation and new functionality across seeds
     ("[CH3:1]>>[CH3:1][CH2:2]", "methyl_to_ethyl"),
