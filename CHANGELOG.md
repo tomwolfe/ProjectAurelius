@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.1.4] - 2026-06-08
+
+### Fixed
+- Suppressed RDKit C++ `std::cerr` output during mutation hot loops (SMARTS reactions, BRICS build/decompose) via OS-level stderr redirection to `/dev/null`. The mutation engine routinely generates invalid intermediates (pentavalent C, trivalent O) that RDKit reports to C++ stderr — these are expected and safely filtered by `SanitizeMol`/`is_valid_electrolyte_mol`, but the 1000s of messages flooded stderr, slowed the pipeline by ~10×, and caused `benchmark_reality_check` to timeout at ≥180s. After fix: clean output, benchmark completes in ~33s (docs mode), +31.3 score gap (vs +22.7), and 100.0% novel scaffold ratio (vs 88.2%) under 60s wall time.
+
+### Changed
+- Replaced hardcoded Table 2 in `paper/manuscript.md` with a Single-Source-of-Truth reference to `docs/benchmarks.md`.
+- Auto-regened `docs/benchmarks.md` via `scripts/update_benchmark_docs.py` with live metrics.
+
 ## [10.1.3] - 2026-06-07
 
 ### Fixed

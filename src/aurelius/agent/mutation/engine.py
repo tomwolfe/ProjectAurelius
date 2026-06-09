@@ -14,12 +14,37 @@ to ``FragmentHarvester`` for single-responsibility separation.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 from typing import Any
 
 import numpy as np
-from rdkit import Chem
+from rdkit import Chem, rdBase
 from rdkit.Chem import BRICS, AllChem
+
+# Suppress RDKit C++ stderr (valence warnings, parser errors) during mutation.
+# These messages are printed via std::cerr, not the RDKit logging system, so
+# rdBase.DisableLog is insufficient. We redirect stderr to /dev/null only in
+# the mutation hot loops where invalid intermediates are expected.
+rdBase.DisableLog('rdApp.error')
+rdBase.DisableLog('rdApp.warning')
+rdBase.DisableLog('rdApp.info')
+rdBase.DisableLog('rdApp.debug')
+
+
+@contextlib.contextmanager
+def _suppress_stderr():
+    """Redirect stderr to /dev/null for the duration of the block."""
+    stderr_fd = os.dup(2)
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull, 2)
+    try:
+        yield
+    finally:
+        os.dup2(stderr_fd, 2)
+        os.close(devnull)
+        os.close(stderr_fd)
 
 from aurelius.agent.mutation.brics import (
     MIN_GROUNDING_SCORE,
@@ -282,11 +307,12 @@ class MutationEngine:
             rxns = sorted(rxns, key=lambda r: _mean_score(r[1]), reverse=True)
         for rxn, name in rxns:
             try:
-                for product_tuple in rxn.RunReactants((ctx.mol,)):
-                    for product in product_tuple:
-                        p_smi = self._process_smarts_product(product, ctx.smiles, reaction_name=name, force_exploration=force_exploration)
-                        if p_smi:
-                            results.append(p_smi)
+                with _suppress_stderr():
+                    for product_tuple in rxn.RunReactants((ctx.mol,)):
+                        for product in product_tuple:
+                            p_smi = self._process_smarts_product(product, ctx.smiles, reaction_name=name, force_exploration=force_exploration)
+                            if p_smi:
+                                results.append(p_smi)
             except Exception:
                 logger.debug("SMARTS reaction '%s' failed for %s", name, ctx.smiles)
         return list(set(results))
@@ -314,10 +340,11 @@ class MutationEngine:
             if ctx is None or ctx.mw > 250 or ctx.hbd > 0:
                 continue
             try:
-                for fs in BRICS.BRICSDecompose(ctx.mol):
-                    frag_ctx = MoleculeContext.from_brics_fragment(fs)
-                    if frag_ctx is not None:
-                        frags.append(frag_ctx.mol)
+                with _suppress_stderr():
+                    for fs in BRICS.BRICSDecompose(ctx.mol):
+                        frag_ctx = MoleculeContext.from_brics_fragment(fs)
+                        if frag_ctx is not None:
+                            frags.append(frag_ctx.mol)
             except Exception:
                 continue
         return frags
@@ -338,7 +365,8 @@ class MutationEngine:
 
     def _collect_brics_fragments(self, ctx: MoleculeContext, force_exploration: bool) -> list[Chem.Mol]:
         try:
-            seed_frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
+            with _suppress_stderr():
+                seed_frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
         except Exception:
             return []
         seed_frags: list[Chem.Mol] = []
@@ -387,10 +415,11 @@ class MutationEngine:
         for idx in indices:
             try:
                 i, j = valid_pairs[idx]
-                for r_mol in BRICS.BRICSBuild([all_frags[i], all_frags[j]]):
-                    s = self._validate_brics_product(r_mol, force_exploration=force_exploration)
-                    if s:
-                        generated.append(s)
+                with _suppress_stderr():
+                    for r_mol in BRICS.BRICSBuild([all_frags[i], all_frags[j]]):
+                        s = self._validate_brics_product(r_mol, force_exploration=force_exploration)
+                        if s:
+                            generated.append(s)
             except Exception:
                 continue
         return generated
