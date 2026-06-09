@@ -307,9 +307,12 @@ def _compute_brics_depth(mol: Chem.Mol, max_iter: int = 5) -> int:
         core_ctx = MoleculeContext.from_smiles(core_smi)
         if core_ctx is None:
             return current_depth
+        n_core = core_ctx.mol.GetNumHeavyAtoms()
         for bb in _BB_MOLS:
-            if core_ctx.mol.HasSubstructMatch(bb) or bb.HasSubstructMatch(core_ctx.mol):
-                return current_depth
+            if bb.HasSubstructMatch(core_ctx.mol):
+                n_bb = bb.GetNumHeavyAtoms()
+                if abs(n_core - n_bb) <= 2:
+                    return current_depth
         try:
             sub_frags = list(BRICS.BRICSDecompose(core_ctx.mol))
         except Exception:
@@ -322,6 +325,10 @@ def _compute_brics_depth(mol: Chem.Mol, max_iter: int = 5) -> int:
             if d > max_d:
                 max_d = d
         return max_d
+
+    for bb in _BB_MOLS:
+        if bb.HasSubstructMatch(mol):
+            return 0
 
     try:
         frags = list(BRICS.BRICSDecompose(mol))

@@ -141,16 +141,19 @@ class PropertyOracle:
         return qr["homo_eV"], qr["lumo_eV"], gap, "TOM (Topological Orbital Model)", qr.get("quantum_confidence", "tom_low")
 
     def _compute_uq_penalty(self, ctx: MoleculeContext) -> float:
-        """Compute GC uncertainty penalty."""
+        """Compute GC uncertainty penalty — graded by number of flagged properties."""
         if self._gc_uq is None:
             return 1.0
         try:
             _diel_mean, diel_std, _ = self._gc_uq.predict_dielectric(ctx)
             _visc_mean, visc_std, _ = self._gc_uq.predict_viscosity(ctx)
+            n_flags = 0
             if diel_std > max(1.0, abs(_diel_mean)) * _UQ_THRESHOLD_FRACTION:
-                return _UQ_PENALTY
+                n_flags += 1
             if visc_std > max(1.0, abs(_visc_mean)) * _UQ_THRESHOLD_FRACTION:
-                return _UQ_PENALTY
+                n_flags += 1
+            if n_flags > 0:
+                return _UQ_PENALTY ** n_flags
         except Exception:
             logger.debug("GC UQ unavailable")
         return 1.0

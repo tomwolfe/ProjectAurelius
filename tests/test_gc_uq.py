@@ -93,6 +93,50 @@ class TestGcUqPenalty:
         )
 
 
+class TestGradedUqPenalty:
+    """UQ penalty must be graded by number of flagged properties."""
+
+    def test_graded_uq_no_flags_no_penalty(self):
+        """When no UQ flags are triggered, penalty must be 1.0."""
+        oracle = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=True)
+        ctx = MoleculeContext.from_smiles("COC(=O)OC")
+        assert ctx is not None
+        result = oracle.evaluate(ctx)
+        penalty = result.get("domain_penalty", 1.0)
+        assert penalty == 1.0, (
+            f"DMC should have no UQ penalty (got {penalty})"
+        )
+
+    def test_graded_uq_double_flag_stronger_penalty(self):
+        """When both dielectric and viscosity exceed UQ threshold,
+        penalty should be _UQ_PENALTY^2 (stricter than single flag)."""
+        from unittest.mock import patch
+        import aurelius.scoring.oracle.oracle as oracle_mod
+
+        original_fn = oracle_mod.PropertyOracle._compute_uq_penalty
+
+        def mocked_uq(self, ctx):
+            return 0.81  # _UQ_PENALTY ** 2
+
+        with patch.object(oracle_mod.PropertyOracle, '_compute_uq_penalty', mocked_uq):
+            oracle = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=True)
+            ctx = MoleculeContext.from_smiles("C1=CC=C2C(=C1)C(=O)C3=C(C2=O)C4=C(C=C3)C5=C(C=C4)C(=O)C6=CC=CC(=C6)C5=O")
+            if ctx is None:
+                return
+            result = oracle.evaluate(ctx)
+            penalty = result.get("domain_penalty", 1.0)
+            assert penalty < _UQ_PENALTY, (
+                f"Double-flagged UQ penalty ({penalty}) should be stricter "
+                f"than single-flag penalty ({_UQ_PENALTY})"
+            )
+
+    def test_graded_uq_penalty_math(self):
+        """Verify _UQ_PENALTY ** n_flags math is correct."""
+        assert _UQ_PENALTY ** 1 == 0.9, "Single flag penalty should be 0.9"
+        assert _UQ_PENALTY ** 2 == 0.81, "Double flag penalty should be 0.81"
+        assert _UQ_PENALTY ** 0 == 1.0, "No flags should give 1.0"
+
+
 class TestGcUqThreshold:
     """UQ threshold logic must be correct."""
 

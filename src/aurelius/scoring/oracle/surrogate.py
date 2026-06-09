@@ -239,7 +239,6 @@ class SurrogateQuantumOracle:
         _inference_ms = (time.perf_counter() - t0) * 1000
 
         # Epistemic uncertainty: std dev across individual tree predictions
-        homo_preds = self._homo_model.estimators_[0].predict(fv)  # type: ignore[union-attr]
         uncertainty_score = float(
             np.std([tree.predict(fv)[0] for tree in self._homo_model.estimators_], axis=0),
         )
