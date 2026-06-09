@@ -30,9 +30,9 @@
   │ HOMO                 │   56        │ +0.8567  │ 0.0000 *** │
   │   top: Anisole                   pred=-3.742 exp=-4.244 │
   │   bot: Bis(trifluoromethyl) sulfone pred=-10.580 exp=-10.580 │
-  │ LUMO                 │   56        │ +0.6003  │ 0.0000 *** │
-  │   top: THF                       pred=1.388 exp=1.500 │
-  │   bot: Methyl phenyl sulfone     pred=-2.452 exp=-2.452 │
+  │ LUMO                 │   56        │ +0.5986  │ 0.0000 *** │
+  │   top: THF                       pred=1.340 exp=1.500 │
+  │   bot: Methyl phenyl sulfone     pred=-2.596 exp=-2.452 │
   └──────────────────────┴────────────┴──────────┴───────────┘
 
   Significance: * p<0.05  ** p<0.01  *** p<0.001
@@ -51,23 +51,23 @@
   [1/4] Screening known commercial electrolytes...
          Known electrolytes: 51 molecules, 35 unique scaffolds
 
-         Known set mean Aurelius Score: 47.36
+         Known set mean Aurelius Score: 47.58
 
   [2/4] Running 5-generation discovery loop...
-         Done in 33.7s
-         Total screened: 7
+         Done in 112.9s
+         Total screened: 14
 
   [3/4] Analyzing top discoveries...
-         Top 50 discoveries: mean score=70.02
-         Unique scaffolds in top 50: 34
-         Novel scaffolds (not in known set): 30 (88.2%)
+         Top 50 discoveries: mean score=77.83
+         Unique scaffolds in top 50: 31
+         Novel scaffolds (not in known set): 31 (100.0%)
 
   [4/4] Verifying assertions...
 
-         Score gap: top discoveries (70.02) - known (47.36) = +22.66
+         Score gap: top discoveries (77.83) - known (47.58) = +30.25
          PASSED: Discoveries score higher than known commercial set.
 
-         Novel scaffold ratio: 88.2% (target >80%)
+         Novel scaffold ratio: 100.0% (target >80%)
          PASSED: >80% of top discoveries have novel scaffolds.
 
 =================================================================

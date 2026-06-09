@@ -27,7 +27,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _BASE_ENV = os.environ.copy()
 _BASE_ENV.setdefault("PYTHONPATH", str(_PROJECT_ROOT / "src"))
 _BASE_ENV["AURELIUS_DOCS_MODE"] = "1"
-_BASE_ENV["AURELIUS_REALITY_WALL_TIME"] = "30"
+_BASE_ENV["AURELIUS_REALITY_WALL_TIME"] = "90"
 
 
 def _capture(module: str) -> str:

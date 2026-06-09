@@ -677,11 +677,12 @@ def _apply_heteroatom_perturbations(n_ew: int, n_ed: int, homo: float, lumo: flo
     """Apply Hueckel-like heteroatom corrections to HOMO/LUMO.
 
     Electron-withdrawing groups stabilise both orbitals; electron-donating
-    groups destabilise. EW coefficient -0.32, LUMO EW scaling 0.35 (HOMO-biased).
+    groups destabilise. EW coefficient -0.32, LUMO EW scaling 0.50 (strengthened
+    from 0.35 per ADR-2026-06-08 to better capture LUMO-lowering of EW groups).
     """
     ew_shift = -0.32 * n_ew
     ed_shift = 0.12 * n_ed
-    return homo + ew_shift + ed_shift, lumo + ew_shift * 0.35 + ed_shift * 0.5
+    return homo + ew_shift + ed_shift, lumo + ew_shift * 0.50 + ed_shift * 0.5
 
 
 def _apply_fluorine_correction(mol: Chem.Mol, homo: float, lumo: float) -> tuple[float, float]:
@@ -702,13 +703,16 @@ def _apply_aromatic_stabilization(mol: Chem.Mol, homo: float, lumo: float) -> tu
 
 
 def _apply_nitrile_correction(mol: Chem.Mol, lumo: float) -> float:
-    """Apply nitrile C≡N π* LUMO lowering (-0.70 eV per nitrile).
+    """Apply nitrile C≡N π* LUMO lowering (-0.70 eV per nitrile, max -1.40 eV).
 
     Physical basis: The C≡N π* orbital is ~0.7-1.0 eV lower than the general
-    N perturbation predicts.
+    N perturbation predicts. Capped at 2 nitrile groups per ADR-2026-06-08:
+    additional nitriles beyond 2 contribute diminishing returns due to
+    orbital localisation on the first-reduced C≡N.
     """
     n_nitrile = len(mol.GetSubstructMatches(NITRILE_PATTERN))
-    return lumo + -0.70 * n_nitrile
+    shift = min(n_nitrile, 2) * -0.70
+    return lumo + shift
 
 
 def _apply_phosphate_correction(mol: Chem.Mol, homo: float) -> float:
@@ -726,7 +730,8 @@ def _apply_sigma_star_correction(mol: Chem.Mol, L: int, lumo: float) -> float:
 
     Physical basis: S=O and P=O bonds have low-lying σ* orbitals from d-orbital
     participation that lower LUMO by 0.3-0.7 eV. Applied only for L<3 where the
-    LUMO is σ* (not π*) character.
+    LUMO is σ* (not π*) character. Molecules with extended conjugation (L>=3) have
+    a π* LUMO that dominates, so the σ* correction would be physically incorrect.
     """
     if L >= 3:
         return lumo

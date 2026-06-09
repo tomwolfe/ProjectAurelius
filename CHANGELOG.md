@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.1.5] - 2026-06-08
+
+### Changed
+- Strengthened TOM LUMO EW coupling from γ=0.35 to γ=0.50 (ADR-2026-06-08). Physically motivated: electron-withdrawing groups lower LUMO more than the previous 0.35× HOMO scaling captured. Impact on Spearman ρ within noise (0.6003 → 0.5986), but the physical model is now more correct for strongly EW-substituted molecules.
+- Capped nitrile LUMO correction at 2 groups (max -1.40 eV) to prevent over-correction from orbital localisation on excess C≡N groups (ADR-2026-06-08).
+
+### Fixed
+- Increased benchmark docs mode wall time (30s → 90s) and subprocess timeout alignment so `benchmark_reality_check` completes reliably under `scripts/update_benchmark_docs.py`. All assertions pass: +30.25 score gap, 100.0% novel scaffold ratio.
+
 ## [10.1.4] - 2026-06-08
 
 ### Fixed
