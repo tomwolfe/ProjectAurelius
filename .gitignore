@@ -53,9 +53,6 @@ env/
 models/
 *.npy
 
-# Certification lab secrets (never commit)
-certification-lab/*.secret
-certification-lab/*.key
 **/aurelius_kernel.json
 
 # Outputs and research archives
