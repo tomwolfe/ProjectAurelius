@@ -1,0 +1,108 @@
+[
+  {
+    "smiles": "FCCOC(=O)OC",
+    "total_score": 59.227688562034366,
+    "is_viable": false,
+    "sigma": 59.586942195892334,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.25802951633332,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 59.2 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "CS(=O)(=O)C",
+    "total_score": 56.60019307450334,
+    "is_viable": false,
+    "sigma": 50.852495431900024,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.22222222466666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 56.6 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "N#CCCC#N",
+    "total_score": 56.96873928224921,
+    "is_viable": false,
+    "sigma": 52.05711126327515,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.25802951633332,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 57.0 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(F)(F)F",
+    "total_score": 59.07952961440761,
+    "is_viable": false,
+    "sigma": 59.10501480102539,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.240125870499991,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 59.1 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "CCOC(=O)OC(C)(C)C",
+    "total_score": 57.909093152641056,
+    "is_viable": false,
+    "sigma": 55.1916241645813,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.25802951633332,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 57.9 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OCC(F)(F)F",
+    "total_score": 57.63005221998572,
+    "is_viable": false,
+    "sigma": 54.26148772239685,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.25802951633332,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 57.6 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "C1COC(=O)O1",
+    "total_score": 27.9,
+    "is_viable": false,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "CC(C)OC(=O)OC(C)C",
+    "total_score": 57.88255716478705,
+    "is_viable": false,
+    "sigma": 55.10317087173462,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.25802951633332,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 57.9 < threshold 65.0"
+    ]
+  }
+]

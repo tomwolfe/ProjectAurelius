@@ -1,0 +1,314 @@
+[
+  {
+    "smiles": "COC(=O)OCC=C",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(F)C=C",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(F)=CF",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)C(F)=C(F)F",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "FCC(F)(F)S(=O)(=O)OC=C",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(F)=C(F)C(F)(F)F",
+    "sei_homogeneity_raw": 0.11297777779999996,
+    "sei_homogeneity_scaled": 11.297777779999995,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "B1OB(OB(OCC(F)F)(OCC(F)F))O1",
+    "sei_homogeneity_raw": 0.5361777778000001,
+    "sei_homogeneity_scaled": 53.61777778000001,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OB1OC(C(F)F)(OCC(F)F)O1",
+    "sei_homogeneity_raw": 0.12151111113333324,
+    "sei_homogeneity_scaled": 12.151111113333323,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "N#CCS(=O)(=O)C",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "N#CCS(=O)(=O)CC#N",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "N#CC(F)S(=O)(=O)C",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "N#CCOC(=O)OC(F)S(=O)(=O)C",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "N#CCS(=O)(=O)C(F)(F)F",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "N#CCOCCS(=O)(=O)CC#N",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OCC(F)F",
+    "sei_homogeneity_raw": 0.11137777779999991,
+    "sei_homogeneity_scaled": 11.137777779999992,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(C)(F)F",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "CCOC(=O)OCC(F)F",
+    "sei_homogeneity_raw": 0.11137777779999991,
+    "sei_homogeneity_scaled": 11.137777779999992,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "CCOC(=O)OC(F)F",
+    "sei_homogeneity_raw": 0.11137777779999991,
+    "sei_homogeneity_scaled": 11.137777779999992,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(F)(F)C(F)(F)F",
+    "sei_homogeneity_raw": 0.19724444446666656,
+    "sei_homogeneity_scaled": 19.724444446666656,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OCC(F)(F)C(F)F",
+    "sei_homogeneity_raw": 0.12497777779999997,
+    "sei_homogeneity_scaled": 12.497777779999996,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC=C(F)F",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(F)=C(F)C(F)(F)C(F)(F)F",
+    "sei_homogeneity_raw": 0.12364444446666667,
+    "sei_homogeneity_scaled": 12.364444446666667,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(F)(F)F",
+    "sei_homogeneity_raw": 0.11217777780000004,
+    "sei_homogeneity_scaled": 11.217777780000004,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(F)F",
+    "sei_homogeneity_raw": 0.11137777779999991,
+    "sei_homogeneity_scaled": 11.137777779999992,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "CCOC(=O)OC(F)(F)F",
+    "sei_homogeneity_raw": 0.11377777779999987,
+    "sei_homogeneity_scaled": 11.377777779999986,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  },
+  {
+    "smiles": "CC(=O)OC(F)(F)F",
+    "sei_homogeneity_raw": 0.11191111113333341,
+    "sei_homogeneity_scaled": 11.19111111333334,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ]
+  }
+]

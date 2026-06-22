@@ -1,0 +1,321 @@
+[
+  {
+    "smiles": "COC(=O)OC(F)(F)C(F)(F)F",
+    "sei_homogeneity_raw": 0.19724444446666656,
+    "sei_homogeneity_scaled": 19.724444446666656,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.25,
+      "delta_salt": -0.2,
+      "delta_poly": -0.1
+    },
+    "descriptor_num_f": 5,
+    "descriptor_num_unsat": 1,
+    "descriptor_logp": 1.9244999999999999
+  },
+  {
+    "smiles": "COC(=O)OC(F)(F)F",
+    "sei_homogeneity_raw": 0.11217777780000004,
+    "sei_homogeneity_scaled": 11.217777780000004,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.15000000000000002,
+      "delta_salt": -0.2,
+      "delta_poly": -0.1
+    },
+    "descriptor_num_f": 3,
+    "descriptor_num_unsat": 1,
+    "descriptor_logp": 1.2892000000000001
+  },
+  {
+    "smiles": "CCOC(=O)OC(F)(F)F",
+    "sei_homogeneity_raw": 0.11377777779999987,
+    "sei_homogeneity_scaled": 11.377777779999986,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.15000000000000002,
+      "delta_salt": -0.2,
+      "delta_poly": -0.1
+    },
+    "descriptor_num_f": 3,
+    "descriptor_num_unsat": 1,
+    "descriptor_logp": 1.6793000000000002
+  },
+  {
+    "smiles": "COC(=O)OC(F)F",
+    "sei_homogeneity_raw": 0.11137777779999991,
+    "sei_homogeneity_scaled": 11.137777779999992,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.1,
+      "delta_salt": -0.2,
+      "delta_poly": -0.1
+    },
+    "descriptor_num_f": 2,
+    "descriptor_num_unsat": 1,
+    "descriptor_logp": 0.992
+  },
+  {
+    "smiles": "CCOC(=O)OCC(F)F",
+    "sei_homogeneity_raw": 0.11137777779999991,
+    "sei_homogeneity_scaled": 11.137777779999992,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.1,
+      "delta_salt": -0.2,
+      "delta_poly": -0.1
+    },
+    "descriptor_num_f": 2,
+    "descriptor_num_unsat": 1,
+    "descriptor_logp": 1.4246
+  },
+  {
+    "smiles": "COC(=O)OCC(F)F",
+    "sei_homogeneity_raw": 0.11137777779999991,
+    "sei_homogeneity_scaled": 11.137777779999992,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.1,
+      "delta_salt": -0.2,
+      "delta_poly": -0.1
+    },
+    "descriptor_num_f": 2,
+    "descriptor_num_unsat": 1,
+    "descriptor_logp": 1.0345
+  },
+  {
+    "smiles": "O1B(OCC(F)F)(OCC)OC1",
+    "error": "Invalid SMILES"
+  },
+  {
+    "smiles": "COC(=O)OB1OC(C)(OCC(F)F)O1",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.1,
+      "delta_salt": -0.2,
+      "delta_poly": -0.1
+    },
+    "descriptor_num_f": 2,
+    "descriptor_num_unsat": 1,
+    "descriptor_logp": 0.7565
+  },
+  {
+    "smiles": "F[B](F)(F)",
+    "sei_homogeneity_raw": 0.19137777779999998,
+    "sei_homogeneity_scaled": 19.137777779999997,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.15000000000000002,
+      "delta_salt": -0.2,
+      "delta_poly": 0.0
+    },
+    "descriptor_num_f": 3,
+    "descriptor_num_unsat": 0,
+    "descriptor_logp": 0.8798
+  },
+  {
+    "smiles": "COC(=O)OC(F)(C(F)F)F",
+    "sei_homogeneity_raw": 0.12151111113333324,
+    "sei_homogeneity_scaled": 12.151111113333323,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.2,
+      "delta_salt": -0.2,
+      "delta_poly": -0.1
+    },
+    "descriptor_num_f": 4,
+    "descriptor_num_unsat": 1,
+    "descriptor_logp": 1.6273
+  },
+  {
+    "smiles": "COC(=O)OCC(F)(F)F",
+    "sei_homogeneity_raw": 0.11377777779999987,
+    "sei_homogeneity_scaled": 11.377777779999986,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.15000000000000002,
+      "delta_salt": -0.2,
+      "delta_poly": -0.1
+    },
+    "descriptor_num_f": 3,
+    "descriptor_num_unsat": 1,
+    "descriptor_logp": 1.3317
+  },
+  {
+    "smiles": "CCOC(=O)OC(F)F",
+    "sei_homogeneity_raw": 0.11137777779999991,
+    "sei_homogeneity_scaled": 11.137777779999992,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.1,
+      "delta_salt": -0.2,
+      "delta_poly": -0.1
+    },
+    "descriptor_num_f": 2,
+    "descriptor_num_unsat": 1,
+    "descriptor_logp": 1.3821
+  },
+  {
+    "smiles": "COC(=O)OCC=C",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": 0.0,
+      "delta_salt": -0.2,
+      "delta_poly": -0.2
+    },
+    "descriptor_num_f": 0,
+    "descriptor_num_unsat": 2,
+    "descriptor_logp": 0.9554
+  },
+  {
+    "smiles": "COC(=O)OC(F)C=C",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.05,
+      "delta_salt": -0.2,
+      "delta_poly": -0.2
+    },
+    "descriptor_num_f": 1,
+    "descriptor_num_unsat": 2,
+    "descriptor_logp": 1.251
+  },
+  {
+    "smiles": "COC(=O)C(F)=C(F)F",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.15000000000000002,
+      "delta_salt": 0.0,
+      "delta_poly": -0.2
+    },
+    "descriptor_num_f": 3,
+    "descriptor_num_unsat": 2,
+    "descriptor_logp": 1.2369999999999999
+  },
+  {
+    "smiles": "FCC(F)(F)S(=O)(=O)OC=C",
+    "sei_homogeneity_raw": 0.11111111113333327,
+    "sei_homogeneity_scaled": 11.111111113333328,
+    "thickness": 50.0,
+    "components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "electronic_insulation": true,
+    "ea_shifts": {
+      "delta_solvent": -0.15000000000000002,
+      "delta_salt": 0.0,
+      "delta_poly": -0.30000000000000004
+    },
+    "descriptor_num_f": 3,
+    "descriptor_num_unsat": 3,
+    "descriptor_logp": 1.0386000000000002
+  }
+]

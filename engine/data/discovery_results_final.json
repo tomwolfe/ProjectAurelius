@@ -1,0 +1,1822 @@
+[
+  {
+    "smiles": "C(F)(F)S(=O)(=O)CCOCC(F)(F)F",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CCOCCOCCOCCO",
+    "total_score": 58.6475214274315,
+    "sigma": 57.6769232749939,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 58.6 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 58.6 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.576769232749939,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.2669169993605465,
+      "tier2_ms": 96.07312500156695,
+      "tier3_ms": 168.41454100358533
+    }
+  },
+  {
+    "smiles": "O=C(OC(F)=C(F)C(F)(F)F)OC(F)=C(F)C(F)(F)F",
+    "total_score": 57.112239292421734,
+    "sigma": 52.55931615829468,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.22222222466666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.1 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.1 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5255931615829468,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333327,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.7266249962849542,
+      "tier2_ms": 15.832624994800426,
+      "tier3_ms": 169.07508300209884
+    }
+  },
+  {
+    "smiles": "CCOC(=O)OC",
+    "total_score": 65.38792213912686,
+    "sigma": 57.35955238342285,
+    "desolvation": 100.0,
+    "sei_homogeneity": 46.4002821205,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": true,
+    "rejection_reasons": [],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [],
+    "tier1_confidence": 0.5735955238342285,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.42182074655,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.290917000209447,
+      "tier2_ms": 15.612957999110222,
+      "tier3_ms": 161.0945830034325
+    }
+  },
+  {
+    "smiles": "CCP(=O)(CC)C",
+    "total_score": 57.368626287737285,
+    "sigma": 53.413939476013184,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.4 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.4 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5341393947601318,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.5409169975318946,
+      "tier2_ms": 15.60566700209165,
+      "tier3_ms": 157.36966699478216
+    }
+  },
+  {
+    "smiles": "CS(=O)(=O)CCOC",
+    "total_score": 67.59146868868788,
+    "sigma": 53.47713232040405,
+    "desolvation": 100.0,
+    "sei_homogeneity": 63.241644962833334,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": true,
+    "rejection_reasons": [],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [],
+    "tier1_confidence": 0.5347713232040405,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.5749240451166666,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.6181249995715916,
+      "tier2_ms": 15.224666996800806,
+      "tier3_ms": 162.4916669970844
+    }
+  },
+  {
+    "smiles": "C(F)(F)S(=O)(=O)C(F)(F)F",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "N#CC(F)(F)C(F)(F)CN",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "COC(=O)OCC=C",
+    "total_score": 65.43478903289517,
+    "sigma": 56.29832744598389,
+    "desolvation": 100.0,
+    "sei_homogeneity": 48.2264539955,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": true,
+    "rejection_reasons": [],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [],
+    "tier1_confidence": 0.5629832744598389,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.43842230905,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.3950839968165383,
+      "tier2_ms": 15.870458002609666,
+      "tier3_ms": 160.74400000070455
+    }
+  },
+  {
+    "smiles": "COC(=O)OB1OC(C)(OCC(F)F)O1",
+    "total_score": 57.95762206232428,
+    "sigma": 55.17435073852539,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.52658420383332,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 58.0 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 58.0 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5517435073852539,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11387803821666653,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.624958004162181,
+      "tier2_ms": 15.396415998111479,
+      "tier3_ms": 170.28679200302577
+    }
+  },
+  {
+    "smiles": "COC(F)(C(F)F)C(F)(F)F",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "O=C1OC(C(F)(F)F)CC1",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CCOCCOC(C)C",
+    "total_score": 57.735466650286114,
+    "sigma": 54.63674068450928,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.7 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.7 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5463674068450928,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.3118749959394336,
+      "tier2_ms": 15.37287500104867,
+      "tier3_ms": 160.46662499866216
+    }
+  },
+  {
+    "smiles": "CCCC1OC(=O)CC1",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CC(F)(F)C(F)(F)CN",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "COC(=O)OC(F)C=C",
+    "total_score": 59.982685139933025,
+    "sigma": 60.69517731666565,
+    "desolvation": 100.0,
+    "sei_homogeneity": 14.370659724666663,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 60.0 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 60.0 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.6069517731666565,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.13064236113333327,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.150250002159737,
+      "tier2_ms": 15.752749997773208,
+      "tier3_ms": 170.9085420006886
+    }
+  },
+  {
+    "smiles": "FC(F)C(F)(OC(F)(C(F)F)C(F)(F)F)C(F)(F)F",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CCP(=O)(OC)C",
+    "total_score": 57.61954245086392,
+    "sigma": 54.23839092254639,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.240125870500002,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.6 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.6 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5423839092254639,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11127387155000001,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.509625002858229,
+      "tier2_ms": 15.24658400012413,
+      "tier3_ms": 157.65912500501145
+    }
+  },
+  {
+    "smiles": "CCOCCOC",
+    "total_score": 57.6337662251381,
+    "sigma": 54.29773926734924,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.6 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.6 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5429773926734924,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.5536249959259294,
+      "tier2_ms": 15.504707997024525,
+      "tier3_ms": 157.88004199566785
+    }
+  },
+  {
+    "smiles": "CC(=O)OC(F)(F)F",
+    "total_score": 57.60006337479631,
+    "sigma": 54.18539643287659,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.22222222466666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.6 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.6 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5418539643287659,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333327,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.6339169999118894,
+      "tier2_ms": 15.94370900420472,
+      "tier3_ms": 168.63416699925438
+    }
+  },
+  {
+    "smiles": "CCCCOC(=O)OCCCC",
+    "total_score": 58.41387598828355,
+    "sigma": 56.89810514450073,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 58.4 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 58.4 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5689810514450073,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.349874994251877,
+      "tier2_ms": 18.620750000991393,
+      "tier3_ms": 172.29312500421656
+    }
+  },
+  {
+    "smiles": "O=C(OC(F)(F)F)OC(F)(F)F",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "COC(=O)OC(F)(F)C(F)(F)F",
+    "total_score": 57.56954162434617,
+    "sigma": 54.08365726470947,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.22222222466666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.6 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.6 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5408365726470947,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333327,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.547832998970989,
+      "tier2_ms": 15.74537499982398,
+      "tier3_ms": 171.1312910047127
+    }
+  },
+  {
+    "smiles": "CCP(=O)(OC)CC",
+    "total_score": 56.920044711389934,
+    "sigma": 51.91866755485535,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 56.9 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 56.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5191866755485535,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.515207997930702,
+      "tier2_ms": 15.373374997579958,
+      "tier3_ms": 158.98608300631167
+    }
+  },
+  {
+    "smiles": "N#CCS(=O)(=O)C",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CCOCOCOC",
+    "total_score": 57.187630823412334,
+    "sigma": 52.81062126159668,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.2 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.2 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5281062126159668,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.12291599746095,
+      "tier2_ms": 15.890417002083268,
+      "tier3_ms": 167.86470800434472
+    }
+  },
+  {
+    "smiles": "CC1CC(O)C1",
+    "total_score": 56.39634340123216,
+    "sigma": 50.172996520996094,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 56.4 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 56.4 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5017299652099609,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.332667005248368,
+      "tier2_ms": 16.82262500253273,
+      "tier3_ms": 172.19474999728845
+    }
+  },
+  {
+    "smiles": "COCC(F)F",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CC(C)OCC(C)O",
+    "total_score": 58.537380984583294,
+    "sigma": 57.30978846549988,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 58.5 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 58.5 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5730978846549988,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 1.8602909985929728,
+      "tier2_ms": 16.188290996069554,
+      "tier3_ms": 173.15579099522438
+    }
+  },
+  {
+    "smiles": "B1OB(OB(OCC(F)F)(OCC(F)F))O1",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CC(C)(C)OP(=O)(OC(C)(C)C)[Si](C)(C)C",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CS(=O)(=O)CC(F)(F)F",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "C1CCOC1",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "C1COCCOCCOCCOCCO1",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "C1COCOC1",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CC1CCOC(F)C1",
+    "total_score": 56.704572132387554,
+    "sigma": 51.20042562484741,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 56.7 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 56.7 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5120042562484741,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.048999995167833,
+      "tier2_ms": 14.615334002883174,
+      "tier3_ms": 159.6909170038998
+    }
+  },
+  {
+    "smiles": "N#CCS(=O)(=O)CCOCCS(=O)(=O)CC#N",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "C(F)(F)CC1CCOC1",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "COC(=O)OC(F)=C(F)C(F)(F)F",
+    "total_score": 57.57620065526048,
+    "sigma": 54.10585403442383,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.22222222466666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.6 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.6 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5410585403442383,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333327,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.2265410007094033,
+      "tier2_ms": 19.051500006753486,
+      "tier3_ms": 173.02304100303445
+    }
+  },
+  {
+    "smiles": "CCOP(C)CC",
+    "total_score": 57.058366230287945,
+    "sigma": 52.37973928451538,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.1 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.1 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5237973928451538,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.414833004877437,
+      "tier2_ms": 15.416875001392327,
+      "tier3_ms": 158.98529100377345
+    }
+  },
+  {
+    "smiles": "C1N(C)CP(C)CP(C)C1",
+    "total_score": 57.72723405674974,
+    "sigma": 54.60929870605469,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.7 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.7 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5460929870605469,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.31658299890114,
+      "tier2_ms": 15.652665999368764,
+      "tier3_ms": 160.49120900424896
+    }
+  },
+  {
+    "smiles": "CCCCOCCCC",
+    "total_score": 56.811892679491436,
+    "sigma": 51.55816078186035,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 56.8 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 56.8 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5155816078186035,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.6258340003550984,
+      "tier2_ms": 14.913624996552244,
+      "tier3_ms": 160.3200419995119
+    }
+  },
+  {
+    "smiles": "CCOCCOCCOCCOCCO",
+    "total_score": 58.6475214274315,
+    "sigma": 57.6769232749939,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 58.6 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 58.6 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.576769232749939,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.47687500086613,
+      "tier2_ms": 14.87591700424673,
+      "tier3_ms": 174.02583299553953
+    }
+  },
+  {
+    "smiles": "COC(=O)C(F)(F)OC(F)F",
+    "total_score": 57.25726991013566,
+    "sigma": 53.04275155067444,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.22222222466666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.3 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.3 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5304275155067444,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333327,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.300833002664149,
+      "tier2_ms": 15.42366600187961,
+      "tier3_ms": 165.43412499595433
+    }
+  },
+  {
+    "smiles": "CS(=O)(=O)CC#N",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CC1CC(F)C(F)O1",
+    "total_score": 58.56021751081824,
+    "sigma": 51.59706473350525,
+    "desolvation": 100.0,
+    "sei_homogeneity": 20.905490453833345,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 58.6 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 58.6 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5159706473350525,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.19004991321666675,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.344000000448432,
+      "tier2_ms": 14.842250006040558,
+      "tier3_ms": 159.307958005229
+    }
+  },
+  {
+    "smiles": "N#CCOCC#N",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CC(C)OCC(C)OCC(C)O",
+    "total_score": 58.31832497433702,
+    "sigma": 56.579601764678955,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 58.3 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 58.3 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5657960176467896,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.471542000421323,
+      "tier2_ms": 15.11062499776017,
+      "tier3_ms": 163.13249999802792
+    }
+  },
+  {
+    "smiles": "CS(=O)(=O)CCOCC",
+    "total_score": 56.79725203033169,
+    "sigma": 50.817084312438965,
+    "desolvation": 100.0,
+    "sei_homogeneity": 13.260633683000002,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 56.8 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 56.8 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5081708431243896,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.12055121530000001,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.4639590046717785,
+      "tier2_ms": 14.999665996583644,
+      "tier3_ms": 159.5408339999267
+    }
+  },
+  {
+    "smiles": "COC(=O)OC=C(F)F",
+    "total_score": 58.907561591425335,
+    "sigma": 58.543723821640015,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.22222222466666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 58.9 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 58.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5854372382164001,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333327,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.5139170029433444,
+      "tier2_ms": 15.030374997877516,
+      "tier3_ms": 167.90537499764469
+    }
+  },
+  {
+    "smiles": "C=CC(F)OC(F)C=C",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CC(O)COCC(C)O",
+    "total_score": 58.53246717766801,
+    "sigma": 57.2934091091156,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.222222224666673,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 58.5 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 58.5 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.572934091091156,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333338,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.320917003089562,
+      "tier2_ms": 14.138207996438723,
+      "tier3_ms": 160.88658299850067
+    }
+  },
+  {
+    "smiles": "O=C(OC=C(F)F)OC=C(F)F",
+    "total_score": 58.09110610798875,
+    "sigma": 55.822205543518066,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.22222222466666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 58.1 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 58.1 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5582220554351807,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11111111113333327,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "polymer-rich",
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 1.9254580038250424,
+      "tier2_ms": 14.949750002415385,
+      "tier3_ms": 167.6192910017562
+    }
+  },
+  {
+    "smiles": "C=CCOC",
+    "total_score": 57.10303736841559,
+    "sigma": 52.433156967163086,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.365451391333345,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Aurelius Score 57.1 < threshold 65.0"
+    ],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [
+      "Aurelius Score 57.1 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.5243315696716309,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.11241319446666675,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.4632919958094135,
+      "tier2_ms": 14.80841699958546,
+      "tier3_ms": 158.38245800114237
+    }
+  },
+  {
+    "smiles": "C=CC(F)OC",
+    "total_score": 66.5015916792961,
+    "sigma": 51.02584958076477,
+    "desolvation": 100.0,
+    "sei_homogeneity": 61.469184025333334,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "is_viable": true,
+    "rejection_reasons": [],
+    "tier1_viable": true,
+    "tier2_viable": true,
+    "tier3_viable": true,
+    "components": [],
+    "tier1_confidence": 0.5102584958076477,
+    "tier1_is_viable": true,
+    "tier2_barrier_eV": -1.952553153038025,
+    "tier2_is_viable": true,
+    "tier3_homogeneity": 0.5588107638666666,
+    "tier3_thickness": 50.0,
+    "tier3_components": [
+      "NaF",
+      "RO-ONa",
+      "Na2CO3"
+    ],
+    "tier_timings": {
+      "tier1_ms": 2.32687500101747,
+      "tier2_ms": 14.843750002910383,
+      "tier3_ms": 158.90466600103537
+    }
+  },
+  {
+    "smiles": "C=CCOCC=C",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  },
+  {
+    "smiles": "CC(C)OC(C)C",
+    "total_score": 27.9,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "is_viable": false,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_viable": false,
+    "tier2_viable": false,
+    "tier3_viable": true,
+    "components": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ],
+    "tier1_confidence": 0.0,
+    "tier1_is_viable": false,
+    "tier2_barrier_eV": 0.0,
+    "tier2_is_viable": false,
+    "tier_timings": {}
+  }
+]

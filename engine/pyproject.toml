@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aurelius"
+name = "aurelius-engine"
 version = "10.1.0"
-description = "Project Aurelius - Evolutionary Algorithm screening pipeline with hybrid quantum/GC oracle and Gaussian penalty objective."
+description = "Project Aurelius Discovery Engine - Open-core evolutionary algorithm screening pipeline with hybrid quantum/GC oracle and Gaussian penalty objective."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
@@ -58,7 +58,7 @@ ignore = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=src/aurelius --cov-report=term-missing -v"
+addopts = "--cov=../engine/src/aurelius --cov-report=term-missing -v"
 markers = [
     "slow: marks tests as slow (skipped in fast CI runs)",
 ]

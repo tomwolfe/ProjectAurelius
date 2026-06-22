@@ -53,21 +53,14 @@ env/
 models/
 *.npy
 
-# Local data files used for training
-data/*
-!src/aurelius/data/force_field_params.json
-!src/aurelius/data/__init__.py
-!src/aurelius/data/synthetic_training_data.csv
-!src/aurelius/data/tier0_seed_smiles.json
-!src/aurelius/data/known_electrolytes.json
-!src/aurelius/data/orbital_calibration.json
+# Certification lab secrets (never commit)
+certification-lab/*.secret
+certification-lab/*.key
+**/aurelius_kernel.json
 
 # Outputs and research archives
 outputs/
 research/
-
-# Seed generation scripts
-generate_*.py
 
 # Runtime outputs
 agent_state.json

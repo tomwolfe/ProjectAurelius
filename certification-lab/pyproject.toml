@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aurelius-certification"
+version = "1.0.0"
+description = "Aurelius Certification Lab — Proprietary kernel tuning and signing tools."
+readme = "NOTICE"
+requires-python = ">=3.11"
+authors = [
+    {name = "Thomas Wolfe", email = "tomwolfe@gmail.com"}
+]
+dependencies = [
+    "aurelius-engine>=10.1.0",  # or `pip install -e ../engine` for local dev
+    "numpy>=1.26.0",
+    "scipy>=1.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.3.0",
+    "mypy>=1.9.0",
+]
+
+[project.scripts]
+certify-kernel = "certifier.cli:certify"
+audit-kernel = "certifier.cli:audit"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
+ignore = ["N803", "N806", "N815", "N812", "E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

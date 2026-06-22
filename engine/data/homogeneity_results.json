@@ -1,0 +1,290 @@
+[
+  {
+    "smiles": "COC(=O)OCC=C",
+    "total_score": 60.65163939312974,
+    "is_viable": false,
+    "sigma": 64.35731649398804,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.22222222466666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 60.7 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(F)C=C",
+    "total_score": 59.737413814821636,
+    "is_viable": false,
+    "sigma": 61.309897899627686,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.22222222466666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 59.7 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(F)=CF",
+    "total_score": 60.49226877208431,
+    "is_viable": false,
+    "sigma": 63.81414532661438,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.240125870499991,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 60.5 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "COC(=O)C(F)=C(F)F",
+    "total_score": 59.33338281627376,
+    "is_viable": false,
+    "sigma": 59.951192140579224,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.240125870499991,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 59.3 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "FCC(F)(F)S(=O)(=O)OC=C",
+    "total_score": 59.211734782813785,
+    "is_viable": false,
+    "sigma": 59.53376293182373,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.25802951633332,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 59.2 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(F)=C(F)C(F)(F)F",
+    "total_score": 59.66639599319179,
+    "is_viable": false,
+    "sigma": 61.025428771972656,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.293836807999991,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 59.7 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "B1OB(OB(OCC(F)F)(OCC(F)F))O1",
+    "total_score": 27.9,
+    "is_viable": false,
+    "sigma": 0.0,
+    "desolvation": 0.0,
+    "sei_homogeneity": 50.0,
+    "mx_synthesis": 90.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Tier 1 (MLX-NA filter): molecule not viable",
+      "Tier 2 (MatterSim-MT): desolvation barrier exceeded",
+      "Aurelius Score 27.9 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OB1OC(C(F)F)(OCC(F)F)O1",
+    "total_score": 57.98734749472022,
+    "is_viable": false,
+    "sigma": 55.45247197151184,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.25802951633332,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 58.0 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "N#CCS(=O)(=O)C",
+    "total_score": 57.889823288876606,
+    "is_viable": false,
+    "sigma": 55.13932704925537,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.240125870499991,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 57.9 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "N#CCS(=O)(=O)CC#N",
+    "total_score": 56.954646956084964,
+    "is_viable": false,
+    "sigma": 52.01013684272766,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.25802951633332,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 57.0 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "N#CC(F)S(=O)(=O)C",
+    "total_score": 57.024186781206524,
+    "is_viable": false,
+    "sigma": 52.230000495910645,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.27593316216666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 57.0 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "N#CCOC(=O)OC(F)S(=O)(=O)C",
+    "total_score": 58.30818709846218,
+    "is_viable": false,
+    "sigma": 56.533873081207275,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.240125870499991,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 58.3 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "N#CCS(=O)(=O)C(F)(F)F",
+    "total_score": 58.33659439400712,
+    "is_viable": false,
+    "sigma": 56.64049983024597,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.22222222466666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 58.3 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "N#CCOCCS(=O)(=O)CC#N",
+    "total_score": 56.98418165361762,
+    "is_viable": false,
+    "sigma": 52.108585834503174,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.25802951633332,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 57.0 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OCC(F)F",
+    "total_score": 58.94710001464565,
+    "is_viable": false,
+    "sigma": 58.66358280181885,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.240125870499991,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 58.9 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(C)(F)F",
+    "total_score": 60.120181134500896,
+    "is_viable": false,
+    "sigma": 62.58578896522522,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.22222222466666,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 60.1 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "CCOC(=O)OCC(F)F",
+    "total_score": 59.2703786007154,
+    "is_viable": false,
+    "sigma": 59.7292423248291,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.25802951633332,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 59.3 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "CCOC(=O)OC(F)F",
+    "total_score": 59.02165112014492,
+    "is_viable": false,
+    "sigma": 58.912086486816406,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.240125870499991,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 59.0 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC(F)(F)C(F)(F)F",
+    "total_score": 58.64795503135402,
+    "is_viable": false,
+    "sigma": 57.66643285751343,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.240125870499991,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 58.6 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OCC(F)(F)C(F)F",
+    "total_score": 58.234746427495075,
+    "is_viable": false,
+    "sigma": 56.28907084465027,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.240125870499991,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 58.2 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "COC(=O)OC=C(F)F",
+    "total_score": 59.63563737388332,
+    "is_viable": false,
+    "sigma": 60.958707332611084,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.240125870499991,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 59.6 < threshold 65.0"
+    ]
+  },
+  {
+    "smiles": "CCOC(=O)OCC(F)F",
+    "total_score": 59.2703786007154,
+    "is_viable": false,
+    "sigma": 59.7292423248291,
+    "desolvation": 100.0,
+    "sei_homogeneity": 12.25802951633332,
+    "mx_synthesis": 95.0,
+    "gwp_penalty": 1.0,
+    "rejection_reasons": [
+      "Aurelius Score 59.3 < threshold 65.0"
+    ]
+  }
+]

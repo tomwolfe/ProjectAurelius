@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurelius.dev/schemas/kernel-v1.json",
+  "title": "Aurelius Certified Kernel",
+  "description": "Schema for a signed Aurelius Certified Kernel that tunes the open-source Discovery Engine for a specific chemical domain.",
+  "type": "object",
+  "required": [
+    "version",
+    "domain_boundary",
+    "tom_parameters",
+    "gc_fragments",
+    "uq_weights",
+    "validation_metrics",
+    "signature"
+  ],
+  "properties": {
+    "version": {
+      "description": "Semantic version of the kernel schema.",
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "examples": ["1.0.0"]
+    },
+    "domain_boundary": {
+      "description": "Defines the chemical space this kernel is certified for.",
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "examples": ["carbonate", "ether", "nitrile", "sulfone"]
+        },
+        "max_molecular_weight": {
+          "type": "number",
+          "description": "Maximum allowed molecular weight (Da).",
+          "examples": [300.0]
+        },
+        "allowed_fragments": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "SMARTS patterns of permitted substructures."
+        },
+        "disallowed_fragments": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "SMARTS patterns of forbidden substructures."
+        },
+        "max_hbd": {
+          "type": "integer",
+          "description": "Maximum number of hydrogen bond donors.",
+          "minimum": 0,
+          "examples": [0]
+        },
+        "max_logp": {
+          "type": "number",
+          "description": "Maximum calculated LogP.",
+          "examples": [2.5]
+        }
+      },
+      "required": ["domain"]
+    },
+    "tom_parameters": {
+      "description": "Tuned constants for the Topological Orbital Model (TOM).",
+      "type": "object",
+      "properties": {
+        "homo_offset": {
+          "type": "number",
+          "description": "Additive correction to TOM HOMO predictions (eV)."
+        },
+        "lumo_offset": {
+          "type": "number",
+          "description": "Additive correction to TOM LUMO predictions (eV)."
+        },
+        "gc_scale": {
+          "type": "number",
+          "description": "Multiplicative scale factor for group-contribution predictions."
+        },
+        "uq_scale": {
+          "type": "number",
+          "description": "Scale factor for uncertainty quantification intervals."
+        },
+        "conjugation_length_cap": {
+          "type": "integer",
+          "description": "Maximum conjugation path length (atoms).",
+          "examples": [16]
+        }
+      },
+      "required": ["homo_offset", "lumo_offset"],
+      "examples": [{
+        "homo_offset": 0.12,
+        "lumo_offset": -0.08,
+        "gc_scale": 1.02,
+        "uq_scale": 0.95,
+        "conjugation_length_cap": 16
+      }]
+    },
+    "gc_fragments": {
+      "description": "Custom fragment additions or corrections for the group-contribution model.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "smarts": {
+            "type": "string",
+            "description": "SMARTS pattern identifying the fragment."
+          },
+          "property": {
+            "type": "string",
+            "description": "Target property this correction applies to.",
+            "examples": ["dielectric", "viscosity", "li_solvation"]
+          },
+          "correction": {
+            "type": "number",
+            "description": "Additive correction value."
+          }
+        },
+        "required": ["smarts", "property", "correction"]
+      }
+    },
+    "uq_weights": {
+      "description": "Weights for the Uncertainty Quantification ensemble.",
+      "type": "object",
+      "properties": {
+        "ensemble_weight": {
+          "type": "number",
+          "description": "Weight for the ensemble variance term.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "calibration_factor": {
+          "type": "number",
+          "description": "Multiplicative calibration factor for prediction intervals."
+        }
+      },
+      "examples": [{
+        "ensemble_weight": 0.5,
+        "calibration_factor": 1.1
+      }]
+    },
+    "validation_metrics": {
+      "description": "Performance metrics computed on the training/validation set.",
+      "type": "object",
+      "properties": {
+        "spearman_rho": {
+          "type": "number",
+          "description": "Spearman rank correlation coefficient.",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "mae": {
+          "type": "number",
+          "description": "Mean absolute error (eV or property units).",
+          "minimum": 0
+        },
+        "n_training": {
+          "type": "integer",
+          "description": "Number of training samples used."
+        },
+        "audit": {
+          "type": "object",
+          "description": "Uncertainty audit results.",
+          "properties": {
+            "coverage_probability": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "confidence_level": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "n_samples": { "type": "integer" },
+            "pass": { "type": "boolean" }
+          }
+        }
+      },
+      "required": ["spearman_rho", "mae"]
+    },
+    "signature": {
+      "description": "HMAC-SHA256 hex digest of canonical JSON serialisation of all preceding fields combined with a secret salt.",
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

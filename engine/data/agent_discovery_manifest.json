@@ -1,0 +1,64 @@
+{
+  "search_statistics": {
+    "total_screened": 113,
+    "generations_run": 4,
+    "invalid_discarded": 0,
+    "final_score_variance": 237.23857674927248
+  },
+  "discoveries": [
+    {
+      "smiles": "CCOC(=O)OC",
+      "total_score": 65.38792213912686,
+      "sigma": 57.35955238342285,
+      "desolvation": 100.0,
+      "sei_homogeneity": 46.4002821205,
+      "mx_synthesis": 95.0,
+      "gwp_penalty": 1.0,
+      "is_viable": true,
+      "rejection_reasons": [],
+      "components": []
+    },
+    {
+      "smiles": "CS(=O)(=O)CCOC",
+      "total_score": 67.59146868868788,
+      "sigma": 53.47713232040405,
+      "desolvation": 100.0,
+      "sei_homogeneity": 63.241644962833334,
+      "mx_synthesis": 95.0,
+      "gwp_penalty": 1.0,
+      "is_viable": true,
+      "rejection_reasons": [],
+      "components": []
+    },
+    {
+      "smiles": "COC(=O)OCC=C",
+      "total_score": 65.43478903289517,
+      "sigma": 56.29832744598389,
+      "desolvation": 100.0,
+      "sei_homogeneity": 48.2264539955,
+      "mx_synthesis": 95.0,
+      "gwp_penalty": 1.0,
+      "is_viable": true,
+      "rejection_reasons": [],
+      "components": []
+    },
+    {
+      "smiles": "C=CC(F)OC",
+      "total_score": 66.5015916792961,
+      "sigma": 51.02584958076477,
+      "desolvation": 100.0,
+      "sei_homogeneity": 61.469184025333334,
+      "mx_synthesis": 95.0,
+      "gwp_penalty": 1.0,
+      "is_viable": true,
+      "rejection_reasons": [],
+      "components": []
+    }
+  ],
+  "exhaustion_proof": {
+    "rolling_mean_plateau": 0.0,
+    "viability_rate_final": 0.14285714285714285,
+    "new_clusters_last_batch": 7,
+    "analytical_summary": "After 113 molecules across 4 generations: 8 viable discoveries found. Final criteria: partial convergence \u2014 volume threshold met but some criteria pending."
+  }
+}

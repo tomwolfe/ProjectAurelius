@@ -1,0 +1,37 @@
+# Phase 6: Borate-Inspired Refined Candidates
+# Goal: Maintain high SEI homogeneity while passing Tier 1/2 viability
+# Strategy: Reduce structural complexity of borate esters, use simpler F-rich carbonates
+
+# === Simple Fluorinated Carbonates (best homogeneity without failing Tier 1) ===
+COC(=O)OC(F)(F)C(F)(F)F
+COC(=O)OC(F)(F)F
+CCOC(=O)OC(F)(F)F
+COC(=O)OC(F)F
+CCOC(=O)OCC(F)F
+COC(=O)OCC(F)F
+
+# === Simplified Borate Analogs (lower complexity boron structures) ===
+# Cyclic borate with single fluorinated chain
+O1B(OCC(F)F)(OCC)OC1
+
+# Cyclic borate with methoxy substituents (simpler)
+COC(=O)OB1OC(C)(OCC(F)F)O1
+
+# Boron tri-fluoride analog (not a real borate but tests the concept)
+F[B](F)(F)
+
+# === Highly Fluorinated Simple Carbonates ===
+# Perfluoro-isopropyl methyl carbonate
+COC(=O)OC(F)(C(F)F)F
+
+# Trifluoro-ethyl methyl carbonate
+COC(=O)OCC(F)(F)F
+
+# Difluoro-methyl ethyl carbonate
+CCOC(=O)OC(F)F
+
+# === Dual-Functional Fluoro-Unsaturated (from Phase 1, verified valid) ===
+COC(=O)OCC=C
+COC(=O)OC(F)C=C
+COC(=O)C(F)=C(F)F
+FCC(F)(F)S(=O)(=O)OC=C
