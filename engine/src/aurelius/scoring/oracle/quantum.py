@@ -31,6 +31,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+from typing import Any
+from collections.abc import Callable
 
 from rdkit import Chem
 
@@ -530,7 +532,22 @@ def _wiener_index(mol: Chem.Mol) -> float:
     return float(total)
 
 
-def _apply_wiener_compactness(mol: Chem.Mol, L: int) -> int:
+_L_CORRECTIONS: list[tuple[str, Callable[..., int]]] = []
+
+def _register_l(fn: Callable[..., int]) -> Callable[..., int]:
+    _L_CORRECTIONS.append((fn.__name__, fn))
+    return fn
+
+
+_ENERGY_CORRECTIONS: list[tuple[str, Callable[..., tuple[float, float]]]] = []
+
+def _register_energy(fn: Callable[..., tuple[float, float]]) -> Callable[..., tuple[float, float]]:
+    _ENERGY_CORRECTIONS.append((fn.__name__, fn))
+    return fn
+
+
+@_register_l
+def _apply_wiener_compactness(mol: Chem.Mol, L: int, **kwargs: Any) -> int:
     """Adjust conjugation length L based on Wiener-index molecular compactness.
 
     Physical basis: Compact molecules (low Wiener index per atom) have stronger
@@ -583,8 +600,9 @@ def _conjugated_bond_deviation(
         return None
 
 
+@_register_l
 def _apply_torsional_strain_penalty(
-    mol: Chem.Mol, L: int, xyz_content: str | None = None
+    mol: Chem.Mol, L: int, xyz_content: str | None = None, **kwargs: Any
 ) -> int:
     """Reduce effective conjugation length L if conjugated system is non-planar.
 
@@ -644,7 +662,8 @@ def _apply_torsional_strain_penalty(
     return L
 
 
-def _apply_peierls_damping(L: int) -> int:
+@_register_l
+def _apply_peierls_damping(_mol: Chem.Mol, L: int, **kwargs: Any) -> int:
     """Apply Peierls distortion damping to prevent 1/L² gap collapse for L > 8.
 
     Physical basis: Long polyenes undergo bond-length alternation that opens a
@@ -673,26 +692,30 @@ def _compute_tom_base_energies(L: int) -> tuple[float, float]:
     return base_homo, base_lumo
 
 
-def _apply_heteroatom_perturbations(n_ew: int, n_ed: int, homo: float, lumo: float) -> tuple[float, float]:
+@_register_energy
+def _apply_heteroatom_perturbations(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
     """Apply Hueckel-like heteroatom corrections to HOMO/LUMO.
 
     Electron-withdrawing groups stabilise both orbitals; electron-donating
     groups destabilise. EW coefficient -0.32, LUMO EW scaling 0.50 (strengthened
     from 0.35 per ADR-2026-06-08 to better capture LUMO-lowering of EW groups).
     """
+    n_ew, n_ed, _ = _count_heteroatom_perturbations(mol)
     ew_shift = -0.32 * n_ew
     ed_shift = 0.12 * n_ed
     return homo + ew_shift + ed_shift, lumo + ew_shift * 0.50 + ed_shift * 0.5
 
 
-def _apply_fluorine_correction(mol: Chem.Mol, homo: float, lumo: float) -> tuple[float, float]:
+@_register_energy
+def _apply_fluorine_correction(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
     """Apply fluorine inductive withdrawal correction (-0.15 eV per F)."""
     n_f = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
     f_shift = -0.15 * n_f
     return homo + f_shift, lumo + f_shift
 
 
-def _apply_aromatic_stabilization(mol: Chem.Mol, homo: float, lumo: float) -> tuple[float, float]:
+@_register_energy
+def _apply_aromatic_stabilization(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
     """Apply aromatic ring stabilization (-0.25 HOMO, -0.15 LUMO per ring).
 
     Physical basis: Cyclic delocalisation (resonance energy ~1.5 eV for benzene)
@@ -702,7 +725,8 @@ def _apply_aromatic_stabilization(mol: Chem.Mol, homo: float, lumo: float) -> tu
     return homo + -0.25 * n_arom, lumo + -0.15 * n_arom
 
 
-def _apply_nitrile_correction(mol: Chem.Mol, lumo: float) -> float:
+@_register_energy
+def _apply_nitrile_correction(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
     """Apply nitrile C≡N π* LUMO lowering (-0.70 eV per nitrile, max -1.40 eV).
 
     Physical basis: The C≡N π* orbital is ~0.7-1.0 eV lower than the general
@@ -712,20 +736,22 @@ def _apply_nitrile_correction(mol: Chem.Mol, lumo: float) -> float:
     """
     n_nitrile = len(mol.GetSubstructMatches(NITRILE_PATTERN))
     shift = min(n_nitrile, 2) * -0.70
-    return lumo + shift
+    return homo, lumo + shift
 
 
-def _apply_phosphate_correction(mol: Chem.Mol, homo: float) -> float:
+@_register_energy
+def _apply_phosphate_correction(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
     """Apply phosphate HOMO correction (+0.50 per P=O) for σ-only P-O-C bonds.
 
     Physical basis: σ-only P-O-C oxygen EW contributions are over-counted;
     +0.50 corrects ~2/3 of the over-counting (~0.96 eV for trialkyl phosphates).
     """
     n_phosphate = len(mol.GetSubstructMatches(_PHOSPHATE_PATTERN))
-    return homo + 0.50 * n_phosphate
+    return homo + 0.50 * n_phosphate, lumo
 
 
-def _apply_sigma_star_correction(mol: Chem.Mol, L: int, lumo: float) -> float:
+@_register_energy
+def _apply_sigma_star_correction(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
     """Apply σ* LUMO correction for non-conjugated S/P=O groups (d-orbital participation).
 
     Physical basis: S=O and P=O bonds have low-lying σ* orbitals from d-orbital
@@ -734,14 +760,15 @@ def _apply_sigma_star_correction(mol: Chem.Mol, L: int, lumo: float) -> float:
     a π* LUMO that dominates, so the σ* correction would be physically incorrect.
     """
     if L >= 3:
-        return lumo
+        return homo, lumo
     for _spattern, _sname, _sshift in _SIGMA_STAR_LUMO:
         if len(mol.GetSubstructMatches(_spattern)) > 0:
             lumo += _sshift
-    return lumo
+    return homo, lumo
 
 
-def _apply_cross_conjugation_penalty(mol: Chem.Mol, lumo: float) -> float:
+@_register_energy
+def _apply_cross_conjugation_penalty(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
     """Apply cross-conjugation penalty (+0.30 eV to LUMO).
 
     Physical basis: Cross-conjugated systems disrupt pi-delocalisation; the
@@ -749,8 +776,8 @@ def _apply_cross_conjugation_penalty(mol: Chem.Mol, lumo: float) -> float:
     for this overestimation (e.g., divinyl ketone, benzophenone).
     """
     if _is_cross_conjugated(mol):
-        return lumo + 0.30
-    return lumo
+        return homo, lumo + 0.30
+    return homo, lumo
 
 
 def _evaluate_tom_single_conformer(
@@ -771,19 +798,13 @@ def _evaluate_tom_single_conformer(
     L = _longest_conjugation_path(mol)
     L = max(L, 2)
     L = _topological_sanity_l(mol, L)
-    L = _apply_wiener_compactness(mol, L)
-    L = _apply_torsional_strain_penalty(mol, L, xyz_content)
-    L = _apply_peierls_damping(L)
 
-    n_ew, n_ed, _ = _count_heteroatom_perturbations(mol)
+    for _, l_fn in _L_CORRECTIONS:
+        L = l_fn(mol, L, xyz_content=xyz_content)
+
     homo, lumo = _compute_tom_base_energies(L)
-    homo, lumo = _apply_heteroatom_perturbations(n_ew, n_ed, homo, lumo)
-    homo, lumo = _apply_fluorine_correction(mol, homo, lumo)
-    homo, lumo = _apply_aromatic_stabilization(mol, homo, lumo)
-    lumo = _apply_nitrile_correction(mol, lumo)
-    homo = _apply_phosphate_correction(mol, homo)
-    lumo = _apply_sigma_star_correction(mol, L, lumo)
-    lumo = _apply_cross_conjugation_penalty(mol, lumo)
+    for _, e_fn in _ENERGY_CORRECTIONS:
+        homo, lumo = e_fn(mol, L, homo, lumo)
 
     return homo, lumo
 

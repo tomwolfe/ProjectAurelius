@@ -232,18 +232,17 @@ class TestOracleCalibration:
         L = _topological_sanity_l(benzophenone, L)
         L = _apply_wiener_compactness(benzophenone, L)
         L = _apply_torsional_strain_penalty(benzophenone, L)
-        L = _apply_peierls_damping(L)
-        n_ew, n_ed, _ = _count_heteroatom_perturbations(benzophenone)
+        L = _apply_peierls_damping(benzophenone, L)
         homo, lumo = _compute_tom_base_energies(L)
-        homo, lumo = _apply_heteroatom_perturbations(n_ew, n_ed, homo, lumo)
-        homo, lumo = _apply_fluorine_correction(benzophenone, homo, lumo)
-        homo, lumo = _apply_aromatic_stabilization(benzophenone, homo, lumo)
-        lumo = _apply_nitrile_correction(benzophenone, lumo)
-        homo = _apply_phosphate_correction(benzophenone, homo)
-        lumo = _apply_sigma_star_correction(benzophenone, L, lumo)
+        homo, lumo = _apply_heteroatom_perturbations(benzophenone, L, homo, lumo)
+        homo, lumo = _apply_fluorine_correction(benzophenone, L, homo, lumo)
+        homo, lumo = _apply_aromatic_stabilization(benzophenone, L, homo, lumo)
+        homo, lumo = _apply_nitrile_correction(benzophenone, L, homo, lumo)
+        homo, lumo = _apply_phosphate_correction(benzophenone, L, homo, lumo)
+        homo, lumo = _apply_sigma_star_correction(benzophenone, L, homo, lumo)
 
         # Now apply the cross-conjugation penalty
-        lumo_with_penalty = _apply_cross_conjugation_penalty(benzophenone, lumo)
+        _, lumo_with_penalty = _apply_cross_conjugation_penalty(benzophenone, L, homo, lumo)
 
         assert math.isclose(lumo_with_penalty, lumo + 0.30, rel_tol=1e-6), (
             f"Cross-conjugation penalty should add +0.30 eV to LUMO: "
@@ -257,7 +256,8 @@ class TestOracleCalibration:
         assert not _is_cross_conjugated(dmc), (
             "DMC should NOT be detected as cross-conjugated"
         )
-        assert _apply_cross_conjugation_penalty(dmc, -0.5) == -0.5, (
+        _, lumo_dmc = _apply_cross_conjugation_penalty(dmc, 2, -5.0, -0.5)
+        assert lumo_dmc == -0.5, (
             "Non-cross-conjugated molecule should not get LUMO penalty"
         )
 
@@ -304,7 +304,7 @@ class TestTOMCorrections:
         decapentaene = Chem.MolFromSmiles("C=CC=CC=CC=CC=C")
         assert decapentaene is not None
         L_raw = _longest_conjugation_path(decapentaene)
-        L_damped = _apply_peierls_damping(L_raw)
+        L_damped = _apply_peierls_damping(decapentaene, L_raw)
 
         assert L_raw > 8, f"Decapentaene should have L > 8, got L={L_raw}"
 
@@ -327,7 +327,7 @@ class TestTOMCorrections:
         assert butadiene is not None
         L_but = _longest_conjugation_path(butadiene)
         assert L_but <= 8, "Butadiene should have L <= 8"
-        L_but_damped = _apply_peierls_damping(L_but)
+        L_but_damped = _apply_peierls_damping(butadiene, L_but)
         assert L_but_damped == L_but, (
             f"Peierls damping should not affect L <= 8: {L_but_damped} != {L_but}"
         )
