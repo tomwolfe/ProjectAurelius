@@ -10,7 +10,7 @@ A physically-grounded Evolutionary Algorithm with a hybrid quantum chemistry / f
 
 **Zero ML bloat.** No PyTorch. No TensorFlow. Just RDKit, xTB, and pure Python.
 
-**External validation:** Live benchmarking confirms strong positive Spearman rank correlation for all five benchmarked properties — see [`docs/benchmarks.md`](docs/benchmarks.md) for current live metrics (auto-generated). Run `python -m benchmarks.benchmark_external_validation` to regenerate.
+**External validation:** Live benchmarks confirm statistically significant positive Spearman ρ for all five benchmarked properties (ρ range 0.60–0.86) — see [`docs/benchmarks.md`](docs/benchmarks.md) for current live metrics (auto-generated). Run `python -m benchmarks.benchmark_external_validation` to regenerate.
 
 ```bash
 aurelius init                          # Initialize pipeline

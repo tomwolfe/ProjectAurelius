@@ -20,7 +20,10 @@ from __future__ import annotations
 
 from importlib import metadata
 
-__version__: str = metadata.version("aurelius")
+try:
+    __version__: str = metadata.version("aurelius-engine")
+except metadata.PackageNotFoundError:
+    __version__: str = metadata.version("aurelius")
 
 from aurelius.agent.loop import DiscoveryLoop
 from aurelius.agent.mutation import MutationEngine

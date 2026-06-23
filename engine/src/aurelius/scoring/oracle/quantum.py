@@ -752,18 +752,20 @@ def _apply_phosphate_correction(mol: Chem.Mol, L: int, homo: float, lumo: float,
 
 @_register_energy
 def _apply_sigma_star_correction(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
-    """Apply σ* LUMO correction for non-conjugated S/P=O groups (d-orbital participation).
+    """Apply σ* LUMO correction for S/P=O groups (d-orbital participation).
 
     Physical basis: S=O and P=O bonds have low-lying σ* orbitals from d-orbital
-    participation that lower LUMO by 0.3-0.7 eV. Applied only for L<3 where the
-    LUMO is σ* (not π*) character. Molecules with extended conjugation (L>=3) have
-    a π* LUMO that dominates, so the σ* correction would be physically incorrect.
+    participation that lower LUMO by 0.3-0.7 eV. For non-conjugated molecules (L<3)
+    the LUMO is σ* in character and the full correction applies. For conjugated
+    molecules (L>=3) the LUMO is primarily π* in character, but σ-π mixing via
+    hyperconjugation means the σ* orbitals still contribute at reduced strength.
+    A scaling factor of 0.40 captures the mixing coefficient for conjugated systems
+    containing sulfone, sulfoxide or phosphate groups.
     """
-    if L >= 3:
-        return homo, lumo
+    sigma_scale = 0.40 if L >= 3 else 1.0
     for _spattern, _sname, _sshift in _SIGMA_STAR_LUMO:
         if len(mol.GetSubstructMatches(_spattern)) > 0:
-            lumo += _sshift
+            lumo += _sshift * sigma_scale
     return homo, lumo
 
 

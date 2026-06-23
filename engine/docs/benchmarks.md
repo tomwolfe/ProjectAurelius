@@ -13,74 +13,32 @@
 
   Benchmark molecules: 63
 
-  Skipped: 7
-
   ┌──────────────────────┬────────────┬──────────┬───────────┐
   │ Property             │     N      │    ρ     │   p-val   │
   ├──────────────────────┼────────────┼──────────┼───────────┤
-  │ Dielectric ε         │   53        │ +0.7256  │ 0.0000 *** │
-  │   top: EC                        pred=14.964 exp=89.780 │
-  │   bot: Cyclohexanone             pred=2.412 exp=2.805 │
-  │ Viscosity η          │   53        │ +0.6748  │ 0.0000 *** │
-  │   top: Bis(2,2,2-trifluoroethyl) sulfone pred=5.994 exp=10.300 │
-  │   bot: DEE                       pred=0.220 exp=0.240 │
-  │ Donor Number         │   38        │ +0.7576  │ 0.0000 *** │
-  │   top: DMSO                      pred=6.606 exp=33.100 │
-  │   bot: Cyclohexanone             pred=1.096 exp=8.000 │
-  │ HOMO                 │   56        │ +0.8567  │ 0.0000 *** │
-  │   top: Anisole                   pred=-3.742 exp=-4.244 │
-  │   bot: Bis(trifluoromethyl) sulfone pred=-10.580 exp=-10.580 │
-  │ LUMO                 │   56        │ +0.5986  │ 0.0000 *** │
-  │   top: THF                       pred=1.340 exp=1.500 │
-  │   bot: Methyl phenyl sulfone     pred=-2.596 exp=-2.452 │
+  │ Dielectric ε         │   53       │ +0.7256  │ 0.0000 *** │
+  │ Viscosity η          │   53       │ +0.6748  │ 0.0000 *** │
+  │ Donor Number         │   38       │ +0.7576  │ 0.0000 *** │
+  │ HOMO                 │   56       │ +0.8567  │ 0.0000 *** │
+  │ LUMO                 │   56       │ +0.5986  │ 0.0000 *** │
   └──────────────────────┴────────────┴──────────┴───────────┘
 
   Significance: * p<0.05  ** p<0.01  *** p<0.001
 
   Properties with ρ > 0: 5/5
-
   EXTERNAL VALIDATION: ALL PROPERTIES SHOW POSITIVE RANK CORRELATION
 ```
 
 ## Reality Check: EA Discoveries vs. Known Electrolytes
 ```text
-=================================================================
-  REALITY CHECK BENCHMARK: EA Discoveries vs. Known Electrolytes
-=================================================================
-
-  [1/4] Screening known commercial electrolytes...
-         Known electrolytes: 51 molecules, 35 unique scaffolds
-
-         Known set mean Aurelius Score: 46.46
-
-  [2/4] Running 5-generation discovery loop...
-         Done in 210.3s
-         Total screened: 9
-
-  [3/4] Analyzing top discoveries...
-         Top 50 discoveries: mean score=72.51
-         Unique scaffolds in top 50: 41
-         Novel scaffolds (not in known set): 38 (92.7%)
-
-  [4/4] Verifying assertions...
-
-         Score gap: top discoveries (72.51) - known (46.46) = +26.05
-         PASSED: Discoveries score higher than known commercial set.
-
-         Novel scaffold ratio: 92.7% (target >80%)
-         PASSED: >80% of top discoveries have novel scaffolds.
-
-=================================================================
-  REALITY CHECK: ALL ASSERTIONS PASSED
-=================================================================
+*Benchmark module not available — skip*
+Run `python -m benchmarks.benchmark_reality_check` to populate.
 ```
 
 ## Mixture Synergy Validation
 ```text
-  PASS: Complementary pair synergy=2.9666 > 0.5
-  PASS: Frankenstein pair synergy=0.0000 == 0.0
-
-MIXTURE SYNERGY BONUS: ALL CHECKS PASSED
+*Benchmark module not available — skip*
+Run `python -m benchmarks.benchmark_mixture_synergy` to populate.
 ```
 
 ## Synthesis Target Brief
