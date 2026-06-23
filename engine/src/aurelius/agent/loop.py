@@ -624,6 +624,22 @@ class DiscoveryLoop:
         if smi in self.state.active_learning_queue:
             return self._evaluate_with_real_quantum(ctx, result_map)
 
+        # Phase 11: Check GcUqEnsemble uncertainty before surrogate evaluation.
+        # If the ensemble flags high uncertainty (std > 15% of mean), bypass
+        # the surrogate and force a real quantum evaluation.
+        gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
+        if gc_uq is not None:
+            try:
+                _, _, diel_high = gc_uq.predict_dielectric(ctx)
+                _, _, visc_high = gc_uq.predict_viscosity(ctx)
+                if diel_high or visc_high:
+                    if smi not in self.state.active_learning_queue:
+                        self.state.active_learning_queue.append(smi)
+                        log.info("  Added %s to active learning queue (high UQ from GcUqEnsemble)", smi)
+                    return self._evaluate_with_real_quantum(ctx, result_map)
+            except Exception:
+                pass
+
         # Uncertainty-Aware Bypass: check surrogate uncertainty first
         try:
             from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
@@ -654,7 +670,6 @@ class DiscoveryLoop:
         if score_data is None:
             return None
 
-        gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
         if gc_uq is not None:
             self._check_uq_and_queue(smi, gc_uq)
 

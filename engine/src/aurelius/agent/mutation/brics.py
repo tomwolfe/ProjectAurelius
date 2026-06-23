@@ -344,6 +344,18 @@ def _compute_brics_depth(mol: Chem.Mol, max_iter: int = 5) -> int:
     return max_depth
 
 
+def _estimate_synthetic_depth(mol: Chem.Mol) -> int:
+    """Estimate the retrosynthetic depth of a molecule using recursive BRICS decomposition.
+
+    Performs BRICS decomposition recursively until all fragments match commercial
+    building blocks. Returns the maximum recursion depth required for all fragments
+    to resolve to commercial building blocks.
+
+    Depth 0 means the molecule itself is a commercial building block.
+    """
+    return _compute_brics_depth(mol)
+
+
 def combined_grounding_score(mol: Chem.Mol) -> float:
     """Combined grounding score: max of BRICS coverage and functional-group coverage,
     with a linear penalty for excessive BRICS disconnection depth, adjusted by
@@ -354,11 +366,12 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
     penalised. This is the minimal relaxation needed to enable scaffold hopping
     while maintaining synthetic feasibility.
 
-    If the BRICS disconnection depth exceeds _MAX_BRICS_DEPTH, a linear penalty
-    of _BRICS_DEPTH_PENALTY_PER_STEP per excess step is subtracted from the
-    coverage score (clamped to min 0.0). This ensures that economically viable
+    If the BRICS disconnection depth exceeds _MAX_BRICS_DEPTH, a multiplicative
+    penalty of (1 - _BRICS_DEPTH_PENALTY_PER_STEP)^(depth - _MAX_BRICS_DEPTH)
+    is applied to the base score. This ensures that economically viable
     molecules (2 or fewer synthetic steps from commercial precursors) are
-    preferred over deeper retrosynthetic paths.
+    preferred over deeper retrosynthetic paths (e.g., depth 3 -> 0.9x, depth
+    4 -> 0.81x).
 
     Additionally, a retrosynthetic reaction rule check is performed. If none of
     the molecule's bond-forming motifs match a known high-yield reaction SMARTS
@@ -370,10 +383,9 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
     fg_cov = functional_group_coverage(mol)
     base = max(brics_cov, fg_cov)
 
-    depth = _compute_brics_depth(mol)
+    depth = _estimate_synthetic_depth(mol)
     if depth > _MAX_BRICS_DEPTH:
-        penalty = _BRICS_DEPTH_PENALTY_PER_STEP * (depth - _MAX_BRICS_DEPTH)
-        base = max(0.0, base - penalty)
+        base *= (1.0 - _BRICS_DEPTH_PENALTY_PER_STEP) ** (depth - _MAX_BRICS_DEPTH)
 
     # Retrosynthetic reaction rule feasibility check
     from aurelius.agent.mutation.reaction_rules import check_retrosynthetic_feasibility

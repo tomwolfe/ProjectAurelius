@@ -234,6 +234,43 @@ class TestDiscoveryLoop:
         assert len(selected_smiles_exploit) > 0
         assert len(selected_smiles_explore) > 0
 
+    def test_gc_uq_high_uncertainty_forces_quantum_evaluation(self, tmp_path):
+        """When GcUqEnsemble predicts high uncertainty (std > 15% of mean),
+        _process_single_candidate should route to _evaluate_with_real_quantum
+        instead of using the surrogate oracle."""
+        from unittest.mock import patch
+
+        mock_pipeline = _make_mock_pipeline()
+        mock_pipeline._oracle = Mock()
+        mock_pipeline._oracle._gc_uq = Mock()
+        mock_pipeline._oracle._gc_uq.predict_dielectric.return_value = (5.0, 2.0, True)
+        mock_pipeline._oracle._gc_uq.predict_viscosity.return_value = (2.0, 0.1, False)
+
+        mock_engine = _make_mock_engine()
+        state = _make_loop_state(str(tmp_path / "al_force.json"))
+
+        loop = DiscoveryLoop(
+            pipeline=mock_pipeline,
+            engine=mock_engine,
+            state=state,
+            max_generations=1,
+            batch_size=3,
+        )
+
+        ctx = MoleculeContext.from_smiles("CC(=O)OC")
+        assert ctx is not None
+        result_map: dict = {}
+
+        with patch.object(loop, '_evaluate_with_real_quantum') as mock_quantum:
+            mock_quantum.return_value = (85.0, {"homo_eV": -6.5})
+            result = loop._process_single_candidate(ctx, result_map)
+
+        assert result is not None, "Should return quantum evaluation result"
+        mock_quantum.assert_called_once()
+        assert "CC(=O)OC" in state.active_learning_queue, (
+            "Should add high-uncertainty molecule to active learning queue"
+        )
+
     def test_similarity_caching_skips_oracle(self, tmp_path):
         """When a candidate with Tanimoto > 0.95 to a previously screened
         molecule is processed, the oracle is not called and the result is
