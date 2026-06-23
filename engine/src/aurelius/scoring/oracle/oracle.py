@@ -158,6 +158,20 @@ class PropertyOracle:
             logger.debug("GC UQ unavailable")
         return 1.0
 
+    def _compute_gc_properties(self, ctx: MoleculeContext) -> tuple[float, float, float, float, float, float]:
+        """Compute all six GC-based bulk property proxies for a molecule.
+
+        Returns:
+            (dielectric, viscosity, li_solvation, li_dissociation, ced, conductivity)
+        """
+        dielectric = predict_dielectric_proxy(ctx)
+        viscosity = predict_viscosity_proxy(ctx)
+        li_solvation = predict_li_solvation_proxy(ctx)
+        li_dissociation = predict_li_dissociation_proxy(ctx)
+        ced = predict_ced_proxy(ctx)
+        conductivity = predict_ionic_conductivity_proxy(dielectric, viscosity, li_solvation)
+        return dielectric, viscosity, li_solvation, li_dissociation, ced, conductivity
+
     def _build_domain(self, ctx: MoleculeContext, skip_quantum: bool, surrogate_penalty: float, s_homo: float, uq_penalty: float) -> tuple[float, str, bool]:
         """Build domain penalty and reason string."""
         q_penalty, q_reason = (1.0, "skipped — surrogate") if skip_quantum else compute_quantum_domain_penalty(ctx)
@@ -174,40 +188,30 @@ class PropertyOracle:
             reasons.append("High UQ Variance")
         return domain_penalty, "; ".join(reasons) if reasons else _DATA_SOURCE, domain_penalty >= 0.85
 
-    def evaluate(self, ctx: MoleculeContext) -> dict[str, Any]:
-        if not isinstance(ctx, MoleculeContext):
-            raise TypeError(
-                f"PropertyOracle.evaluate() requires a MoleculeContext, got {type(ctx).__name__}. "
-                "Use MoleculeContext.from_smiles() to parse SMILES first."
-            )
-        smiles = ctx.smiles
-        if smiles in self._cache:
-            return self._cache[smiles]
-
-        surrogate_penalty, s_homo, s_lumo, skip_quantum = self._run_surrogate(ctx)
-        homo, lumo, gap, quantum_method, quantum_confidence_val = self._compute_quantum(ctx, skip_quantum, s_homo, s_lumo)
-        uq_penalty = self._compute_uq_penalty(ctx)
-
-        dielectric = predict_dielectric_proxy(ctx)
-        viscosity = predict_viscosity_proxy(ctx)
-        li_solvation = predict_li_solvation_proxy(ctx)
-        li_dissociation = predict_li_dissociation_proxy(ctx)
-        ced = predict_ced_proxy(ctx)
-        conductivity = predict_ionic_conductivity_proxy(dielectric, viscosity, li_solvation)
-
-        domain_penalty, domain_reason_str, domain_applicable = self._build_domain(
-            ctx, skip_quantum, surrogate_penalty, s_homo, uq_penalty,
-        )
-
+    def _apply_sei_penalty(self, ctx: MoleculeContext, lumo: float, domain_penalty: float, domain_reason_str: str) -> tuple[float, str, bool]:
+        """Apply SEI motif penalty and integrate into domain penalty."""
         sei_penalty, sei_reason = _evaluate_sei_motif(ctx, lumo)
-        if sei_penalty < 1.0:
-            domain_penalty *= sei_penalty
-            if domain_reason_str and domain_reason_str != _DATA_SOURCE:
-                domain_reason_str += "; " + sei_reason
-            else:
-                domain_reason_str = sei_reason
-            domain_applicable = domain_penalty >= 0.85
+        if sei_penalty >= 1.0:
+            return domain_penalty, domain_reason_str, domain_penalty >= 0.85
+        domain_penalty *= sei_penalty
+        if domain_reason_str and domain_reason_str != _DATA_SOURCE:
+            domain_reason_str += "; " + sei_reason
+        else:
+            domain_reason_str = sei_reason
+        return domain_penalty, domain_reason_str, domain_penalty >= 0.85
 
+    def _assemble_result(
+        self,
+        smiles: str,
+        homo: float, lumo: float, gap: float,
+        dielectric: float, viscosity: float,
+        li_solvation: float, li_dissociation: float,
+        ced: float, conductivity: float,
+        domain_penalty: float, domain_reason_str: str, domain_applicable: bool,
+        quantum_method: str, quantum_confidence_val: str,
+        skip_quantum: bool,
+    ) -> dict[str, Any]:
+        """Assemble the final evaluation result dict."""
         result: dict[str, Any] = {
             "homo_eV": round(homo, 4),
             "lumo_eV": round(lumo, 4),
@@ -226,6 +230,39 @@ class PropertyOracle:
         }
         if self._surrogate is not None:
             result["surrogate_skipped"] = skip_quantum
+        return result
+
+    def evaluate(self, ctx: MoleculeContext) -> dict[str, Any]:
+        if not isinstance(ctx, MoleculeContext):
+            raise TypeError(
+                f"PropertyOracle.evaluate() requires a MoleculeContext, got {type(ctx).__name__}. "
+                "Use MoleculeContext.from_smiles() to parse SMILES first."
+            )
+        smiles = ctx.smiles
+        if smiles in self._cache:
+            return self._cache[smiles]
+
+        surrogate_penalty, s_homo, s_lumo, skip_quantum = self._run_surrogate(ctx)
+        homo, lumo, gap, quantum_method, quantum_confidence_val = self._compute_quantum(ctx, skip_quantum, s_homo, s_lumo)
+        uq_penalty = self._compute_uq_penalty(ctx)
+
+        dielectric, viscosity, li_solvation, li_dissociation, ced, conductivity = self._compute_gc_properties(ctx)
+
+        domain_penalty, domain_reason_str, domain_applicable = self._build_domain(
+            ctx, skip_quantum, surrogate_penalty, s_homo, uq_penalty,
+        )
+        domain_penalty, domain_reason_str, domain_applicable = self._apply_sei_penalty(
+            ctx, lumo, domain_penalty, domain_reason_str,
+        )
+
+        result = self._assemble_result(
+            smiles, homo, lumo, gap,
+            dielectric, viscosity, li_solvation, li_dissociation,
+            ced, conductivity,
+            domain_penalty, domain_reason_str, domain_applicable,
+            quantum_method, quantum_confidence_val,
+            skip_quantum,
+        )
         self._cache[smiles] = result
         return result
 

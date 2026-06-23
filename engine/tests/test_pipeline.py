@@ -139,6 +139,68 @@ def test_ternary_synergy_no_bonus_for_homogeneous() -> None:
     assert bonus == 0.0, f"Homogeneous mixture should have zero synergy, got {bonus}"
 
 
+def test_ternary_synergy_capped_at_six() -> None:
+    """Ternary synergy must be capped at 6.0 to prevent gaming."""
+    d1, v1 = 15.0, 10.0
+    d2, v2 = 1.0, 0.1
+    d3, v3 = 10.0, 5.0
+    syn = mixture_synergy_bonus_ternary(d1, d2, d3, v1, v2, v3, 0.3, 0.3)
+    assert syn <= 6.0, f"Ternary synergy ({syn:.3f}) must not exceed 6.0 cap"
+
+
+def test_ternary_synergy_renormalization() -> None:
+    """Small global fractions in the best pair should be re-normalized correctly.
+
+    When frac1=0.1 and frac2=0.1 (pair accounts for 20% of mixture), the
+    synergy function should re-normalize the pair fractions to 0.5:0.5
+    before computing the synergy score.
+    """
+    d1, v1 = 18.0, 2.5
+    d2, v2 = 2.0, 0.8
+    d3, v3 = 5.0, 1.5
+    syn = mixture_synergy_bonus_ternary(d1, d2, d3, v1, v2, v3, 0.1, 0.1)
+    assert syn > 0.0, "Complementary ternary with small fractions should have synergy"
+
+
+def test_ternary_synergy_zero_for_non_complementary() -> None:
+    """Ternary synergy must be zero when no binary pair is complementary."""
+    d1, v1 = 5.0, 2.5
+    d2, v2 = 4.0, 3.0
+    d3, v3 = 6.0, 2.8
+    syn = mixture_synergy_bonus_ternary(d1, d2, d3, v1, v2, v3, 0.33, 0.33)
+    assert syn == 0.0, "Non-complementary ternary should have zero synergy"
+
+
+def test_ternary_synergy_identical_to_binary_when_frac3_zero() -> None:
+    """Ternary synergy should match binary when the third component fraction is zero."""
+    from aurelius.scoring.oracle.gc import mixture_synergy_bonus
+
+    d1, v1 = 8.0, 2.5
+    d2, v2 = 2.0, 0.5
+    d3, v3 = 3.0, 2.0
+
+    bin_syn = mixture_synergy_bonus(d1, d2, v1, v2, 0.5)
+    ter_syn = mixture_synergy_bonus_ternary(d1, d2, d3, v1, v2, v3, 0.5, 0.5)
+    assert abs(bin_syn - ter_syn) < 1e-6, (
+        f"Ternary with zero frac3 ({ter_syn:.6f}) should match binary ({bin_syn:.6f})"
+    )
+
+
+def test_direct_unit_predict_mixture_dielectric() -> None:
+    """Direct unit test for binary mixture dielectric mixing rule."""
+    from aurelius.scoring.oracle.gc import predict_mixture_dielectric
+    mix = predict_mixture_dielectric(10.0, 5.0, 0.5)
+    assert abs(mix - 7.5) < 1e-6, f"Expected 7.5, got {mix}"
+
+
+def test_direct_unit_predict_mixture_viscosity() -> None:
+    """Direct unit test for binary mixture viscosity (Grunberg-Nissan) mixing rule."""
+    from aurelius.scoring.oracle.gc import predict_mixture_viscosity
+    mix = predict_mixture_viscosity(1.0, 4.0, 0.5)
+    expected = (1.0 * 4.0) ** 0.5
+    assert abs(mix - expected) < 1e-6, f"Expected {expected:.6f}, got {mix:.6f}"
+
+
 # ---------------------------------------------------------------------------
 # Full Ternary Pipeline Screening
 # ---------------------------------------------------------------------------

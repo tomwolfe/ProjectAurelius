@@ -66,15 +66,36 @@ def _run_script(script_path: str) -> str:
         return ""
 
 
+def _check_module(module: str) -> bool:
+    """Check if a benchmark module exists and is importable."""
+    try:
+        import importlib
+        importlib.import_module(module)
+        return True
+    except ImportError:
+        return False
+
+
 def main() -> None:
     docs_dir = Path(__file__).resolve().parent.parent / "docs"
     docs_dir.mkdir(exist_ok=True)
     output_file = docs_dir / "benchmarks.md"
     brief_file = docs_dir / "synthesis_brief.md"
 
-    ext_val = _capture("benchmarks.benchmark_external_validation")
-    reality = _capture("benchmarks.benchmark_reality_check")
-    mixture = _capture("benchmarks.benchmark_mixture_synergy")
+    available: list[str] = []
+    unavailable: list[str] = []
+    for module in _TIMEOUTS:
+        if _check_module(module):
+            available.append(module)
+        else:
+            unavailable.append(module)
+
+    if unavailable:
+        print(f"Warning: benchmark modules not found: {', '.join(unavailable)}", file=sys.stderr)
+
+    ext_val = _capture("benchmarks.benchmark_external_validation") if "benchmarks.benchmark_external_validation" in available else "*Benchmark module not available — skip*"
+    reality = _capture("benchmarks.benchmark_reality_check") if "benchmarks.benchmark_reality_check" in available else "*Benchmark module not available — skip*"
+    mixture = _capture("benchmarks.benchmark_mixture_synergy") if "benchmarks.benchmark_mixture_synergy" in available else "*Benchmark module not available — skip*"
 
     # Generate synthesis brief
     script_path = str(Path(__file__).resolve().parent / "generate_synthesis_brief.py")
@@ -110,7 +131,13 @@ def main() -> None:
             f.write("*Auto-generated — see [synthesis_brief.md](synthesis_brief.md) for full table.*\n")
 
     print(f"Successfully updated {output_file}")
-    print(f"Synthesis brief: {brief_file}")
+    if brief_file.exists():
+        print(f"Synthesis brief: {brief_file}")
+
+    if unavailable:
+        print(f"\nNote: {len(unavailable)} benchmark(s) were unavailable (check PYTHONPATH):")
+        for m in unavailable:
+            print(f"  - {m}")
 
 
 if __name__ == "__main__":
