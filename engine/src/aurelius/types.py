@@ -26,8 +26,6 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
 
-MIXTURE_SEPARATOR: str = "|"
-
 # Return type for parsed mixtures: binary -> (a, b, frac_a) or ternary -> (a, b, c, frac_a, frac_b)
 ParsedMixture = tuple[str, str, float] | tuple[str, str, str, float, float]
 
