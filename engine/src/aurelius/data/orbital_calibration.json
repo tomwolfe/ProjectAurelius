@@ -1252,5 +1252,287 @@
     "name": "2-Methyl_THF_2",
     "homo_eV": -6.9,
     "lumo_eV": 1.5
+  },
+  {
+    "smiles": "c1ccsc1",
+    "name": "Thiophene",
+    "homo_eV": -5.9,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "c1cscn1",
+    "name": "Thiazole",
+    "homo_eV": -6.2,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "c1cc2ccsc2cc1",
+    "name": "Benzothiophene",
+    "homo_eV": -5.8,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "c1ccc2scnc2c1",
+    "name": "Benzothiazole",
+    "homo_eV": -6.0,
+    "lumo_eV": -0.7
+  },
+  {
+    "smiles": "CS(=O)(=O)OC",
+    "name": "Dimethyl_sulfate",
+    "homo_eV": -7.6,
+    "lumo_eV": 0.2
+  },
+  {
+    "smiles": "FC(F)(F)COP(=O)(OCC(F)(F)F)OCC(F)(F)F",
+    "name": "Tris_trifluoroethyl_phosphate",
+    "homo_eV": -8.0,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "COP(=O)(C)OC",
+    "name": "Dimethyl_methylphosphonate",
+    "homo_eV": -7.3,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CCOP(=O)(CC)OCC",
+    "name": "Diethyl_ethylphosphonate",
+    "homo_eV": -7.3,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CP(C)(C)=O",
+    "name": "Trimethylphosphine_oxide",
+    "homo_eV": -6.8,
+    "lumo_eV": 0.8
+  },
+  {
+    "smiles": "O=P(c1ccccc1)(c1ccccc1)c1ccccc1",
+    "name": "Triphenylphosphine_oxide",
+    "homo_eV": -6.2,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "C=CS(=O)(=O)C=C",
+    "name": "Divinyl_sulfone",
+    "homo_eV": -6.6,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "C=CCS(=O)(=O)CC=C",
+    "name": "Diallyl_sulfone",
+    "homo_eV": -7.0,
+    "lumo_eV": 0.2
+  },
+  {
+    "smiles": "O=S1(=O)CCCC1",
+    "name": "Tetrahydrothiophene_1_1_dioxide",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.2
+  },
+  {
+    "smiles": "O=S1(=O)CCCCC1",
+    "name": "Thiane_1_1_dioxide",
+    "homo_eV": -7.4,
+    "lumo_eV": -0.1
+  },
+  {
+    "smiles": "CS(=O)(=O)NC",
+    "name": "Methanesulfonamide_methyl",
+    "homo_eV": -7.3,
+    "lumo_eV": 0.3
+  },
+  {
+    "smiles": "CS(=O)(=O)NS(=O)(=O)C",
+    "name": "Dimethyl_sulfonimide",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)(F)F",
+    "name": "Trifluoromethyl_methyl_sulfone",
+    "homo_eV": -8.0,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "FC(F)(F)S(=O)(=O)C(F)(F)F",
+    "name": "Bis_trifluoromethyl_sulfone",
+    "homo_eV": -8.4,
+    "lumo_eV": -1.0
+  },
+  {
+    "smiles": "C1CS(=O)(=O)CCCO1",
+    "name": "1_3_2_Dioxathiane_2_2_dioxide",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.1
+  },
+  {
+    "smiles": "COP(=S)(OC)OC",
+    "name": "Trimethyl_thiophosphate",
+    "homo_eV": -7.2,
+    "lumo_eV": 0.4
+  },
+  {
+    "smiles": "CCOP(=S)(OCC)OCC",
+    "name": "Triethyl_thiophosphate",
+    "homo_eV": -7.2,
+    "lumo_eV": 0.4
+  },
+  {
+    "smiles": "FP(=O)(F)F",
+    "name": "Phosphoryl_fluoride",
+    "homo_eV": -8.1,
+    "lumo_eV": -0.7
+  },
+  {
+    "smiles": "N#CP(=O)(OC)OC",
+    "name": "Dimethyl_cyanophosphonate",
+    "homo_eV": -7.6,
+    "lumo_eV": 0.0
+  },
+  {
+    "smiles": "CC1=CS(=O)(=O)C1",
+    "name": "Methyl_vinyl_sulfone",
+    "homo_eV": -6.8,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "O=S(=O)(C(F)(F)F)C(F)(F)F",
+    "name": "Perfluorosulfone",
+    "homo_eV": -8.5,
+    "lumo_eV": -1.2
+  },
+  {
+    "smiles": "CS(=O)(=O)Cl",
+    "name": "Methanesulfonyl_chloride",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.0
+  },
+  {
+    "smiles": "CS(=O)(=O)F",
+    "name": "Methanesulfonyl_fluoride",
+    "homo_eV": -7.7,
+    "lumo_eV": -0.2
+  },
+  {
+    "smiles": "c1csc(c1)P(=O)(OCC)OCC",
+    "name": "Diethyl_thiophen_2_ylphosphonate",
+    "homo_eV": -6.5,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "C1CS(=O)(=O)CCO1",
+    "name": "1_4_Dioxathiane_2_2_dioxide",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.0
+  },
+  {
+    "smiles": "CCS(=O)(=O)c1ccc(C)cc1",
+    "name": "Tosyl_ethane",
+    "homo_eV": -6.5,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "C1CSC(=S)S1",
+    "name": "Ethylene_trithiocarbonate",
+    "homo_eV": -6.5,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "C=CSC=C",
+    "name": "Divinyl_sulfide",
+    "homo_eV": -6.4,
+    "lumo_eV": 0.3
+  },
+  {
+    "smiles": "N#CS",
+    "name": "Thiocyanic_acid",
+    "homo_eV": -7.2,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "CCP(=O)(CC)CC",
+    "name": "Triethylphosphine_oxide",
+    "homo_eV": -6.9,
+    "lumo_eV": 0.7
+  },
+  {
+    "smiles": "C1CO1",
+    "name": "Ethylene_oxide",
+    "homo_eV": -7.4,
+    "lumo_eV": 1.6
+  },
+  {
+    "smiles": "c1ccc2c(c1)sc(c2)S(=O)(=O)c3ccccc3",
+    "name": "Phenyl_sulfonyl_benzothiophene",
+    "homo_eV": -6.0,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "O=S1(=O)C=Cc2ccccc21",
+    "name": "Benzo_b_thiophene_1_1_dioxide",
+    "homo_eV": -6.0,
+    "lumo_eV": -0.9
+  },
+  {
+    "smiles": "C1=CC=C2C(=C1)C(=C(S2))S(=O)(=O)c3ccccc3",
+    "name": "Benzothiophene_sulfone",
+    "homo_eV": -6.1,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "CC(C)OP(=O)(OC(C)C)OC(C)C",
+    "name": "Triisopropyl_phosphate_alt",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "COCCOCCOCCOP(=O)(OCCOCCOCCOC)OCCOCCOCCOC",
+    "name": "Polyether_phosphate",
+    "homo_eV": -7.2,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CS(=O)(=O)NS(=O)(=O)C(F)(F)F",
+    "name": "Methyl_triflyl_sulfonimide",
+    "homo_eV": -8.2,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "C1CSC1",
+    "name": "Thietane",
+    "homo_eV": -6.8,
+    "lumo_eV": 1.0
+  },
+  {
+    "smiles": "C1CSCC1",
+    "name": "Thiolane",
+    "homo_eV": -6.8,
+    "lumo_eV": 1.1
+  },
+  {
+    "smiles": "O=S1(=O)CCOCC1",
+    "name": "1_4_Oxathiane_4_4_dioxide",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.0
+  },
+  {
+    "smiles": "CC(C)(C)S(=O)(=O)C(C)(C)C",
+    "name": "Di_tert_butyl_sulfone",
+    "homo_eV": -7.6,
+    "lumo_eV": 0.4
+  },
+  {
+    "smiles": "c1csc(c1)S(=O)(=O)c1ccccc1",
+    "name": "Thiophen_2_yl_phenyl_sulfone",
+    "homo_eV": -6.3,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "P(=O)(O)(O)O",
+    "name": "Phosphoric_acid",
+    "homo_eV": -7.8,
+    "lumo_eV": 0.2
   }
 ]

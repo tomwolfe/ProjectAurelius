@@ -224,6 +224,27 @@ def _compute_dielectric_cross_terms(counts: dict[str, int]) -> float:
     ):
         correction += 0.4
 
+    # Sulfone-nitrile non-linear synergy: additional dipole enhancement
+    # from co-occurring high-voltage sulfone and polar nitrile groups.
+    # Physical justification: sulfones (ε~44) and nitriles (μ≈3.9 D) form
+    # cooperative dipolar networks that surpass simple additivity. This is
+    # a higher-order correction beyond the linear sulfone-nitrile term.
+    n_sulfone = counts.get("sulfone", 0)
+    n_nitrile = counts.get("nitrile", 0)
+    if n_sulfone > 0 and n_nitrile > 1:
+        correction += 0.3
+
+    # Fluorinated-ether interaction: modulation of ether dipole alignment
+    # by adjacent trifluoromethyl/fluorine groups. Physical justification:
+    # electron-withdrawing fluorine reduces the ether oxygen's lone-pair
+    # availability for dipole alignment, partially suppressing the ether
+    # contribution when fluorinated and non-fluorinated ethers co-occur.
+    if (
+        counts.get("fluorinated_ether", 0) > 0
+        and counts.get("ether", 0) > 0
+    ):
+        correction += 0.25
+
     return max(-2.0, min(2.0, correction))
 
 
