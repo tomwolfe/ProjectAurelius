@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -28,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:
-    from aurelius.types import ScreeningResult
+    from aurelius.types import MoleculeContext, ScreeningResult
 
 _MAX_DISCOVERIES = 100
 log = logging.getLogger(__name__)
@@ -78,6 +79,11 @@ class LoopState:
     atomic JSON checkpointing for resume capability.
     """
 
+    # --- Similarity caching ---
+    screened_fingerprints: list[tuple[str, Any, dict[str, Any]]] = field(default_factory=list)
+    """SMILES, ECFP4 fingerprint, and screening result for each screened molecule.
+    Used by find_nearest_screened to skip redundant oracle evaluations."""
+
     # --- Batch metrics ---
     batch_means: list[float] = field(default_factory=list)
     _all_scores: list[float] = field(default_factory=list)
@@ -106,6 +112,7 @@ class LoopState:
         self.path = _resolve_output_path(self.path, self.output_dir)
         if not self.started_at:
             self.started_at = datetime.now(UTC).isoformat()
+        self._cache_lock = threading.Lock()
         self._load()
 
     # ------------------------------------------------------------------
@@ -135,6 +142,34 @@ class LoopState:
         if len(self._all_scores) < 2:
             return 0.0
         return float(np.var(self._all_scores, ddof=1))
+
+    # ------------------------------------------------------------------
+    # Similarity-based oracle caching
+    # ------------------------------------------------------------------
+
+    def find_nearest_screened(
+        self, ctx: MoleculeContext, threshold: float = 0.95
+    ) -> dict[str, Any] | None:
+        """Return cached screening result if a similar molecule was already screened.
+
+        Uses BulkTanimotoSimilarity on ECFP4 fingerprints to find the nearest
+        match above the given threshold.
+
+        Thread-safe via _cache_lock.
+        """
+        if not self.screened_fingerprints:
+            return None
+        fp = ctx.get_ecfp4()
+        with self._cache_lock:
+            stored_fps = [entry[1] for entry in self.screened_fingerprints]
+        from rdkit.DataStructs import BulkTanimotoSimilarity
+        sims = BulkTanimotoSimilarity(fp, stored_fps)
+        max_sim = max(sims)
+        if max_sim >= threshold:
+            best_idx = sims.index(max_sim)
+            with self._cache_lock:
+                return self.screened_fingerprints[best_idx][2]
+        return None
 
     # ------------------------------------------------------------------
     # Scaffold tracking
@@ -404,6 +439,7 @@ class LoopState:
         self.discoveries.clear()
         self._all_results.clear()
         self._seen_smiles.clear()
+        self.screened_fingerprints.clear()
         self.active_learning_queue.clear()
         self.save()
 

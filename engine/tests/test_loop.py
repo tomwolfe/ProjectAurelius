@@ -12,6 +12,7 @@ from unittest.mock import Mock
 
 from aurelius.agent.loop import DiscoveryLoop, ScreeningResult
 from aurelius.agent.state import LoopState
+from aurelius.types import MoleculeContext
 
 
 class TestDiscoveryLoop:
@@ -232,6 +233,101 @@ class TestDiscoveryLoop:
         selected_smiles_explore = {ctx.smiles for ctx in selected_explore}
         assert len(selected_smiles_exploit) > 0
         assert len(selected_smiles_explore) > 0
+
+    def test_similarity_caching_skips_oracle(self, tmp_path):
+        """When a candidate with Tanimoto > 0.95 to a previously screened
+        molecule is processed, the oracle is not called and the result is
+        interpolated from cache."""
+        mock_pipeline = _make_mock_pipeline()
+        mock_pipeline._oracle = Mock()
+        mock_pipeline._oracle._gc_uq = Mock()
+        mock_pipeline._oracle._gc_uq.predict_dielectric.return_value = (10.0, 0.1, False)
+        mock_pipeline._oracle._gc_uq.predict_viscosity.return_value = (2.0, 0.05, False)
+
+        mock_engine = _make_mock_engine()
+        state = _make_loop_state(str(tmp_path / "cache_skip.json"))
+
+        # Pre-populate the cache with a molecule and its screening result
+        ctx = MoleculeContext.from_smiles("CC(=O)OC")
+        assert ctx is not None
+        state.screened_fingerprints = [
+            (ctx.smiles, ctx.get_ecfp4(), {
+                "score": {
+                    "total_score": 85.0,
+                    "is_viable": True,
+                    "rejection_reasons": [],
+                    "sa_score": 3.5,
+                    "sub_scores": {},
+                },
+                "tier2": {
+                    "homo_eV": -6.5,
+                    "lumo_eV": -0.5,
+                    "dielectric_proxy": 8.0,
+                    "viscosity_proxy": 2.0,
+                    "li_solvation_proxy": 1.5,
+                    "ced_proxy": 0.3,
+                },
+            }),
+        ]
+
+        loop = DiscoveryLoop(
+            pipeline=mock_pipeline,
+            engine=mock_engine,
+            state=state,
+            max_generations=1,
+            batch_size=3,
+        )
+
+        # Process the same molecule (Tanimoto 1.0 > 0.95 -> cache hit)
+        similar_ctx = MoleculeContext.from_smiles("CC(=O)OC")
+        assert similar_ctx is not None
+        result_map: dict = {}
+        result = loop._process_single_candidate(similar_ctx, result_map)
+
+        assert result is not None, "Should return cached result"
+        total_score, t2 = result
+        assert total_score == 85.0, "Should return cached score"
+        assert t2["homo_eV"] == -6.5, "Should return cached properties"
+
+        # Oracle should NOT have been called (cache hit)
+        mock_pipeline.screen_molecule.assert_not_called()
+
+        # Result should be marked as interpolated
+        stored_result = state._all_results[-1]
+        assert stored_result["smiles"] == "CC(=O)OC"
+        assert stored_result["total_score"] == 85.0
+
+    def test_similarity_caching_stores_results(self, tmp_path):
+        """After screening a new molecule, its fingerprint and result are
+        stored in LoopState.screened_fingerprints."""
+        mock_pipeline = _make_mock_pipeline()
+        mock_pipeline._oracle = Mock()
+        mock_pipeline._oracle._gc_uq = Mock()
+        mock_pipeline._oracle._gc_uq.predict_dielectric.return_value = (10.0, 0.1, False)
+        mock_pipeline._oracle._gc_uq.predict_viscosity.return_value = (2.0, 0.05, False)
+
+        mock_engine = _make_mock_engine()
+        state = _make_loop_state(str(tmp_path / "cache_store.json"))
+
+        loop = DiscoveryLoop(
+            pipeline=mock_pipeline,
+            engine=mock_engine,
+            state=state,
+            max_generations=1,
+            batch_size=3,
+        )
+
+        ctx = MoleculeContext.from_smiles("CC(=O)OC")
+        assert ctx is not None
+        result_map: dict = {}
+        result = loop._process_single_candidate(ctx, result_map)
+
+        assert result is not None, "Should successfully screen"
+        assert len(state.screened_fingerprints) == 1, "Should store one entry"
+        stored_smi, stored_fp, stored_result = state.screened_fingerprints[0]
+        assert stored_smi == "CC(=O)OC", "Should store correct SMILES"
+        assert stored_fp is not None, "Should store fingerprint"
+        assert stored_result["score"]["total_score"] == 85.0, "Should store screening result"
 
 
 # ---------------------------------------------------------------------------

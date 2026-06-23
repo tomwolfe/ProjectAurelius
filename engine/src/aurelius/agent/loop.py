@@ -637,9 +637,18 @@ class DiscoveryLoop:
         except Exception:
             pass
 
-        result = self._screen_molecule(ctx)
-        if result is None:
-            return None
+        # Check similarity cache before expensive oracle evaluation
+        cached = self.state.find_nearest_screened(ctx)
+        if cached is not None:
+            result = cached
+            result["score"]["domain_reason"] = "interpolated"
+            log.info("  CACHE HIT for %s (interpolated from similar screened molecule)", smi)
+        else:
+            result = self._screen_molecule(ctx)
+            if result is None:
+                return None
+            # Store fingerprint and result for future similarity lookups
+            self.state.screened_fingerprints.append((smi, ctx.get_ecfp4(), result))
 
         score_data = result.get("score")
         if score_data is None:
