@@ -116,7 +116,7 @@ class TestGradedUqPenalty:
         original_fn = oracle_mod.PropertyOracle._compute_uq_penalty
 
         def mocked_uq(self, ctx):
-            return 0.81  # _UQ_PENALTY ** 2
+            return 0.81, 0.0, 0.0  # (penalty, diel_std, visc_std)
 
         with patch.object(oracle_mod.PropertyOracle, '_compute_uq_penalty', mocked_uq):
             oracle = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=True)

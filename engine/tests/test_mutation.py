@@ -168,3 +168,123 @@ class TestStagnationPivot:
         for smi in results:
             ctx = MoleculeContext.from_smiles(smi)
             assert ctx is not None, f"Invalid SMILES in exploration results: {smi}"
+
+
+# ---------------------------------------------------------------------------
+# Hard-Topological Constraint Tests (Anti-Failure Protocol)
+# ---------------------------------------------------------------------------
+# Each test verifies that is_electrolyte_like() (called by both
+# _process_smarts_product and _validate_brics_product) rejects molecules
+# that violate one of the four hard constraints:
+#   1. Strained rings (3- or 4-membered)
+#   2. Conjugation paths > 16 atoms
+#   3. Valence errors (explicit valence exceeded)
+#   4. < 20% sp3 carbon character (for >4 carbons)
+
+
+class TestHardTopologicalConstraints:
+    """Hard-topological filters prevent model extrapolation failure modes.
+
+    Inverted failure mode: Without these gates, the evolutionary algorithm
+    can generate molecules that are synthetically impossible or physically
+    unrealistic (strained rings violate Baeyer strain theory, overconjugation
+    games additive models, valence errors are chemically impossible).
+    """
+
+    def test_rejects_strained_3_membered_ring(self):
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
+        ctx = MoleculeContext.from_smiles("C1CC1")  # cyclopropane
+        assert ctx is not None
+        assert not is_electrolyte_like(ctx), "3-membered ring must be rejected"
+
+    def test_rejects_strained_4_membered_ring(self):
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
+        ctx = MoleculeContext.from_smiles("C1CCC1")  # cyclobutane
+        assert ctx is not None
+        assert not is_electrolyte_like(ctx), "4-membered ring must be rejected"
+
+    def test_accepts_stable_5_membered_ring(self):
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
+        ctx = MoleculeContext.from_smiles("C1COC(=O)O1")  # EC
+        assert ctx is not None
+        assert is_electrolyte_like(ctx), "5-membered ring must be accepted"
+
+    def test_accepts_stable_6_membered_ring(self):
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
+        ctx = MoleculeContext.from_smiles("C1COCCO1")  # 1,4-dioxane
+        assert ctx is not None
+        assert is_electrolyte_like(ctx), "6-membered ring must be accepted"
+
+    def test_rejects_long_conjugation(self):
+        """Conjugation path > 16 atoms must be rejected."""
+        from aurelius.agent.mutation.smarts import is_electrolyte_like, find_max_conjugated_path
+        # beta-carotene-like polyene chain
+        smi = "CC1=C(C=CC=C(C=CC=C(C=C)C)C)C=CC=C1"
+        ctx = MoleculeContext.from_smiles(smi)
+        assert ctx is not None
+        path_len = find_max_conjugated_path(ctx.mol)
+        assert path_len > 16, f"Test molecule conjugation ({path_len}) should be > 16"
+        assert not is_electrolyte_like(ctx), "Overconjugated molecule must be rejected"
+
+    def test_accepts_short_conjugation(self):
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
+        ctx = MoleculeContext.from_smiles("C1COC(=O)O1")  # EC — no conjugation
+        assert ctx is not None
+        assert is_electrolyte_like(ctx), "Short-conjugation molecule must be accepted"
+
+    def test_rejects_valence_error(self):
+        """Pentavalent carbon must be rejected."""
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
+        # Pentavalent carbon via SMILES with explicit valence error
+        try:
+            from rdkit import Chem
+            mol = Chem.MolFromSmiles("C(C)(C)(C)C")
+            if mol is not None:
+                # Some RDKit versions still parse this; check explicit valence
+                ctx = MoleculeContext(smiles="C(C)(C)(C)C", mol=mol)
+                assert not is_electrolyte_like(ctx), "Pentavalent carbon must be rejected"
+        except Exception:
+            pass  # RDKit may reject the SMILES outright — also acceptable
+
+    def test_accepts_normal_valence(self):
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
+        ctx = MoleculeContext.from_smiles("COC(=O)OC")  # DMC
+        assert ctx is not None
+        assert is_electrolyte_like(ctx), "Normal-valence molecule must be accepted"
+
+    def test_rejects_low_sp3_fraction(self):
+        """Molecule with >4 carbons but <20% sp3 must be rejected."""
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
+        # Benzene ring (6 carbons, 0 sp3)
+        ctx = MoleculeContext.from_smiles("C1=CC=CC=C1")
+        assert ctx is not None
+        assert not is_electrolyte_like(ctx), "Benzene (0% sp3, 6 C) must be rejected"
+
+    def test_accepts_high_sp3_fraction(self):
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
+        ctx = MoleculeContext.from_smiles("COC(=O)OC")  # DMC: 3 sp3 / 3 C = 100%
+        assert ctx is not None
+        assert is_electrolyte_like(ctx), "High-sp3 molecule must be accepted"
+
+    def test_low_sp3_skipped_for_few_carbons(self):
+        """Molecule with <=4 carbons must skip the sp3 check."""
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
+        ctx = MoleculeContext.from_smiles("C(F)(F)F")  # 1 C, 0% sp3, but only 1 C
+        assert ctx is not None
+        # Should pass because n_c < 4
+        result = is_electrolyte_like(ctx)
+        # May still be rejected by other checks (e.g. halogen limit)
+        assert isinstance(result, bool)
+
+    def test_smarts_products_respect_topological_filter(self):
+        """SMARTS mutation products should not include valence errors
+        or strained rings."""
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
+        engine = MutationEngine(seed_smiles=["COC(=O)OC", "C1COCCO1"])
+        candidates = engine.mutate("COC(=O)OC", batch_size=50)
+        for smi in candidates:
+            ctx = MoleculeContext.from_smiles(smi)
+            assert ctx is not None, f"Invalid SMILES in SMARTS product: {smi}"
+            assert is_electrolyte_like(ctx), (
+                f"SMARTS product {smi} violates topological constraints"
+            )

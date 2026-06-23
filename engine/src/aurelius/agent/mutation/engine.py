@@ -291,6 +291,8 @@ class MutationEngine:
             product_ctx = self._ctx_cache[product_smi]
         if not product_ctx.is_valid_electrolyte_mol():
             return None
+        if not is_electrolyte_like(product_ctx):
+            return None
         if not self._novelty_check(product_ctx, force_exploration=force_exploration):
             return None
         if reaction_name is not None and self._adaptive_bias:
