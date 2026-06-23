@@ -279,12 +279,12 @@ _MAX_BRICS_DEPTH: int = 2
 _BRICS_DEPTH_PENALTY_PER_STEP: float = 0.1
 
 # Minimum combined grounding score for BRICS products.
-# Physical justification: At least 40% of the molecule's fragments or
+# Physical justification: At least 60% of the molecule's fragments or
 # functional groups must map to commercial building blocks. This ensures
 # novel-scaffold candidates remain synthesizable from catalog precursors
 # while not strangling genuine scaffold hopping. Too high a threshold (0.7+)
 # collapses the proposal space back to seed-like molecules.
-MIN_GROUNDING_SCORE: float = 0.4
+MIN_GROUNDING_SCORE: float = 0.6
 
 
 def _compute_brics_depth(mol: Chem.Mol, max_iter: int = 5) -> int:

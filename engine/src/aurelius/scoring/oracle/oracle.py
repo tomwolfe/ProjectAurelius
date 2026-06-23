@@ -140,10 +140,14 @@ class PropertyOracle:
         gap = qr["lumo_eV"] - qr["homo_eV"]
         return qr["homo_eV"], qr["lumo_eV"], gap, "TOM (Topological Orbital Model)", qr.get("quantum_confidence", "tom_low")
 
-    def _compute_uq_penalty(self, ctx: MoleculeContext) -> float:
-        """Compute GC uncertainty penalty — graded by number of flagged properties."""
+    def _compute_uq_penalty(self, ctx: MoleculeContext) -> tuple[float, float, float]:
+        """Compute GC uncertainty penalty — graded by number of flagged properties.
+
+        Returns:
+            (penalty, diel_std, visc_std) where penalty in [0.81, 1.0].
+        """
         if self._gc_uq is None:
-            return 1.0
+            return 1.0, 0.0, 0.0
         try:
             _diel_mean, diel_std, _ = self._gc_uq.predict_dielectric(ctx)
             _visc_mean, visc_std, _ = self._gc_uq.predict_viscosity(ctx)
@@ -153,10 +157,11 @@ class PropertyOracle:
             if visc_std > max(1.0, abs(_visc_mean)) * _UQ_THRESHOLD_FRACTION:
                 n_flags += 1
             if n_flags > 0:
-                return _UQ_PENALTY ** n_flags
+                return _UQ_PENALTY ** n_flags, diel_std, visc_std
+            return 1.0, diel_std, visc_std
         except Exception:
             logger.debug("GC UQ unavailable")
-        return 1.0
+        return 1.0, 0.0, 0.0
 
     def _compute_gc_properties(self, ctx: MoleculeContext) -> tuple[float, float, float, float, float, float]:
         """Compute all six GC-based bulk property proxies for a molecule.
@@ -210,6 +215,8 @@ class PropertyOracle:
         domain_penalty: float, domain_reason_str: str, domain_applicable: bool,
         quantum_method: str, quantum_confidence_val: str,
         skip_quantum: bool,
+        diel_std: float = 0.0,
+        visc_std: float = 0.0,
     ) -> dict[str, Any]:
         """Assemble the final evaluation result dict."""
         result: dict[str, Any] = {
@@ -227,6 +234,8 @@ class PropertyOracle:
             "domain_penalty": round(domain_penalty, 4),
             "quantum_method": quantum_method,
             "quantum_confidence": quantum_confidence_val,
+            "uncertainty_flag": diel_std > abs(dielectric) * _UQ_THRESHOLD_FRACTION
+            or visc_std > abs(viscosity) * _UQ_THRESHOLD_FRACTION,
         }
         if self._surrogate is not None:
             result["surrogate_skipped"] = skip_quantum
@@ -244,7 +253,7 @@ class PropertyOracle:
 
         surrogate_penalty, s_homo, s_lumo, skip_quantum = self._run_surrogate(ctx)
         homo, lumo, gap, quantum_method, quantum_confidence_val = self._compute_quantum(ctx, skip_quantum, s_homo, s_lumo)
-        uq_penalty = self._compute_uq_penalty(ctx)
+        uq_penalty, diel_std, visc_std = self._compute_uq_penalty(ctx)
 
         dielectric, viscosity, li_solvation, li_dissociation, ced, conductivity = self._compute_gc_properties(ctx)
 
@@ -262,6 +271,8 @@ class PropertyOracle:
             domain_penalty, domain_reason_str, domain_applicable,
             quantum_method, quantum_confidence_val,
             skip_quantum,
+            diel_std=diel_std,
+            visc_std=visc_std,
         )
         self._cache[smiles] = result
         return result
