@@ -1,11 +1,11 @@
-# Aurelius Discovery Engine v10.1 — Open Core
+# Project Aurelius: Physics-Grounded Small Molecule Discovery Engine
 
 > This is the **MIT-licensed** open-source engine of the Aurelius platform.
 > **Certified Kernels** (`aurelius_kernel.json`) are available to tune the
 > engine for specific chemical domains — see [the parent README](../README.md)
 > and [Certification Protocol](../docs/certification_protocol.md).
 
-**Novel molecule discovery for battery electrolytes.**
+**Novel molecule discovery for battery electrolytes, organic electronics, and catalysis.**
 
 A physically-grounded Evolutionary Algorithm pipeline with a **hybrid quantum + fragment-additivity oracle** and **lightweight ML surrogate pre-filter**. Frontier orbitals (HOMO/LUMO) are predicted via quantum chemistry (xTB/GFN2-xTB preferred, Topological Orbital Model fallback) — bulk properties (dielectric, viscosity, Li+ solvation) via interpretable group-contribution fragment-additivity with uncertainty quantification.
 
@@ -81,6 +81,11 @@ pip install git+https://github.com/tomwolfe/ProjectAurelius.git
 
 ## Quick Start
 
+While the default configuration is optimized for battery electrolytes, the
+oracle can be retuned for other chemical domains (organic electronics,
+catalysis, small-molecule discovery) via the **Certification Lab** —
+see [`docs/certification_protocol.md`](../docs/certification_protocol.md).
+
 ```bash
 aurelius init                         # Initialize pipeline
 aurelius doctor                       # Validate dependencies
@@ -105,6 +110,27 @@ aurelius mixture "C1COC(=O)O1" "COCCOC" --frac 0.5  # Screen EC/DME 50:50 mixtur
 | `validate` | `<smiles>` | Run full pipeline with detailed scorecard |
 | `agent` | `--max-generations --batch-size` | Run the autonomous screening agent |
 | `mixture` | `<smiles_a> <smiles_b> [--frac]` | Screen a binary electrolyte mixture |
+
+## Beyond Batteries
+
+While Aurelius is optimized for battery electrolyte discovery, the engine's
+modular hybrid oracle (quantum + fragment-additivity) generalizes to any
+property that can be expressed through frontier orbital energies and
+group-contribution fragment contributions. Example domains:
+
+- **Organic Electronics**: Tune the oracle for hole/electron transport
+  materials (OFETs, OLEDs) by recalibrating HOMO/LUMO targets and
+  adding charge-mobility fragment contributions.
+- **Catalysis**: Adapt screening to ligand design by reweighting
+  frontier-orbital descriptors and incorporating metal-coordination
+  fragment terms via the Certification Lab.
+- **Small-Molecule Drugs**: Replace the electrolyte viability filter with
+  Lipinski/Ro5 rules and recalibrate the GC fragment library for
+  solvation/LogP prediction.
+
+The **Certification Lab** provides the tooling to retune the
+`tom_parameters`, `gc_fragments`, and `validation_metrics` for these
+alternative domains.
 
 ## Quantum Backend
 

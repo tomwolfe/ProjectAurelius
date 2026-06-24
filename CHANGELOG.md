@@ -1,5 +1,30 @@
 # Changelog
 
+## [10.2.0] - 2026-06-23
+
+### Added
+- **Certification Lab — Report Generator** (`certification-lab/src/certifier/report_generator.py`):
+  New `ReportGenerator` class that produces a one-page PDF validation summary
+  (domain name, Spearman ρ before/after tuning, MAE before/after tuning,
+  signature status). Requires `reportlab`.
+- **API Authentication & Rate Limiting** (`engine/src/aurelius/api/server.py`):
+  Token-based `verify_api_key` dependency checks `X-API-Key` header against
+  `AURELIUS_API_KEY` env var (disabled when unset). Built-in in-memory
+  sliding-window rate limiter applied to `/screen` (30/min) and `/batch`
+  (10/min). `/health` remains public.
+- **Docker multi-stage build** (`engine/docker/Dockerfile`): Two-stage image
+  reduces final size. xTB binary checked gracefully (warning, no crash).
+- **Docker Compose** (`docker-compose.yml`): Runs `aurelius-api` with a
+  `redis` caching service.
+- **Example certified kernels** (`docs/examples/kernels/`): Three structurally
+  valid `aurelius_kernel.json` files for carbonate, sulfone, and ether domains.
+
+### Changed
+- **README** (`engine/README.md`): Updated title/tagline to "Project Aurelius:
+  Physics-Grounded Small Molecule Discovery Engine." Added "Beyond Batteries"
+  section covering organic electronics, catalysis, and drug-discovery use
+  cases. Quick Start now references Certification Lab for domain retuning.
+
 ## [10.1.5] - 2026-06-08
 
 ### Changed

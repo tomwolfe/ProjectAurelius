@@ -1,0 +1,60 @@
+{
+  "version": "1.0.0",
+  "domain_boundary": {
+    "domain": "ether",
+    "max_molecular_weight": 200.0,
+    "allowed_fragments": [
+      "CCOC",
+      "C1CCOC1",
+      "COCCOC"
+    ],
+    "disallowed_fragments": [
+      "[#16]",
+      "[#7]",
+      "C(=O)O"
+    ],
+    "max_hbd": 0,
+    "max_logp": 2.0
+  },
+  "tom_parameters": {
+    "homo_offset": 0.22,
+    "lumo_offset": 0.05,
+    "gc_scale": 1.01,
+    "uq_scale": 0.88,
+    "conjugation_length_cap": 12
+  },
+  "gc_fragments": [
+    {
+      "smarts": "COCCOC",
+      "property": "li_solvation",
+      "correction": 1.8
+    },
+    {
+      "smarts": "CCOC",
+      "property": "dielectric",
+      "correction": 3.5
+    },
+    {
+      "smarts": "C1CCOC1",
+      "property": "dielectric",
+      "correction": 4.2
+    }
+  ],
+  "uq_weights": {
+    "ensemble_weight": 0.40,
+    "calibration_factor": 0.95
+  },
+  "validation_metrics": {
+    "spearman_rho": 0.81,
+    "mae": 0.19,
+    "rmse": 0.25,
+    "n_training": 22,
+    "audit": {
+      "coverage_probability": 0.95,
+      "confidence_level": 0.90,
+      "n_samples": 11,
+      "pass": true
+    }
+  },
+  "signature": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}

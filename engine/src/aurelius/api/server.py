@@ -12,11 +12,15 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
+import time
+from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
 from aurelius.pipeline import AureliusPipeline
@@ -24,6 +28,66 @@ from aurelius.pipeline import AureliusPipeline
 logger = logging.getLogger(__name__)
 
 _pipeline: AureliusPipeline | None = None
+
+
+# ---------------------------------------------------------------------------
+# API Key authentication
+# ---------------------------------------------------------------------------
+
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
+_AURELIUS_API_KEY: str | None = os.environ.get("AURELIUS_API_KEY")
+
+
+async def verify_api_key(api_key: str | None = Depends(API_KEY_HEADER)) -> None:
+    """Dependency that checks ``X-API-Key`` against ``AURELIUS_API_KEY``.
+
+    When ``AURELIUS_API_KEY`` is unset (default) authentication is disabled
+    and all requests are allowed.
+    """
+    if _AURELIUS_API_KEY is None:
+        return
+    if api_key != _AURELIUS_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid or missing API key")
+
+
+# ---------------------------------------------------------------------------
+# In-memory sliding-window rate limiter
+# ---------------------------------------------------------------------------
+
+_rate_store: dict[str, list[float]] = defaultdict(list)
+
+
+class RateLimiter:
+    """FastAPI-compatible rate-limit dependency.
+
+    Parameters
+    ----------
+    limit : int
+        Maximum number of requests allowed in the window.
+    window : float
+        Time window in seconds (default 60).
+    """
+
+    def __init__(self, limit: int, window: float = 60.0) -> None:
+        self.limit = limit
+        self.window = window
+
+    async def __call__(self, request: Request) -> None:
+        ip = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        window_start = now - self.window
+        timestamps = _rate_store[ip]
+        while timestamps and timestamps[0] < window_start:
+            timestamps.pop(0)
+        if len(timestamps) >= self.limit:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"Rate limit exceeded ({self.limit} req / "
+                    f"{self.window:.0f}s). Try again later."
+                ),
+            )
+        timestamps.append(now)
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +164,10 @@ async def health() -> HealthResponse:
     )
 
 
-@app.post("/screen")
+@app.post(
+    "/screen",
+    dependencies=[Depends(verify_api_key), Depends(RateLimiter(30))],
+)
 async def screen(request: ScreenRequest) -> dict[str, Any]:
     """Screen a single molecule through the full Aurelius pipeline.
 
@@ -114,7 +181,10 @@ async def screen(request: ScreenRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/batch")
+@app.post(
+    "/batch",
+    dependencies=[Depends(verify_api_key), Depends(RateLimiter(10))],
+)
 async def batch(request: BatchRequest) -> list[dict[str, Any]]:
     """Screen multiple molecules through the full Aurelius pipeline.
 

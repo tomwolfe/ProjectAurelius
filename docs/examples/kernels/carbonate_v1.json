@@ -1,0 +1,60 @@
+{
+  "version": "1.0.0",
+  "domain_boundary": {
+    "domain": "carbonate",
+    "max_molecular_weight": 250.0,
+    "allowed_fragments": [
+      "C(=O)OC",
+      "C1COC(=O)O1",
+      "O=C(OCC)OCC"
+    ],
+    "disallowed_fragments": [
+      "[#16]",
+      "[#15]",
+      "[#9]"
+    ],
+    "max_hbd": 0,
+    "max_logp": 1.5
+  },
+  "tom_parameters": {
+    "homo_offset": 0.15,
+    "lumo_offset": -0.10,
+    "gc_scale": 1.03,
+    "uq_scale": 0.92,
+    "conjugation_length_cap": 16
+  },
+  "gc_fragments": [
+    {
+      "smarts": "C1OC(=O)OC1",
+      "property": "dielectric",
+      "correction": 8.0
+    },
+    {
+      "smarts": "C(=O)(C)O",
+      "property": "dielectric",
+      "correction": 5.5
+    },
+    {
+      "smarts": "C(=O)(OCC)OCC",
+      "property": "dielectric",
+      "correction": 2.0
+    }
+  ],
+  "uq_weights": {
+    "ensemble_weight": 0.45,
+    "calibration_factor": 1.15
+  },
+  "validation_metrics": {
+    "spearman_rho": 0.72,
+    "mae": 0.28,
+    "rmse": 0.35,
+    "n_training": 28,
+    "audit": {
+      "coverage_probability": 0.93,
+      "confidence_level": 0.90,
+      "n_samples": 14,
+      "pass": true
+    }
+  },
+  "signature": "a1b2c3d4e5f6789012345678abcdef0123456789abcdef0123456789abcdef00"
+}

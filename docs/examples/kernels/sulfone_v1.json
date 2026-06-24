@@ -1,0 +1,60 @@
+{
+  "version": "1.0.0",
+  "domain_boundary": {
+    "domain": "sulfone",
+    "max_molecular_weight": 350.0,
+    "allowed_fragments": [
+      "S(=O)(=O)C",
+      "C1CS(=O)(=O)CC1",
+      "S(=O)(=O)CC"
+    ],
+    "disallowed_fragments": [
+      "[#9]",
+      "C(=O)OC"
+    ],
+    "max_hbd": 0,
+    "max_logp": 1.0
+  },
+  "tom_parameters": {
+    "homo_offset": 0.08,
+    "lumo_offset": -0.22,
+    "gc_scale": 0.97,
+    "uq_scale": 1.10,
+    "conjugation_length_cap": 14
+  },
+  "gc_fragments": [
+    {
+      "smarts": "S(=O)(=O)C",
+      "property": "dielectric",
+      "correction": 12.0
+    },
+    {
+      "smarts": "S(=O)(=O)CC",
+      "property": "viscosity",
+      "correction": 3.5
+    },
+    {
+      "smarts": "S(=O)(=O)C",
+      "property": "li_solvation",
+      "correction": 2.8
+    }
+  ],
+  "uq_weights": {
+    "ensemble_weight": 0.50,
+    "calibration_factor": 1.20
+  },
+  "validation_metrics": {
+    "spearman_rho": 0.68,
+    "mae": 0.31,
+    "rmse": 0.40,
+    "n_training": 18,
+    "audit": {
+      "coverage_probability": 0.89,
+      "confidence_level": 0.90,
+      "n_samples": 9,
+      "pass": false,
+      "reason": "Coverage below confidence threshold."
+    }
+  },
+  "signature": "f0e1d2c3b4a5968778695041322310fe0dcba9876543210fedcba9876543210a"
+}
