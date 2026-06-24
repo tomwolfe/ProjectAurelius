@@ -16,9 +16,12 @@ RUN pip install --no-cache-dir rdkit==2024.09.6
 COPY requirements-full.txt /tmp/requirements-full.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-full.txt
 
+# Install API server dependencies
+RUN pip install --no-cache-dir fastapi uvicorn diskcache
+
 # Copy project source
 COPY . /app/aurelius
 WORKDIR /app
 
-# Default command
-ENTRYPOINT ["python", "-m", "aurelius"]
+# Default command — start uvicorn API server
+ENTRYPOINT ["uvicorn", "aurelius.api.server:app", "--host", "0.0.0.0", "--port", "8000"]

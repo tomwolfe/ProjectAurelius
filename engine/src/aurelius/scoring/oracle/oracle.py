@@ -13,7 +13,10 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
+
+import diskcache
 
 from aurelius.constants import (
     SEI_LUMO_LOWER,
@@ -42,6 +45,9 @@ from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
+
+_ORACLE_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".aurelius", "oracle_cache")
+_ORACLE_CACHE_SIZE_LIMIT = 1_000_000_000  # 1 GB
 
 
 def _evaluate_sei_motif(ctx: MoleculeContext, lumo: float) -> tuple[float, str]:
@@ -92,6 +98,10 @@ class PropertyOracle:
         self._use_gc_uq = use_gc_uq
         self._gc_uq: GcUqEnsemble | None = GcUqEnsemble() if use_gc_uq else None
         self._cache: dict[str, dict[str, Any]] = {}
+        self._disk_cache: diskcache.Cache = diskcache.Cache(
+            directory=_ORACLE_CACHE_DIR,
+            size_limit=_ORACLE_CACHE_SIZE_LIMIT,
+        )
         self._n_surrogate_skips = 0
 
     @property
@@ -250,6 +260,10 @@ class PropertyOracle:
         smiles = ctx.smiles
         if smiles in self._cache:
             return self._cache[smiles]
+        cached = self._disk_cache.get(smiles)
+        if cached is not None:
+            self._cache[smiles] = cached
+            return cached
 
         surrogate_penalty, s_homo, s_lumo, skip_quantum = self._run_surrogate(ctx)
         homo, lumo, gap, quantum_method, quantum_confidence_val = self._compute_quantum(ctx, skip_quantum, s_homo, s_lumo)
@@ -275,6 +289,7 @@ class PropertyOracle:
             visc_std=visc_std,
         )
         self._cache[smiles] = result
+        self._disk_cache[smiles] = result
         return result
 
     def evaluate_smiles(self, smiles: str) -> dict[str, Any]:
@@ -284,6 +299,9 @@ class PropertyOracle:
         return self.evaluate(ctx)
 
     def save(self, path: str = "oracle_cache.joblib") -> None:
+        self._cache.clear()
+        for key in self._disk_cache:
+            self._cache[key] = self._disk_cache[key]
         import joblib
         payload: dict[str, Any] = {
             "cache": self._cache,
@@ -303,9 +321,12 @@ class PropertyOracle:
         loaded_cache = payload.get("cache")
         if loaded_cache is not None:
             self._cache.update(loaded_cache)
+            for key, value in loaded_cache.items():
+                self._disk_cache[key] = value
         logger.info("PropertyOracle: cache loaded from %s", path)
         return True
 
     def clear_cache(self) -> None:
         self._cache.clear()
+        self._disk_cache.clear()
         self._quantum.clear_cache()

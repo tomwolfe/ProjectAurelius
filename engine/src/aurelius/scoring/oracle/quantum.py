@@ -264,14 +264,23 @@ def _run_xtb(xyz_content: str, workdir: str | None = None) -> dict[str, float] |
         return None
 
 
+def _run_xtb_worker(args: tuple[str, str]) -> dict[str, float] | None:
+    """Worker function for ProcessPoolExecutor — runs xTB on a single XYZ.
+
+    Each worker process handles its own temp dir and cleanup.
+    """
+    xyz_content, workdir = args
+    return _run_xtb(xyz_content, workdir)
+
+
 def run_xtb_batch(
     xyz_list: list[str], max_workers: int = 4
 ) -> list[dict[str, float] | None]:
     """Run multiple xTB single-point calculations in parallel.
 
-    Uses a ThreadPoolExecutor to overlap subprocess I/O. Subprocess calls
-    release the GIL, so threading is effective for xTB batch execution
-    without the overhead of process pool serialization.
+    Uses a ProcessPoolExecutor to isolate xTB subprocess calls in
+    separate processes, avoiding GIL contention and ensuring clean
+    temp directory management in each worker.
 
     Args:
         xyz_list: List of XYZ-format molecular geometry strings.
@@ -291,10 +300,11 @@ def run_xtb_batch(
     ]
 
     results: list[dict[str, float] | None] = [None] * len(xyz_list)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as pool:
+        args_list = list(zip(xyz_list, workdirs))
         future_map: dict[concurrent.futures.Future[dict[str, float] | None], int] = {
-            pool.submit(_run_xtb, xyz, wd): i
-            for i, (xyz, wd) in enumerate(zip(xyz_list, workdirs))
+            pool.submit(_run_xtb_worker, args): i
+            for i, args in enumerate(args_list)
         }
         for future in concurrent.futures.as_completed(future_map):
             idx = future_map[future]
@@ -303,6 +313,9 @@ def run_xtb_batch(
             except Exception as exc:
                 logger.debug("xTB batch item %d failed: %s", idx, exc)
                 results[idx] = None
+
+    for wd in workdirs:
+        shutil.rmtree(wd, ignore_errors=True)
 
     return results
 
@@ -926,10 +939,12 @@ class QuantumOracle:
         use_xtb: bool = True,
         n_conformers: int = _N_CONFORMERS,
         n_top_conformers: int = _N_TOP_CONFORMERS,
+        max_workers: int = 4,
     ) -> None:
         self._use_xtb = use_xtb and _HAS_XTB
         self._n_conformers = n_conformers
         self._n_top_conformers = n_top_conformers
+        self._max_workers = max_workers
         self._cache: dict[str, dict[str, float]] = {}
         self._n_xtb_calls = 0
         self._n_tom_calls = 0
