@@ -16,8 +16,10 @@ from rdkit import Chem
 from aurelius.scoring.oracle.quantum import (
     _apply_cross_conjugation_penalty,
     _apply_peierls_damping,
+    _apply_steric_crowding_penalty,
     _apply_torsional_strain_penalty,
     _apply_wiener_compactness,
+    _detect_steric_crowding,
     _is_cross_conjugated,
     _longest_conjugation_path,
     _wiener_index,
@@ -405,4 +407,74 @@ class TestSurrogateCalibration:
         assert surrogate.n_train >= 150, (
             f"Surrogate trained on only {surrogate.n_train} molecules; "
             f"need >= 150 for adequate generalization."
+        )
+
+
+class TestStericCrowding:
+    """Steric crowding detection and penalty for pi-systems."""
+
+    def test_detect_crowded_tetra_substituted_alkene(self):
+        """An sp2 carbon with >2 non-H neighbors should be crowded."""
+        mol = Chem.MolFromSmiles("C=C(C)C(C)C")
+        assert mol is not None
+        assert _detect_steric_crowding(mol), (
+            "Tetra-substituted alkene carbon should be detected as crowded"
+        )
+
+    def test_detect_crowded_small_ring(self):
+        """An sp2 carbon in a 4-membered ring should be crowded."""
+        mol = Chem.MolFromSmiles("C1=CCC1")
+        assert mol is not None
+        assert _detect_steric_crowding(mol), (
+            "sp2 carbon in 4-membered ring should be crowded"
+        )
+
+    def test_not_crowded_linear_alkene(self):
+        """A simple linear alkene should NOT be crowded."""
+        mol = Chem.MolFromSmiles("C=CC")
+        assert mol is not None
+        assert not _detect_steric_crowding(mol), (
+            "Simple linear alkene should not be crowded"
+        )
+
+    def test_not_crowded_benzene(self):
+        """Benzene (6-membered ring, sp2 with 2 non-H neighbors) not crowded."""
+        mol = Chem.MolFromSmiles("c1ccccc1")
+        assert mol is not None
+        assert not _detect_steric_crowding(mol), (
+            "Benzene should not be detected as crowded"
+        )
+
+    def test_crowded_5_ring_not_crowded(self):
+        """Cyclopentadiene has a 5-membered ring — not <5, should not be crowded."""
+        mol = Chem.MolFromSmiles("C1=CC=CC1")
+        assert mol is not None
+        assert not _detect_steric_crowding(mol), (
+            "Cyclopentadiene sp2 in 5-ring should not be crowded"
+        )
+
+    def test_steric_penalty_applied_to_crowded_molecule(self):
+        """Crowded molecules should get +0.30 eV to both HOMO and LUMO."""
+        mol = Chem.MolFromSmiles("C=C(C)C")
+        assert mol is not None
+        homo_in, lumo_in = -6.0, 0.0
+        homo_out, lumo_out = _apply_steric_crowding_penalty(mol, 4, homo_in, lumo_in)
+        assert homo_out == homo_in + 0.3, (
+            f"HOMO should be {homo_in + 0.3}, got {homo_out}"
+        )
+        assert lumo_out == lumo_in + 0.3, (
+            f"LUMO should be {lumo_in + 0.3}, got {lumo_out}"
+        )
+
+    def test_steric_penalty_not_applied_to_benzene(self):
+        """Benzene should NOT receive the steric crowding penalty."""
+        mol = Chem.MolFromSmiles("c1ccccc1")
+        assert mol is not None
+        homo_in, lumo_in = -6.0, 0.0
+        homo_out, lumo_out = _apply_steric_crowding_penalty(mol, 6, homo_in, lumo_in)
+        assert homo_out == homo_in, (
+            f"Benzene HOMO should not shift, got {homo_out}"
+        )
+        assert lumo_out == lumo_in, (
+            f"Benzene LUMO should not shift, got {lumo_out}"
         )

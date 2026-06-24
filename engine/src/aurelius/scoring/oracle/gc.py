@@ -19,6 +19,7 @@ published experimental data; historical tuning is in CHANGELOG.md.
 
 from __future__ import annotations
 
+import abc
 import json
 import logging
 import math
@@ -748,12 +749,35 @@ class GcUqEnsemble:
 # ---------------------------------------------------------------------------
 
 
-class BasePropertyModel:
+class BasePropertyModel(abc.ABC):
     """Abstract base class for group-contribution property models.
 
     Subclasses define fragment patterns with associated property contributions
     and provide prediction methods using the fragment-additivity framework
     with Michaelis-Menten saturation and non-linear cross-terms.
+
+    Example::
+
+        class CatalysisPack(BasePropertyModel):
+            name = "catalysis"
+            fragments = [
+                (Chem.MolFromSmarts("[Pd]"), "palladium", 1.0, 0.5),
+            ]
+            base_values = {"turnover_frequency": 0.0}
+            cross_terms = []
+
+            def predict_all(self, ctx: MoleculeContext) -> dict[str, float]:
+                return {"turnover_frequency_proxy": self._predict_tof(ctx)}
+
+            def _predict_tof(self, ctx: MoleculeContext) -> float:
+                counts = self.count_fragments(ctx.mol)
+                return self.base_values["turnover_frequency"] + sum(
+                    self.saturate_contrib(counts.get(name, 0), contrib)
+                    for _, name, contrib, _ in self.fragments
+                )
+
+            def property_keys(self) -> dict[str, str]:
+                return {"turnover_frequency": "turnover_frequency_proxy"}
     """
 
     name: str = "base"
@@ -776,6 +800,29 @@ class BasePropertyModel:
 
     def get_fragment_names(self) -> list[str]:
         return [name for _, name, *_rest in self.fragments]
+
+    @abc.abstractmethod
+    def predict_all(self, ctx: MoleculeContext) -> dict[str, float]:
+        """Predict all properties for a molecule context.
+
+        Args:
+            ctx: MoleculeContext with parsed molecule data.
+
+        Returns:
+            Dict mapping proxy property names (e.g., "dielectric_proxy")
+            to their predicted float values.
+        """
+        ...
+
+    @abc.abstractmethod
+    def property_keys(self) -> dict[str, str]:
+        """Map short property names to result dict keys.
+
+        Returns:
+            Dict mapping short names (e.g., "dielectric") to the full
+            keys returned by ``predict_all`` (e.g., "dielectric_proxy").
+        """
+        ...
 
 
 # ---------------------------------------------------------------------------

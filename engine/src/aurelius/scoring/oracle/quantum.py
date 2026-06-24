@@ -795,6 +795,60 @@ def _apply_cross_conjugation_penalty(mol: Chem.Mol, L: int, homo: float, lumo: f
     return homo, lumo
 
 
+def _detect_steric_crowding(mol: Chem.Mol) -> bool:
+    """Detect steric crowding in pi-systems via purely topological rules.
+
+    A molecule is sterically crowded if it contains an sp2 carbon in a
+    conjugated path that either:
+      - has >2 non-hydrogen neighbours, or
+      - is part of a ring with <5 members.
+
+    These topological patterns correlate with twisted/unstable pi-systems
+    (e.g., tetra-substituted alkenes, cyclobutadiene-like motifs) without
+    requiring 3D geometry or force-field calculations.
+
+    Returns:
+        True if any atom matches the crowding criteria.
+    """
+    ring_info = mol.GetRingInfo()
+    atom_rings = ring_info.AtomRings()
+
+    for atom in mol.GetAtoms():
+        if atom.GetAtomicNum() != 6:
+            continue
+        if atom.GetHybridization() != Chem.HybridizationType.SP2:
+            continue
+        if not any(
+            _is_conjugated_bond(mol, atom.GetIdx(), nb.GetIdx())
+            for nb in atom.GetNeighbors()
+        ):
+            continue
+        n_non_h = sum(1 for nb in atom.GetNeighbors() if nb.GetAtomicNum() != 1)
+        if n_non_h > 2:
+            return True
+        idx = atom.GetIdx()
+        for ring in atom_rings:
+            if idx in ring and len(ring) < 5:
+                return True
+    return False
+
+
+@_register_energy
+def _apply_steric_crowding_penalty(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
+    """Apply steric crowding penalty (+0.30 eV to both HOMO and LUMO).
+
+    Physical basis: Sterically crowded pi-systems (e.g., tetra-substituted
+    alkenes, small-ring sp2 carbons) are twisted or ring-strained, which
+    destabilises both frontier orbitals. The +0.30 eV shift across both
+    orbitals widens the effective gap and penalises molecules with distorted
+    pi-systems. This is a lightweight alternative to UFF optimisation:
+    purely topological, zero compute cost.
+    """
+    if _detect_steric_crowding(mol):
+        return homo + 0.3, lumo + 0.3
+    return homo, lumo
+
+
 def _evaluate_tom_single_conformer(
     mol: Chem.Mol, xyz_content: str | None = None
 ) -> tuple[float, float]:
@@ -837,6 +891,8 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
         7. Phosphate HOMO correction (+0.50 per P=O) for σ-only P-O-C bonds
         8. Base offset calibrated to 45 electrolyte molecules from DFT references.
         9. Cross-conjugation penalty for branched pi-systems.
+        10. Steric crowding penalty (+0.30 eV to both HOMO and LUMO) for
+            sp2 carbons with >2 non-H neighbours or in rings <5 members.
 
     Uses Boltzmann-weighted averaging over the top 3 conformers to stabilise
     predictions for sterically hindered, flexible conjugated systems.
