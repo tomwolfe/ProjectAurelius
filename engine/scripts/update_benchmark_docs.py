@@ -14,6 +14,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
+from rdkit import Chem
+from rdkit.Chem.Scaffolds import MurckoScaffold
+
 # Per-benchmark timeouts (seconds). The reality check's own wall-time limit
 # is set to 30s via AURELIUS_REALITY_WALL_TIME (vs 120s standalone).
 _TIMEOUTS: dict[str, int] = {
@@ -76,6 +80,52 @@ def _check_module(module: str) -> bool:
         return False
 
 
+def _compute_scientific_yield() -> float:
+    """Compute scientific yield as novel_scaffold_count / total_screened.
+
+    Runs a quick mutation engine proposal and screens a batch of candidates
+    to measure how many novel Murcko scaffolds are discovered per molecule
+    screened. This is a proxy for the EA's chemical exploration efficiency,
+    reported separately from net_progress to decouple scientific from
+    code-simplicity metrics.
+    """
+    np.random.seed(42)
+    import random
+    random.seed(42)
+    try:
+        from aurelius.agent.mutation import MutationEngine
+        engine = MutationEngine(seed_smiles=["COC(=O)OC", "C1COCCO1"])
+        candidates = engine.propose_candidates(n_candidates=50, batch_size=25)
+
+        seed_scaffolds: set[str] = set()
+        for smi in engine.seed_pool:
+            mol = Chem.MolFromSmiles(smi)
+            if mol:
+                s = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+                if s:
+                    seed_scaffolds.add(s)
+
+        novel_count = 0
+        total_screened = 0
+        for smi in candidates:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                continue
+            total_screened += 1
+            try:
+                s = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+                if s and s not in seed_scaffolds:
+                    novel_count += 1
+            except Exception:
+                continue
+
+        if total_screened == 0:
+            return 0.0
+        return novel_count / total_screened
+    except Exception:
+        return 0.0
+
+
 def main() -> None:
     docs_dir = Path(__file__).resolve().parent.parent / "docs"
     docs_dir.mkdir(exist_ok=True)
@@ -105,6 +155,8 @@ def main() -> None:
     model_card_path = str(Path(__file__).resolve().parent / "generate_model_card.py")
     _run_script(model_card_path)
 
+    sci_yield = _compute_scientific_yield()
+
     parts = [
         "# Live Benchmark Results\n",
         "\n",
@@ -123,6 +175,11 @@ def main() -> None:
         "## Mixture Synergy Validation\n",
         "```text\n",
         mixture,
+        "```\n",
+        "\n",
+        "## Scientific Yield\n",
+        "```text\n",
+        f"Scientific yield (novel scaffolds / total screened): {sci_yield:.4f}\n",
         "```\n",
     ]
 

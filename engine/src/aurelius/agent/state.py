@@ -98,6 +98,7 @@ class LoopState:
 
     # --- Scaffold tracking ---
     scaffolds_per_batch: list[list[str]] = field(default_factory=list)
+    _seen_scaffolds: set[str] = field(default_factory=set)
 
     # --- Checkpointing ---
     best_score: float = 0.0
@@ -177,6 +178,7 @@ class LoopState:
 
     def record_scaffolds(self, scaffolds: list[str]) -> None:
         self.scaffolds_per_batch.append(list(set(scaffolds)))
+        self._seen_scaffolds.update(scaffolds)
 
     def has_scaffold_stagnation(self, n_batches: int = 3) -> bool:
         if len(self.scaffolds_per_batch) < n_batches:
@@ -190,6 +192,22 @@ class LoopState:
         counts = Counter(all_scaffolds)
         most_common_count = counts.most_common(1)[0][1]
         return most_common_count >= n_batches
+
+    @property
+    def scientific_yield(self) -> float:
+        """Fraction of screened molecules with novel scaffolds.
+
+        Computed as the number of unique Murcko scaffolds observed across
+        all batches divided by the total number of molecules screened.
+        A higher value indicates the EA is exploring diverse chemical
+        space rather than rediscovering known scaffolds.
+
+        Returns:
+            Float in [0.0, 1.0]; 0.0 if no molecules have been screened.
+        """
+        if self.total_screened <= 0:
+            return 0.0
+        return len(self._seen_scaffolds) / self.total_screened
 
     # ------------------------------------------------------------------
     # Empirical feedback tracking for dynamic re-weighting
@@ -439,6 +457,7 @@ class LoopState:
         self.discoveries.clear()
         self._all_results.clear()
         self._seen_smiles.clear()
+        self._seen_scaffolds.clear()
         self.screened_fingerprints.clear()
         self.active_learning_queue.clear()
         self.save()

@@ -613,7 +613,6 @@ def _conjugated_bond_deviation(
         return None
 
 
-@_register_l
 def _apply_torsional_strain_penalty(
     mol: Chem.Mol, L: int, xyz_content: str | None = None, **kwargs: Any
 ) -> int:
@@ -622,14 +621,16 @@ def _apply_torsional_strain_penalty(
     Physical basis: The particle-in-a-box model assumes a perfectly planar
     conjugated system. Torsional strain (dihedral > 30°) between adjacent
     conjugated atoms breaks pi-orbital overlap, effectively shortening the
-    conjugation path. This prevents false-positive narrow gaps for sterically
-    hindered conjugated molecules (e.g., bulky biphenyl derivatives).
+    conjugation path.
 
-    When xyz_content is provided, uses those coordinates directly (from a
-    specific conformer). Otherwise generates a conformer via ETKDGv3 with
-    useRandomCoords and UFF relaxation (maxIts=500) to escape local minima.
+    When xyz_content is provided, uses those coordinates directly. Otherwise
+    generates a conformer via ETKDGv3 with useRandomCoords and UFF relaxation.
     For each conjugated bond with flanking neighbors, the dihedral angle is
     measured. If any exceeds 30 deg, L is reduced by 30% (floor 2).
+
+    Note: This function is no longer auto-registered in the L-correction
+    pipeline. Use `use_geometry_correction=True` in `predict_tom_orbitals`
+    for the new per-bond 20% reduction logic.
     """
     if L <= 2:
         return L
@@ -672,6 +673,61 @@ def _apply_torsional_strain_penalty(
 
     if max_deviation > 30.0:
         L = max(2, int(L * 0.7))
+    return L
+
+
+def _apply_geometry_correction(mol: Chem.Mol, L: int) -> int:
+    """Reduce effective conjugation length L for non-planar conjugated bonds.
+
+    Generates a single low-energy conformer using ETKDGv3 and UFF relaxation.
+    Measures dihedral angles along all conjugated bonds. For each bond with
+    a deviation >30° from planarity (0° or 180°), reduces effective L by
+    20%. The compounding reduction captures the cumulative effect of multiple
+    twisted bonds fragmenting the pi-system.
+
+    Physical basis: The particle-in-a-box model assumes a perfectly planar
+    conjugated system. Each twisted bond (>30° dihedral) breaks pi-orbital
+    overlap, effectively shortening the conjugation path. A 20% per-bond
+    reduction reflects the exponential decay of through-bond coupling with
+    the cosine of the dihedral angle (cos²θ attenuation).
+
+    Args:
+        mol: RDKit molecule.
+        L: Current effective conjugation length.
+
+    Returns:
+        Reduced conjugation length (minimum 2).
+    """
+    if L <= 2:
+        return L
+    from rdkit.Chem import AllChem
+
+    mol_copy = Chem.RWMol(mol)
+    mol_copy.UpdatePropertyCache()
+    try:
+        mol_copy = Chem.AddHs(mol_copy)
+        params = AllChem.ETKDGv3()
+        params.randomSeed = 42
+        result = AllChem.EmbedMolecule(mol_copy, params)
+        if result != 0:
+            return L
+        AllChem.UFFOptimizeMolecule(mol_copy)
+        conf = mol_copy.GetConformer()
+    except Exception:
+        return L
+
+    n_distorted = 0
+    for bond in mol.GetBonds():
+        if not bond.GetIsConjugated():
+            continue
+        deviation = _conjugated_bond_deviation(
+            mol, conf, bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        )
+        if deviation is not None and deviation > 30.0:
+            n_distorted += 1
+
+    if n_distorted > 0:
+        L = max(2, int(L * (0.8 ** n_distorted)))
     return L
 
 
@@ -850,7 +906,8 @@ def _apply_steric_crowding_penalty(mol: Chem.Mol, L: int, homo: float, lumo: flo
 
 
 def _evaluate_tom_single_conformer(
-    mol: Chem.Mol, xyz_content: str | None = None
+    mol: Chem.Mol, xyz_content: str | None = None,
+    use_geometry_correction: bool = False,
 ) -> tuple[float, float]:
     """Evaluate TOM for a single conformer with optional geometry-dependent penalty.
 
@@ -860,6 +917,8 @@ def _evaluate_tom_single_conformer(
     Args:
         mol: RDKit molecule.
         xyz_content: Optional XYZ string for conformer-specific torsional analysis.
+        use_geometry_correction: If True, apply per-bond 20% L reduction for
+            conjugated bonds with >30° dihedral deviation from planarity.
 
     Returns:
         (homo_eV, lumo_eV)
@@ -871,6 +930,9 @@ def _evaluate_tom_single_conformer(
     for _, l_fn in _L_CORRECTIONS:
         L = l_fn(mol, L, xyz_content=xyz_content)
 
+    if use_geometry_correction:
+        L = _apply_geometry_correction(mol, L)
+
     homo, lumo = _compute_tom_base_energies(L)
     for _, e_fn in _ENERGY_CORRECTIONS:
         homo, lumo = e_fn(mol, L, homo, lumo)
@@ -878,7 +940,9 @@ def _evaluate_tom_single_conformer(
     return homo, lumo
 
 
-def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
+def predict_tom_orbitals(
+    mol: Chem.Mol, use_geometry_correction: bool = False,
+) -> tuple[float, float]:
     """Predict HOMO/LUMO using the Topological Orbital Model (TOM).
 
     The model estimates frontier orbital energies from:
@@ -897,12 +961,20 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     Uses Boltzmann-weighted averaging over the top 3 conformers to stabilise
     predictions for sterically hindered, flexible conjugated systems.
 
+    Args:
+        mol: RDKit molecule.
+        use_geometry_correction: If True, generate a conformer and reduce
+            effective L by 20% for each conjugated bond with >30° dihedral
+            deviation from planarity. Default False (fast topological path).
+
     Returns:
         (homo_eV, lumo_eV)
     """
     conformers = _generate_multi_xyz(mol, n_conformers=3)
     if not conformers:
-        return _evaluate_tom_single_conformer(mol)
+        return _evaluate_tom_single_conformer(
+            mol, use_geometry_correction=use_geometry_correction,
+        )
 
     top = conformers[:3]
     energies = [e for _, e in top]
@@ -911,7 +983,9 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     homo_vals: list[float] = []
     lumo_vals: list[float] = []
     for xyz, _ in top:
-        h, l = _evaluate_tom_single_conformer(mol, xyz)
+        h, l = _evaluate_tom_single_conformer(
+            mol, xyz, use_geometry_correction=use_geometry_correction,
+        )
         homo_vals.append(h)
         lumo_vals.append(l)
 

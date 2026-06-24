@@ -190,11 +190,32 @@ class PropertyOracle:
         """
         return self._property_pack.predict_all(ctx)
 
+    def _compute_ood_penalty(self, ctx: MoleculeContext) -> tuple[float, str]:
+        """Compute centroid-based OOD penalty and reason string.
+
+        Returns (penalty_multiplier, reason_string). 1.0 if no OOD detected.
+        """
+        if self._gc_uq is None:
+            return 1.0, ""
+        try:
+            ood_dist, is_ood = self._gc_uq.compute_domain_distance(ctx)
+            if is_ood:
+                return 0.9, f"OOD centroid (dist={ood_dist:.3f})"
+        except Exception:
+            pass
+        return 1.0, ""
+
     def _build_domain(self, ctx: MoleculeContext, skip_quantum: bool, surrogate_penalty: float, s_homo: float, uq_penalty: float) -> tuple[float, str, bool]:
-        """Build domain penalty and reason string."""
+        """Build domain penalty and reason string.
+
+        Combines quantum DoA, GC DoA, surrogate, UQ variance, and
+        centroid-based OOD penalties into a single domain penalty.
+        """
         q_penalty, q_reason = (1.0, "skipped — surrogate") if skip_quantum else compute_quantum_domain_penalty(ctx)
         gc_penalty, gc_reason = compute_gc_domain_penalty(ctx)
-        domain_penalty = min(q_penalty, gc_penalty, surrogate_penalty, uq_penalty)
+        ood_penalty, ood_reason = self._compute_ood_penalty(ctx)
+        domain_penalty = min(q_penalty, gc_penalty, surrogate_penalty, uq_penalty, ood_penalty)
+
         reasons: list[str] = []
         if q_penalty < 1.0 and not skip_quantum:
             reasons.append(f"quantum: {q_reason}")
@@ -204,6 +225,8 @@ class PropertyOracle:
             reasons.append(f"surrogate: HOMO={s_homo:.2f} eV > threshold")
         if uq_penalty < 1.0:
             reasons.append("High UQ Variance")
+        if ood_penalty < 1.0:
+            reasons.append(ood_reason)
         return domain_penalty, "; ".join(reasons) if reasons else _DATA_SOURCE, domain_penalty >= 0.85
 
     def _apply_sei_penalty(self, ctx: MoleculeContext, lumo: float, domain_penalty: float, domain_reason_str: str) -> tuple[float, str, bool]:

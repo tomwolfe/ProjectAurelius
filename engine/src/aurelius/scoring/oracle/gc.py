@@ -610,6 +610,10 @@ class GcUqEnsemble:
         self._is_trained = False
         self._train_time_ms: float = 0.0
         self._empirical_data: list[dict] = empirical_data if empirical_data is not None else []
+        # Domain distance (centroid-based OOD) state
+        self._centroid_fp: np.ndarray | None = None
+        self._centroid_mean_dist: float = 0.0
+        self._centroid_std_dist: float = 0.0
 
     def append_empirical_data(self, new_data: list[dict]) -> None:
         """Append empirical wet-lab feedback data and flag the ensemble for retraining.
@@ -717,6 +721,7 @@ class GcUqEnsemble:
             "GcUqEnsemble: trained on %d molecules in %.1fms",
             len(X_list), self._train_time_ms,
         )
+        self._compute_fingerprint_centroid()
 
     def predict_dielectric(self, ctx: MoleculeContext) -> tuple[float, float, bool]:
         """Predict dielectric proxy with uncertainty (mean, std, high_uncertainty)."""
@@ -748,6 +753,129 @@ class GcUqEnsemble:
     @property
     def is_trained(self) -> bool:
         return self._is_trained
+
+    # ------------------------------------------------------------------
+    # Domain distance — centroid-based out-of-distribution detection
+    # ------------------------------------------------------------------
+    # Physical justification: Tanimoto distance to the training set
+    # centroid (mean ECFP4 bit vector) serves as a proxy for structural
+    # novelty. Molecules with distance > mean + 2*std of the training set
+    # are flagged as OOD. This is O(1) per molecule, numerically stable,
+    # and avoids the dimensionality curse of Mahalanobis distance on
+    # sparse binary fingerprints.
+
+    def _compute_fingerprint_centroid(self) -> None:
+        """Compute training set ECFP4 centroid and distance statistics.
+
+        Loads the same benchmark + empirical data used for ensemble
+        training, generates ECFP4 fingerprints for each molecule, and
+        computes:
+          - Centroid fingerprint (mean bit vector, thresholded at 0.5)
+          - Mean Tanimoto distance from training molecules to centroid
+          - Standard deviation of those distances
+
+        These statistics are stored for O(1) domain distance checks on
+        new molecules.
+        """
+        fps_list: list[np.ndarray] = []
+
+        path = self._resolve_path()
+        with open(path) as f:
+            data = json.load(f)
+
+        for entry in data:
+            smi = entry.get("smiles", "")
+            if not smi:
+                continue
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is None:
+                continue
+            fp = ctx.get_ecfp4()
+            fps_list.append(np.array(fp, dtype=np.float32))
+
+        for entry in self._empirical_data:
+            smi = entry.get("smiles", "")
+            if not smi:
+                continue
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is None:
+                continue
+            fp = ctx.get_ecfp4()
+            fps_list.append(np.array(fp, dtype=np.float32))
+
+        if len(fps_list) < 3:
+            logger.warning(
+                "GcUqEnsemble: too few molecules (%d) for centroid computation",
+                len(fps_list),
+            )
+            return
+
+        self._centroid_fp = np.mean(fps_list, axis=0).astype(np.float32)
+        centroid_binary = (self._centroid_fp >= 0.5).astype(np.float32)
+        norm_c = float(np.sum(centroid_binary))
+
+        distances: list[float] = []
+        for arr in fps_list:
+            dot = float(np.dot(arr, centroid_binary))
+            norm_a = float(np.sum(arr))
+            denom = norm_a + norm_c - dot
+            if denom > 1e-10:
+                dist = 1.0 - dot / denom
+            else:
+                dist = 0.0
+            distances.append(dist)
+
+        self._centroid_mean_dist = float(np.mean(distances))
+        self._centroid_std_dist = (
+            float(np.std(distances, ddof=1)) if len(distances) > 1 else 0.0
+        )
+        logger.info(
+            "GcUqEnsemble: centroid computed from %d molecules "
+            "(mean_dist=%.4f, std_dist=%.4f)",
+            len(fps_list), self._centroid_mean_dist, self._centroid_std_dist,
+        )
+
+    def compute_domain_distance(
+        self, ctx: MoleculeContext,
+    ) -> tuple[float, bool]:
+        """Compute Tanimoto distance from a molecule to the training centroid.
+
+        A molecule is flagged as out-of-distribution (OOD) if its Tanimoto
+        distance to the centroid exceeds the training set mean + 2*std.
+
+        Physical justification: Molecules far from the training centroid
+        in fingerprint space have structural features poorly represented
+        in the calibration set. The 2*std threshold is a standard
+        statistical cutoff (95th percentile under normality) for outlier
+        detection.
+
+        Args:
+            ctx: MoleculeContext for the query molecule.
+
+        Returns:
+            (distance, is_ood) where distance is 1 - Tanimoto similarity
+            to the binarized centroid, and is_ood is True when distance
+            exceeds the training mean + 2*std threshold.
+        """
+        if self._centroid_fp is None:
+            return 0.0, False
+
+        centroid_binary = (self._centroid_fp >= 0.5).astype(np.float32)
+        norm_c = float(np.sum(centroid_binary))
+
+        fp = ctx.get_ecfp4()
+        arr = np.array(fp, dtype=np.float32)
+        dot = float(np.dot(arr, centroid_binary))
+        norm_a = float(np.sum(arr))
+        denom = norm_a + norm_c - dot
+        if denom > 1e-10:
+            distance = 1.0 - dot / denom
+        else:
+            distance = 0.0
+
+        threshold = self._centroid_mean_dist + 2.0 * self._centroid_std_dist
+        is_ood = distance > threshold
+        return distance, is_ood
 
 
 # ---------------------------------------------------------------------------
