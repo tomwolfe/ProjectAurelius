@@ -40,7 +40,9 @@ from aurelius.scoring.oracle.gc import (
     predict_mixture_viscosity,
     predict_viscosity_proxy,
 )
+from aurelius.scoring.oracle.gc import ElectrolytePack
 from aurelius.scoring.oracle.oracle import PropertyOracle
+from aurelius.scoring.oracle.packs import OrganicElectronicsPack
 from aurelius.scoring.oracle.quantum import (
     _ATOM_PERTURBATIONS,
     _HAS_XTB,
@@ -69,6 +71,8 @@ from aurelius.scoring.oracle.surrogate import (
 )
 
 __all__ = [
+    "ElectrolytePack",
+    "OrganicElectronicsPack",
     "PropertyOracle",
     "QuantumOracle",
     "SurrogateQuantumOracle",

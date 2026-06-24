@@ -20,6 +20,10 @@ pip install aurelius-engine
 aurelius screen "CC(=O)OC1=CC=CC=C1"
 ```
 
+For detailed explanations of proxy values (dielectric, viscosity, Li+ solvation)
+with curated examples and troubleshooting, see
+[`docs/quickstart_chemist.md`](docs/quickstart_chemist.md).
+
 For full CLI reference, see [`engine/README.md`](engine/README.md).
 
 ## Certified Kernels
@@ -38,6 +42,11 @@ for the schema definition.
 - **Engine**: MIT License — see [`engine/LICENSE`](engine/LICENSE) (or root `LICENSE`).
 - **Certification Lab**: Proprietary — see `certification-lab/NOTICE`.
 
+## Architecture
+
+For a detailed breakdown of the pipeline, property pack system, agent loop,
+and certification workflow, see [`docs/architecture.md`](docs/architecture.md).
+
 ## Repository Structure
 
 ```
@@ -55,6 +64,9 @@ project-aurelius/
 │   ├── scripts/
 │   └── pyproject.toml
 └── docs/
+    ├── quickstart_chemist.md
+    ├── architecture.md
     ├── certification_protocol.md
+    ├── contributing_fragments.md
     └── kernel_schema.json
 ```

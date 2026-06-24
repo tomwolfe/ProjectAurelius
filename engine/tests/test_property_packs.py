@@ -163,6 +163,85 @@ class TestOrganicElectronicsPack:
         ea_with = pack.predict_electron_affinity(ctx_withdrawing)
         assert ea_with >= ea_plain, "EWG should increase EA"
 
+    # --- Fragment-specific tests for the task-required fragments ---
+
+    def test_thiophene_boosts_hole_mobility(self) -> None:
+        """Thiophene fragment should increase hole mobility."""
+        pack = OrganicElectronicsPack()
+        ctx_base = MoleculeContext.from_smiles("c1ccccc1")
+        ctx_thio = MoleculeContext.from_smiles("c1ccsc1")
+        assert ctx_base is not None
+        assert ctx_thio is not None
+        hm_base = pack.predict_hole_mobility(ctx_base)
+        hm_thio = pack.predict_hole_mobility(ctx_thio)
+        assert hm_thio > hm_base, "Thiophene should boost hole mobility"
+
+    def test_carbazole_donates_hole_mobility(self) -> None:
+        """Carbazole is a hole-transporting motif."""
+        pack = OrganicElectronicsPack()
+        ctx = MoleculeContext.from_smiles("c1ccc2c(c1)c1ccccc1[nH]2")
+        assert ctx is not None
+        hm = pack.predict_hole_mobility(ctx)
+        assert hm > 1.5, "Carbazole should give high hole mobility"
+
+    def test_triphenylamine_highest_hole_mobility(self) -> None:
+        """Triphenylamine is one of the strongest hole-transporting units."""
+        pack = OrganicElectronicsPack()
+        ctx = MoleculeContext.from_smiles("N(c1ccccc1)(c1ccccc1)c1ccccc1")
+        assert ctx is not None
+        hm = pack.predict_hole_mobility(ctx)
+        assert hm > 2.0, "Triphenylamine should be a strong hole transporter"
+
+    def test_benzothiadiazole_boosts_electron_affinity(self) -> None:
+        """BTD is a strong electron acceptor."""
+        pack = OrganicElectronicsPack()
+        ctx_plain = MoleculeContext.from_smiles("c1ccccc1")
+        ctx_btd = MoleculeContext.from_smiles("c1ccc2nsnc2c1")
+        assert ctx_plain is not None
+        assert ctx_btd is not None
+        ea_plain = pack.predict_electron_affinity(ctx_plain)
+        ea_btd = pack.predict_electron_affinity(ctx_btd)
+        assert ea_btd > ea_plain, "BTD should boost electron affinity"
+
+    def test_triazine_boosts_electron_affinity(self) -> None:
+        """Triazine is an electron-transporting unit."""
+        pack = OrganicElectronicsPack()
+        ctx_plain = MoleculeContext.from_smiles("c1ccccc1")
+        ctx_tri = MoleculeContext.from_smiles("c1ncncn1")
+        assert ctx_plain is not None
+        assert ctx_tri is not None
+        ea_plain = pack.predict_electron_affinity(ctx_plain)
+        ea_tri = pack.predict_electron_affinity(ctx_tri)
+        assert ea_tri > ea_plain, "Triazine should boost electron affinity"
+
+    def test_cyano_boosts_electron_affinity(self) -> None:
+        """Cyano (C#N) is a strong electron-withdrawing group."""
+        pack = OrganicElectronicsPack()
+        ctx_plain = MoleculeContext.from_smiles("c1ccccc1")
+        ctx_cn = MoleculeContext.from_smiles("c1ccccc1C#N")
+        assert ctx_plain is not None
+        assert ctx_cn is not None
+        ea_plain = pack.predict_electron_affinity(ctx_plain)
+        ea_cn = pack.predict_electron_affinity(ctx_cn)
+        assert ea_cn > ea_plain, "Cyano should boost electron affinity"
+
+    def test_donor_acceptor_cross_term(self) -> None:
+        """TPA + BTD cross-term should boost both properties above additivity."""
+        pack = OrganicElectronicsPack()
+        ctx_donor = MoleculeContext.from_smiles("N(c1ccccc1)(c1ccccc1)c1ccccc1")
+        ctx_acceptor = MoleculeContext.from_smiles("c1ccc2nsnc2c1")
+        # A molecule containing both TPA and BTD: TPA-phenyl-BTD conjugated system
+        ctx_both = MoleculeContext.from_smiles("c1ccc(N(c2ccccc2)c2ccccc2)cc1c1ccc2nsnc2c1")
+        assert ctx_donor is not None, "TPA SMILES should be valid"
+        assert ctx_acceptor is not None, "BTD SMILES should be valid"
+        assert ctx_both is not None, "D-A SMILES should be valid"
+        hm_both = pack.predict_hole_mobility(ctx_both)
+        ea_both = pack.predict_electron_affinity(ctx_both)
+        hm_either = max(pack.predict_hole_mobility(ctx_donor), pack.predict_hole_mobility(ctx_acceptor))
+        ea_either = max(pack.predict_electron_affinity(ctx_donor), pack.predict_electron_affinity(ctx_acceptor))
+        assert hm_both >= hm_either, "D-A system should have enhanced hole mobility"
+        assert ea_both >= ea_either, "D-A system should have enhanced EA"
+
 
 class TestPropertyOracleWithPack:
     """PropertyOracle integration with different property packs."""
