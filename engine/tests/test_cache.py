@@ -1,8 +1,8 @@
-"""Tests for the PropertyOracle disk-based caching layer.
+"""Tests for the PropertyOracle abstract caching layer.
 
 Verifies that:
 1. Repeated evaluate() calls return cached results (L1 in-memory).
-2. Results persist across instances via diskcache (L2).
+2. Results persist across instances via DiskCacheBackend (L2).
 3. clear_cache() empties both cache levels.
 """
 
@@ -12,6 +12,7 @@ import time
 
 import pytest
 
+from aurelius.cache import DiskCacheBackend
 from aurelius.scoring.oracle.oracle import PropertyOracle
 from aurelius.types import MoleculeContext
 
@@ -63,20 +64,26 @@ def test_clear_cache_empties_both_levels(oracle: PropertyOracle) -> None:
 
 
 def test_disk_cache_persistence() -> None:
-    """Results should persist across PropertyOracle instances via diskcache."""
-    # Use a unique SMILES to avoid collisions with other tests
+    """Results should persist across PropertyOracle instances via DiskCacheBackend."""
+    import tempfile
+
+    cache_dir = tempfile.mkdtemp()
+    l2 = DiskCacheBackend(directory=cache_dir, size_limit=10_000_000)
     ctx = MoleculeContext.from_smiles("CCCO")
     assert ctx is not None
     # First instance — populate cache
-    oracle1 = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=False)
+    oracle1 = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=False, l2_cache=l2)
     result1 = oracle1.evaluate(ctx)
-    # Second instance — should load from disk
-    oracle2 = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=False)
+    # Second instance with same cache dir — should load from disk
+    l2_copy = DiskCacheBackend(directory=cache_dir, size_limit=10_000_000)
+    oracle2 = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=False, l2_cache=l2_copy)
     result2 = oracle2.evaluate(ctx)
     assert result1 == result2
     # Clean up
     oracle1.clear_cache()
     oracle2.clear_cache()
+    import shutil
+    shutil.rmtree(cache_dir, ignore_errors=True)
 
 
 def test_cache_miss_for_different_smiles(oracle: PropertyOracle) -> None:

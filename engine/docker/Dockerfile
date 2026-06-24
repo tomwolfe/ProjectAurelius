@@ -40,10 +40,15 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application source (for entry_points, scripts, etc.)
 COPY --from=builder /build/src /app/src
 
+# Copy server module (decoupled from core engine)
+COPY server/ /app/server/
+
 # Graceful xtb handling: warn if binary is missing, never crash
 RUN (command -v xtb >/dev/null 2>&1 && echo "xTB found") \
     || echo "WARNING: xTB binary not found. Falling back to TOM oracle."
 
+ENV PYTHONPATH=/app
+
 EXPOSE 8000
 
-ENTRYPOINT ["uvicorn", "aurelius.api.server:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["uvicorn", "server.api_server:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,12 +1,16 @@
-"""FastAPI server for Project Aurelius.
+"""FastAPI server for Project Aurelius — decoupled from the core engine.
 
 Provides REST endpoints for the Aurelius screening pipeline:
     POST /screen   — Screen a single molecule by SMILES
     POST /batch    — Screen multiple molecules by SMILES
     GET  /health   — Health check / status
 
+All operational infrastructure (FastAPI, Uvicorn, optional Redis caching)
+lives here, outside the ``aurelius`` package tree. The core engine knows
+nothing about HTTP, web frameworks, or deployment.
+
 Usage:
-    uvicorn aurelius.api.server:app --host 0.0.0.0 --port 8000
+    uvicorn server.api_server:app --host 0.0.0.0 --port 8000
 """
 
 from __future__ import annotations
@@ -23,12 +27,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
+from aurelius.cache import CacheBackend, DictCache, DiskCacheBackend, RedisCacheBackend
 from aurelius.pipeline import AureliusPipeline
 
 logger = logging.getLogger(__name__)
 
 _pipeline: AureliusPipeline | None = None
-
 
 # ---------------------------------------------------------------------------
 # API Key authentication
@@ -39,11 +43,6 @@ _AURELIUS_API_KEY: str | None = os.environ.get("AURELIUS_API_KEY")
 
 
 async def verify_api_key(api_key: str | None = Depends(API_KEY_HEADER)) -> None:
-    """Dependency that checks ``X-API-Key`` against ``AURELIUS_API_KEY``.
-
-    When ``AURELIUS_API_KEY`` is unset (default) authentication is disabled
-    and all requests are allowed.
-    """
     if _AURELIUS_API_KEY is None:
         return
     if api_key != _AURELIUS_API_KEY:
@@ -58,16 +57,6 @@ _rate_store: dict[str, list[float]] = defaultdict(list)
 
 
 class RateLimiter:
-    """FastAPI-compatible rate-limit dependency.
-
-    Parameters
-    ----------
-    limit : int
-        Maximum number of requests allowed in the window.
-    window : float
-        Time window in seconds (default 60).
-    """
-
     def __init__(self, limit: int, window: float = 60.0) -> None:
         self.limit = limit
         self.window = window
@@ -110,6 +99,31 @@ class HealthResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Cache backend factory — Redis if configured, otherwise DictCache
+# ---------------------------------------------------------------------------
+
+
+def _make_cache_backend() -> CacheBackend:
+    """Create a cache backend based on the environment.
+
+    If ``REDIS_URL`` is set, returns a ``RedisCacheBackend``.
+    Otherwise returns a ``DictCache`` (in-memory). For persistent
+    disk-based caching across restarts, set ``AURELIUS_CACHE_DIR``
+    to a writable path to use ``DiskCacheBackend`` instead.
+    """
+    redis_url = os.environ.get("REDIS_URL")
+    if redis_url:
+        logger.info("Using Redis cache backend: %s", redis_url.split("@")[-1] if "@" in redis_url else redis_url)
+        return RedisCacheBackend(url=redis_url)
+    cache_dir = os.environ.get("AURELIUS_CACHE_DIR")
+    if cache_dir:
+        logger.info("Using disk cache backend: %s", cache_dir)
+        return DiskCacheBackend(directory=cache_dir)
+    logger.info("Using in-memory DictCache (restart loses cache)")
+    return DictCache()
+
+
+# ---------------------------------------------------------------------------
 # Lifespan — initialise pipeline once at startup
 # ---------------------------------------------------------------------------
 
@@ -120,10 +134,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     logging.basicConfig(level=logging.INFO)
     logger.info("Initialising Aurelius pipeline...")
     try:
+        l2_cache = _make_cache_backend()
         pipeline = AureliusPipeline()
         pipeline.initialize()
         _pipeline = pipeline
-        logger.info("Aurelius pipeline initialised successfully.")
+        logger.info("Aurelius pipeline initialised successfully (cache: %s).", type(l2_cache).__name__)
     except Exception as exc:
         logger.error("Failed to initialise pipeline: %s", exc)
         _pipeline = None
@@ -157,7 +172,6 @@ def _get_pipeline() -> AureliusPipeline:
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    """Return server status and pipeline initialisation state."""
     return HealthResponse(
         status="ok",
         pipeline_initialized=_pipeline is not None,
@@ -169,10 +183,6 @@ async def health() -> HealthResponse:
     dependencies=[Depends(verify_api_key), Depends(RateLimiter(30))],
 )
 async def screen(request: ScreenRequest) -> dict[str, Any]:
-    """Screen a single molecule through the full Aurelius pipeline.
-
-    Returns tier1, tier2, and score results.
-    """
     pipeline = _get_pipeline()
     try:
         result = pipeline.screen_smiles(request.smiles)
@@ -186,10 +196,6 @@ async def screen(request: ScreenRequest) -> dict[str, Any]:
     dependencies=[Depends(verify_api_key), Depends(RateLimiter(10))],
 )
 async def batch(request: BatchRequest) -> list[dict[str, Any]]:
-    """Screen multiple molecules through the full Aurelius pipeline.
-
-    Returns a list of results in the same order as the input SMILES.
-    """
     pipeline = _get_pipeline()
     results: list[dict[str, Any]] = []
     for smi in request.smiles:

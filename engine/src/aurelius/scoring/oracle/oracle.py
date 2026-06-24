@@ -13,11 +13,9 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
-import diskcache
-
+from aurelius.cache import CacheBackend, DictCache
 from aurelius.constants import (
     SEI_LUMO_LOWER,
     SEI_LUMO_UPPER,
@@ -41,9 +39,6 @@ from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
-
-_ORACLE_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".aurelius", "oracle_cache")
-_ORACLE_CACHE_SIZE_LIMIT = 1_000_000_000  # 1 GB
 
 
 def _evaluate_sei_motif(ctx: MoleculeContext, lumo: float) -> tuple[float, str]:
@@ -86,6 +81,7 @@ class PropertyOracle:
         use_surrogate: bool = True,
         use_gc_uq: bool = True,
         property_pack: BasePropertyModel | None = None,
+        l2_cache: CacheBackend | None = None,
     ) -> None:
         self._quantum = QuantumOracle(use_xtb=use_xtb)
         self._use_surrogate = use_surrogate
@@ -96,10 +92,7 @@ class PropertyOracle:
         self._gc_uq: GcUqEnsemble | None = GcUqEnsemble() if use_gc_uq else None
         self._property_pack: BasePropertyModel = property_pack or ElectrolytePack()
         self._cache: dict[str, dict[str, Any]] = {}
-        self._disk_cache: diskcache.Cache = diskcache.Cache(
-            directory=_ORACLE_CACHE_DIR,
-            size_limit=_ORACLE_CACHE_SIZE_LIMIT,
-        )
+        self._disk_cache: CacheBackend = l2_cache or DictCache()
         self._n_surrogate_skips = 0
 
     @property
@@ -107,9 +100,28 @@ class PropertyOracle:
         return self._quantum.method
 
     def _run_surrogate(self, ctx: MoleculeContext) -> tuple[float, float, float, bool]:
-        """Run surrogate pre-filter. Returns (surrogate_penalty, s_homo, s_lumo, skip_quantum)."""
+        """Run surrogate pre-filter. Returns (surrogate_penalty, s_homo, s_lumo, skip_quantum).
+
+        Two gates control whether the surrogate prediction is trusted:
+          1. Structural novelty gate: if the molecule's max Tanimoto similarity
+             to the calibration pool is below ``similarity_threshold``, the
+             surrogate is considered untrustworthy and quantum is forced.
+          2. HOMO threshold gate: if surrogate predicts HOMO > -5.0 eV,
+             skip quantum (classic fast-skip path).
+        """
         if self._surrogate is None:
             return 1.0, -99.0, 99.0, False
+        try:
+            if self._surrogate.is_structurally_novel(ctx):
+                logger.info(
+                    "Surrogate: molecule structurally novel (max Tanimoto < %.2f) — "
+                    "forcing quantum oracle",
+                    self._surrogate.similarity_threshold,
+                )
+                return 1.0, -99.0, 99.0, False
+        except Exception:
+            pass
+
         try:
             s_homo, s_lumo = self._surrogate.predict(ctx)
             penalty = self._surrogate.compute_penalty(s_homo)

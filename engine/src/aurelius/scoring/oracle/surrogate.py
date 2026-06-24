@@ -79,6 +79,7 @@ class SurrogateQuantumOracle:
         n_estimators: int = 50,
         max_depth: int = 8,
         random_state: int = 42,
+        similarity_threshold: float = 0.30,
     ) -> None:
         self._n_estimators = n_estimators
         self._max_depth = max_depth
@@ -91,6 +92,8 @@ class SurrogateQuantumOracle:
         self._is_trained = False
         self._train_time_ms: float = 0.0
         self._n_train: int = 0
+        self._similarity_threshold = similarity_threshold
+        self._calibration_fps: list[Any] | None = None
 
     def set_training_data(self, data: list[dict[str, Any]]) -> None:
         """Override training data (used for holdout validation)."""
@@ -178,11 +181,15 @@ class SurrogateQuantumOracle:
         X_list: list[np.ndarray] = []
         y_homo: list[float] = []
         y_lumo: list[float] = []
+        self._calibration_fps = []
 
         for entry in data:
             mol = Chem.MolFromSmiles(entry["smiles"])
             if mol is None:
                 continue
+            from rdkit.Chem import AllChem
+            fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+            self._calibration_fps.append(fp)
             from aurelius.types import MoleculeContext
             ctx = MoleculeContext(smiles=entry["smiles"], mol=mol)
             fv = self._build_feature_vector(ctx)
@@ -313,6 +320,24 @@ class SurrogateQuantumOracle:
         if homo_eV > _SURROGATE_HOMO_THRESHOLD:
             return _SURROGATE_PENALTY
         return 1.0
+
+    def is_structurally_novel(self, ctx: MoleculeContext) -> bool:
+        """Check if molecule is structurally dissimilar from calibration data.
+
+        Computes max Tanimoto similarity (ECFP4) against the training pool.
+        Returns True if max similarity < threshold, indicating the surrogate
+        prediction should not be trusted and xTB should be forced.
+        """
+        if self._calibration_fps is None or len(self._calibration_fps) < 3:
+            return False
+        fp = ctx.get_ecfp4()
+        from rdkit.DataStructs import BulkTanimotoSimilarity
+        sims = BulkTanimotoSimilarity(fp, self._calibration_fps)
+        return max(sims) < self._similarity_threshold
+
+    @property
+    def similarity_threshold(self) -> float:
+        return self._similarity_threshold
 
     @property
     def is_trained(self) -> bool:

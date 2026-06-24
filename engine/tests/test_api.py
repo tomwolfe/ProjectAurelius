@@ -20,7 +20,7 @@ def _mock_pipeline() -> None:
         "tier2": {"homo_eV": -7.0, "lumo_eV": 0.5},
         "score": {"total_score": 75.0, "is_viable": True},
     }
-    with patch("aurelius.api.server.AureliusPipeline", return_value=mock_pipeline):
+    with patch("api_server.AureliusPipeline", return_value=mock_pipeline):
         yield
 
 
@@ -28,9 +28,9 @@ def _mock_pipeline() -> None:
 def client() -> pytest.FixtureRequest:
     from fastapi.testclient import TestClient
 
-    from aurelius.api.server import app
+    import api_server
 
-    with TestClient(app) as c:
+    with TestClient(api_server.app) as c:
         yield c
 
 
@@ -70,9 +70,9 @@ def test_screen_missing_smiles_returns_422(client: pytest.FixtureRequest) -> Non
 
 def test_screen_invalid_smiles_returns_400(client: pytest.FixtureRequest) -> None:
     """POST /screen with invalid SMILES should return a 400 error."""
-    import aurelius.api.server as server
+    import api_server
 
-    server._pipeline.screen_smiles.side_effect = ValueError("Invalid SMILES")
+    api_server._pipeline.screen_smiles.side_effect = ValueError("Invalid SMILES")
     response = client.post("/screen", json={"smiles": "invalid_smiles_123"})
     assert response.status_code == 400
 
@@ -100,9 +100,9 @@ def test_batch_valid_smiles_returns_200(client: pytest.FixtureRequest) -> None:
 
 def test_batch_invalid_smiles_returns_results_with_errors(client: pytest.FixtureRequest) -> None:
     """POST /batch with invalid SMILES should return per-item errors."""
-    import aurelius.api.server as server
+    import api_server
 
-    server._pipeline.screen_smiles.side_effect = ValueError("Invalid SMILES")
+    api_server._pipeline.screen_smiles.side_effect = ValueError("Invalid SMILES")
     response = client.post("/batch", json={"smiles": ["invalid_smiles_123"]})
     assert response.status_code == 200
     data = response.json()
