@@ -254,14 +254,16 @@ def validate_cmd(smiles: str) -> None:
 @cli.command("agent")
 @click.option("--max-generations", type=int, default=50, help="Maximum generations to run")
 @click.option("--batch-size", type=int, default=50, help="Candidates per batch")
+@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
 def agent(
     max_generations: int,
     batch_size: int,
+    pack: str,
 ) -> None:
     """Run the autonomous screening agent."""
     from aurelius.agent.loop import AgentConfig, run_screening
 
-    cfg = AgentConfig(max_generations=max_generations, batch_size=batch_size)
+    cfg = AgentConfig(max_generations=max_generations, batch_size=batch_size, pack=pack)
     run_screening(cfg)
 
 

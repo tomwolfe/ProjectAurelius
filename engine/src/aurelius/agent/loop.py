@@ -53,12 +53,24 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 
+def _build_pipeline(pack: str = "electrolyte") -> AureliusPipeline:
+    """Create a pipeline with the given property pack name."""
+    from aurelius.scoring.oracle.gc import ElectrolytePack
+    from aurelius.scoring.oracle.packs import OrganicElectronicsPack
+    pack_map = {
+        "electrolyte": ElectrolytePack(),
+        "organic_electronics": OrganicElectronicsPack(),
+    }
+    return AureliusPipeline(property_pack=pack_map[pack])
+
+
 @dataclass(frozen=True)
 class AgentConfig:
     """Parameters for the autonomous screening agent."""
 
     max_generations: int = 50
     batch_size: int = 50
+    pack: str = "electrolyte"
     wet_lab_feedback: Callable[[list[ScreeningResult], dict[str, float]], None] | None = None
 
 
@@ -121,7 +133,7 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
 
     wall_start = time.time()
 
-    pipeline = AureliusPipeline()
+    pipeline = _build_pipeline(agent_cfg.pack)
     pipeline.initialize()
 
     loop = DiscoveryLoop(
@@ -307,6 +319,10 @@ class DiscoveryLoop:
                 break
 
             self.state.save()
+
+            if self.state.active_learning_queue:
+                export_path = f"active_learning_queue_gen{generation}.json"
+                self.state.export_active_learning_queue(export_path)
 
         return {
             "all_results": [self._dict_to_screening(d) for d in self.state._all_results],

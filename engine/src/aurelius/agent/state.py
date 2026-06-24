@@ -445,6 +445,17 @@ class LoopState:
         n = max(5, len(scored) // divisor)
         return [s for _, s in scored[:n]]
 
+    def export_active_learning_queue(self, path: str) -> None:
+        """Save the active learning queue SMILES list to a JSON file.
+
+        Args:
+            path: Destination file path for the JSON export.
+        """
+        resolved = _resolve_output_path(path, self.output_dir)
+        with open(resolved, "w") as f:
+            json.dump(self.active_learning_queue, f, indent=2)
+        log.info("Exported active learning queue (%d SMILES) to %s", len(self.active_learning_queue), resolved)
+
     def clear(self) -> None:
         self.batch_means.clear()
         self._all_scores.clear()
