@@ -101,6 +101,10 @@ def main() -> None:
     script_path = str(Path(__file__).resolve().parent / "generate_synthesis_brief.py")
     _run_script(script_path)
 
+    # Auto-regenerate model card so it never goes stale
+    model_card_path = str(Path(__file__).resolve().parent / "generate_model_card.py")
+    _run_script(model_card_path)
+
     parts = [
         "# Live Benchmark Results\n",
         "\n",

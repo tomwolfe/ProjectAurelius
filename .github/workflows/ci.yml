@@ -50,6 +50,9 @@ jobs:
           pip install -e ".[dev]"
           pip install huggingface-hub
 
+      - name: Run heuristic stability test
+        run: pytest tests/test_heuristic_stability.py -v --no-header
+
       - name: Run pytest
         run: pytest tests/ -v
 

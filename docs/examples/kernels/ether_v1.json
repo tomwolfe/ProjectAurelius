@@ -2,59 +2,68 @@
   "version": "1.0.0",
   "domain_boundary": {
     "domain": "ether",
-    "max_molecular_weight": 200.0,
+    "max_molecular_weight": 300.0,
     "allowed_fragments": [
-      "CCOC",
-      "C1CCOC1",
-      "COCCOC"
+      "COC",
+      "CCOCC",
+      "C1CCOC1"
     ],
     "disallowed_fragments": [
       "[#16]",
-      "[#7]",
-      "C(=O)O"
+      "[CX3](=O)[OX2]"
     ],
     "max_hbd": 0,
     "max_logp": 2.0
   },
   "tom_parameters": {
-    "homo_offset": 0.22,
-    "lumo_offset": 0.05,
-    "gc_scale": 1.01,
-    "uq_scale": 0.88,
-    "conjugation_length_cap": 12
+    "homo_offset": 0.0,
+    "lumo_offset": 0.0,
+    "gc_scale": 4.7937,
+    "uq_scale": 0.95,
+    "conjugation_length_cap": 16
   },
   "gc_fragments": [
     {
-      "smarts": "COCCOC",
-      "property": "li_solvation",
-      "correction": 1.8
+      "smarts": "O=C([O&X2])[O&X2]",
+      "property": "dielectric",
+      "correction": 2.0
     },
     {
-      "smarts": "CCOC",
+      "smarts": "[O&D2]([C&X4])[C&X4]",
       "property": "dielectric",
-      "correction": 3.5
+      "correction": 1.5
     },
     {
-      "smarts": "C1CCOC1",
+      "smarts": "S(=O)(=O)[C&X4]",
       "property": "dielectric",
-      "correction": 4.2
+      "correction": 5.0
+    },
+    {
+      "smarts": "S(=O)(=O)[O&X2]",
+      "property": "dielectric",
+      "correction": 5.5
+    },
+    {
+      "smarts": "[S&X3](=O)[C&X4]",
+      "property": "dielectric",
+      "correction": 7.5
     }
   ],
   "uq_weights": {
-    "ensemble_weight": 0.40,
-    "calibration_factor": 0.95
+    "ensemble_weight": 0.5,
+    "calibration_factor": 1.0
   },
   "validation_metrics": {
-    "spearman_rho": 0.81,
-    "mae": 0.19,
-    "rmse": 0.25,
-    "n_training": 22,
+    "spearman_rho": 0.6379,
+    "mae": 21.9013,
+    "rmse": 23.2218,
+    "n_training": 26,
     "audit": {
       "coverage_probability": 0.95,
-      "confidence_level": 0.90,
-      "n_samples": 11,
+      "confidence_level": 0.9,
+      "n_samples": 20,
       "pass": true
     }
   },
-  "signature": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  "signature": "cac4b4ec65111d19347d474337e91928d32a72a9c9e76b71dcb1471e7bf0630c"
 }

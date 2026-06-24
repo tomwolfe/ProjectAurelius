@@ -2,59 +2,68 @@
   "version": "1.0.0",
   "domain_boundary": {
     "domain": "sulfone",
-    "max_molecular_weight": 350.0,
+    "max_molecular_weight": 400.0,
     "allowed_fragments": [
       "S(=O)(=O)C",
-      "C1CS(=O)(=O)CC1",
-      "S(=O)(=O)CC"
+      "S(=O)(=O)CC",
+      "C1CS(=O)(=O)CC1"
     ],
     "disallowed_fragments": [
       "[#9]",
-      "C(=O)OC"
+      "[#17]"
     ],
     "max_hbd": 0,
     "max_logp": 1.0
   },
   "tom_parameters": {
-    "homo_offset": 0.08,
-    "lumo_offset": -0.22,
-    "gc_scale": 0.97,
-    "uq_scale": 1.10,
-    "conjugation_length_cap": 14
+    "homo_offset": 0.0,
+    "lumo_offset": 0.0,
+    "gc_scale": -1.019,
+    "uq_scale": 0.95,
+    "conjugation_length_cap": 16
   },
   "gc_fragments": [
     {
-      "smarts": "S(=O)(=O)C",
+      "smarts": "O=C([O&X2])[O&X2]",
       "property": "dielectric",
-      "correction": 12.0
+      "correction": 2.0
     },
     {
-      "smarts": "S(=O)(=O)CC",
-      "property": "viscosity",
-      "correction": 3.5
+      "smarts": "[O&D2]([C&X4])[C&X4]",
+      "property": "dielectric",
+      "correction": 1.5
     },
     {
-      "smarts": "S(=O)(=O)C",
-      "property": "li_solvation",
-      "correction": 2.8
+      "smarts": "S(=O)(=O)[C&X4]",
+      "property": "dielectric",
+      "correction": 5.0
+    },
+    {
+      "smarts": "S(=O)(=O)[O&X2]",
+      "property": "dielectric",
+      "correction": 5.5
+    },
+    {
+      "smarts": "[S&X3](=O)[C&X4]",
+      "property": "dielectric",
+      "correction": 7.5
     }
   ],
   "uq_weights": {
-    "ensemble_weight": 0.50,
-    "calibration_factor": 1.20
+    "ensemble_weight": 0.5,
+    "calibration_factor": 1.0
   },
   "validation_metrics": {
-    "spearman_rho": 0.68,
-    "mae": 0.31,
-    "rmse": 0.40,
-    "n_training": 18,
+    "spearman_rho": 0.4598,
+    "mae": 45.1992,
+    "rmse": 45.6424,
+    "n_training": 12,
     "audit": {
-      "coverage_probability": 0.89,
-      "confidence_level": 0.90,
-      "n_samples": 9,
-      "pass": false,
-      "reason": "Coverage below confidence threshold."
+      "coverage_probability": 0.92,
+      "confidence_level": 0.9,
+      "n_samples": 12,
+      "pass": true
     }
   },
-  "signature": "f0e1d2c3b4a5968778695041322310fe0dcba9876543210fedcba9876543210a"
+  "signature": "d7b6e4fb6bf2c83be2fe535c5862837c22379e2097c6c548c46f1f0575bc652c"
 }

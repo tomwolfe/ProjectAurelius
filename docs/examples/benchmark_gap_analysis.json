@@ -1,0 +1,52 @@
+[
+  {
+    "name": "18-Crown-6",
+    "smiles": "C1COCCOCCOCCOCCOCCO1",
+    "reason": "Bulky macrocyclic ether (MW=264) tests GC MW>250 domain penalty boundary and viscosity saturation for high-ether-count molecules. Current benchmark lacks ethers above 7 O atoms."
+  },
+  {
+    "name": "Bis(2,2,2-trifluoroethyl) sulfone ethyl ether",
+    "smiles": "FC(F)(F)COCCS(=O)(=O)CCOCC(F)(F)F",
+    "reason": "Fluorinated-sulfone-ether tri-hybrid molecule tests cross-term interaction of three co-occurring polar groups (ether+sulfone+fluorine). No existing benchmark entry combines all three."
+  },
+  {
+    "name": "Hexamethyldisiloxane",
+    "smiles": "C[Si](C)(C)O[Si](C)(C)C",
+    "reason": "Silicon-containing solvent — GC fragment-additivity has no Si fragments, so this tests the zero-fragment fallback and domain penalty behavior. Si-based electrolytes are an emerging class."
+  },
+  {
+    "name": "Trimethyl borate",
+    "smiles": "B(OC)(OC)OC",
+    "reason": "Boron-containing solvent additive. The GC model has boronate and borate fragments, but no B-containing benchmark entries exist to validate their contributions."
+  },
+  {
+    "name": "N,N-Dimethyltrifluoromethanesulfonamide",
+    "smiles": "CN(C)S(=O)(=O)C(F)(F)F",
+    "reason": "Sulfonamide with CF3 — tests sulfonimide/sulfonamide fragment contributions. No sulfonamide compounds exist in the current benchmark, despite their relevance as Li-salt anions."
+  },
+  {
+    "name": "Tetraethylene glycol dimethyl ether (Tetraglyme)",
+    "smiles": "COCCOCCOCCOCCOC",
+    "reason": "Extended glyme chain (5 ether O atoms) tests Michaelis-Menten saturation behavior beyond triglyme (current longest glyme). Essential for validating ether saturation parameter."
+  },
+  {
+    "name": "1,1,2,2-Tetrafluoroethyl-2,2,3,3-tetrafluoropropyl ether",
+    "smiles": "FC(F)(F)C(F)(F)COCC(F)(F)C(F)(F)F",
+    "reason": "Highly fluorinated ether (8 F atoms) tests extreme fluorination domain penalty boundary (current F≥6 threshold) and viscosity saturation for perfluorinated chains."
+  },
+  {
+    "name": "Methyl cyanoacetate",
+    "smiles": "COC(=O)CC#N",
+    "reason": "Nitrile-ester hybrid — tests cross-term interaction between nitrile and ester fragments. Current benchmark has nitrile-ether and carbonate-nitrile but no ester-nitrile combinations."
+  },
+  {
+    "name": "Tris(pentafluorophenyl)borane (BCF)",
+    "smiles": "B(c1c(F)c(F)c(F)c(F)c1F)(c1c(F)c(F)c(F)c(F)c1F)c1c(F)c(F)c(F)c(F)c1F",
+    "reason": "Electron-deficient borane (MW=512) — extreme edge case testing MW>500 domain penalty, zero GC fragment matches (no fitting fragments for perfluoroaryl borane). Limits test for the GC fallback."
+  },
+  {
+    "name": "Methyl tributylammonium bis(trifluoromethanesulfonyl)imide",
+    "smiles": "CCCC[N+](C)(CCCC)CCCC.FC(F)(F)S(=O)(=O)[N-]S(=O)(=O)C(F)(F)F",
+    "reason": "Ionic liquid pair — tests GC behavior for charged species. Current benchmark contains only neutral molecules, creating a blindspot for ionic liquid electrolyte formulations."
+  }
+]
