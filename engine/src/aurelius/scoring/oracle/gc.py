@@ -34,13 +34,33 @@ from sklearn.preprocessing import StandardScaler
 from aurelius.constants import (
     _GC_GAS_EVOLUTION_PATTERNS,
     ACRYLATE_CROSSLINK_PATTERN,
+    COMPLEMENTARITY_DIELECTRIC_THRESH,
+    COMPLEMENTARITY_VISCOSITY_THRESH,
+    MARGULES_INTERACTION_SCALE,
     MAX_DIELECTRIC_PER_TPSA,
+    MIXTURE_SYNERGY_CAP,
     SULTONE_CROSSLINK_PATTERN,
     VINYL_CROSSLINK_PATTERN,
 )
 from aurelius.types import MoleculeContext
 
 _DATA_SOURCE: str = "hybrid (GC bulk + Quantum orbital)"
+
+# ---------------------------------------------------------------------------
+# Cross-term corrections loaded from external JSON for easy tuning.
+# Located in engine/src/aurelius/data/gc_cross_terms.json.
+# ---------------------------------------------------------------------------
+_CROSS_TERMS_PATH: str = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "..", "data", "gc_cross_terms.json",
+)
+with open(_CROSS_TERMS_PATH) as _f:
+    _CROSS_TERMS_DATA: list[dict[str, object]] = json.load(_f)
+# Keep as list of tuples for backward compatibility with iteration patterns.
+_CROSS_TERMS: list[tuple[str, str, float, str]] = [
+    (str(item["frag_a"]), str(item["frag_b"]), float(item["boost"]), str(item["description"]))
+    for item in _CROSS_TERMS_DATA
+]
 
 
 def compute_gc_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
@@ -184,26 +204,6 @@ def _count_fragments(mol: Chem.Mol) -> dict[str, int]:
         matches = mol.GetSubstructMatches(pattern)
         counts[name] = len(matches)
     return counts
-
-
-# Non-linear cross-term corrections for dielectric proxy.
-_CROSS_TERMS: list[tuple[str, str, float, str]] = [
-    ("carbonate", "ether", 0.8, "carbonate-ether synergy (glyme-carbonate hybrids)"),
-    ("nitrile", "ether", 0.3, "nitrile-ether synergy"),
-    ("carbonate", "fluorine", -0.5, "fluorinated carbonate suppression"),
-    ("sulfone", "ether", 0.4, "sulfone-ether synergy"),
-    ("carbonate", "nitrile", -0.3, "carbonate-nitrile antagonism"),
-    ("alcohol", "carbonate", -0.4, "alcohol-carbonate H-bond competition"),
-    ("sulfone", "carbonate", -0.3, "sulfone-carbonate polarity competition"),
-    ("nitrile", "fluorine", 0.3, "fluorinated nitrile dipole enhancement"),
-    # Sulfone-nitrile high-voltage synergy: Co-occurring sulfone (ε~44) and
-    # nitrile (μ≈3.9 D) groups form cooperative dipolar networks that enhance
-    # dielectric beyond simple additivity. Physical basis: sulfone S=O dipoles
-    # polarize adjacent nitrile C≡N bonds, increasing effective dipole moment.
-    # See: J. Electrochem. Soc. 2020, 167, 110532; Phys. Chem. Chem. Phys.
-    # 2019, 21, 14732. Value 0.5 calibrated on sulfolane + adiponitrile blends.
-    ("sulfone", "nitrile", 0.5, "sulfone-nitrile high-voltage synergy"),
-]
 
 
 def _compute_dielectric_cross_terms(counts: dict[str, int]) -> float:
@@ -438,8 +438,9 @@ def mixture_synergy_bonus(
 ) -> float:
     """Non-linear synergy bonus for complementary binary electrolyte mixtures.
 
-    A complementary pair combines a high-dielectric component (d > 4.0) with
-    a low-viscosity component (v < 1.5). Neither pure component simultaneously
+    A complementary pair combines a high-dielectric component
+    (d > COMPLEMENTARITY_DIELECTRIC_THRESH) with a low-viscosity component
+    (v < COMPLEMENTARITY_VISCOSITY_THRESH). Neither pure component simultaneously
     achieves both benefits because polar groups that raise dielectric also
     increase viscosity. The mixture's synergy reflects this thermodynamic
     complementarity — it is a non-linear effect that single-molecule scoring
@@ -453,8 +454,8 @@ def mixture_synergy_bonus(
     equimolar composition for complementary pairs. Capped at 3.0 to
     prevent gaming.
     """
-    has_high_d = max(d1, d2) > 4.0
-    has_low_v = min(v1, v2) < 1.5
+    has_high_d = max(d1, d2) > COMPLEMENTARITY_DIELECTRIC_THRESH
+    has_low_v = min(v1, v2) < COMPLEMENTARITY_VISCOSITY_THRESH
 
     if not (has_high_d and has_low_v):
         return 0.0
@@ -469,12 +470,12 @@ def mixture_synergy_bonus(
 
     # Margules-inspired non-ideal mixing term
     # A ∝ |d₁-d₂|·|v₁-v₂| scaled to give ~0.5 bonus at 50:50 for complementary pairs
-    interaction = abs(d1 - d2) * abs(v1 - v2) / 8.0
+    interaction = abs(d1 - d2) * abs(v1 - v2) * MARGULES_INTERACTION_SCALE
     interaction = min(interaction, 3.0)  # saturation cap to prevent gaming
     non_ideal = interaction * frac1 * f2
     score += non_ideal
 
-    return min(max(0.0, score), 6.0)
+    return min(max(0.0, score), MIXTURE_SYNERGY_CAP)
 
 
 def mixture_synergy_bonus_ternary(
@@ -487,7 +488,7 @@ def mixture_synergy_bonus_ternary(
     Evaluates all three binary pairs within the ternary blend, selects the
     dominant complementary pair (max |dᵢ-dⱼ|·|vᵢ-vⱼ| interaction), and
     applies the Margules-inspired bonus for that pair. The total synergy
-    is capped at 6.0 to prevent gaming.
+    is capped at MIXTURE_SYNERGY_CAP to prevent gaming.
 
     Physical justification: In a ternary carbonate/ether/sulfone mixture,
     the dominant complementary pair (e.g., high-dielectric carbonate +
@@ -519,8 +520,8 @@ def mixture_synergy_bonus_ternary(
 
     pd1, pd2, pv1, pv2, pf1, pf2 = best_pair
 
-    has_high_d = max(pd1, pd2) > 4.0
-    has_low_v = min(pv1, pv2) < 1.5
+    has_high_d = max(pd1, pd2) > COMPLEMENTARITY_DIELECTRIC_THRESH
+    has_low_v = min(pv1, pv2) < COMPLEMENTARITY_VISCOSITY_THRESH
     if not (has_high_d and has_low_v):
         return 0.0
 
@@ -535,12 +536,12 @@ def mixture_synergy_bonus_ternary(
 
     score = d_mix / 4.0 + 1.5 / max(v_mix, 0.01)
 
-    interaction = abs(pd1 - pd2) * abs(pv1 - pv2) / 8.0
+    interaction = abs(pd1 - pd2) * abs(pv1 - pv2) * MARGULES_INTERACTION_SCALE
     interaction = min(interaction, 3.0)
     non_ideal = interaction * nf1 * nf2
     score += non_ideal
 
-    return min(max(0.0, score), 6.0)
+    return min(max(0.0, score), MIXTURE_SYNERGY_CAP)
 
 
 # ---------------------------------------------------------------------------
@@ -964,25 +965,6 @@ class BasePropertyModel(abc.ABC):
 # ---------------------------------------------------------------------------
 
 
-_ELECTROLYTE_CROSS_TERMS: list[tuple[str, str, float, str]] = [
-    ("carbonate", "ether", 0.8, "carbonate-ether synergy (glyme-carbonate hybrids)"),
-    ("nitrile", "ether", 0.3, "nitrile-ether synergy"),
-    ("carbonate", "fluorine", -0.5, "fluorinated carbonate suppression"),
-    ("sulfone", "ether", 0.4, "sulfone-ether synergy"),
-    ("carbonate", "nitrile", -0.3, "carbonate-nitrile antagonism"),
-    ("alcohol", "carbonate", -0.4, "alcohol-carbonate H-bond competition"),
-    ("sulfone", "carbonate", -0.3, "sulfone-carbonate polarity competition"),
-    ("nitrile", "fluorine", 0.3, "fluorinated nitrile dipole enhancement"),
-    # Sulfone-nitrile high-voltage synergy: Co-occurring sulfone (ε~44) and
-    # nitrile (μ≈3.9 D) groups form cooperative dipolar networks that enhance
-    # dielectric beyond simple additivity. Physical basis: sulfone S=O dipoles
-    # polarize adjacent nitrile C≡N bonds, increasing effective dipole moment.
-    # See: J. Electrochem. Soc. 2020, 167, 110532; Phys. Chem. Chem. Phys.
-    # 2019, 21, 14732. Value 0.5 calibrated on sulfolane + adiponitrile blends.
-    ("sulfone", "nitrile", 0.5, "sulfone-nitrile high-voltage synergy"),
-]
-
-
 class ElectrolytePack(BasePropertyModel):
     """Group-contribution model for electrolyte bulk properties.
 
@@ -1000,7 +982,7 @@ class ElectrolytePack(BasePropertyModel):
         "li_solvation": 1.0,
         "ced": 2.0,
     }
-    cross_terms: list[tuple[str, str, float, str]] = _ELECTROLYTE_CROSS_TERMS
+    cross_terms: list[tuple[str, str, float, str]] = _CROSS_TERMS
 
     def _compute_dielectric_cross_terms(self, counts: dict[str, int]) -> float:
         correction = 0.0

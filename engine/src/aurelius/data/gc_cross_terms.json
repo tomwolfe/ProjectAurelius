@@ -1,0 +1,11 @@
+[
+    {"frag_a": "carbonate", "frag_b": "ether", "boost": 0.8, "description": "carbonate-ether synergy (glyme-carbonate hybrids)"},
+    {"frag_a": "nitrile", "frag_b": "ether", "boost": 0.3, "description": "nitrile-ether synergy"},
+    {"frag_a": "carbonate", "frag_b": "fluorine", "boost": -0.5, "description": "fluorinated carbonate suppression"},
+    {"frag_a": "sulfone", "frag_b": "ether", "boost": 0.4, "description": "sulfone-ether synergy"},
+    {"frag_a": "carbonate", "frag_b": "nitrile", "boost": -0.3, "description": "carbonate-nitrile antagonism"},
+    {"frag_a": "alcohol", "frag_b": "carbonate", "boost": -0.4, "description": "alcohol-carbonate H-bond competition"},
+    {"frag_a": "sulfone", "frag_b": "carbonate", "boost": -0.3, "description": "sulfone-carbonate polarity competition"},
+    {"frag_a": "nitrile", "frag_b": "fluorine", "boost": 0.3, "description": "fluorinated nitrile dipole enhancement"},
+    {"frag_a": "sulfone", "frag_b": "nitrile", "boost": 0.5, "description": "sulfone-nitrile high-voltage synergy"}
+]

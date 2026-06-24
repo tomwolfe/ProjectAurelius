@@ -519,3 +519,24 @@ NET_PROGRESS_LOC_NORM: float = 5000.0
 NET_PROGRESS_CC_NORM: float = 5.0
 NET_PROGRESS_DEP_NORM: float = 10.0
 NET_PROGRESS_ARCH_NORM: float = 50.0
+
+# ---------------------------------------------------------------------------
+# Mixture Synergy Constants
+# ---------------------------------------------------------------------------
+# Physical basis: The Margules-inspired interaction term scales the non-ideal
+# mixing contribution as A = |d₁-d₂|·|v₁-v₂|·scale. The scale of 0.125
+# (derived from /8.0) gives ~0.5 bonus at 50:50 for complementary pairs.
+# The cap of 6.0 prevents unbounded synergy scoring from gaming the
+# multi-objective optimisation.
+
+MIXTURE_SYNERGY_CAP: float = 6.0
+"""Upper bound for the mixture synergy bonus (prevents gaming)."""
+
+MARGULES_INTERACTION_SCALE: float = 0.125
+"""Scaling factor for the Margules-inspired non-ideal mixing term (1/8 = 0.125)."""
+
+COMPLEMENTARITY_DIELECTRIC_THRESH: float = 4.0
+"""Dielectric threshold above which a component is considered 'high-dielectric'."""
+
+COMPLEMENTARITY_VISCOSITY_THRESH: float = 1.5
+"""Viscosity threshold below which a component is considered 'low-viscosity'."""

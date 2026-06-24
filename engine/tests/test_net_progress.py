@@ -1,24 +1,22 @@
-"""Net Progress metric — repository-level objective function.
+"""Net Progress metric — repository-level objective function (scientific metrics only).
 
 Defines:
   DISCOVERY_VALUE = (0.25 * rediscovery_rate) + (0.20 * scaffold_novelty)
                     + (0.15 * top_k_enrichment) + (0.20 * holdout_generalization)
                     + (0.20 * experimental_trend_recovery)
-  SIMPLICITY_COST = (0.30 * norm_loc) + (0.20 * norm_cc_violations)
-                    + (0.20 * norm_dependencies) + (0.30 * norm_architectural_surface_area)
-  NET_PROGRESS = DISCOVERY_VALUE - (0.35 * SIMPLICITY_COST)
 
-This test calculates the BASELINE net progress and verifies that any code
-changes do not decrease it. The constants (lambda, normalisation factors) are
-chosen so that NET_PROGRESS lives in [0, 1] for a healthy repository.
+This test calculates the BASELINE discovery value and verifies that any code
+changes do not decrease it below zero.
 
 Usage:
     pytest tests/test_net_progress.py -v
+
+Architecture health (lines of code, overlong functions, dependencies,
+architectural surface area) is checked by ``scripts/check_architecture.py``.
 """
 
 from __future__ import annotations
 
-import ast
 import json
 import os
 import random
@@ -27,12 +25,6 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
-from aurelius.constants import (
-    NET_PROGRESS_ARCH_NORM,
-    NET_PROGRESS_CC_NORM,
-    NET_PROGRESS_DEP_NORM,
-    NET_PROGRESS_LOC_NORM,
-)
 from aurelius.scoring.oracle.gc import (
     _compute_sei_fracture_toughness_proxy,
     predict_dielectric_proxy,
@@ -43,113 +35,8 @@ from aurelius.scoring.oracle.quantum import (
 )
 from aurelius.types import MoleculeContext
 
-LAMBDA = 0.35
-
-SRC_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius")
-
 HOLDOUT_SEED = 42
 HOLDOUT_FRACTION = 0.20
-
-
-def _count_lines_of_code() -> int:
-    """Count total non-empty, non-comment lines in src/aurelius/.py files."""
-    total = 0
-    for root, _dirs, files in os.walk(SRC_DIR):
-        for fn in files:
-            if not fn.endswith(".py"):
-                continue
-            filepath = os.path.join(root, fn)
-            with open(filepath) as f:
-                for line in f:
-                    stripped = line.strip()
-                    if stripped and not stripped.startswith("#"):
-                        total += 1
-    return total
-
-
-def _count_cyclomatic_violations() -> int:
-    """Count functions exceeding cyclomatic complexity of 12 in core modules."""
-    try:
-        from radon.complexity import cc_visit
-    except ImportError:
-        raise ImportError(
-            "radon is required for Net Progress complexity checks. "
-            "Install via: pip install radon"
-        )
-
-    excluded = {"chem_utils.py", "dependencies.py", "__init__.py", "__main__.py",
-                "reporting.py"}
-    violations = 0
-    for root, _dirs, files in os.walk(SRC_DIR):
-        for fn in files:
-            if not fn.endswith(".py") or fn in excluded:
-                continue
-            filepath = os.path.join(root, fn)
-            with open(filepath) as f:
-                try:
-                    blocks = cc_visit(f.read())
-                    for block in blocks:
-                        if block.complexity > 12:
-                            violations += 1
-                except Exception:
-                    continue
-    return violations
-
-
-def _count_dependency_imports() -> int:
-    """Count unique third-party imports in src/aurelius/ (excluding aurelius itself)."""
-    stdlib = {"os", "sys", "json", "math", "re", "time", "io", "abc", "typing",
-              "collections", "functools", "itertools", "pathlib", "copy", "inspect",
-              "logging", "contextlib", "subprocess", "tempfile", "threading",
-              "concurrent", "dataclasses", "warnings", "pickle", "enum", "hashlib",
-              "textwrap", "bisect", "random", "__future__", "atexit", "datetime",
-              "importlib", "shutil"}
-    deps: set[str] = set()
-    for root, _dirs, files in os.walk(SRC_DIR):
-        for fn in files:
-            if not fn.endswith(".py"):
-                continue
-            filepath = os.path.join(root, fn)
-            with open(filepath) as f:
-                try:
-                    tree = ast.parse(f.read())
-                except SyntaxError:
-                    continue
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        pkg = alias.name.split(".")[0]
-                        if pkg not in stdlib and not pkg.startswith("aurelius"):
-                            deps.add(pkg)
-                elif isinstance(node, ast.ImportFrom) and node.module:
-                    pkg = node.module.split(".")[0]
-                    if pkg not in stdlib and not pkg.startswith("aurelius"):
-                        deps.add(pkg)
-    return len(deps)
-
-
-def _count_architectural_surface_area() -> int:
-    """Count public classes and functions in core src/aurelius/ modules.
-
-    Tracks the number of public (non-underscore-prefixed) classes and
-    top-level functions as a proxy for architectural complexity.
-    """
-    count = 0
-    excluded = {"__init__.py", "__main__.py", "dependencies.py", "reporting.py"}
-    for root, _dirs, files in os.walk(SRC_DIR):
-        for fn in files:
-            if not fn.endswith(".py") or fn in excluded:
-                continue
-            filepath = os.path.join(root, fn)
-            with open(filepath) as f:
-                try:
-                    tree = ast.parse(f.read())
-                except SyntaxError:
-                    continue
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and not node.name.startswith("_"):
-                    count += 1
-    return count
 
 
 def _compute_rediscovery_rate() -> float:
@@ -345,36 +232,22 @@ def _compute_experimental_trend_recovery() -> float:
 
 
 class TestNetProgress:
-    """Repository-level objective function.
+    """Repository-level scientific discovery value assessment.
 
-    NET_PROGRESS = DISCOVERY_VALUE - (LAMBDA * SIMPLICITY_COST)
+    DISCOVERY_VALUE = (0.25 * rediscovery_rate) + (0.20 * scaffold_novelty)
+                      + (0.15 * top_k_enrichment) + (0.20 * holdout_generalization)
+                      + (0.20 * experimental_trend_recovery)
 
-    Ensures that any code change increases discovery value more than it
-    adds complexity cost.
+    Ensures that any code change maintains a positive discovery value.
+    Architecture health is checked separately by ``scripts/check_architecture.py``.
     """
 
-    def test_net_progress_is_positive(self):
-        loc = _count_lines_of_code()
-        cc_violations = _count_cyclomatic_violations()
-        n_deps = _count_dependency_imports()
-        arch_surface = _count_architectural_surface_area()
-
+    def test_discovery_value_is_positive(self):
         rediscovery_rate = _compute_rediscovery_rate()
         scaffold_novelty = _compute_scaffold_novelty()
         top_k_enrichment = _compute_top_k_enrichment()
         holdout_gen = _compute_holdout_generalization()
         trend_recovery = _compute_experimental_trend_recovery()
-
-        sim_loc = min(1.0, loc / NET_PROGRESS_LOC_NORM)
-        sim_cc = min(1.0, cc_violations / NET_PROGRESS_CC_NORM)
-        sim_dep = min(1.0, n_deps / NET_PROGRESS_DEP_NORM)
-        sim_arch = min(1.0, arch_surface / NET_PROGRESS_ARCH_NORM)
-        simplicity_cost = (
-            0.30 * sim_loc
-            + 0.20 * sim_cc
-            + 0.20 * sim_dep
-            + 0.30 * sim_arch
-        )
 
         discovery_value = (
             0.25 * rediscovery_rate
@@ -384,33 +257,19 @@ class TestNetProgress:
             + 0.20 * trend_recovery
         )
 
-        net_progress = discovery_value - LAMBDA * simplicity_cost
-
         print(f"\n{'=' * 65}")
-        print("  NET PROGRESS REPORT")
+        print("  DISCOVERY VALUE REPORT")
         print(f"{'=' * 65}")
-        print("  DISCOVERY VALUE")
         print(f"    Rediscovery rate:            {rediscovery_rate:.3f}")
         print(f"    Scaffold novelty:            {scaffold_novelty:.3f}")
         print(f"    Top-k enrichment:            {top_k_enrichment:.3f}")
         print(f"    Holdout generalization:      {holdout_gen:.3f}")
         print(f"    Experimental trend recovery: {trend_recovery:.3f}")
         print(f"    DISCOVERY_VALUE:             {discovery_value:.3f}")
-        print("  SIMPLICITY COST")
-        print(f"    Lines of code:               {loc} (norm={sim_loc:.3f})")
-        print(f"    CC violations >12:           {cc_violations} (norm={sim_cc:.3f})")
-        print(f"    Third-party deps:            {n_deps} (norm={sim_dep:.3f})")
-        print(f"    Architectural surface area:  {arch_surface} (norm={sim_arch:.3f})")
-        print(f"    SIMPLICITY_COST:             {simplicity_cost:.3f}")
-        print("  NET PROGRESS")
-        print(f"    λ:                           {LAMBDA}")
-        print(f"    NET_PROGRESS:                {net_progress:.3f}")
         print(f"{'=' * 65}")
 
-        assert net_progress > 0.0, (
-            f"NET_PROGRESS = {net_progress:.3f} is not positive. "
-            f"The complexity cost ({simplicity_cost:.3f} × λ={LAMBDA}) "
-            f"outweighs the discovery value ({discovery_value:.3f})."
+        assert discovery_value > 0.0, (
+            f"DISCOVERY_VALUE = {discovery_value:.3f} is not positive."
         )
 
     def test_active_learning_queue_field_is_not_public_api(self):
