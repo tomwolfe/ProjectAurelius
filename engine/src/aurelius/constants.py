@@ -11,6 +11,18 @@ from rdkit import Chem
 FINGERPRINT_SIZE: int = 2048
 
 # ---------------------------------------------------------------------------
+# Ed25519 Public Key for Kernel Signature Verification
+# ---------------------------------------------------------------------------
+# The Certification Lab signs kernels using Ed25519 with a private key known
+# only to the Lab. The Engine verifies kernels using this public key.
+# This key corresponds to the Aurelius development seed.
+# In production, replace this with the actual Lab's published public key.
+
+KERNEL_PUBLIC_KEY: bytes = bytes.fromhex(
+    "4e176c659b2f3544ee549931dfdedefbd4f95366dbf94ee6a06f05d0c7ef76cf"
+)
+
+# ---------------------------------------------------------------------------
 # Frontier Orbital (HOMO/LUMO) Thresholds
 # ---------------------------------------------------------------------------
 # Physical basis: HOMO energy measures oxidative stability of the electrolyte.
