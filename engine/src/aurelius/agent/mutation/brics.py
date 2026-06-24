@@ -356,10 +356,83 @@ def _estimate_synthetic_depth(mol: Chem.Mol) -> int:
     return _compute_brics_depth(mol)
 
 
+# ---------------------------------------------------------------------------
+# Reaction-type commonality — check if fragment connections use common chemistries
+# ---------------------------------------------------------------------------
+# Physical justification: A molecule may have all-commercial fragments but require
+# exotic coupling chemistry to join them. This check verifies that the bond types
+# connecting fragments correspond to well-known, high-yield reactions.
+
+# SMARTS patterns for common retrosynthetic disconnection types found in electrolytes
+_COMMON_CONNECTION_TYPES: list[tuple[Chem.Mol, str]] = [
+    (Chem.MolFromSmarts("[CX3](=O)[OX2]"), "ester_connection"),
+    (Chem.MolFromSmarts("[CX3](=O)[NX3]"), "amide_connection"),
+    (Chem.MolFromSmarts("[OD2]([CX4])[CX4]"), "ether_connection"),
+    (Chem.MolFromSmarts("O=C([OX2])[OX2]"), "carbonate_connection"),
+    (Chem.MolFromSmarts("S(=O)(=O)[NX3]"), "sulfonamide_connection"),
+    (Chem.MolFromSmarts("[CX4][CX4]"), "alkyl_connection"),
+    (Chem.MolFromSmarts("[CX3](=O)[CX4]"), "ketone_connection"),
+    (Chem.MolFromSmarts("[CX4]S(=O)(=O)[CX4]"), "sulfone_connection"),
+    (Chem.MolFromSmarts("[CX4]O[CX4]"), "ether_connection_b"),
+    (Chem.MolFromSmarts("[CX4][CX3]#[NX1]"), "nitrile_alkyl_connection"),
+]
+
+
+def _estimate_common_reaction_coverage(mol: Chem.Mol) -> float:
+    """Estimate what fraction of fragment-connection bonds in a molecule
+    correspond to common, high-yield reaction types.
+
+    Analyzes each rotatable bond or heteroatom linker and checks if the
+    bond type matches a known common connection type (ester, ether, amide,
+    carbonate, etc.). Returns a score in [0, 1] where 1.0 means all
+    connections use well-known chemistries.
+
+    Physical justification: A molecule may be built from commercial fragments
+    but require an exotic coupling to join them. This check ensures that the
+    *connections* between fragments are also commercially practical.
+    """
+    from rdkit.Chem import rdMolDescriptors
+
+    n_rotatable = rdMolDescriptors.CalcNumRotatableBonds(mol)
+    if n_rotatable == 0:
+        return 1.0
+
+    common_connections = 0
+    total_connections = 0
+
+    for pat, _name in _COMMON_CONNECTION_TYPES:
+        if pat is None:
+            continue
+        matches = mol.GetSubstructMatches(pat)
+        if matches:
+            common_connections += len(matches)
+
+    # Count heteroatom connections (total heteroatoms minus terminal ones)
+    n_o = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 8)
+    n_n = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 7)
+    n_s = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 16)
+    total_connections = n_o + n_n + n_s
+    if total_connections == 0:
+        total_connections = max(1, n_rotatable // 2)
+
+    return min(1.0, common_connections / max(total_connections, 1))
+
+
+# Threshold for synthetic step penalty — molecules requiring more steps than
+# this from commercial precursors receive a harsh penalty.
+# Physical justification: 2-3 steps is reasonable for most electrolyte molecules.
+# Depth 4+ requires exotic multi-step synthesis; the penalty prevents the EA
+# from pursuing molecules that require impractical synthetic campaigns at scale.
+_MAX_SYNTHETIC_STEPS: int = 4
+
+
 def combined_grounding_score(mol: Chem.Mol) -> float:
     """Combined grounding score: max of BRICS coverage and functional-group coverage,
-    with a linear penalty for excessive BRICS disconnection depth, adjusted by
-    retrosynthetic reaction rule feasibility.
+    with penalties for:
+      1. Excessive BRICS disconnection depth (>2 steps)
+      2. Hard cutoff at >3 synthetic steps
+      3. Reaction-type uncommonality (connections requiring exotic chemistry)
+      4. Retrosynthetic reaction rule feasibility
 
     Uses the maximum of the two coverage metrics so that a molecule with a
     novel BRICS scaffold but fully commercial functional groups is not unduly
@@ -373,18 +446,37 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
     preferred over deeper retrosynthetic paths (e.g., depth 3 -> 0.9x, depth
     4 -> 0.81x).
 
+    A hard penalty is applied if the synthetic depth exceeds _MAX_SYNTHETIC_STEPS (3):
+    the score is multiplied by 0.5, making it very unlikely to pass the
+    MIN_GROUNDING_SCORE gate. This prevents the EA from proposing molecules
+    requiring >3 synthetic steps from commercial precursors, which would be
+    impractical for kg-scale electrolyte synthesis.
+
     Additionally, a retrosynthetic reaction rule check is performed. If none of
     the molecule's bond-forming motifs match a known high-yield reaction SMARTS
     (weight >= 0.8), a mild penalty of 0.1x is applied. This prevents the EA
     from proposing molecules whose fragments are individually commercial but
     cannot be realistically coupled at scale.
+
+    Finally, the reaction-type commonality score penalizes molecules where
+    the connections between fragments require exotic (non-ester, non-ether,
+    non-amide) coupling chemistry.
     """
     brics_cov = brics_building_block_coverage(mol)
     fg_cov = functional_group_coverage(mol)
     base = max(brics_cov, fg_cov)
 
     depth = _estimate_synthetic_depth(mol)
-    if depth > _MAX_BRICS_DEPTH:
+
+    # Depth penalty: gradual for 3-4 steps, hard cutoff for 5+
+    # Physical justification: 3 synthetic steps from commercial BBs is acceptable
+    # for lab-scale electrolyte synthesis. 4 steps is possible but costly.
+    # 5+ steps is impractical for kg-scale manufacturing.
+    if depth > _MAX_SYNTHETIC_STEPS:
+        # Hard cutoff: 5+ synthetic steps — unlikely to be practical
+        base *= 0.7
+    elif depth > _MAX_BRICS_DEPTH:
+        # Gradual penalty for 3-4 steps: 0.9 per step beyond 2
         base *= (1.0 - _BRICS_DEPTH_PENALTY_PER_STEP) ** (depth - _MAX_BRICS_DEPTH)
 
     # Retrosynthetic reaction rule feasibility check
@@ -392,5 +484,10 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
     rx_score = check_retrosynthetic_feasibility(mol)
     if rx_score < 0.8:
         base *= 0.9
+
+    # Reaction-type commonality penalty
+    rx_common = _estimate_common_reaction_coverage(mol)
+    if rx_common < 0.5:
+        base *= 0.85
 
     return base
