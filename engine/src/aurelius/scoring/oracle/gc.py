@@ -251,25 +251,10 @@ def _compute_dielectric_cross_terms(counts: dict[str, int]) -> float:
 def predict_dielectric_proxy(ctx: MoleculeContext) -> float:
     """Predict a dielectric constant proxy via fragment-additivity + TPSA cap
     + non-linear cross-term corrections.
+
+    Delegates to the default ElectrolytePack singleton.
     """
-    mol = ctx.mol
-    counts = _count_fragments(mol)
-    value = _GC_BASE_DIELECTRIC
-    for _smarts, _name, dd, _dv, _ls, _dc in _GC_FRAGMENTS:
-        n = counts.get(_name, 0)
-        value += _saturate_contrib(n, dd * 2.0)
-
-    value += _compute_dielectric_cross_terms(counts)
-
-    tpsa = ctx.tpsa
-    # TPSA coefficient 0.030: differentiates high-polarity (EC, DMSO, DMF) from
-    # low-polarity molecules via direct polarity measurement.
-    value += tpsa * 0.030
-
-    max_diel = _GC_BASE_DIELECTRIC + tpsa * MAX_DIELECTRIC_PER_TPSA
-    value = min(value, max_diel)
-
-    return max(1.0, value)
+    return _DEFAULT_ELECTROLYTE.predict_dielectric(ctx)
 
 
 def _count_branch_points(mol: Chem.Mol) -> int:
@@ -316,108 +301,35 @@ def _compute_rigidity_penalty(ctx: MoleculeContext) -> float:
 
 
 def predict_viscosity_proxy(ctx: MoleculeContext) -> float:
-    """Predict a viscosity proxy via fragment-additivity + branching penalty."""
-    mol = ctx.mol
-    counts = _count_fragments(mol)
-    value = _GC_BASE_VISCOSITY
-    for _smarts, _name, _dd, dv, _ls, _dc in _GC_FRAGMENTS:
-        n = counts.get(_name, 0)
-        value += _saturate_contrib(n, dv * 2.0)
+    """Predict a viscosity proxy via fragment-additivity + branching penalty.
 
-    mw = ctx.mw
-    value += (mw - 30.0) * 0.005
-    n_rot = ctx.rotatable_bonds
-    value += n_rot * 0.15
-
-    n_branch = _count_branch_points(mol)
-    value += n_branch * 0.80
-
-    n_stereo = _count_stereocenters(mol)
-    value += n_stereo * 0.05
-
-    value += _compute_rigidity_penalty(ctx)
-
-    return max(0.1, value)
+    Delegates to the default ElectrolytePack singleton.
+    """
+    return _DEFAULT_ELECTROLYTE.predict_viscosity(ctx)
 
 
 def predict_li_solvation_proxy(ctx: MoleculeContext) -> float:
     """Predict a Li+ solvation energy proxy via fragment-additivity.
 
-    Physical justification: In addition to the fragment-additivity model,
-    an HF-scavenging bonus (+0.2) is applied when the molecule contains
-    known HF-scavenging functional groups (e.g., sultone rings). These
-    groups mitigate LiPF6 hydrolysis into HF — the #1 real-world cause
-    of battery failure — by converting free HF into stable sulfonate
-    salts. This bonus proxies improved battery lifetime and is separate
-    from direct Li+ solvation effects captured by the fragment model.
+    Delegates to the default ElectrolytePack singleton.
     """
-    mol = ctx.mol
-    counts = _count_fragments(mol)
-    value = _GC_BASE_LI_SOLVATION
-    for _smarts, _name, _dd, _dv, ls, _dc in _GC_FRAGMENTS:
-        n = counts.get(_name, 0)
-        value += _saturate_contrib(n, ls * 2.0)
-
-    if counts.get("hf_scavenger", 0) > 0:
-        value += 0.2  # HF-scavenging bonus for LiPF6 compatibility
-
-    mw = ctx.mw
-    value += max(0.0, (mw - 50.0)) * 0.002
-    return max(0.5, value)
+    return _DEFAULT_ELECTROLYTE.predict_li_solvation(ctx)
 
 
 def predict_ced_proxy(ctx: MoleculeContext) -> float:
     """Predict a Cohesive Energy Density (CED) proxy via fragment-additivity.
 
-    Physical justification: CED = (sum of molar attraction constants)^2 / molar
-    volume. The fragment-additivity approach sums polar-group contributions to
-    intermolecular cohesion (dipole-dipole, H-bonding, pi-stacking). Rigid
-    cyclic molecules with polar groups (sulfolane, EC) score higher than
-    flexible linear molecules because their conformational rigidity prevents
-    dipole cancellation (Kirkwood g>1 effect). A Michaelis-Menten saturation
-    prevents unphysical stacking of many polar groups — five sulfones do not
-    produce five times the CED of one.
+    Delegates to the default ElectrolytePack singleton.
     """
-    mol = ctx.mol
-    counts = _count_fragments(mol)
-    value = _GC_BASE_CED
-    for _smarts, _name, _dd, _dv, _ls, dc in _GC_FRAGMENTS:
-        n = counts.get(_name, 0)
-        value += _saturate_contrib(n, dc * 2.0)
-
-    # Ring rigidity bonus: each ring (except aromatic) adds rigidity that
-    # prevents dipole cancellation, boosting effective CED.
-    ring_info = mol.GetRingInfo()
-    n_rings = ring_info.NumRings()
-    n_arom_rings = sum(
-        1 for ring in ring_info.AtomRings()
-        if all(mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring)
-    )
-    value += max(0, n_rings - n_arom_rings) * 0.3
-
-    return max(1.0, min(15.0, value))
+    return _DEFAULT_ELECTROLYTE.predict_ced(ctx)
 
 
 def predict_gas_evolution_proxy(ctx: MoleculeContext) -> float:
     """Predict reductive gas evolution risk via fragment-additivity.
 
-    Physical justification: Linear carbonates and vulnerable acyclic esters
-    undergo one-electron reduction at the anode, generating CO₂/CO gas via
-    radical-mediated C-O bond cleavage. The proxy sums saturated pattern
-    contributions, where higher = worse (greater gas evolution risk).
-    Cyclic carbonates (EC, PC) are excluded by the acyclic constraint on
-    the vulnerable ester pattern. Fluorination mitigates risk by replacing
-    vulnerable C-H bonds with C-F bonds (no change in the base carbonate
-    contribution, but fewer vulnerable acyclic matches).
+    Delegates to the default ElectrolytePack singleton.
     """
-    total = 0.0
-    for pattern, _name, weight in _GC_GAS_EVOLUTION_PATTERNS:
-        if pattern is None:
-            continue
-        n = len(ctx.mol.GetSubstructMatches(pattern))
-        total += _saturate_contrib(n, weight)
-
-    return total
+    return _DEFAULT_ELECTROLYTE.predict_gas_evolution(ctx)
 
 
 def _compute_sei_fracture_toughness_proxy(ctx: MoleculeContext) -> float:
@@ -472,25 +384,9 @@ def predict_ionic_conductivity_proxy(
 ) -> float:
     """Predict ionic conductivity proxy via Walden-product model.
 
-    Combines dielectric (salt dissociation), viscosity (Stokes-Einstein
-    mobility), and Li+ solvation (charge carrier availability) into a
-    single figure of merit. The Walden product relates molar conductivity
-    to fluidity: ion mobility is inversely proportional to viscosity and
-    proportional to the number of charge carriers (set by dielectric *
-    Li+ binding strength). The Li+ solvation contribution uses a Gaussian
-    centered on the Goldilocks target (3.5) — too-weak binding fails to
-    dissociate salts, too-strong binding reduces transference number.
+    Delegates to the default ElectrolytePack singleton.
     """
-    if viscosity <= 0.0 or dielectric < 0.0:
-        return 0.0
-
-    effective_dielec = max(0.0, dielectric - 1.0)
-    solvation_factor = math.exp(-0.5 * ((li_solvation - 3.5) / 1.5) ** 2)
-
-    if viscosity < 0.001:
-        return 0.0
-    conductivity = effective_dielec * solvation_factor / viscosity
-    return max(0.0, min(10.0, conductivity))
+    return _DEFAULT_ELECTROLYTE.predict_ionic_conductivity(dielectric, viscosity, li_solvation)
 
 
 def predict_li_dissociation_proxy(
@@ -499,80 +395,9 @@ def predict_li_dissociation_proxy(
 ) -> float:
     """Predict Li-salt dissociation propensity via fragment-additivity.
 
-    Physical justification: Li-salt dissociation into solvent-separated ion
-    pairs (SSIPs) vs contact ion pairs (CIPs) is critical for free charge
-    carrier availability. A molecule with balanced electron-donating (Lewis
-    base) and electron-withdrawing motifs promotes SSIP formation by
-    simultaneously solvating Li+ (via donor motifs) and stabilising the
-    anion (via acceptor/withdrawing motifs). Molecules with very high donor
-    number bind Li+ too tightly (poor transference), while molecules with
-    low donor/acceptor balance cannot dissociate the salt at all.
-
-    The proxy ranges from 0.0 (no dissociation) to ~5.0 (excellent SSIP
-    formation). A score > 2.5 indicates good salt dissociation propensity.
-
-    The salt_type parameter is reserved for future salt-specific corrections
-    (e.g., LiTFSI vs LiPF6 have different dissociation energetics).
+    Delegates to the default ElectrolytePack singleton.
     """
-    counts = _count_fragments(ctx.mol)
-
-    # Donor motifs that solvate Li+ (Lewis base sites)
-    donor_sites: dict[str, float] = {
-        "carbonate": 1.2,
-        "ether": 1.0,
-        "nitrile": 0.8,
-        "sulfone": 0.6,
-        "sulfoxide": 1.5,
-        "alcohol": 1.3,
-        "ester": 0.7,
-        "amide": 1.4,
-        "primary_amine": 1.2,
-        "secondary_amine": 1.0,
-        "phosphate": 0.9,
-        "sulfonate": 0.7,
-        "aromatic_nitrogen": 0.8,
-        "glyme_chelating": 1.5,
-    }
-
-    # Acceptor motifs that stabilise the anion (electron-withdrawing)
-    acceptor_sites: dict[str, float] = {
-        "fluorine": 0.4,
-        "trifluoromethyl": 0.6,
-        "difluoromethylene": 0.3,
-        "sulfone": 0.5,
-        "sulfonyl_fluoride": 0.7,
-        "sulfonimide": 0.8,
-        "nitrile": 0.3,
-    }
-
-    donor_score = sum(
-        donor_sites.get(name, 0.0) * _saturate_contrib(counts.get(name, 0), 2.0)
-        for name in donor_sites
-    )
-    acceptor_score = sum(
-        acceptor_sites.get(name, 0.0) * _saturate_contrib(counts.get(name, 0), 2.0)
-        for name in acceptor_sites
-    )
-
-    base = max(0.0, donor_score + 0.3 * acceptor_score)
-
-    # Penalty for extreme donor dominance (too-tight Li+ binding -> CIP)
-    if donor_score > 4.0 and acceptor_score < 1.0:
-        base *= 0.7
-
-    # Penalty for extreme acceptor dominance (no Li+ solvation)
-    if acceptor_score > donor_score * 2.0:
-        base *= 0.5
-
-    # Imbalance penalty: optimal dissociation requires balanced motifs
-    total = donor_score + acceptor_score
-    if total > 0.0:
-        balance = 1.0 - abs(donor_score - acceptor_score) / total
-    else:
-        balance = 0.0
-    base *= 0.5 + 0.5 * balance
-
-    return max(0.0, min(6.0, base))
+    return _DEFAULT_ELECTROLYTE.predict_li_dissociation(ctx, salt_type=salt_type)
 
 
 # ---------------------------------------------------------------------------
@@ -916,3 +741,246 @@ class GcUqEnsemble:
     @property
     def is_trained(self) -> bool:
         return self._is_trained
+
+
+# ---------------------------------------------------------------------------
+# BasePropertyModel — Abstract Base Class for Group-Contribution Models
+# ---------------------------------------------------------------------------
+
+
+class BasePropertyModel:
+    """Abstract base class for group-contribution property models.
+
+    Subclasses define fragment patterns with associated property contributions
+    and provide prediction methods using the fragment-additivity framework
+    with Michaelis-Menten saturation and non-linear cross-terms.
+    """
+
+    name: str = "base"
+
+    # Subclasses override these:
+    fragments: list[tuple[Chem.Mol, str, ...]]
+    base_values: dict[str, float]
+    saturation_k: float = 0.693
+    cross_terms: list[tuple[str, str, float, str]] = []
+
+    def count_fragments(self, mol: Chem.Mol) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for pattern, name, *_rest in self.fragments:
+            matches = mol.GetSubstructMatches(pattern)
+            counts[name] = len(matches)
+        return counts
+
+    def saturate_contrib(self, count: int, max_contrib: float) -> float:
+        return max_contrib * (1.0 - math.exp(-self.saturation_k * count))
+
+    def get_fragment_names(self) -> list[str]:
+        return [name for _, name, *_rest in self.fragments]
+
+
+# ---------------------------------------------------------------------------
+# ElectrolytePack — Default GC Model for Electrolyte Bulk Properties
+# ---------------------------------------------------------------------------
+
+
+_ELECTROLYTE_CROSS_TERMS: list[tuple[str, str, float, str]] = [
+    ("carbonate", "ether", 0.8, "carbonate-ether synergy (glyme-carbonate hybrids)"),
+    ("nitrile", "ether", 0.3, "nitrile-ether synergy"),
+    ("carbonate", "fluorine", -0.5, "fluorinated carbonate suppression"),
+    ("sulfone", "ether", 0.4, "sulfone-ether synergy"),
+    ("carbonate", "nitrile", -0.3, "carbonate-nitrile antagonism"),
+    ("alcohol", "carbonate", -0.4, "alcohol-carbonate H-bond competition"),
+    ("sulfone", "carbonate", -0.3, "sulfone-carbonate polarity competition"),
+    ("nitrile", "fluorine", 0.3, "fluorinated nitrile dipole enhancement"),
+    ("sulfone", "nitrile", 0.5, "sulfone-nitrile high-voltage synergy"),
+]
+
+
+class ElectrolytePack(BasePropertyModel):
+    """Group-contribution model for electrolyte bulk properties.
+
+    Predicts dielectric, viscosity, Li+ solvation, CED, and derived
+    ionic conductivity using fragment-additivity with Michaelis-Menten
+    saturation and non-linear cross-terms. This is the default pack used
+    by PropertyOracle.
+    """
+
+    name: str = "electrolyte"
+    fragments: list[tuple[Chem.Mol, str, float, float, float, float]] = _GC_FRAGMENTS  # type: ignore[assignment]
+    base_values: dict[str, float] = {
+        "dielectric": 1.9,
+        "viscosity": 0.1,
+        "li_solvation": 1.0,
+        "ced": 2.0,
+    }
+    cross_terms: list[tuple[str, str, float, str]] = _ELECTROLYTE_CROSS_TERMS
+
+    def _compute_dielectric_cross_terms(self, counts: dict[str, int]) -> float:
+        correction = 0.0
+        for frag_a, frag_b, boost, _desc in self.cross_terms:
+            if counts.get(frag_a, 0) > 0 and counts.get(frag_b, 0) > 0:
+                correction += boost
+        if (
+            counts.get("carbonate", 0) > 0
+            and counts.get("ether", 0) > 0
+            and (counts.get("fluorine", 0) > 0 or counts.get("trifluoromethyl", 0) > 0)
+        ):
+            correction += 0.4
+        n_sulfone = counts.get("sulfone", 0)
+        n_nitrile = counts.get("nitrile", 0)
+        if n_sulfone > 0 and n_nitrile > 1:
+            correction += 0.3
+        if (
+            counts.get("fluorinated_ether", 0) > 0
+            and counts.get("ether", 0) > 0
+        ):
+            correction += 0.25
+        return max(-2.0, min(2.0, correction))
+
+    def predict_dielectric(self, ctx: MoleculeContext) -> float:
+        mol = ctx.mol
+        counts = self.count_fragments(mol)
+        value = self.base_values["dielectric"]
+        for _smarts, _name, dd, _dv, _ls, _dc in self.fragments:
+            n = counts.get(_name, 0)
+            value += self.saturate_contrib(n, dd * 2.0)
+        value += self._compute_dielectric_cross_terms(counts)
+        tpsa = ctx.tpsa
+        value += tpsa * 0.030
+        max_diel = self.base_values["dielectric"] + tpsa * MAX_DIELECTRIC_PER_TPSA
+        value = min(value, max_diel)
+        return max(1.0, value)
+
+    def predict_viscosity(self, ctx: MoleculeContext) -> float:
+        mol = ctx.mol
+        counts = self.count_fragments(mol)
+        value = self.base_values["viscosity"]
+        for _smarts, _name, _dd, dv, _ls, _dc in self.fragments:
+            n = counts.get(_name, 0)
+            value += self.saturate_contrib(n, dv * 2.0)
+        mw = ctx.mw
+        value += (mw - 30.0) * 0.005
+        n_rot = ctx.rotatable_bonds
+        value += n_rot * 0.15
+        n_branch = _count_branch_points(mol)
+        value += n_branch * 0.80
+        n_stereo = _count_stereocenters(mol)
+        value += n_stereo * 0.05
+        value += _compute_rigidity_penalty(ctx)
+        return max(0.1, value)
+
+    def predict_li_solvation(self, ctx: MoleculeContext) -> float:
+        mol = ctx.mol
+        counts = self.count_fragments(mol)
+        value = self.base_values["li_solvation"]
+        for _smarts, _name, _dd, _dv, ls, _dc in self.fragments:
+            n = counts.get(_name, 0)
+            value += self.saturate_contrib(n, ls * 2.0)
+        if counts.get("hf_scavenger", 0) > 0:
+            value += 0.2
+        mw = ctx.mw
+        value += max(0.0, (mw - 50.0)) * 0.002
+        return max(0.5, value)
+
+    def predict_ced(self, ctx: MoleculeContext) -> float:
+        mol = ctx.mol
+        counts = self.count_fragments(mol)
+        value = self.base_values["ced"]
+        for _smarts, _name, _dd, _dv, _ls, dc in self.fragments:
+            n = counts.get(_name, 0)
+            value += self.saturate_contrib(n, dc * 2.0)
+        ring_info = mol.GetRingInfo()
+        n_rings = ring_info.NumRings()
+        n_arom_rings = sum(
+            1 for ring in ring_info.AtomRings()
+            if all(mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring)
+        )
+        value += max(0, n_rings - n_arom_rings) * 0.3
+        return max(1.0, min(15.0, value))
+
+    def predict_ionic_conductivity(
+        self, dielectric: float, viscosity: float, li_solvation: float
+    ) -> float:
+        if viscosity <= 0.0 or dielectric < 0.0:
+            return 0.0
+        effective_dielec = max(0.0, dielectric - 1.0)
+        solvation_factor = math.exp(-0.5 * ((li_solvation - 3.5) / 1.5) ** 2)
+        if viscosity < 0.001:
+            return 0.0
+        conductivity = effective_dielec * solvation_factor / viscosity
+        return max(0.0, min(10.0, conductivity))
+
+    def predict_li_dissociation(self, ctx: MoleculeContext, salt_type: str = "LiPF6") -> float:
+        counts = self.count_fragments(ctx.mol)
+        donor_sites: dict[str, float] = {
+            "carbonate": 1.2, "ether": 1.0, "nitrile": 0.8,
+            "sulfone": 0.6, "sulfoxide": 1.5, "alcohol": 1.3,
+            "ester": 0.7, "amide": 1.4, "primary_amine": 1.2,
+            "secondary_amine": 1.0, "phosphate": 0.9, "sulfonate": 0.7,
+            "aromatic_nitrogen": 0.8, "glyme_chelating": 1.5,
+        }
+        acceptor_sites: dict[str, float] = {
+            "fluorine": 0.4, "trifluoromethyl": 0.6,
+            "difluoromethylene": 0.3, "sulfone": 0.5,
+            "sulfonyl_fluoride": 0.7, "sulfonimide": 0.8, "nitrile": 0.3,
+        }
+        donor_score = sum(
+            donor_sites.get(name, 0.0) * self.saturate_contrib(counts.get(name, 0), 2.0)
+            for name in donor_sites
+        )
+        acceptor_score = sum(
+            acceptor_sites.get(name, 0.0) * self.saturate_contrib(counts.get(name, 0), 2.0)
+            for name in acceptor_sites
+        )
+        base = max(0.0, donor_score + 0.3 * acceptor_score)
+        if donor_score > 4.0 and acceptor_score < 1.0:
+            base *= 0.7
+        if acceptor_score > donor_score * 2.0:
+            base *= 0.5
+        total = donor_score + acceptor_score
+        if total > 0.0:
+            balance = 1.0 - abs(donor_score - acceptor_score) / total
+        else:
+            balance = 0.0
+        base *= 0.5 + 0.5 * balance
+        return max(0.0, min(6.0, base))
+
+    def predict_gas_evolution(self, ctx: MoleculeContext) -> float:
+        total = 0.0
+        for pattern, _name, weight in _GC_GAS_EVOLUTION_PATTERNS:
+            if pattern is None:
+                continue
+            n = len(ctx.mol.GetSubstructMatches(pattern))
+            total += self.saturate_contrib(n, weight)
+        return total
+
+    def predict_all(self, ctx: MoleculeContext) -> dict[str, float]:
+        dielectric = self.predict_dielectric(ctx)
+        viscosity = self.predict_viscosity(ctx)
+        li_solvation = self.predict_li_solvation(ctx)
+        ced = self.predict_ced(ctx)
+        conductivity = self.predict_ionic_conductivity(dielectric, viscosity, li_solvation)
+        li_dissociation = self.predict_li_dissociation(ctx)
+        return {
+            "dielectric_proxy": dielectric,
+            "viscosity_proxy": viscosity,
+            "li_solvation_proxy": li_solvation,
+            "ced_proxy": ced,
+            "conductivity_proxy": conductivity,
+            "li_dissociation_proxy": li_dissociation,
+        }
+
+    def property_keys(self) -> dict[str, str]:
+        """Map short property names to result dict keys used by PropertyOracle."""
+        return {
+            "dielectric": "dielectric_proxy",
+            "viscosity": "viscosity_proxy",
+            "li_solvation": "li_solvation_proxy",
+            "li_dissociation": "li_dissociation_proxy",
+            "ced": "ced_proxy",
+            "conductivity": "conductivity_proxy",
+        }
+
+
+# Default singleton for backward-compatible module-level functions
+_DEFAULT_ELECTROLYTE: ElectrolytePack = ElectrolytePack()

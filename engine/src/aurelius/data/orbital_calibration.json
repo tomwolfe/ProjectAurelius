@@ -1534,5 +1534,35 @@
     "name": "Phosphoric_acid",
     "homo_eV": -7.8,
     "lumo_eV": 0.2
+  },
+  {
+    "smiles": "O=C(c1ccccc1)c2ccccc2",
+    "name": "Benzophenone",
+    "homo_eV": -6.3,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "O=C(c1ccc(F)cc1)c2ccc(F)cc2",
+    "name": "4,4-Difluorobenzophenone",
+    "homo_eV": -6.5,
+    "lumo_eV": -1.0
+  },
+  {
+    "smiles": "COc1ccc(C(=O)c2ccccc2)cc1",
+    "name": "4-Methoxybenzophenone",
+    "homo_eV": -6.1,
+    "lumo_eV": -0.9
+  },
+  {
+    "smiles": "FC(F)(F)c1ccc(C(=O)c2ccccc2)cc1",
+    "name": "4-Trifluoromethylbenzophenone",
+    "homo_eV": -6.6,
+    "lumo_eV": -0.9
+  },
+  {
+    "smiles": "CN(C)c1ccc(C(=O)c2ccc(N(C)C)cc2)cc1",
+    "name": "Michlers_ketone",
+    "homo_eV": -5.6,
+    "lumo_eV": -0.7
   }
 ]

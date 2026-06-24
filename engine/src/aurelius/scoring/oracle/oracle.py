@@ -28,14 +28,10 @@ from aurelius.scoring.oracle.gc import (
     _DATA_SOURCE,
     _UQ_PENALTY,
     _UQ_THRESHOLD_FRACTION,
+    BasePropertyModel,
+    ElectrolytePack,
     GcUqEnsemble,
     compute_gc_domain_penalty,
-    predict_ced_proxy,
-    predict_dielectric_proxy,
-    predict_ionic_conductivity_proxy,
-    predict_li_dissociation_proxy,
-    predict_li_solvation_proxy,
-    predict_viscosity_proxy,
 )
 from aurelius.scoring.oracle.quantum import (
     QuantumOracle,
@@ -89,6 +85,7 @@ class PropertyOracle:
         use_xtb: bool = True,
         use_surrogate: bool = True,
         use_gc_uq: bool = True,
+        property_pack: BasePropertyModel | None = None,
     ) -> None:
         self._quantum = QuantumOracle(use_xtb=use_xtb)
         self._use_surrogate = use_surrogate
@@ -97,6 +94,7 @@ class PropertyOracle:
         )
         self._use_gc_uq = use_gc_uq
         self._gc_uq: GcUqEnsemble | None = GcUqEnsemble() if use_gc_uq else None
+        self._property_pack: BasePropertyModel = property_pack or ElectrolytePack()
         self._cache: dict[str, dict[str, Any]] = {}
         self._disk_cache: diskcache.Cache = diskcache.Cache(
             directory=_ORACLE_CACHE_DIR,
@@ -173,19 +171,12 @@ class PropertyOracle:
             logger.debug("GC UQ unavailable")
         return 1.0, 0.0, 0.0
 
-    def _compute_gc_properties(self, ctx: MoleculeContext) -> tuple[float, float, float, float, float, float]:
-        """Compute all six GC-based bulk property proxies for a molecule.
+    def _compute_gc_properties(self, ctx: MoleculeContext) -> dict[str, float]:
+        """Compute all GC-based bulk property proxies for a molecule.
 
-        Returns:
-            (dielectric, viscosity, li_solvation, li_dissociation, ced, conductivity)
+        Delegates to the configured property pack (default: ElectrolytePack).
         """
-        dielectric = predict_dielectric_proxy(ctx)
-        viscosity = predict_viscosity_proxy(ctx)
-        li_solvation = predict_li_solvation_proxy(ctx)
-        li_dissociation = predict_li_dissociation_proxy(ctx)
-        ced = predict_ced_proxy(ctx)
-        conductivity = predict_ionic_conductivity_proxy(dielectric, viscosity, li_solvation)
-        return dielectric, viscosity, li_solvation, li_dissociation, ced, conductivity
+        return self._property_pack.predict_all(ctx)
 
     def _build_domain(self, ctx: MoleculeContext, skip_quantum: bool, surrogate_penalty: float, s_homo: float, uq_penalty: float) -> tuple[float, str, bool]:
         """Build domain penalty and reason string."""
@@ -219,9 +210,7 @@ class PropertyOracle:
         self,
         smiles: str,
         homo: float, lumo: float, gap: float,
-        dielectric: float, viscosity: float,
-        li_solvation: float, li_dissociation: float,
-        ced: float, conductivity: float,
+        gc_props: dict[str, float],
         domain_penalty: float, domain_reason_str: str, domain_applicable: bool,
         quantum_method: str, quantum_confidence_val: str,
         skip_quantum: bool,
@@ -233,20 +222,24 @@ class PropertyOracle:
             "homo_eV": round(homo, 4),
             "lumo_eV": round(lumo, 4),
             "gap_eV": round(gap, 4),
-            "dielectric_proxy": round(dielectric, 4),
-            "viscosity_proxy": round(viscosity, 4),
-            "li_solvation_proxy": round(li_solvation, 4),
-            "li_dissociation_proxy": round(li_dissociation, 4),
-            "ced_proxy": round(ced, 4),
-            "conductivity_proxy": round(conductivity, 4),
             "domain_applicable": domain_applicable,
+            "domain_drift_risk": domain_penalty < 0.85,
             "domain_reason": domain_reason_str,
             "domain_penalty": round(domain_penalty, 4),
             "quantum_method": quantum_method,
             "quantum_confidence": quantum_confidence_val,
-            "uncertainty_flag": diel_std > abs(dielectric) * _UQ_THRESHOLD_FRACTION
-            or visc_std > abs(viscosity) * _UQ_THRESHOLD_FRACTION,
         }
+        # Merge property pack-specific proxies
+        for key, value in gc_props.items():
+            result[key] = round(value, 4)
+
+        # Standard electrolyte uncertainty flag (only if dielectric/viscosity present)
+        dielectric = gc_props.get("dielectric_proxy", 0.0)
+        viscosity = gc_props.get("viscosity_proxy", 0.0)
+        result["uncertainty_flag"] = (
+            diel_std > abs(dielectric) * _UQ_THRESHOLD_FRACTION
+            or visc_std > abs(viscosity) * _UQ_THRESHOLD_FRACTION
+        )
         if self._surrogate is not None:
             result["surrogate_skipped"] = skip_quantum
         return result
@@ -269,7 +262,7 @@ class PropertyOracle:
         homo, lumo, gap, quantum_method, quantum_confidence_val = self._compute_quantum(ctx, skip_quantum, s_homo, s_lumo)
         uq_penalty, diel_std, visc_std = self._compute_uq_penalty(ctx)
 
-        dielectric, viscosity, li_solvation, li_dissociation, ced, conductivity = self._compute_gc_properties(ctx)
+        gc_props = self._compute_gc_properties(ctx)
 
         domain_penalty, domain_reason_str, domain_applicable = self._build_domain(
             ctx, skip_quantum, surrogate_penalty, s_homo, uq_penalty,
@@ -278,10 +271,17 @@ class PropertyOracle:
             ctx, lumo, domain_penalty, domain_reason_str,
         )
 
+        if domain_penalty < 0.85:
+            logger.warning(
+                "Warning: Molecule is outside the calibrated domain of the current kernel. "
+                "Consider retuning via Aurelius Certification Lab. "
+                "(smiles=%s, domain_penalty=%.4f, reason=%s)",
+                smiles, domain_penalty, domain_reason_str,
+            )
+
         result = self._assemble_result(
             smiles, homo, lumo, gap,
-            dielectric, viscosity, li_solvation, li_dissociation,
-            ced, conductivity,
+            gc_props,
             domain_penalty, domain_reason_str, domain_applicable,
             quantum_method, quantum_confidence_val,
             skip_quantum,
