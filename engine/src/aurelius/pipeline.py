@@ -77,6 +77,7 @@ from aurelius.scoring.oracle import (
     predict_mixture_li_solvation,
     predict_mixture_viscosity,
 )
+from aurelius.scoring.oracle.gc import BasePropertyModel
 from aurelius.screening.tier1 import Filter
 from aurelius.types import MoleculeContext
 from aurelius.utils.chem_utils import electrolyte_synthetic_accessibility
@@ -154,10 +155,12 @@ class AureliusPipeline:
     def __init__(
         self,
         use_real_models: bool = True,
+        property_pack: BasePropertyModel | None = None,
     ) -> None:
         self._filter: Filter | None = None
         self._use_real_models = use_real_models
         self._oracle: PropertyOracle | None = None
+        self._property_pack = property_pack
 
     def initialize(self) -> None:
         """Initialise all pipeline components."""
@@ -171,7 +174,7 @@ class AureliusPipeline:
                 logger.warning("Tier 1 (Filter): DISABLED - %s", exc)
                 self._filter = None
 
-        self._oracle = PropertyOracle()
+        self._oracle = PropertyOracle(property_pack=self._property_pack)
         oracle_cache = "oracle_cache.joblib"
         if not self._oracle.load(oracle_cache):
             logger.info("Oracle (PropertyOracle): no cache found — using GC model directly.")
@@ -271,11 +274,6 @@ class AureliusPipeline:
                 "homo_eV": homo_eV,
                 "lumo_eV": lumo_eV,
                 "gap_eV": oracle_result.get("gap_eV", 0.0),
-                "dielectric_proxy": dielectric_proxy,
-                "viscosity_proxy": viscosity_proxy,
-                "li_solvation_proxy": li_solvation_proxy,
-                "li_dissociation_proxy": li_dissociation_proxy,
-                "ced_proxy": ced_proxy,
                 "sei_fracture_toughness_proxy": sei_fracture_toughness_proxy,
                 "gas_evolution_proxy": gas_evolution_proxy,
                 "domain_applicable": oracle_result.get("domain_applicable", True),
@@ -283,6 +281,10 @@ class AureliusPipeline:
                 "domain_penalty": domain_penalty,
                 "quantum_confidence": oracle_result.get("quantum_confidence", "unknown"),
             }
+            t2_result.update(
+                (k, v) for k, v in oracle_result.items()
+                if k.endswith("_proxy") and k not in t2_result
+            )
             results["tier2"] = t2_result
             logger.info(
                 "Oracle Result: %s -> HOMO=%.3f LUMO=%.3f Dielectric=%.3f Viscosity=%.3f LiSolv=%.3f",

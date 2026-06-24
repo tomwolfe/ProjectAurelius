@@ -24,9 +24,15 @@ from aurelius.types import MoleculeContext
 from aurelius.utils.dependencies import HAS_RDKIT
 
 
-def _make_pipeline() -> AureliusPipeline:
+def _make_pipeline(pack: str = "electrolyte") -> AureliusPipeline:
     """Create and initialize a pipeline."""
-    pipeline = AureliusPipeline()
+    from aurelius.scoring.oracle.gc import ElectrolytePack
+    from aurelius.scoring.oracle.packs import OrganicElectronicsPack
+    pack_map = {
+        "electrolyte": ElectrolytePack(),
+        "organic_electronics": OrganicElectronicsPack(),
+    }
+    pipeline = AureliusPipeline(property_pack=pack_map[pack])
     pipeline.initialize()
     return pipeline
 
@@ -53,9 +59,21 @@ def init() -> None:
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Show detailed framework versions")
 def doctor(verbose: bool) -> None:
     """Validate dependencies, hardware, and configuration."""
+    import platform
+    from aurelius.scoring.oracle import has_xtb
+
     click.echo("[Frameworks]")
     icon = "OK" if HAS_RDKIT else "MISSING"
     click.echo(f"  [{icon:>7}] rdkit")
+    if not HAS_RDKIT:
+        _ = platform.system()
+        click.echo("         → conda install -c conda-forge rdkit")
+
+    xtb_ok = has_xtb()
+    click.echo(f"  [{'OK' if xtb_ok else 'MISSING':>7}] xtb")
+    if not xtb_ok:
+        click.echo("         → https://github.com/grimme-lab/xtb/releases")
+        click.echo("         → Add xtb directory to PATH")
 
     click.echo("")
 
@@ -70,6 +88,8 @@ def doctor(verbose: bool) -> None:
     click.echo("[Summary]")
     if not HAS_RDKIT:
         click.echo("  WARNING: RDKit is missing. Pipeline will not function.")
+    elif not xtb_ok:
+        click.echo("  WARNING: xTB not on PATH — TOM fallback active (reduced accuracy).")
     else:
         click.echo("  All core frameworks available. System ready for full pipeline.")
 
@@ -78,9 +98,10 @@ def doctor(verbose: bool) -> None:
 
 @cli.command("screen")
 @click.argument("smiles")
-def screen(smiles: str) -> None:
+@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
+def screen(smiles: str, pack: str) -> None:
     """Screen a single molecule through the full Aurelius pipeline."""
-    pipeline = _make_pipeline()
+    pipeline = _make_pipeline(pack=pack)
     results = pipeline.screen_smiles(smiles)
 
     score = results.get("score", {})
@@ -94,12 +115,14 @@ def screen(smiles: str) -> None:
 @cli.command("batch")
 @click.argument("file", type=click.Path(exists=True))
 @click.option("--output", type=click.Path(), help="Output JSON file")
+@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
 def batch(
     file: str,
     output: str | None,
+    pack: str,
 ) -> None:
     """Screen multiple molecules from a SMILES file (one per line)."""
-    pipeline = _make_pipeline()
+    pipeline = _make_pipeline(pack=pack)
     smiles_list = []
     with open(file) as f:
         for line in f:

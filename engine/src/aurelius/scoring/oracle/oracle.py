@@ -244,6 +244,9 @@ class PropertyOracle:
             result["surrogate_skipped"] = skip_quantum
         return result
 
+    def _cache_key(self, smiles: str) -> str:
+        return f"{smiles}::{self._property_pack.name}"
+
     def evaluate(self, ctx: MoleculeContext) -> dict[str, Any]:
         if not isinstance(ctx, MoleculeContext):
             raise TypeError(
@@ -251,12 +254,19 @@ class PropertyOracle:
                 "Use MoleculeContext.from_smiles() to parse SMILES first."
             )
         smiles = ctx.smiles
-        if smiles in self._cache:
-            return self._cache[smiles]
-        cached = self._disk_cache.get(smiles)
+        key = self._cache_key(smiles)
+        if key in self._cache:
+            return self._cache[key]
+        cached = self._disk_cache.get(key)
         if cached is not None:
-            self._cache[smiles] = cached
+            self._cache[key] = cached
             return cached
+        # Fallback for legacy caches (pre-pack-keying)
+        if key != smiles:
+            cached = self._disk_cache.get(smiles)
+            if cached is not None:
+                self._cache[key] = cached
+                return cached
 
         surrogate_penalty, s_homo, s_lumo, skip_quantum = self._run_surrogate(ctx)
         homo, lumo, gap, quantum_method, quantum_confidence_val = self._compute_quantum(ctx, skip_quantum, s_homo, s_lumo)
@@ -288,8 +298,8 @@ class PropertyOracle:
             diel_std=diel_std,
             visc_std=visc_std,
         )
-        self._cache[smiles] = result
-        self._disk_cache[smiles] = result
+        self._cache[key] = result
+        self._disk_cache[key] = result
         return result
 
     def evaluate_smiles(self, smiles: str) -> dict[str, Any]:
