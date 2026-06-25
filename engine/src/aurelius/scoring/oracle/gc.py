@@ -183,6 +183,32 @@ _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float, float]] = [
     (Chem.MolFromSmarts("[OX2]1[CX3](=O)[OX2][CX4][CX4]1"), "cyclic_carbonate",  8.0,  0.8,  0.0,  4.0),
 ]
 
+# (pattern, name, hydrolysis_risk) — separate from bulk-property fragments
+# so the 6-tuple structure of _GC_FRAGMENTS is unaffected.
+# Risk values on a [0, 5] scale; the sigmoid threshold is in constants.py.
+# Physical justification: Each match contributes its risk value with
+# Michaelis-Menten saturation (diminishing returns for multiple copies).
+_GC_HYDROLYSIS_RISK_FRAGMENTS: list[tuple[Chem.Mol, str, float]] = [
+    # Acyl halides: R-C(=O)-X (X = F, Cl, Br, I) — violent hydrolysis producing HX acid.
+    # Risk 4.0 because they react exothermically with trace water even at RT.
+    (Chem.MolFromSmarts("[CX3](=[OX1])[F,Cl,Br,I]"),           "acyl_halide",   4.0),
+    # Anhydrides: R-C(=O)-O-C(=O)-R — rapid hydrolysis to carboxylic acids.
+    # Risk 3.0; less violent than acyl halides but still problematic in
+    # electrolyte systems where water is ppm-level but catalytic.
+    (Chem.MolFromSmarts("[CX3](=[OX1])[OX2][CX3](=[OX1])"),    "anhydride",     3.0),
+    # Epoxides (3-ring): C1CO1 — strained ring opens with water (acid-catalysed).
+    # Risk 2.5; ring-opening is slower than acyl halide solvolysis but
+    # produces diols that increase viscosity and degrade performance.
+    (Chem.MolFromSmarts("[OX2]1[CX4][CX4]1"),                  "epoxide",       2.5),
+    # Acyl cyanides: R-C(=O)-O-C#N — extreme hydrolysis eliminates HCN.
+    # Risk 5.0 (max): generates toxic, electrode-poisoning cyanide.
+    (Chem.MolFromSmarts("[CX3](=[OX1])[OX2][CX2]#[N]"),        "acyl_cyanide",  5.0),
+    # Enol esters (vinyl esters): R-C(=O)-O-C=C — more reactive than
+    # alkyl esters due to O-C(sp2) bond giving better leaving group.
+    # Risk 2.0; moderate concern but notably worse than stable carbonates.
+    (Chem.MolFromSmarts("[CX3](=[OX1])[OX2][CX3]=[CX3]"),      "enol_ester",    2.0),
+]
+
 _GC_BASE_DIELECTRIC: float = 1.9
 _GC_BASE_VISCOSITY: float = 0.1
 _GC_BASE_LI_SOLVATION: float = 1.0
@@ -1123,6 +1149,15 @@ class ElectrolytePack(BasePropertyModel):
             total += self.saturate_contrib(n, weight)
         return total
 
+    def predict_hydrolysis_risk(self, ctx: MoleculeContext) -> float:
+        total = 0.0
+        for pattern, _name, risk in _GC_HYDROLYSIS_RISK_FRAGMENTS:
+            if pattern is None:
+                continue
+            n = len(ctx.mol.GetSubstructMatches(pattern))
+            total += self.saturate_contrib(n, risk)
+        return total
+
     def predict_all(self, ctx: MoleculeContext) -> dict[str, float]:
         dielectric = self.predict_dielectric(ctx)
         viscosity = self.predict_viscosity(ctx)
@@ -1130,6 +1165,7 @@ class ElectrolytePack(BasePropertyModel):
         ced = self.predict_ced(ctx)
         conductivity = self.predict_ionic_conductivity(dielectric, viscosity, li_solvation)
         li_dissociation = self.predict_li_dissociation(ctx)
+        hydrolysis_risk = self.predict_hydrolysis_risk(ctx)
         return {
             "dielectric_proxy": dielectric,
             "viscosity_proxy": viscosity,
@@ -1137,6 +1173,7 @@ class ElectrolytePack(BasePropertyModel):
             "ced_proxy": ced,
             "conductivity_proxy": conductivity,
             "li_dissociation_proxy": li_dissociation,
+            "hydrolysis_risk_proxy": hydrolysis_risk,
         }
 
     def property_keys(self) -> dict[str, str]:
@@ -1148,6 +1185,7 @@ class ElectrolytePack(BasePropertyModel):
             "li_dissociation": "li_dissociation_proxy",
             "ced": "ced_proxy",
             "conductivity": "conductivity_proxy",
+            "hydrolysis_risk": "hydrolysis_risk_proxy",
         }
 
 

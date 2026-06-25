@@ -32,6 +32,7 @@ from aurelius.constants import (
     DIELECTRIC_TARGET,
     DISCOVERY_THRESHOLD,
     HOMO_THRESHOLD,
+    HYDROLYSIS_RISK_THRESHOLD,
     LI_SOLVATION_TARGET,
     LUMO_TARGET,
     SA_THRESHOLD,
@@ -39,6 +40,7 @@ from aurelius.constants import (
     SCORE_WEIGHT_DIELECTRIC,
     SCORE_WEIGHT_GAS_EVOLUTION,
     SCORE_WEIGHT_HOMO,
+    SCORE_WEIGHT_HYDROLYSIS,
     SCORE_WEIGHT_LI_SOLVATION,
     SCORE_WEIGHT_LUMO,
     SCORE_WEIGHT_SA,
@@ -141,6 +143,9 @@ _OBJECTIVES: list[Objective] = [
     Objective("gas_evolution_penalty", "gas_evolution_proxy", SCORE_WEIGHT_GAS_EVOLUTION,
               lambda v: _sigmoid(v, 0.5, 2.0, False),
               failure_reason_template="gas_evolution_proxy={value:.3f} (high degradation risk)"),
+    Objective("hydrolysis_penalty", "hydrolysis_risk_proxy", SCORE_WEIGHT_HYDROLYSIS,
+              lambda v: _sigmoid(v, HYDROLYSIS_RISK_THRESHOLD, 3.0, False),
+              failure_reason_template="hydrolysis_risk_proxy={value:.3f} (high hydrolysis risk)"),
 ]
 
 
@@ -264,6 +269,7 @@ class AureliusPipeline:
             li_solvation_proxy = oracle_result.get("li_solvation_proxy", 0.0)
             li_dissociation_proxy = oracle_result.get("li_dissociation_proxy", 0.0)
             ced_proxy = oracle_result.get("ced_proxy", 0.0)
+            hydrolysis_risk_proxy = oracle_result.get("hydrolysis_risk_proxy", 0.0)
 
             domain_penalty = oracle_result.get("domain_penalty", 1.0)
 
@@ -300,6 +306,7 @@ class AureliusPipeline:
             ced_proxy=ced_proxy,
             sei_fracture_toughness_proxy=sei_fracture_toughness_proxy,
             gas_evolution_proxy=gas_evolution_proxy,
+            hydrolysis_risk_proxy=hydrolysis_risk_proxy,
             ctx=ctx,
             quantum_confidence=quantum_confidence,
         )
@@ -589,6 +596,7 @@ class AureliusPipeline:
         ced_proxy: float = 0.0,
         sei_fracture_toughness_proxy: float = 0.0,
         gas_evolution_proxy: float = 0.0,
+        hydrolysis_risk_proxy: float = 0.0,
         ctx: MoleculeContext | None = None,
         quantum_confidence: str = "unknown",
     ) -> dict[str, Any]:
@@ -615,6 +623,7 @@ class AureliusPipeline:
             dielectric_proxy: Predicted dielectric proxy.
             viscosity_proxy: Predicted viscosity proxy.
             li_solvation_proxy: Predicted Li+ solvation proxy.
+            hydrolysis_risk_proxy: Predicted hydrolysis risk (GC fragment-additivity).
             ctx: Pre-parsed MoleculeContext for substructure checks.
             quantum_confidence: Confidence level from quantum backend
                 ("xtb", "tom_high", or "tom_low").
@@ -631,6 +640,7 @@ class AureliusPipeline:
             "ced_proxy": ced_proxy,
             "sei_fracture_toughness_proxy": sei_fracture_toughness_proxy,
             "gas_evolution_proxy": gas_evolution_proxy,
+            "hydrolysis_risk_proxy": hydrolysis_risk_proxy,
         }
 
         sub_scores: dict[str, float] = {}

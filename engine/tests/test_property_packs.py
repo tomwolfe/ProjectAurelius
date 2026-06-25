@@ -85,6 +85,7 @@ class TestElectrolytePack:
         expected_keys = {
             "dielectric_proxy", "viscosity_proxy", "li_solvation_proxy",
             "ced_proxy", "conductivity_proxy", "li_dissociation_proxy",
+            "hydrolysis_risk_proxy",
         }
         assert set(props.keys()) == expected_keys
         for v in props.values():
@@ -109,6 +110,52 @@ class TestElectrolytePack:
         gas_cyclic = pack.predict_gas_evolution(ctx_cyclic)
         assert 0 <= gas_linear <= 5.0
         assert 0 <= gas_cyclic <= 5.0
+
+
+class TestHydrolysisRisk:
+    """Hydrolytic stability proxy tests."""
+
+    def test_predict_hydrolysis_risk(self) -> None:
+        """predict_hydrolysis_risk should return a float for any molecule."""
+        pack = ElectrolytePack()
+        ctx = MoleculeContext.from_smiles("CCO")
+        assert ctx is not None
+        risk = pack.predict_hydrolysis_risk(ctx)
+        assert isinstance(risk, float)
+        assert risk >= 0.0
+
+    def test_hydrolysis_in_predict_all(self) -> None:
+        """hydrolysis_risk_proxy should be in predict_all output."""
+        pack = ElectrolytePack()
+        ctx = MoleculeContext.from_smiles("CCO")
+        assert ctx is not None
+        props = pack.predict_all(ctx)
+        assert "hydrolysis_risk_proxy" in props
+        assert isinstance(props["hydrolysis_risk_proxy"], float)
+
+    def test_acyl_chloride_vs_carbonate(self) -> None:
+        """An acyl chloride should have higher hydrolysis risk than a stable carbonate."""
+        pack = ElectrolytePack()
+        # Acetyl chloride: reactive acyl halide motif
+        ctx_acyl = MoleculeContext.from_smiles("CC(=O)Cl")
+        # Dimethyl carbonate: stable linear carbonate
+        ctx_carb = MoleculeContext.from_smiles("COC(=O)OC")
+        assert ctx_acyl is not None
+        assert ctx_carb is not None
+        risk_acyl = pack.predict_hydrolysis_risk(ctx_acyl)
+        risk_carb = pack.predict_hydrolysis_risk(ctx_carb)
+        assert risk_acyl > risk_carb, (
+            f"Acyl chloride risk ({risk_acyl:.3f}) should exceed "
+            f"carbonate risk ({risk_carb:.3f})"
+        )
+
+    def test_hydrolysis_risk_zero_for_simple_alkane(self) -> None:
+        """Simple alkanes should have zero hydrolysis risk."""
+        pack = ElectrolytePack()
+        ctx = MoleculeContext.from_smiles("CCCC")
+        assert ctx is not None
+        risk = pack.predict_hydrolysis_risk(ctx)
+        assert risk == 0.0
 
 
 class TestOrganicElectronicsPack:

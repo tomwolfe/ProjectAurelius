@@ -121,7 +121,7 @@ SCORE_WEIGHT_DIELECTRIC: float = 0.17
 SCORE_WEIGHT_VISCOSITY: float = 0.10
 """Weight for viscosity (ion mobility) penalty."""
 
-SCORE_WEIGHT_LI_SOLVATION: float = 0.20
+SCORE_WEIGHT_LI_SOLVATION: float = 0.15
 """Weight for Li+ solvation energy proxy — penalises binding that is too tight
 (poor transference number) or too weak (poor conductivity)."""
 
@@ -508,6 +508,25 @@ SCORE_WEIGHT_SEI_FRACTURE: float = 0.06
 SCORE_WEIGHT_GAS_EVOLUTION: float = 0.05
 """Weight for gas evolution penalty — penalises molecules prone to reductive
 gas generation (CO₂/CO from linear carbonates and vulnerable esters)."""
+
+# ---------------------------------------------------------------------------
+# Hydrolytic Stability Proxy — Fragment-Additivity Thresholds
+# ---------------------------------------------------------------------------
+# Physical basis: Acyl halides, anhydrides, epoxides, and related motifs
+# react with trace water in battery electrolytes, generating acidic by-
+# products (HF, HCl, carboxylic acids) that corrode electrodes and degrade
+# performance. The GC proxy sums fragment contributions; the sigmoid in the
+# scoring stage penalises total risk above this threshold.
+#
+# Threshold of 1.0 corresponds to ~1-2 moderately reactive fragments
+# (e.g., one epoxide ring). Weight kept small (0.05) to avoid overpowering
+# frontier-orbital and transport property objectives.
+
+HYDROLYSIS_RISK_THRESHOLD: float = 1.0
+"""Cumulative hydrolysis risk above which the sigmoid penalty activates."""
+
+SCORE_WEIGHT_HYDROLYSIS: float = 0.05
+"""Weight for hydrolysis risk penalty — penalises water-reactive motifs."""
 
 # ---------------------------------------------------------------------------
 # Net Progress Normalization Constants
