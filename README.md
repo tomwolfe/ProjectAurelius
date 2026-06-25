@@ -26,16 +26,74 @@ with curated examples and troubleshooting, see
 
 For full CLI reference, see [`engine/README.md`](engine/README.md).
 
-## Certified Kernels
+## Certification Lab (SaaS)
 
-A **Certified Kernel** is a signed JSON artifact that adjusts the engine's
-TOM/GC parameters for optimal accuracy within a specific chemical domain
-(e.g., fluorinated carbonates, ether electrolytes). Contact the Aurelius team
-for custom certification campaigns.
+The Certification Lab provides a B2B SaaS platform for chemists to upload experimental data,
+generate certified kernels, and manage subscriptions. It features:
 
-See [`docs/certification_protocol.md`](docs/certification_protocol.md) for the
-conceptual overview and [`docs/kernel_schema.json`](docs/kernel_schema.json)
-for the schema definition.
+- **JWT authentication** — register/login with email & password
+- **Kernel CRUD** — upload CSV/JSON data, view/download kernels
+- **Stripe billing** — subscription management with checkout sessions
+- **HTMX frontend** — single-page application with tabbed interface (kernels, upload, subscription)
+
+### Quick Start
+
+```bash
+# Install dependencies
+pip install -e .[web]
+
+# Run database migrations
+cd certification-lab
+python -m alembic upgrade head
+
+# Start the server
+uvicorn server.api_server:app --host 0.0.0.0 --port 8001
+```
+
+### Setup Environment Variables
+
+| Variable | Description |
+|---|---|
+| `AURELIUS_JWT_SECRET` | Secret key for JWT token signing |
+| `AURELIUS_API_KEY` | Legacy API key for unauthenticated access |
+| `AURELIUS_SECRET` | Ed25519 signing seed |
+| `AURELIUS_DATABASE_URL` | Database connection string (default: SQLite) |
+| `STRIPE_SECRET_KEY` | Stripe secret API key |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook verification secret |
+| `FRONTEND_URL` | Base URL for redirect URLs |
+
+### API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/auth/register` | Create new user account |
+| `POST` | `/auth/login` | Login and receive JWT |
+| `GET` | `/kernels` | List user's kernels |
+| `GET` | `/kernels/{id}` | Get single kernel |
+| `POST` | `/kernels` | Create a new kernel |
+| `DELETE` | `/kernels/{id}` | Delete a kernel |
+| `POST` | `/kernels/certify` | Full certification pipeline |
+| `POST` | `/kernels/{id}/diff/{old_id}` | Compare two kernels |
+| `POST` | `/subscribe` | Create Stripe checkout session |
+| `POST` | `/webhook` | Stripe webhook handler |
+| `GET` | `/health` | Health check |
+
+### Frontend Pages
+
+| Path | Description |
+|------|-------------|
+| `/` | Main app shell |
+| `/login` | Login page |
+| `/register` | Registration page |
+| `/dashboard` | User dashboard with tabs |
+| `/upload` | Upload & certify data |
+
+### Testing
+
+```bash
+cd certification-lab
+python -m pytest tests/ -v
+```
 
 ## License
 
@@ -62,11 +120,17 @@ project-aurelius/
 ├── certification-lab/        # [PRIVATE] Proprietary
 │   ├── src/certifier/
 │   ├── scripts/
+│   ├── server/               # FastAPI server, auth, templates
+│   ├── db/                   # SQLAlchemy models & engine setup
+│   ├── alembic/              # Database migrations
+│   ├── alembic.ini           # Alembic configuration
+│   ├── tests/
 │   └── pyproject.toml
-└── docs/
-    ├── quickstart_chemist.md
-    ├── architecture.md
-    ├── certification_protocol.md
-    ├── contributing_fragments.md
-    └── kernel_schema.json
+├── docs/
+│   ├── quickstart_chemist.md
+│   ├── architecture.md
+│   ├── certification_protocol.md
+│   ├── contributing_fragments.md
+│   └── kernel_schema.json
+└── data/                     # SQLite database (auto-created)
 ```
