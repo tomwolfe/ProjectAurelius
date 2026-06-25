@@ -1,0 +1,31 @@
+{
+  "version": "1.0.0",
+  "domain_boundary": {
+    "domain": "ether_low_temperature",
+    "description": "Ether-based solvents for low-temperature operation"
+  },
+  "tom_parameters": {
+    "homo_offset": 0.3351641361732618,
+    "lumo_offset": 0.3930316894329735,
+    "gc_scale": 1.0295727491153226,
+    "uq_scale": 0.9069036012340801
+  },
+  "gc_fragments": [],
+  "uq_weights": {
+    "ensemble_weight": 0.5
+  },
+  "validation_metrics": {
+    "spearman_rho": -0.3999999999999999,
+    "mae": 0.25103282723465214,
+    "rmse": 0.2970264275587892,
+    "n_training": 5
+  },
+  "signature": "f03c432ed2eb66eded0ee7bef92508ffe0f53487179c5ae82dac8ac95a30d4079cde2a71d9db82b5ed3ce44d226408a49ea09ef921f9c2d539c7df9656ac8c03",
+  "audit": {
+    "coverage_probability": 1.0,
+    "confidence_level": 0.95,
+    "n_samples": 5,
+    "pass": true,
+    "reason": ""
+  }
+}

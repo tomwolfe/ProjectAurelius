@@ -1,0 +1,31 @@
+{
+  "version": "1.0.0",
+  "domain_boundary": {
+    "domain": "sulfone_stable",
+    "description": "Sulfone-based electrolytes for high stability"
+  },
+  "tom_parameters": {
+    "homo_offset": 0.19708747696131468,
+    "lumo_offset": 0.14887153264135122,
+    "gc_scale": 0.9812797737307848,
+    "uq_scale": 0.9909367753192782
+  },
+  "gc_fragments": [],
+  "uq_weights": {
+    "ensemble_weight": 0.5
+  },
+  "validation_metrics": {
+    "spearman_rho": 0.1071428571428571,
+    "mae": 0.23589463298342064,
+    "rmse": 0.26713904314623693,
+    "n_training": 7
+  },
+  "signature": "76038970e10e0aae72275b480da186f1f8ff2b689b293c040db4972c690ad79577f993a3e5e7126c07b96c59ee7ac3463711a4534dcbdbb9d6abb1d2952f150d",
+  "audit": {
+    "coverage_probability": 1.0,
+    "confidence_level": 0.95,
+    "n_samples": 7,
+    "pass": true,
+    "reason": ""
+  }
+}

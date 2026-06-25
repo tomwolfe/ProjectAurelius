@@ -26,6 +26,22 @@ with curated examples and troubleshooting, see
 
 For full CLI reference, see [`engine/README.md`](engine/README.md).
 
+### Pre-Certified Kernels (Quick Start)
+
+Jump-start your workflow with domain-tuned, signed kernels generated from
+curated public benchmark data. Load any of these into the engine via the
+Certification Lab or use them as reference baselines:
+
+| Kernel | Domain | Description |
+|--------|--------|-------------|
+| [`carbonate_high_voltage.json`](docs/examples/kernels/carbonate_high_voltage.json) | Carbonate | High-voltage organic carbonate electrolytes (EC, PC, DMC, DEC, EMC, FEC) |
+| [`ether_low_temperature.json`](docs/examples/kernels/ether_low_temperature.json) | Ether | Low-temperature ether-based solvents (DME, THF, Diglyme, DEE, DOL) |
+| [`sulfone_stable.json`](docs/examples/kernels/sulfone_stable.json) | Sulfone | High-stability sulfone electrolytes (DMSO, Sulfolane, PS, dimethyl sulfone) |
+
+These kernels were produced by the [generate_pre_certified_kernels.py](certification-lab/scripts/generate_pre_certified_kernels.py)
+script and are ready for evaluation, comparison, or as a starting point for
+further domain tuning.
+
 ## Certification Lab (SaaS)
 
 The Certification Lab provides a B2B SaaS platform for chemists to upload experimental data,

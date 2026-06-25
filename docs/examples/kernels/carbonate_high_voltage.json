@@ -1,0 +1,31 @@
+{
+  "version": "1.0.0",
+  "domain_boundary": {
+    "domain": "carbonate_high_voltage",
+    "description": "Organic carbonates for high-voltage electrolyte applications"
+  },
+  "tom_parameters": {
+    "homo_offset": -0.43674991787338513,
+    "lumo_offset": 0.44066173254577734,
+    "gc_scale": 1.0050180644373539,
+    "uq_scale": 1.0083015233363768
+  },
+  "gc_fragments": [],
+  "uq_weights": {
+    "ensemble_weight": 0.5
+  },
+  "validation_metrics": {
+    "spearman_rho": 0.6071428571428572,
+    "mae": 0.5002499413381322,
+    "rmse": 0.7237141244622607,
+    "n_training": 7
+  },
+  "signature": "e4c84731dd0e1d8ab48ca5747127447dd394bffa3e8db2a68f3ddac917aec55587694ea3a9e1f84cad68658532be3795246f5bdeabc90c6dcf3f9ef9af9f220d",
+  "audit": {
+    "coverage_probability": 0.8571428571428571,
+    "confidence_level": 0.95,
+    "n_samples": 7,
+    "pass": false,
+    "reason": "Coverage below confidence threshold."
+  }
+}
