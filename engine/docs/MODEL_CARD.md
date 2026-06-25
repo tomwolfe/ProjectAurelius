@@ -77,41 +77,19 @@ Li-metal, and Na-ion batteries.
 
 ## External Property Validation
 ```text
-========================================================================
-  EXTERNAL PROPERTY VALIDATION — Spearman Rank Correlation
-========================================================================
-
-  Compares Aurelius oracle predictions against published experimental
-  values for common electrolyte solvents.
-
-  Benchmark molecules: 63
-
-  ┌──────────────────────┬────────────┬──────────┬───────────┐
-  │ Property             │     N      │    ρ     │   p-val   │
-  ├──────────────────────┼────────────┼──────────┼───────────┤
-  │ Dielectric ε         │   53       │ +0.7256  │ 0.0000 *** │
-  │ Viscosity η          │   53       │ +0.6748  │ 0.0000 *** │
-  │ Donor Number         │   38       │ +0.7576  │ 0.0000 *** │
-  │ HOMO                 │   56       │ +0.8567  │ 0.0000 *** │
-  │ LUMO                 │   56       │ +0.5986  │ 0.0000 *** │
-  └──────────────────────┴────────────┴──────────┴───────────┘
-
-  Significance: * p<0.05  ** p<0.01  *** p<0.001
-
-  Properties with ρ > 0: 5/5
-  EXTERNAL VALIDATION: ALL PROPERTIES SHOW POSITIVE RANK CORRELATION
-```
+*Benchmark module not available — skip*```
 
 ## Reality Check: EA Discoveries vs. Known Electrolytes
 ```text
-*Benchmark module not available — skip*
-Run `python -m benchmarks.benchmark_reality_check` to populate.
-```
+*Benchmark module not available — skip*```
 
 ## Mixture Synergy Validation
 ```text
-*Benchmark module not available — skip*
-Run `python -m benchmarks.benchmark_mixture_synergy` to populate.
+*Benchmark module not available — skip*```
+
+## Scientific Yield
+```text
+Scientific yield (novel scaffolds / total screened): 0.0909
 ```
 
 ## Synthesis Target Brief
@@ -143,7 +121,6 @@ Run `python -m benchmarks.benchmark_mixture_synergy` to populate.
 - `mypy>=1.9.0`
 - `psutil>=5.9.0`
 - `types-psutil`
-- `radon>=2.6.0`
 
 
 ---
