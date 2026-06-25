@@ -98,6 +98,45 @@ def _discovery_entry(d: ScreeningResult, uq_data: dict[str, dict[str, float]]) -
     return entry
 
 
+def _pareto_entry(d: ScreeningResult, uq_data: dict[str, dict[str, float]]) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "smiles": d.smiles,
+        "total_score": d.total_score,
+        "lumo_eV": d.lumo_eV,
+        "dielectric_proxy": d.dielectric_proxy,
+        "viscosity_proxy": d.viscosity_proxy,
+    }
+    if d.homo_eV is not None:
+        entry["homo_eV"] = d.homo_eV
+    if d.li_solvation_proxy is not None:
+        entry["li_solvation_proxy"] = d.li_solvation_proxy
+    if d.smiles in uq_data:
+        entry["diel_std"] = uq_data[d.smiles]["diel_std"]
+        entry["visc_std"] = uq_data[d.smiles]["visc_std"]
+        entry["uncertainty_weighted_score"] = round(
+            uq_data[d.smiles]["uncertainty_weighted_score"], 4
+        )
+    return entry
+
+
+def _pareto_entries(
+    pareto_front: list[ScreeningResult],
+    uq_data: dict[str, dict[str, float]],
+) -> list[dict[str, Any]]:
+    return [_pareto_entry(d, uq_data) for d in pareto_front]
+
+
+def _export_pareto_front(
+    pareto_entries: list[dict[str, Any]],
+    output_dir: str | Path | None = None,
+) -> None:
+    path = _resolve_output_path("pareto_front.json", output_dir)
+    with open(path, "w") as f:
+        json.dump(pareto_entries, f, indent=2)
+    log = logging.getLogger("aurelius_agent")
+    log.info("Pareto front written to %s", path)
+
+
 def generate_run_summary(
     state: LoopState,
     all_results: list[ScreeningResult],
@@ -134,6 +173,10 @@ def generate_run_summary(
         key=lambda d: _ucb_sort_key(d, uq_data),
     )
 
+    pareto_entries = _pareto_entries(pareto_front, uq_data)
+    _export_pareto_front(pareto_entries, output_dir)
+    log.info("Pareto front: %d non-dominated solutions found", len(pareto_entries))
+
     summary: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
         "pipeline": "Project Aurelius v10.0 — Multi-Objective Electrolyte Discovery Engine",
@@ -164,20 +207,7 @@ def generate_run_summary(
         "new_scaffolds_per_batch": [len(s) for s in state.scaffolds_per_batch],
         "discoveries": [_discovery_entry(d, uq_data) for d in top_discoveries[:50]],
         "all_results_count": len(all_results),
-        "pareto_optimal_discoveries": [
-            {**{"smiles": d.smiles, "total_score": d.total_score}, **(
-                {
-                    "diel_std": uq_data[d.smiles]["diel_std"],
-                    "visc_std": uq_data[d.smiles]["visc_std"],
-                    "uncertainty_weighted_score": round(
-                        uq_data[d.smiles]["uncertainty_weighted_score"], 4
-                    ),
-                }
-                if d.smiles in uq_data
-                else {}
-            )}
-            for d in pareto_front
-        ],
+        "pareto_optimal_discoveries": pareto_entries,
     }
 
     if top_mixtures:

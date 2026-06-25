@@ -187,6 +187,17 @@ def main() -> None:
     else:
         print("  EXTERNAL VALIDATION: SOME PROPERTIES LACK POSITIVE RANK CORRELATION")
 
+    print()
+    print("__BENCHMARK_RESULTS__")
+    print(json.dumps({
+        exp_key: {
+            "rho": round(_spearman_rho(data["predicted"], data["experimental"]), 4)
+                if len(data["predicted"]) >= 4 else 0.0,
+            "n": len(data["predicted"]),
+        }
+        for exp_key, data in results.items()
+    }, indent=2))
+
     return 0 if all_pass else 1
 
 
