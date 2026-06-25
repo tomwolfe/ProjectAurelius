@@ -70,8 +70,11 @@ from aurelius.constants import (
     SULFONYL_F_PATTERN as _SULFONYL_F_PATTERN,
 )
 from aurelius.scoring.oracle import (
+    _GC_FRAGMENTS,
     PropertyOracle,
     _compute_sei_fracture_toughness_proxy,
+    _count_fragments,
+    _saturate_contrib,
     mixture_synergy_bonus,
     mixture_synergy_bonus_ternary,
     predict_gas_evolution_proxy,
@@ -731,12 +734,43 @@ class AureliusPipeline:
     ) -> list[str]:
         if is_viable:
             return []
+
+        _PROP_GC_IDX: dict[str, int] = {
+            "dielectric_proxy": 2,
+            "viscosity_proxy": 3,
+            "li_solvation_proxy": 4,
+            "ced_proxy": 5,
+        }
+
+        counts = None
+        if ctx is not None:
+            counts = _count_fragments(ctx.mol)
+
         reasons = []
         for obj in _OBJECTIVES:
             s = sub_scores.get(obj.name, 0.0)
             if s < 0.3:
                 value = raw_values.get(obj.property_key, 0.0)
-                reasons.append(obj.failure_reason_template.format(value=value))
+                reason = obj.failure_reason_template.format(value=value)
+                if counts is not None and obj.property_key in _PROP_GC_IDX:
+                    contrib_idx = _PROP_GC_IDX[obj.property_key]
+                    contribs: list[tuple[str, float]] = []
+                    for _, name, *vals in _GC_FRAGMENTS:
+                        raw_c = vals[contrib_idx - 2]
+                        n = counts.get(name, 0)
+                        if n > 0 and abs(raw_c) > 1e-6:
+                            total = _saturate_contrib(n, raw_c * 2.0)
+                            contribs.append((name, total))
+                    contribs.sort(key=lambda x: abs(x[1]), reverse=True)
+                    top = contribs[:3]
+                    if top:
+                        parts = []
+                        for name, total in top:
+                            sign = "+" if total >= 0 else ""
+                            parts.append(f"{name} ({sign}{total:.1f})")
+                        reason += " Top contributors: " + ", ".join(parts) + "."
+                reasons.append(reason)
+
         if ctx is not None:
             if AureliusPipeline._check_al_corrosion_risk(ctx.mol) < 1.0:
                 reasons.append("Al corrosion risk (high-LUMO fluorinated molecule)")

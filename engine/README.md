@@ -107,7 +107,7 @@ aurelius mixture "C1COC(=O)O1" "COCCOC" --frac 0.5  # Screen EC/DME 50:50 mixtur
 | `batch` | `<file>` | Screen molecules from SMILES file |
 | `score` | `<smiles>` | Compute Aurelius score only |
 | `evaluate` | `<smiles>` | Run ML oracle evaluation |
-| `validate` | `<smiles>` | Run full pipeline with detailed scorecard |
+| `validate` | `<smiles>` | Run full pipeline with detailed scorecard and fragment-level rejection insights (top 3 contributing GC fragments per failing-property) |
 | `agent` | `--max-generations --batch-size` | Run the autonomous screening agent |
 | `mixture` | `<smiles_a> <smiles_b> [--frac]` | Screen a binary electrolyte mixture |
 
