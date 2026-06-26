@@ -31,10 +31,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
+from aurelius.types import MoleculeContext
 
 if TYPE_CHECKING:
-    from aurelius.types import MoleculeContext, ScreeningResult
+    from aurelius.types import ScreeningResult
+
+import numpy as np
 
 _MAX_DISCOVERIES = 100
 log = logging.getLogger(__name__)
@@ -126,12 +128,18 @@ class LoopState:
     path: str = "agent_state.json"
     output_dir: str | Path | None = None
 
+    # --- Thread-safety locks (initialised in __post_init__) ---
+    _state_lock: threading.Lock = field(init=False, default_factory=threading.Lock)
+    _cache_lock: threading.Lock = field(init=False, default_factory=threading.Lock)
+    _al_queue_lock: threading.Lock = field(init=False, default_factory=threading.Lock)
+
     def __post_init__(self) -> None:
         self.path = _resolve_output_path(self.path, self.output_dir)
         if not self.started_at:
             self.started_at = datetime.now(UTC).isoformat()
         self._cache_lock = threading.Lock()
         self._state_lock = threading.Lock()
+        self._al_queue_lock = threading.Lock()
         # Mirror list of fingerprints for fast lookup in find_nearest_screened
         self._cached_fingerprints: list[Any] = []
         self._load()
@@ -441,31 +449,35 @@ class LoopState:
         return [s for _, s in scored[:n]]
 
     def export_active_learning_queue(self, path: str) -> None:
+        with self._al_queue_lock:
+            snapshot = list(self.active_learning_queue)
         resolved = _resolve_output_path(path, self.output_dir)
         with open(resolved, "w") as f:
-            json.dump(self.active_learning_queue, f, indent=2)
+            json.dump(snapshot, f, indent=2)
         log.info(
             "Exported active learning queue (%d SMILES) to %s",
-            len(self.active_learning_queue),
+            len(snapshot),
             resolved,
         )
 
     def clear(self) -> None:
-        self.batch_means.clear()
-        self._all_scores.clear()
-        self.generations = 0
-        self.seed_pool_size = 0
-        self.total_screened = 0
-        self.best_score = 0.0
-        self.viable_count = 0
-        self.invalid_discarded = 0
-        self.discoveries.clear()
-        self._all_results.clear()
-        self._seen_smiles.clear()
-        self._seen_scaffolds.clear()
-        self.screened_fingerprints.clear()
-        self._cached_fingerprints.clear()
-        self.active_learning_queue.clear()
+        with self._state_lock:
+            self.batch_means.clear()
+            self._all_scores.clear()
+            self.generations = 0
+            self.seed_pool_size = 0
+            self.total_screened = 0
+            self.best_score = 0.0
+            self.viable_count = 0
+            self.invalid_discarded = 0
+            self.discoveries.clear()
+            self._all_results.clear()
+            self._seen_smiles.clear()
+            self._seen_scaffolds.clear()
+            self.screened_fingerprints.clear()
+            self._cached_fingerprints.clear()
+        with self._al_queue_lock:
+            self.active_learning_queue.clear()
         MoleculeContext.from_smiles.cache_clear()
         self.save()
 

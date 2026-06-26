@@ -31,8 +31,8 @@ import re
 import shutil
 import tempfile
 from abc import ABC, abstractmethod
-from typing import Any
 from collections.abc import Callable
+from typing import Any
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -40,15 +40,35 @@ from rdkit.DataStructs import BulkTanimotoSimilarity
 
 from aurelius.compute.xtb_pool import (
     _HAS_XTB as _HAS_XTB,
+)
+from aurelius.compute.xtb_pool import (
     _XTB_BIN as _XTB_BIN,
+)
+from aurelius.compute.xtb_pool import (
     _XTB_HOMO_RE as _XTB_HOMO_RE,
+)
+from aurelius.compute.xtb_pool import (
     _XTB_LUMO_RE as _XTB_LUMO_RE,
+)
+from aurelius.compute.xtb_pool import (
     BatchXTBRunner as BatchXTBRunner,
+)
+from aurelius.compute.xtb_pool import (
     _find_xtb_binary as _find_xtb_binary,
+)
+from aurelius.compute.xtb_pool import (
     _parse_xtb_output as _parse_xtb_output,
+)
+from aurelius.compute.xtb_pool import (
     _run_xtb as _run_xtb,
+)
+from aurelius.compute.xtb_pool import (
     _run_xtb_from_file as _run_xtb_from_file,
+)
+from aurelius.compute.xtb_pool import (
     has_xtb as has_xtb,
+)
+from aurelius.compute.xtb_pool import (
     run_xtb_batch as run_xtb_batch,
 )
 from aurelius.constants import NITRILE_PATTERN
@@ -918,17 +938,20 @@ class XTBBackend(QuantumBackend):
         n_top_conformers: int = _N_TOP_CONFORMERS,
         max_workers: int = 4,
         batcher: BatchXTBRunner | None = None,
+        allow_fallback: bool = False,
     ) -> None:
         if not _HAS_XTB:
-            raise RuntimeError(
-                "XTBBackend requires the xTB binary on PATH. "
-                "Install via: brew install xtb  or  https://github.com/grimme-lab/xtb/releases"
+            raise EnvironmentError(
+                "XTBBackend requires the xtb binary on PATH. "
+                "Install via: brew install xtb or https://github.com/grimme-lab/xtb/releases. "
+                "In Docker, xtb is installed as part of the build image."
             )
         self._n_conformers = n_conformers
         self._n_top_conformers = n_top_conformers
         self._max_workers = max_workers
         self._batcher = batcher
         self._cache: dict[str, dict[str, float]] = {}
+        self._allow_fallback = allow_fallback
         self._n_calls = 0
 
     @property
@@ -993,7 +1016,7 @@ class XTBBackend(QuantumBackend):
                 result["confidence_score"] = 1.0
                 return result
             msg = "xTB evaluation failed — no conformers could be generated or evaluated."
-            raise RuntimeError(msg)
+            raise EnvironmentError(msg)
 
         xtb_results, energies = self._run_xtb_flat(conformers, self._n_top_conformers)
 
@@ -1006,7 +1029,7 @@ class XTBBackend(QuantumBackend):
                 result["confidence_score"] = 1.0
                 return result
             msg = "xTB evaluation failed — all conformer calculations returned no result."
-            raise RuntimeError(msg)
+            raise EnvironmentError(msg)
 
         self._n_calls += len(xtb_results)
 
@@ -1030,7 +1053,7 @@ class XTBBackend(QuantumBackend):
             return dict(result)
 
         msg = "xTB evaluation returned no result."
-        raise RuntimeError(msg)
+        raise EnvironmentError(msg)
 
 
 class TOMBackend(QuantumBackend):
@@ -1058,6 +1081,7 @@ class TOMBackend(QuantumBackend):
         calibration_path: str | None = None,
     ) -> None:
         self._cache: dict[str, dict[str, float]] = {}
+        self._allow_fallback = allow_fallback
         self._n_calls = 0
         self._calibration_fps: list[Chem.DataStructs.ExplicitBitVect] | None = calibration_fps
         self._calibration_smiles: list[str] | None = calibration_smiles
@@ -1183,6 +1207,7 @@ class QuantumOracle:
         n_top_conformers: int = _N_TOP_CONFORMERS,
         max_workers: int = 4,
         batch_size: int = 10,
+        allow_fallback: bool = False,
         flush_interval: float = 5.0,
     ) -> None:
         self._batcher: BatchXTBRunner | None = None
@@ -1201,6 +1226,7 @@ class QuantumOracle:
             batcher=self._batcher,
         )
         self._cache: dict[str, dict[str, float]] = {}
+        self._allow_fallback = allow_fallback
 
         if isinstance(self._backend, TOMBackend):
             logger.info("QuantumOracle: xTB binary not found — using TOM fallback.")
@@ -1225,16 +1251,7 @@ class QuantumOracle:
         if smiles in self._cache:
             return dict(self._cache[smiles])
 
-        try:
-            result = self._backend.evaluate(mol)
-        except RuntimeError:
-            logger.warning(
-                "QuantumOracle: %s failed — falling back to TOM.",
-                self._backend.method,
-            )
-            fallback = TOMBackend()
-            result = fallback.evaluate(mol)
-
+        result = self._backend.evaluate(mol)
         self._cache[smiles] = result
         return dict(result)
 
