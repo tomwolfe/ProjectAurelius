@@ -18,13 +18,18 @@ must be in (0.0, 1.0) and sum to 1.0.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
-import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
+
+logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import numpy as np
 
 # Return type for parsed mixtures: binary -> (a, b, frac_a) or ternary -> (a, b, c, frac_a, frac_b)
 ParsedMixture = tuple[str, str, float] | tuple[str, str, str, float, float]
@@ -53,7 +58,7 @@ class ScreeningResult:
     total_score: float
     is_viable: bool
     rejection_reasons: list[str]
-    fingerprint: np.ndarray[Any, Any] | None = None
+    fingerprint: Any = None
     novelty_to_seed: float | None = None
     homo_eV: float | None = None
     lumo_eV: float | None = None
@@ -63,9 +68,10 @@ class ScreeningResult:
     sa_score: float | None = None
     li_dissociation_proxy: float | None = None
     sub_scores: dict[str, float] | None = None
+    estimated_cost_score: float | None = None
 
 
-@dataclass
+@dataclass(frozen=True)
 class MoleculeContext:
     """Unified molecular context — parsed exactly once per screening step.
 
@@ -91,10 +97,24 @@ class MoleculeContext:
     def from_smiles(cls, smiles: str) -> MoleculeContext | None:
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
+            # Provide specific feedback for common SMILES errors
+            if smiles.count("(") != smiles.count(")"):
+                logger.error("Unmatched parentheses in SMILES: '%s'", smiles)
+            elif smiles.count("[") != smiles.count("]"):
+                logger.error("Unmatched brackets in SMILES: '%s'", smiles)
+            elif any(d in smiles for d in "0123456789") and not any(
+                int(d) < 10
+                for d in "0123456789"
+                if smiles.count(d) > 0 and smiles.count(d) % 2 != 0
+            ):
+                logger.error("Unmatched ring digit in SMILES: '%s'", smiles)
+            else:
+                logger.error("RDKit could not parse SMILES: '%s'", smiles)
             return None
         try:
             Chem.SanitizeMol(mol)
-        except Exception:
+        except Exception as exc:
+            logger.error("Sanitization failed for '%s': %s", smiles, exc)
             return None
         return cls(smiles=smiles, mol=mol)
 
@@ -107,9 +127,9 @@ class MoleculeContext:
 
     def get_ecfp4(self) -> Any:
         if self.fingerprint_ecfp4 is None:
-            self.fingerprint_ecfp4 = AllChem.GetMorganFingerprintAsBitVect(
+            object.__setattr__(self, "fingerprint_ecfp4", AllChem.GetMorganFingerprintAsBitVect(
                 self.mol, radius=2, nBits=2048
-            )
+            ))
         return self.fingerprint_ecfp4
 
     @cached_property
@@ -140,7 +160,7 @@ class MoleculeContext:
     def hba(self) -> int:
         return Descriptors.NumHAcceptors(self.mol)
 
-    def get_feature_vector(self) -> np.ndarray[Any, Any]:
+    def get_feature_vector(self) -> Any:
         """Get or compute 2053-dim feature vector (lazy).
 
         Layout:
@@ -152,6 +172,7 @@ class MoleculeContext:
           - [2052]    NumRotatableBonds
         """
         if self.feature_vector is None:
+            import numpy as np
             fp = self.get_ecfp4()
             arr = np.zeros(2053, dtype=np.float32)
             for idx in fp.GetOnBits():
@@ -161,7 +182,7 @@ class MoleculeContext:
             arr[2050] = self.tpsa
             arr[2051] = self.ring_count
             arr[2052] = self.rotatable_bonds
-            self.feature_vector = arr
+            object.__setattr__(self, "feature_vector", arr)
         return self.feature_vector
 
     def is_valid_electrolyte_mol(self) -> bool:

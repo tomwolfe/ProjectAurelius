@@ -25,11 +25,10 @@ import logging
 import math
 import os
 import time
+from functools import lru_cache
+from typing import Any
 
-import numpy as np
 from rdkit import Chem
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import StandardScaler
 
 from aurelius.constants import (
     _GC_GAS_EVOLUTION_PATTERNS,
@@ -61,6 +60,19 @@ _CROSS_TERMS: list[tuple[str, str, float, str]] = [
     (str(item["frag_a"]), str(item["frag_b"]), float(item["boost"]), str(item["description"]))
     for item in _CROSS_TERMS_DATA
 ]
+
+
+def compute_estimated_cost_score(ctx: MoleculeContext) -> float:
+    """Estimate synthetic cost from fragment complexity.
+
+    Sums the cost values of all matched fragments. Higher cost indicates
+    more expensive/complex synthesis. Returns a unitless score.
+    """
+    counts = _count_fragments(ctx.mol)
+    return sum(
+        _FRAGMENT_COSTS.get(name, 1.0) * count
+        for name, count in counts.items()
+    )
 
 
 def compute_gc_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
@@ -109,79 +121,36 @@ def get_data_source() -> str:
 # Fragment-Additivity (Group-Contribution) Models — Bulk Properties Only
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Fragment definitions loaded from external JSON (engine/src/aurelius/data/fragments.json)
+# for easy tuning without code changes.
+# ---------------------------------------------------------------------------
+_FRAGMENTS_PATH: str = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "..", "data", "fragments.json",
+)
+with open(_FRAGMENTS_PATH) as _ff:
+    _FRAGMENTS_DATA: list[dict[str, object]] = json.load(_ff)
+
+# Compile SMARTS patterns once at module load and build the canonical tuple list.
 # (pattern, name, dielectric_contrib, viscosity_contrib, li_solvation_contrib, ced_contrib)
 _GC_FRAGMENTS: list[tuple[Chem.Mol, str, float, float, float, float]] = [
-    # Ester SMARTS uses ([#6]) to exclude carbonate carbonyls (both neighbors are
-    # oxygens) — true esters require C(=O)-C connectivity.
-    (Chem.MolFromSmarts("[CX3](=O)([#6])[OX2H0]"),  "ester",              2.5,  0.6,  0.8,  2.0),
-    (Chem.MolFromSmarts("[CX3](=O)[OH]"),          "carboxylic_acid",    4.0,  1.0,  1.8,  5.0),
-    (Chem.MolFromSmarts("[CX3](=O)[NX3]"),         "amide",              6.0,  0.8,  2.5,  6.0),
-    (Chem.MolFromSmarts("[CX3](=O)[CX3]"),         "ketone",             3.0,  0.5,  0.6,  3.0),
-    (Chem.MolFromSmarts("[CH](=O)"),               "aldehyde",           2.5,  0.3,  0.3,  2.5),
-    # Linear carbonates (DMC ε≈3.1, DEC ε≈2.8) have anti-periplanar O-alkyl
-    # conformation cancelling dipoles (Kirkwood g<1). The cyclic_carbonate fragment
-    # (8.0) separately captures EC/PC's g>1 effect.
-    (Chem.MolFromSmarts("O=C([OX2])[OX2]"),        "carbonate",          2.0,  0.7,  1.2,  3.0),
-    (Chem.MolFromSmarts("[OD2]([CX4])[CX4]"),      "ether",              1.5, -0.4,  1.0,  1.5),
-    (Chem.MolFromSmarts("[OH][CX4]"),              "alcohol",            4.5,  1.2,  2.0,  5.0),
-    (Chem.MolFromSmarts("[NX3;H2][CX4]"),          "primary_amine",      3.5,  0.5,  1.0,  4.0),
-    (Chem.MolFromSmarts("[NX3;H1]([CX4])[CX4]"),   "secondary_amine",    2.5,  0.4,  0.8,  3.0),
-    (Chem.MolFromSmarts("[NX3;H0]([CX4])([CX4])[CX4]"), "tertiary_amine", 1.5,  0.3,  0.5,  2.0),
-    # The C≡N dipole (μ≈3.9 D) gives ACN pred≈10.0, PN pred≈8.5. Cyclic_carbonate
-    # boost to EC (pred≈18) preserves the experimental ranking ACN < DMSO < EC.
-    (Chem.MolFromSmarts("[C]#[N]"),                "nitrile",            7.5,  0.4,  0.8,  5.0),
-    (Chem.MolFromSmarts("[CX3]=[CX3]"),            "alkene",             0.5,  0.1,  0.1,  0.5),
-    (Chem.MolFromSmarts("[CX2]#[CX2]"),            "alkyne",             1.0,  0.2,  0.2,  1.0),
-    (Chem.MolFromSmarts("[c]"),                    "aromatic_carbon",    0.5,  0.5,  0.1,  2.0),
-    (Chem.MolFromSmarts("[F]"),                    "fluorine",           0.0,  0.1, -0.5,  0.0),
-    (Chem.MolFromSmarts("[Cl]"),                   "chlorine",           0.5,  0.2, -0.3,  1.0),
-    (Chem.MolFromSmarts("[Br]"),                   "bromine",            0.5,  0.3, -0.2,  1.0),
-    (Chem.MolFromSmarts("S(=O)(=O)[CX4]"),         "sulfone",            5.0,  0.8,  1.0,  6.0),
-    (Chem.MolFromSmarts("S(=O)(=O)[OX2]"),         "sulfonate",          5.5,  0.6,  1.2,  6.0),
-    (Chem.MolFromSmarts("S(=O)(=O)F"),             "sulfonyl_fluoride",  4.0,  0.4,  0.5,  5.0),
-    # Cyclic sulfone (5-ring): S in 5-membered ring (sulfolane). Ring rigidity increases
-    # viscosity significantly vs acyclic sulfones. Dielectric ~44 for sulfolane.
-    # NOTE: These are incremental corrections OVER the general "sulfone"/"sulfonate" fragments
-    # which already match the cyclic S(=O)(=O) group. Small values prevent double-counting.
-    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][CX4]1"), "cyclic_sulfone_5", 0.5, 1.0, 0.2, 1.0),
-    # Cyclic sulfone (6-ring): slightly less ring strain than 5-ring
-    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][CX4][CX4]1"), "cyclic_sulfone_6", 0.3, 0.8, 0.1, 0.5),
-    # Sultone (5-ring cyclic sulfonate ester): S-O-C in ring (e.g., 1,3-propane sultone).
-    # The S-O-C ester linkage adds extra dielectric vs acyclic sulfonate.
-    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][OX2]1"), "sultone_5", 0.5, 0.6, 0.3, 0.5),
-    # Sultone (6-ring): larger ring, less strain
-    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][CX4][OX2]1"), "sultone_6", 0.3, 0.4, 0.2, 0.3),
-    (Chem.MolFromSmarts("[PX4](=O)([OX2])([OX2])[OX2]"), "phosphate",    4.0,  0.8,  1.5,  5.0),
-    (Chem.MolFromSmarts("[C](F)(F)F"),             "trifluoromethyl",    0.5,  0.2, -0.3,  0.5),
-    (Chem.MolFromSmarts("[C](F)(F)"),              "difluoromethylene",  0.3,  0.1, -0.2,  0.3),
-    (Chem.MolFromSmarts("[BX3]([OX2])"),           "boronate",           2.0,  0.7,  1.0,  3.0),
-    (Chem.MolFromSmarts("[BX4]([OX2])([OX2])([OX2])[OX2]"), "borate",    3.0,  0.6,  1.5,  3.5),
-    (Chem.MolFromSmarts("[S]([CX4])[CX4]"),        "thioether",          1.0,  0.2,  0.3,  1.0),
-    (Chem.MolFromSmarts("[F][CX4][OX2][CX4]"),     "fluorinated_ether",  1.0,  0.0, -0.2,  1.0),
-    (Chem.MolFromSmarts("[PX4](=N)([OX2])([OX2])[OX2]"), "phosphazene",  3.5,  0.4,  0.8,  3.5),
-    (Chem.MolFromSmarts("[OX2][CX4][CX4][OX2]"),   "glyme_chelating",    2.0,  0.1,  0.6,  2.0),
-    (Chem.MolFromSmarts("[SX4](=O)(=O)[NX3][SX4](=O)(=O)"), "sulfonimide", 5.0,  0.5,  0.5,  5.0),
-    (Chem.MolFromSmarts("[CX3](=O)[OX2]C(F)(F)F"),  "fluorinated_carbonate", 3.0,  0.3, -0.1,  3.0),
-    (Chem.MolFromSmarts("[SX3](=O)[CX4]"),           "sulfoxide",             7.5,  0.5,  3.5,  6.0),
-    # Pyridine (DN=33.1) ranks above DMSO (DN=29.8) via stronger aromatic N basicity.
-    (Chem.MolFromSmarts("[n]"),                      "aromatic_nitrogen",     4.0,  0.3,  4.0,  4.0),
-    (Chem.MolFromSmarts("[PX4](=O)([OX2])([OX2])[#6]"), "phosphonate",        3.5,  0.5,  1.0,  3.5),
-    # HF-scavenger motif: sultones and related groups that scavenge HF from
-    # LiPF6 hydrolysis, preventing the #1 real-world battery failure mode.
-    # Physical justification: Sultones (e.g., 1,3-propane sultone) react with
-    # HF via ring-opening, converting free HF into stable sulfonate salts.
-    # This protects the cathode and prevents transition metal dissolution.
-    # The li_solvation_contrib bonus reflects improved battery lifetime,
-    # not direct Li+ binding — it is a proxy for HF mitigation.
-    (Chem.MolFromSmarts("[SX4](=O)(=O)1[CX4][CX4][CX4][OX2]1"), "hf_scavenger", 0.0, 0.0, 0.5, 0.0),
-    # Cyclic carbonate (5-ring): cis-conformation enables cooperative dipole alignment
-    # (Kirkwood g>1), boosting ε 20-30× vs linear. Li+ binding at carbonyl O is same
-    # as linear carbonates, so li_solvation kept at 0.0 (donor number unaffected).
-    # EC (ε=89.78) and PC (ε=64.92) are 2-3× higher than any other aprotic solvent.
-    # The 8.0 captures the physical gap between cyclic (Kirkwood g>1) and linear
-    # (g<1) carbonates.
-    (Chem.MolFromSmarts("[OX2]1[CX3](=O)[OX2][CX4][CX4]1"), "cyclic_carbonate",  8.0,  0.8,  0.0,  4.0),
+    (
+        Chem.MolFromSmarts(str(item["smarts"])),
+        str(item["name"]),
+        float(item["dielectric"]),
+        float(item["viscosity"]),
+        float(item["li_solvation"]),
+        float(item["ced"]),
+    )
+    for item in _FRAGMENTS_DATA
 ]
+
+# Fragment cost lookup for estimated_cost_score (higher = more expensive to synthesise)
+_FRAGMENT_COSTS: dict[str, float] = {
+    str(item["name"]): float(item.get("cost", 1.0))
+    for item in _FRAGMENTS_DATA
+}
 
 # (pattern, name, hydrolysis_risk) — separate from bulk-property fragments
 # so the 6-tuple structure of _GC_FRAGMENTS is unaffected.
@@ -224,7 +193,19 @@ def _saturate_contrib(count: int, max_contrib: float) -> float:
 
 
 def _count_fragments(mol: Chem.Mol) -> dict[str, int]:
-    """Count occurrences of each pre-compiled fragment pattern in a molecule."""
+    """Count occurrences of each pre-compiled fragment pattern in a molecule.
+
+    Results are cached via LRU keyed on canonical SMILES for performance.
+    """
+    return _cached_count_fragments(Chem.MolToSmiles(mol))
+
+
+@lru_cache(maxsize=2048)
+def _cached_count_fragments(smiles: str) -> dict[str, int]:
+    """LRU-cached fragment counting — keyed by canonical SMILES."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return {}
     counts: dict[str, int] = {}
     for pattern, name, _dd, _dv, _ls, _dc in _GC_FRAGMENTS:
         matches = mol.GetSubstructMatches(pattern)
@@ -593,11 +574,12 @@ _UQ_N_ENSEMBLE: int = 5
 logger = logging.getLogger(__name__)
 
 
-def _get_fragment_feature_vector(ctx: MoleculeContext) -> np.ndarray:
+def _get_fragment_feature_vector(ctx: MoleculeContext) -> Any:
     """Build a feature vector from GC fragment counts for a molecule.
 
     Returns a 1D array of length = len(_GC_FRAGMENTS) + 2 (MW, TPSA).
     """
+    import numpy as np
     counts = _count_fragments(ctx.mol)
     frag_names = [name for _, name, _, _, _, _ in _GC_FRAGMENTS]
     arr = np.zeros(len(frag_names) + 2, dtype=np.float32)
@@ -610,6 +592,9 @@ def _get_fragment_feature_vector(ctx: MoleculeContext) -> np.ndarray:
 
 class GcUqEnsemble:
     """Random Forest ensemble for GC uncertainty quantification.
+
+    Requires numpy and scikit-learn (install via ``pip install -e ".[ml]"``).
+    If not available, all prediction methods return (0.0, 0.0, False).
 
     Trains N RandomForestRegressor models with different random_state seeds on
     external_property_benchmark.json. Captures non-linear fragment interactions
@@ -630,17 +615,34 @@ class GcUqEnsemble:
         self._n_ensemble = n_ensemble
         self._alpha = alpha
         self._benchmark_path = benchmark_path
-        self._diel_models: list[RandomForestRegressor] | None = None
-        self._visc_models: list[RandomForestRegressor] | None = None
-        self._diel_scaler: StandardScaler | None = None
-        self._visc_scaler: StandardScaler | None = None
+        self._diel_models: Any = None
+        self._visc_models: Any = None
+        self._diel_scaler: Any = None
+        self._visc_scaler: Any = None
         self._is_trained = False
         self._train_time_ms: float = 0.0
         self._empirical_data: list[dict] = empirical_data if empirical_data is not None else []
         # Domain distance (centroid-based OOD) state
-        self._centroid_fp: np.ndarray | None = None
+        self._centroid_fp: Any = None
         self._centroid_mean_dist: float = 0.0
         self._centroid_std_dist: float = 0.0
+        self._numpy_available = False
+        self._sklearn_available = False
+        try:
+            import numpy as np
+            self._np = np
+            self._numpy_available = True
+        except ImportError:
+            self._np = None
+        try:
+            from sklearn.ensemble import RandomForestRegressor as RFR
+            from sklearn.preprocessing import StandardScaler as SS
+            self._RFR = RFR
+            self._SS = SS
+            self._sklearn_available = True
+        except ImportError:
+            self._RFR = None
+            self._SS = None
 
     def append_empirical_data(self, new_data: list[dict]) -> None:
         """Append empirical wet-lab feedback data and flag the ensemble for retraining.
@@ -672,8 +674,8 @@ class GcUqEnsemble:
             "external_property_benchmark.json not found for GC UQ training"
         )
 
-    def _load_training_data(self) -> tuple[list[np.ndarray], list[float], list[float]]:
-        X_list: list[np.ndarray] = []
+    def _load_training_data(self) -> tuple[list[Any], list[float], list[float]]:
+        X_list: list[Any] = []
         y_diel: list[float] = []
         y_visc: list[float] = []
 
@@ -708,7 +710,7 @@ class GcUqEnsemble:
 
     def _parse_entry(
         self, entry: dict, smi_key: str
-    ) -> tuple[np.ndarray, float, float] | None:
+    ) -> tuple[Any, float, float] | None:
         smi = entry[smi_key] if smi_key == "smiles" else smi_key
         ctx = MoleculeContext.from_smiles(smi)
         if ctx is None:
@@ -721,13 +723,13 @@ class GcUqEnsemble:
         return fp, float(diel_exp) if diel_exp is not None else 0.0, float(visc_exp) if visc_exp is not None else 0.0
 
     def _train_ensemble(
-        self, X: np.ndarray, y: list[float], seed_offset: int
-    ) -> tuple[StandardScaler, list[RandomForestRegressor]]:
-        scaler = StandardScaler()
+        self, X: Any, y: list[float], seed_offset: int
+    ) -> tuple[Any, list[Any]]:
+        scaler = self._SS()
         X_scaled = scaler.fit_transform(X)
-        models: list[RandomForestRegressor] = []
+        models: list[Any] = []
         for seed in range(self._n_ensemble):
-            model = RandomForestRegressor(
+            model = self._RFR(
                 n_estimators=50, max_depth=5, random_state=seed + seed_offset
             )
             model.fit(X_scaled, y)
@@ -737,6 +739,10 @@ class GcUqEnsemble:
     def _ensure_trained(self) -> None:
         if self._is_trained:
             return
+        if not self._numpy_available or not self._sklearn_available:
+            logger.warning("GcUqEnsemble: numpy/scikit-learn not available — UQ disabled")
+            return
+        np = self._np
         t0 = time.perf_counter()
         X_list, y_diel, y_visc = self._load_training_data()
         X = np.array(X_list, dtype=np.float32)
@@ -765,11 +771,12 @@ class GcUqEnsemble:
     def _predict(
         self,
         ctx: MoleculeContext,
-        models: list[RandomForestRegressor] | None,
-        scaler: StandardScaler | None,
+        models: Any,
+        scaler: Any,
     ) -> tuple[float, float]:
         if models is None or scaler is None:
             return 0.0, 0.0
+        np = self._np
         fp = _get_fragment_feature_vector(ctx).reshape(1, -1)
         fp_scaled = scaler.transform(fp)
         preds = [float(m.predict(fp_scaled)[0]) for m in models]
@@ -804,7 +811,10 @@ class GcUqEnsemble:
         These statistics are stored for O(1) domain distance checks on
         new molecules.
         """
-        fps_list: list[np.ndarray] = []
+        if not self._numpy_available:
+            return
+        np = self._np
+        fps_list: list[Any] = []
 
         path = self._resolve_path()
         with open(path) as f:
@@ -884,8 +894,9 @@ class GcUqEnsemble:
             to the binarized centroid, and is_ood is True when distance
             exceeds the training mean + 2*std threshold.
         """
-        if self._centroid_fp is None:
+        if self._centroid_fp is None or not self._numpy_available:
             return 0.0, False
+        np = self._np
 
         centroid_binary = (self._centroid_fp >= 0.5).astype(np.float32)
         norm_c = float(np.sum(centroid_binary))
@@ -1035,10 +1046,18 @@ class ElectrolytePack(BasePropertyModel):
     def predict_dielectric(self, ctx: MoleculeContext) -> float:
         mol = ctx.mol
         counts = self.count_fragments(mol)
-        value = self.base_values["dielectric"]
-        for _smarts, _name, dd, _dv, _ls, _dc in self.fragments:
-            n = counts.get(_name, 0)
-            value += self.saturate_contrib(n, dd * 2.0)
+        try:
+            import numpy as np
+            names = [name for _, name, _, _, _, _ in self.fragments]
+            dd_arr = np.array([dd for _, _, dd, _, _, _ in self.fragments], dtype=np.float32)
+            count_arr = np.array([counts.get(n, 0) for n in names], dtype=np.float32)
+            contribs = dd_arr * 2.0 * (1.0 - np.exp(-self.saturation_k * count_arr))
+            value = self.base_values["dielectric"] + float(np.sum(contribs))
+        except ImportError:
+            value = self.base_values["dielectric"]
+            for _smarts, _name, dd, _dv, _ls, _dc in self.fragments:
+                n = counts.get(_name, 0)
+                value += self.saturate_contrib(n, dd * 2.0)
         value += self._compute_dielectric_cross_terms(counts)
         tpsa = ctx.tpsa
         value += tpsa * 0.030
@@ -1049,10 +1068,18 @@ class ElectrolytePack(BasePropertyModel):
     def predict_viscosity(self, ctx: MoleculeContext) -> float:
         mol = ctx.mol
         counts = self.count_fragments(mol)
-        value = self.base_values["viscosity"]
-        for _smarts, _name, _dd, dv, _ls, _dc in self.fragments:
-            n = counts.get(_name, 0)
-            value += self.saturate_contrib(n, dv * 2.0)
+        try:
+            import numpy as np
+            names = [name for _, name, _, _, _, _ in self.fragments]
+            dv_arr = np.array([dv for _, _, _, dv, _, _ in self.fragments], dtype=np.float32)
+            count_arr = np.array([counts.get(n, 0) for n in names], dtype=np.float32)
+            contribs = dv_arr * 2.0 * (1.0 - np.exp(-self.saturation_k * count_arr))
+            value = self.base_values["viscosity"] + float(np.sum(contribs))
+        except ImportError:
+            value = self.base_values["viscosity"]
+            for _smarts, _name, _dd, dv, _ls, _dc in self.fragments:
+                n = counts.get(_name, 0)
+                value += self.saturate_contrib(n, dv * 2.0)
         mw = ctx.mw
         value += (mw - 30.0) * 0.005
         n_rot = ctx.rotatable_bonds
@@ -1064,13 +1091,32 @@ class ElectrolytePack(BasePropertyModel):
         value += _compute_rigidity_penalty(ctx)
         return max(0.1, value)
 
+    def _vectorized_fragment_sum(
+        self, counts: dict[str, int], contrib_idx: int
+    ) -> float:
+        """Sum saturate_contrib over all fragments at given contrib index.
+
+        Uses NumPy when available for vectorized computation; falls back
+        to Python loop otherwise.
+        """
+        names = [name for _, name, *_ in self.fragments]
+        contribs = [c for _, _, *vals in self.fragments for c in [vals[contrib_idx]]]
+        try:
+            import numpy as np
+            c_arr = np.array(contribs, dtype=np.float32) * 2.0
+            n_arr = np.array([counts.get(n, 0) for n in names], dtype=np.float32)
+            return float(np.sum(c_arr * (1.0 - np.exp(-self.saturation_k * n_arr))))
+        except ImportError:
+            total = 0.0
+            for _smarts, _name, *vals in self.fragments:
+                n = counts.get(_name, 0)
+                total += self.saturate_contrib(n, vals[contrib_idx] * 2.0)
+            return total
+
     def predict_li_solvation(self, ctx: MoleculeContext) -> float:
         mol = ctx.mol
         counts = self.count_fragments(mol)
-        value = self.base_values["li_solvation"]
-        for _smarts, _name, _dd, _dv, ls, _dc in self.fragments:
-            n = counts.get(_name, 0)
-            value += self.saturate_contrib(n, ls * 2.0)
+        value = self.base_values["li_solvation"] + self._vectorized_fragment_sum(counts, 2)
         if counts.get("hf_scavenger", 0) > 0:
             value += 0.2
         mw = ctx.mw
@@ -1080,10 +1126,7 @@ class ElectrolytePack(BasePropertyModel):
     def predict_ced(self, ctx: MoleculeContext) -> float:
         mol = ctx.mol
         counts = self.count_fragments(mol)
-        value = self.base_values["ced"]
-        for _smarts, _name, _dd, _dv, _ls, dc in self.fragments:
-            n = counts.get(_name, 0)
-            value += self.saturate_contrib(n, dc * 2.0)
+        value = self.base_values["ced"] + self._vectorized_fragment_sum(counts, 3)
         ring_info = mol.GetRingInfo()
         n_rings = ring_info.NumRings()
         n_arom_rings = sum(

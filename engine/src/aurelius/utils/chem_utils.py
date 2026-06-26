@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-import numpy as np
 from rdkit import Chem
 
 from aurelius.constants import (
@@ -249,7 +248,7 @@ def electrolyte_synthetic_accessibility(ctx: Any) -> float:
     score = 3.0
     for _name, rule_fn in _SA_RULES:
         score += rule_fn(ctx)
-    return float(np.clip(score, 1.0, 10.0))
+    return max(1.0, min(10.0, score))
 
 
 __all__ = [

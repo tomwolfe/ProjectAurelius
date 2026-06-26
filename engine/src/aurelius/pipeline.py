@@ -20,7 +20,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
 from rdkit import Chem
 
 from aurelius.constants import (
@@ -91,13 +90,13 @@ logger = logging.getLogger(__name__)
 
 
 def _gaussian(value: float, target: float, sigma: float) -> float:
-    return float(np.exp(-0.5 * ((value - target) / sigma) ** 2))
+    return math.exp(-0.5 * ((value - target) / sigma) ** 2)
 
 
 def _sigmoid(value: float, target: float, steepness: float, higher_is_better: bool = True) -> float:
     if higher_is_better:
-        return float(1.0 / (1.0 + np.exp(-steepness * (value - target))))
-    return float(1.0 / (1.0 + np.exp(steepness * (value - target))))
+        return 1.0 / (1.0 + math.exp(-steepness * (value - target)))
+    return 1.0 / (1.0 + math.exp(steepness * (value - target)))
 
 
 @dataclass
@@ -666,11 +665,11 @@ class AureliusPipeline:
         total_score *= 100.0
 
         total_score = self._apply_penalties(total_score, lumo_eV, ctx)
-        total_score = float(np.clip(total_score, 0.0, 100.0))
+        total_score = max(0.0, min(100.0, total_score))
 
         if quantum_confidence == "tom_low":
             total_score *= 0.85
-            total_score = float(np.clip(total_score, 0.0, 100.0))
+            total_score = max(0.0, min(100.0, total_score))
 
         is_viable = total_score >= VIABILITY_THRESHOLD
 
@@ -698,7 +697,7 @@ class AureliusPipeline:
                     score.setdefault("rejection_reasons", []).append(
                         f"Domain penalty {domain_penalty:.2f}: {reason}"
                     )
-        score["total_score"] = float(np.clip(score["total_score"], 0.0, 100.0))
+        score["total_score"] = max(0.0, min(100.0, score["total_score"]))
         score["is_viable"] = score["total_score"] >= VIABILITY_THRESHOLD
         return score
 

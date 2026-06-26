@@ -17,28 +17,44 @@ import os
 import time
 from typing import Any
 
-import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Descriptors, rdMolDescriptors
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
 
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
 
+_HAS_NUMPY = False
+_HAS_SKLEARN = False
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    np = None  # type: ignore[assignment]
 
-def _spearmanr(x: np.ndarray, y: np.ndarray) -> tuple[float, float]:
+try:
+    from sklearn.ensemble import RandomForestRegressor as _RFR
+    from sklearn.model_selection import train_test_split as _tt_split
+    _HAS_SKLEARN = True
+except ImportError:
+    _RFR = None
+    _tt_split = None
+
+
+def _spearmanr(x: Any, y: Any) -> tuple[float, float]:
+    np_ = np  # local ref for type checker
+    if np_ is None:
+        return 0.0, 0.0
     n = len(x)
-    x_rank = np.empty(n, dtype=np.float64)
-    y_rank = np.empty(n, dtype=np.float64)
+    x_rank = np_.empty(n, dtype=np.float64)
+    y_rank = np_.empty(n, dtype=np.float64)
     for i in range(n):
-        x_rank[i] = 1 + np.sum(x < x[i]) + (np.sum(x == x[i]) - 1) / 2
-        y_rank[i] = 1 + np.sum(y < y[i]) + (np.sum(y == y[i]) - 1) / 2
-    x_diff = x_rank - np.mean(x_rank)
-    y_diff = y_rank - np.mean(y_rank)
-    denom = np.sqrt(np.sum(x_diff ** 2)) * np.sqrt(np.sum(y_diff ** 2))
-    rho = float(np.sum(x_diff * y_diff) / denom) if denom > 0 else 0.0
+        x_rank[i] = 1 + np_.sum(x < x[i]) + (np_.sum(x == x[i]) - 1) / 2
+        y_rank[i] = 1 + np_.sum(y < y[i]) + (np_.sum(y == y[i]) - 1) / 2
+    x_diff = x_rank - np_.mean(x_rank)
+    y_diff = y_rank - np_.mean(y_rank)
+    denom = np_.sqrt(np_.sum(x_diff ** 2)) * np_.sqrt(np_.sum(y_diff ** 2))
+    rho = float(np_.sum(x_diff * y_diff) / denom) if denom > 0 else 0.0
     return rho, 0.0
 
 _SURROGATE_HOMO_THRESHOLD: float = -5.0
@@ -48,6 +64,9 @@ _TRAINING_TIME_LIMIT: float = 2.0
 
 class SurrogateQuantumOracle:
     """RandomForest surrogate for fast HOMO/LUMO estimation.
+
+    Requires numpy and scikit-learn (install via ``pip install -e ".[ml]"``).
+    If not available, ``predict()`` raises RuntimeError.
 
     Trained lazily on orbital_calibration.json. Training takes < 2s
     for the calibration set (~200 molecules). Inference is < 1ms per molecule.
@@ -87,8 +106,8 @@ class SurrogateQuantumOracle:
         self._calibration_path = calibration_path
         self._data_override: list[dict[str, Any]] | None = None
 
-        self._homo_model: RandomForestRegressor | None = None
-        self._lumo_model: RandomForestRegressor | None = None
+        self._homo_model: Any = None
+        self._lumo_model: Any = None
         self._is_trained = False
         self._train_time_ms: float = 0.0
         self._n_train: int = 0
@@ -128,7 +147,8 @@ class SurrogateQuantumOracle:
         with open(resolved) as f:
             return json.load(f)
 
-    def _fingerprint_array(self, mol: Chem.Mol) -> np.ndarray:
+    def _fingerprint_array(self, mol: Chem.Mol) -> Any:
+        import numpy as np
         from rdkit.Chem import AllChem
         fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
         arr = np.zeros(2048, dtype=np.float32)
@@ -136,7 +156,7 @@ class SurrogateQuantumOracle:
             arr[idx] = 1.0
         return arr
 
-    def _build_feature_vector(self, ctx: MoleculeContext) -> np.ndarray:
+    def _build_feature_vector(self, ctx: MoleculeContext) -> Any:
         """Build 2060-dim feature vector from MoleculeContext.
 
         Layout:
@@ -154,6 +174,7 @@ class SurrogateQuantumOracle:
           - [2058]    Fraction sp3
           - [2059]    Num H-bond acceptors
         """
+        import numpy as np
         mol = ctx.mol
         fp_arr = self._fingerprint_array(mol)
         arr = np.zeros(2060, dtype=np.float32)
@@ -175,10 +196,15 @@ class SurrogateQuantumOracle:
     def _ensure_trained(self) -> None:
         if self._is_trained:
             return
+        if not _HAS_NUMPY or not _HAS_SKLEARN:
+            raise RuntimeError(
+                "SurrogateQuantumOracle requires numpy and scikit-learn. "
+                "Install with: pip install -e '.[ml]'"
+            )
         t0 = time.perf_counter()
         data = self._load_data()
 
-        X_list: list[np.ndarray] = []
+        X_list: list[Any] = []
         y_homo: list[float] = []
         y_lumo: list[float] = []
         self._calibration_fps = []
@@ -202,17 +228,18 @@ class SurrogateQuantumOracle:
                 f"Surrogate training requires >= 5 molecules, got {len(X_list)}"
             )
 
-        X = np.array(X_list, dtype=np.float32)
-        y_homo_arr = np.array(y_homo, dtype=np.float32)
-        y_lumo_arr = np.array(y_lumo, dtype=np.float32)
+        np_ = np
+        X = np_.array(X_list, dtype=np.float32)
+        y_homo_arr = np_.array(y_homo, dtype=np.float32)
+        y_lumo_arr = np_.array(y_lumo, dtype=np.float32)
 
-        self._homo_model = RandomForestRegressor(
+        self._homo_model = _RFR(
             n_estimators=self._n_estimators,
             max_depth=self._max_depth,
             random_state=self._random_state,
             n_jobs=1,
         )
-        self._lumo_model = RandomForestRegressor(
+        self._lumo_model = _RFR(
             n_estimators=self._n_estimators,
             max_depth=self._max_depth,
             random_state=self._random_state + 1,
@@ -237,6 +264,7 @@ class SurrogateQuantumOracle:
         uncertainty_score is the standard deviation across RF tree predictions,
         serving as an epistemic uncertainty proxy.
         """
+        import numpy as np
         self._ensure_trained()
         fv = self._build_feature_vector(ctx).reshape(1, -1)
 
@@ -265,12 +293,15 @@ class SurrogateQuantumOracle:
         float
             Spearman rho on the holdout set. Returns 0.0 if insufficient data.
         """
+        if not _HAS_SKLEARN:
+            return 0.0
+        import numpy as np
         data = self._load_data()
         if len(data) < 10:
             return 0.0
 
         indices = list(range(len(data)))
-        train_idx, test_idx = train_test_split(
+        train_idx, test_idx = _tt_split(
             indices, test_size=0.2, random_state=self._random_state,
         )
 

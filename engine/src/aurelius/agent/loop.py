@@ -277,6 +277,7 @@ class DiscoveryLoop:
             li_solvation_proxy=d.get("li_solvation_proxy"),
             sa_score=d.get("sa_score"),
             sub_scores=d.get("sub_scores"),
+            estimated_cost_score=d.get("estimated_cost_score"),
         )
 
     def execute(self) -> dict[str, Any]:
@@ -424,6 +425,7 @@ class DiscoveryLoop:
 
     @staticmethod
     def _build_screening_result(smi: str, total_score: float, score_data: dict[str, Any], t2: dict[str, Any], novelty: float | None, ctx: MoleculeContext, sub_scores: dict[str, Any]) -> ScreeningResult:
+        from aurelius.scoring.oracle.gc import compute_estimated_cost_score
         return ScreeningResult(
             smiles=smi,
             total_score=total_score,
@@ -438,6 +440,7 @@ class DiscoveryLoop:
             li_solvation_proxy=t2.get("li_solvation_proxy"),
             sa_score=score_data.get("sa_score"),
             sub_scores=sub_scores,
+            estimated_cost_score=compute_estimated_cost_score(ctx),
         )
 
     @staticmethod

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from aurelius.scoring.oracle.gc import (
     _CROSS_TERMS,
+    _FRAGMENT_COSTS,
     _GC_BASE_CED,
     _GC_BASE_DIELECTRIC,
     _GC_BASE_LI_SOLVATION,
@@ -26,6 +27,7 @@ from aurelius.scoring.oracle.gc import (
     _count_fragments,
     _count_stereocenters,
     _saturate_contrib,
+    compute_estimated_cost_score,
     compute_gc_domain_penalty,
     get_data_source,
     mixture_synergy_bonus,
@@ -80,6 +82,7 @@ __all__ = [
     "GcUqEnsemble",
     "_SURROGATE_HOMO_THRESHOLD",
     "_SURROGATE_PENALTY",
+    "compute_estimated_cost_score",
     "compute_gc_domain_penalty",
     "compute_quantum_domain_penalty",
     "get_data_source",
@@ -98,6 +101,7 @@ __all__ = [
     "mixture_synergy_bonus",
     "mixture_synergy_bonus_ternary",
     "_GC_FRAGMENTS",
+    "_FRAGMENT_COSTS",
     "_GC_HYDROLYSIS_RISK_FRAGMENTS",
     "_count_fragments",
     "_count_branch_points",
