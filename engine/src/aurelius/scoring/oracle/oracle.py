@@ -82,6 +82,7 @@ class PropertyOracle:
         use_gc_uq: bool = True,
         property_pack: BasePropertyModel | None = None,
         l2_cache: CacheBackend | None = None,
+        redis_url: str | None = None,
     ) -> None:
         self._quantum = QuantumOracle(use_xtb=use_xtb)
         self._use_surrogate = use_surrogate
@@ -92,7 +93,11 @@ class PropertyOracle:
         self._gc_uq: GcUqEnsemble | None = GcUqEnsemble() if use_gc_uq else None
         self._property_pack: BasePropertyModel = property_pack or ElectrolytePack()
         self._cache: dict[str, dict[str, Any]] = {}
-        self._disk_cache: CacheBackend = l2_cache or DictCache()
+        if redis_url is not None and l2_cache is None:
+            from aurelius.cache.redis_cache import RedisCache
+            self._disk_cache: CacheBackend = RedisCache(url=redis_url)  # type: ignore[assignment]
+        else:
+            self._disk_cache: CacheBackend = l2_cache or DictCache()
         self._n_surrogate_skips = 0
 
     @property

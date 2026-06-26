@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir rdkit==2024.09.6
 
 COPY . .
-RUN pip install --no-cache-dir -e ".[api]"
+RUN pip install --no-cache-dir -e ".[web]"
 
 RUN (command -v xtb >/dev/null 2>&1 && echo "xTB found") \
     || echo "WARNING: xTB binary not found. Falling back to TOM oracle."

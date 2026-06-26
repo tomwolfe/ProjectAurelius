@@ -32,6 +32,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 from abc import ABC, abstractmethod
 from typing import Any
 from collections.abc import Callable
@@ -358,6 +360,116 @@ def _parse_xtb_output(output: str) -> dict[str, float] | None:
 
     logger.debug("Could not parse HOMO/LUMO from xTB output")
     return None
+
+
+# ---------------------------------------------------------------------------
+# BatchXTBRunner — Queues XYZ geometries, flushes in parallel batches
+# ---------------------------------------------------------------------------
+
+
+class _PendingJob:
+    """A queued xTB calculation awaiting batch dispatch."""
+
+    __slots__ = ("xyz", "future")
+
+    def __init__(self, xyz: str, future: concurrent.futures.Future[dict[str, float] | None]) -> None:
+        self.xyz = xyz
+        self.future = future
+
+
+class BatchXTBRunner:
+    """Batch xTB runner that queues XYZ geometries and runs them in parallel.
+
+    When the queue reaches *batch_size* or *flush_interval* seconds have
+    passed since the last flush, all pending XYZs are written to a shared
+    temp directory and xTB is invoked in parallel via ``run_xtb_batch``.
+
+    Thread-safe.  Intended to be shared across ``XTBBackend`` instances so
+    that conformer-level calculations from multiple molecules are batched
+    together, dramatically reducing per-molecule overhead.
+
+    Args:
+        batch_size: Flush when this many jobs accumulate (default 10).
+        flush_interval: Maximum seconds to wait before flushing (default 5.0).
+        max_workers: Maximum parallel xTB processes per batch (default 4).
+    """
+
+    def __init__(
+        self,
+        batch_size: int = 10,
+        flush_interval: float = 5.0,
+        max_workers: int = 4,
+    ) -> None:
+        self._batch_size = batch_size
+        self._flush_interval = flush_interval
+        self._max_workers = max_workers
+        self._lock = threading.RLock()
+        self._pending: list[_PendingJob] = []
+        self._timer: threading.Timer | None = None
+        self._last_flush = time.monotonic()
+
+    def submit(self, xyz: str) -> concurrent.futures.Future[dict[str, float] | None]:
+        """Submit an XYZ geometry for xTB evaluation.
+
+        Returns a ``Future`` that will be resolved when the batch is flushed.
+        """
+        future: concurrent.futures.Future[dict[str, float] | None] = concurrent.futures.Future()
+        job = _PendingJob(xyz, future)
+        with self._lock:
+            self._pending.append(job)
+            if len(self._pending) >= self._batch_size:
+                self.flush()
+            elif self._timer is None:
+                self._timer = threading.Timer(
+                    self._flush_interval, self._timed_flush,
+                )
+                self._timer.daemon = True
+                self._timer.start()
+        return future
+
+    def _timed_flush(self) -> None:
+        """Called by the background timer — flush any accumulated jobs."""
+        self._timer = None
+        self.flush()
+
+    def flush(self) -> None:
+        """Explicitly flush all pending jobs."""
+        now = time.monotonic()
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            batch = self._pending
+            self._pending = []
+            self._last_flush = now
+        if not batch:
+            return
+        xyzs = [j.xyz for j in batch]
+        results = run_xtb_batch(xyzs, max_workers=self._max_workers)
+        for job, result in zip(batch, results, strict=False):
+            if not job.future.set_running_or_notify_cancel():
+                continue
+            job.future.set_result(result)
+
+    def shutdown(self) -> None:
+        """Cancel any pending flush timer and drain remaining jobs."""
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            remaining = self._pending
+            self._pending = []
+        for job in remaining:
+            if not job.future.set_running_or_notify_cancel():
+                continue
+            result = _run_xtb(job.xyz)
+            job.future.set_result(result)
+
+    @property
+    def pending_count(self) -> int:
+        """Number of jobs currently queued."""
+        with self._lock:
+            return len(self._pending)
 
 
 # ---------------------------------------------------------------------------
@@ -1181,6 +1293,7 @@ class XTBBackend(QuantumBackend):
         n_conformers: int = _N_CONFORMERS,
         n_top_conformers: int = _N_TOP_CONFORMERS,
         max_workers: int = 4,
+        batcher: BatchXTBRunner | None = None,
     ) -> None:
         if not _HAS_XTB:
             raise RuntimeError(
@@ -1190,6 +1303,7 @@ class XTBBackend(QuantumBackend):
         self._n_conformers = n_conformers
         self._n_top_conformers = n_top_conformers
         self._max_workers = max_workers
+        self._batcher = batcher
         self._cache: dict[str, dict[str, float]] = {}
         self._n_calls = 0
 
@@ -1207,16 +1321,23 @@ class XTBBackend(QuantumBackend):
     def get_cache_size(self) -> int:
         return len(self._cache)
 
-    @staticmethod
-    def _run_xtb_flat(conformers: list[tuple[str, float]], n_top: int) -> tuple[list[dict[str, float]], list[float]]:
+    def _run_xtb_flat(self, conformers: list[tuple[str, float]], n_top: int) -> tuple[list[dict[str, float]], list[float]]:
         top = conformers[:n_top]
         results: list[dict[str, float]] = []
         energies: list[float] = []
-        for xyz, uff_energy in top:
-            xtb_result = _run_xtb(xyz)
-            if xtb_result is not None:
-                results.append(xtb_result)
-                energies.append(uff_energy)
+        if self._batcher is not None:
+            futures = [self._batcher.submit(xyz) for xyz, _ in top]
+            for (xyz, uff_energy), future in zip(top, futures, strict=False):
+                xtb_result = future.result()
+                if xtb_result is not None:
+                    results.append(xtb_result)
+                    energies.append(uff_energy)
+        else:
+            for xyz, uff_energy in top:
+                xtb_result = _run_xtb(xyz)
+                if xtb_result is not None:
+                    results.append(xtb_result)
+                    energies.append(uff_energy)
         return results, energies
 
     @staticmethod
@@ -1350,6 +1471,7 @@ def _resolve_backend(
     n_conformers: int = _N_CONFORMERS,
     n_top_conformers: int = _N_TOP_CONFORMERS,
     max_workers: int = 4,
+    batcher: BatchXTBRunner | None = None,
 ) -> QuantumBackend:
     """Resolve a quantum backend from parameters.
 
@@ -1359,6 +1481,7 @@ def _resolve_backend(
         n_conformers: Number of conformers to generate.
         n_top_conformers: Number of top conformers for averaging.
         max_workers: Max workers for xTB batch.
+        batcher: Optional shared ``BatchXTBRunner`` for batched execution.
 
     Returns:
         A ``QuantumBackend`` instance.
@@ -1370,6 +1493,7 @@ def _resolve_backend(
             n_conformers=n_conformers,
             n_top_conformers=n_top_conformers,
             max_workers=max_workers,
+            batcher=batcher,
         )
     return TOMBackend()
 
@@ -1399,13 +1523,23 @@ class QuantumOracle:
         n_conformers: int = _N_CONFORMERS,
         n_top_conformers: int = _N_TOP_CONFORMERS,
         max_workers: int = 4,
+        batch_size: int = 10,
+        flush_interval: float = 5.0,
     ) -> None:
+        self._batcher: BatchXTBRunner | None = None
+        if use_xtb and _HAS_XTB:
+            self._batcher = BatchXTBRunner(
+                batch_size=batch_size,
+                flush_interval=flush_interval,
+                max_workers=max_workers,
+            )
         self._backend = _resolve_backend(
             backend=backend,
             use_xtb=use_xtb,
             n_conformers=n_conformers,
             n_top_conformers=n_top_conformers,
             max_workers=max_workers,
+            batcher=self._batcher,
         )
         self._cache: dict[str, dict[str, float]] = {}
 
@@ -1451,3 +1585,13 @@ class QuantumOracle:
 
     def get_cache_size(self) -> int:
         return len(self._cache)
+
+    def flush_batcher(self) -> None:
+        """Force-flush any pending xTB jobs in the batcher."""
+        if self._batcher is not None:
+            self._batcher.flush()
+
+    @property
+    def batcher_pending(self) -> int:
+        """Number of xTB jobs still pending in the batcher queue."""
+        return self._batcher.pending_count if self._batcher is not None else 0
