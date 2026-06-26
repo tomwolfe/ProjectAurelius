@@ -2,14 +2,14 @@
 
 Usage:
     aurelius init                    Initialize pipeline
-    aurelius doctor                  Validate dependencies and hardware
-    aurelius doctor-xtb              Check xTB quantum backend availability
+    aurelius doctor                  Validate dependencies, hardware, and xTB backend
     aurelius screen <smiles>         Screen a single molecule
     aurelius batch <file>            Screen molecules from SMILES file
     aurelius score <smiles>          Compute Aurelius score only
     aurelius evaluate <smiles>       Run full pipeline evaluation
     aurelius agent                   Run the autonomous screening agent
     aurelius mixture <smi_a> <smi_b> [--frac]  Screen a binary electrolyte mixture
+    aurelius verify-kernel <path>    Verify a kernel's Ed25519 signature
 """
 
 from __future__ import annotations
@@ -102,7 +102,11 @@ def doctor(verbose: bool) -> None:
 def screen(smiles: str, pack: str) -> None:
     """Screen a single molecule through the full Aurelius pipeline."""
     pipeline = _make_pipeline(pack=pack)
-    results = pipeline.screen_smiles(smiles)
+    try:
+        results = pipeline.screen_smiles(smiles)
+    except ValueError as e:
+        click.echo(f"Invalid SMILES: {e}", err=True)
+        sys.exit(1)
 
     score = results.get("score", {})
     total = score.get("total_score", 0.0)
@@ -165,22 +169,15 @@ def score(
 ) -> None:
     """Compute the Aurelius v10.0 score for a molecule (quick mode)."""
     pipeline = _make_pipeline()
-    results = pipeline.screen_smiles(smiles)
+    try:
+        results = pipeline.screen_smiles(smiles)
+    except ValueError as e:
+        click.echo(f"Invalid SMILES: {e}", err=True)
+        sys.exit(1)
 
     score = results.get("score", {})
     if score:
         click.echo(f"\nAurelius Score v10.0: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
-
-
-@cli.command("doctor-xtb")
-def doctor_xtb() -> None:
-    """Check if the xTB quantum chemistry backend is available."""
-    from aurelius.scoring.oracle import has_xtb
-
-    if has_xtb():
-        click.echo("[OK] xTB binary found on PATH — quantum oracle ENABLED.")
-    else:
-        click.echo("[INFO] xTB binary not found on PATH — TOM fallback active.")
 
 
 @cli.command("evaluate")
@@ -196,6 +193,9 @@ def evaluate_cmd(
         total = score.get("total_score", 0.0)
         viable = score.get("is_viable", False)
         click.echo(f"\nAurelius Score v10.0: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}")
+    except ValueError as e:
+        click.echo(f"Invalid SMILES: {e}", err=True)
+        sys.exit(1)
     except Exception as e:
         click.echo(f"[Aurelius Pipeline] Evaluation failed: {e}", err=True)
         sys.exit(1)
@@ -209,7 +209,11 @@ def validate_cmd(smiles: str, pretty: bool) -> None:
     from aurelius.pipeline import _OBJECTIVES
 
     pipeline = _make_pipeline()
-    results = pipeline.screen_smiles(smiles)
+    try:
+        results = pipeline.screen_smiles(smiles)
+    except ValueError as e:
+        click.echo(f"Invalid SMILES: {e}", err=True)
+        sys.exit(1)
     score = results.get("score", {})
     t2 = results.get("tier2", {})
 
@@ -309,8 +313,11 @@ def agent(
 def _validate_component_smiles(smiles_a: str, smiles_b: str) -> tuple[MoleculeContext, MoleculeContext]:
     ctx_a = MoleculeContext.from_smiles(smiles_a)
     ctx_b = MoleculeContext.from_smiles(smiles_b)
-    if ctx_a is None or ctx_b is None:
-        click.echo("Error: Invalid SMILES provided.", err=True)
+    if ctx_a is None:
+        click.echo(f"Invalid SMILES: could not parse '{smiles_a}'", err=True)
+        sys.exit(1)
+    if ctx_b is None:
+        click.echo(f"Invalid SMILES: could not parse '{smiles_b}'", err=True)
         sys.exit(1)
     return ctx_a, ctx_b
 
@@ -634,6 +641,40 @@ def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
     click.echo(f"  MAE:          {mae:.4f}")
     click.echo(f"  RMSE:         {rmse:.4f}")
     click.echo(f"  Training pts: {len(valid_smiles)}")
+
+
+@cli.command("verify-kernel")
+@click.argument("kernel_path", type=click.Path(exists=True))
+def verify_kernel_cmd(kernel_path: str) -> None:
+    """Verify a kernel's Ed25519 signature using the public key in constants.
+
+    KERNEL_PATH is the path to a signed aurelius_kernel.json file.
+    """
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        from aurelius.constants import KERNEL_PUBLIC_KEY
+
+        with open(kernel_path) as f:
+            kernel = json.load(f)
+
+        stored = kernel.get("signature", "")
+        if not stored:
+            click.echo("FAIL: No signature field found in kernel.", err=True)
+            sys.exit(1)
+
+        payload = {k: v for k, v in kernel.items() if k != "signature"}
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+        pub = Ed25519PublicKey.from_public_bytes(KERNEL_PUBLIC_KEY)
+        pub.verify(bytes.fromhex(stored), canonical.encode("utf-8"))
+        click.echo("OK: Kernel signature verified successfully.")
+    except json.JSONDecodeError:
+        click.echo(f"FAIL: Could not parse {kernel_path} as JSON.", err=True)
+        sys.exit(1)
+    except Exception as exc:
+        click.echo(f"FAIL: Signature verification failed: {exc}", err=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

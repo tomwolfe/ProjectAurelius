@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from functools import cached_property
+from functools import cached_property, lru_cache
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from rdkit import Chem
@@ -94,6 +94,7 @@ class MoleculeContext:
     feature_vector: np.ndarray[Any, Any] | None = None
 
     @classmethod
+    @lru_cache(maxsize=1024)
     def from_smiles(cls, smiles: str) -> MoleculeContext | None:
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:

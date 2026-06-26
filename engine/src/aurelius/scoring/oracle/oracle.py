@@ -99,6 +99,10 @@ class PropertyOracle:
     def quantum_method(self) -> str:
         return self._quantum.method
 
+    @property
+    def property_pack(self) -> BasePropertyModel:
+        return self._property_pack
+
     def _run_surrogate(self, ctx: MoleculeContext) -> tuple[float, float, float, bool]:
         """Run surrogate pre-filter. Returns (surrogate_penalty, s_homo, s_lumo, skip_quantum).
 

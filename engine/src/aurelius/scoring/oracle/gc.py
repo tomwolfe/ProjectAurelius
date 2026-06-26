@@ -620,6 +620,7 @@ class GcUqEnsemble:
         self._diel_scaler: Any = None
         self._visc_scaler: Any = None
         self._is_trained = False
+        self._dirty = False
         self._train_time_ms: float = 0.0
         self._empirical_data: list[dict] = empirical_data if empirical_data is not None else []
         # Domain distance (centroid-based OOD) state
@@ -645,17 +646,18 @@ class GcUqEnsemble:
             self._SS = None
 
     def append_empirical_data(self, new_data: list[dict]) -> None:
-        """Append empirical wet-lab feedback data and flag the ensemble for retraining.
+        """Append empirical wet-lab feedback data and set the dirty flag.
 
         Each entry should be a dict with at minimum a 'smiles' key, and optionally
         'dielectric_constant' and/or 'viscosity_cP' keys matching the benchmark format.
 
-        After appending, self._is_trained is set to False, causing _ensure_trained()
-        to lazily retrain the Ridge ensemble on the expanded dataset during the next
-        prediction call. This enables the UQ ensemble to learn from real-world data
-        and reduce prediction variance for the fed-back molecules.
+        After appending, the dirty flag is set to True. The ensemble retrains lazily
+        on the next ``predict`` (or ``predict_dielectric`` / ``predict_viscosity``)
+        call via ``_ensure_trained``. This prevents redundant retraining when multiple
+        feedback entries arrive in quick succession.
         """
         self._empirical_data.extend(new_data)
+        self._dirty = True
         self._is_trained = False
 
     def _resolve_path(self) -> str:
@@ -737,7 +739,7 @@ class GcUqEnsemble:
         return scaler, models
 
     def _ensure_trained(self) -> None:
-        if self._is_trained:
+        if self._is_trained and not self._dirty:
             return
         if not self._numpy_available or not self._sklearn_available:
             logger.warning("GcUqEnsemble: numpy/scikit-learn not available — UQ disabled")
@@ -749,6 +751,7 @@ class GcUqEnsemble:
         self._diel_scaler, self._diel_models = self._train_ensemble(X, y_diel, seed_offset=0)
         self._visc_scaler, self._visc_models = self._train_ensemble(X, y_visc, seed_offset=100)
         self._is_trained = True
+        self._dirty = False
         self._train_time_ms = (time.perf_counter() - t0) * 1000
         logger.info(
             "GcUqEnsemble: trained on %d molecules in %.1fms",
