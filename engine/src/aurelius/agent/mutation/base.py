@@ -92,6 +92,7 @@ class MutationStrategy(ABC):
         context: StrategyContext,
         batch_size: int = 50,
         force_exploration: bool = False,
+        diagnostics: list[str] | None = None,
     ) -> list[str]:
         ...
 
@@ -124,15 +125,22 @@ class SmartsStrategy(MutationStrategy):
         context: StrategyContext,
         reaction_name: str | None = None,
         force_exploration: bool = False,
+        _diagnostics: list[str] | None = None,
     ) -> str | None:
         if product is None:
+            if _diagnostics is not None:
+                _diagnostics.append("SMARTS: product is None")
             return None
         try:
             Chem.SanitizeMol(product)
         except Exception:
+            if _diagnostics is not None:
+                _diagnostics.append("SMARTS: invalid valence")
             return None
         product_smi = Chem.MolToSmiles(product)
         if not product_smi or product_smi == seed_smi:
+            if _diagnostics is not None:
+                _diagnostics.append("SMARTS: failed — identical to seed")
             return None
         if product_smi not in context.ctx_cache:
             product_ctx = MoleculeContext(smiles=product_smi, mol=product)
@@ -140,12 +148,18 @@ class SmartsStrategy(MutationStrategy):
         else:
             product_ctx = context.ctx_cache[product_smi]
         if not product_ctx.is_valid_electrolyte_mol():
+            if _diagnostics is not None:
+                _diagnostics.append("SMARTS: failed: invalid valence")
             return None
         if not is_electrolyte_like(product_ctx):
+            if _diagnostics is not None:
+                _diagnostics.append("SMARTS: failed: not electrolyte-like")
             return None
         if context.novelty_validator is not None and not context.novelty_validator.novelty_check(
             product_ctx, force_exploration=force_exploration,
         ):
+            if _diagnostics is not None:
+                _diagnostics.append("SMARTS: failed: novelty check")
             return None
         if reaction_name is not None and context.adaptive_bias:
             context.product_to_reaction[product_smi] = reaction_name
@@ -157,6 +171,7 @@ class SmartsStrategy(MutationStrategy):
         context: StrategyContext,
         batch_size: int = 50,
         force_exploration: bool = False,
+        diagnostics: list[str] | None = None,
     ) -> list[str]:
         if force_exploration:
             return []
@@ -178,6 +193,7 @@ class SmartsStrategy(MutationStrategy):
                                 product, ctx.smiles, context,
                                 reaction_name=name,
                                 force_exploration=force_exploration,
+                                _diagnostics=diagnostics,
                             )
                             if p_smi:
                                 results.append(p_smi)
@@ -282,28 +298,45 @@ class BricsStrategy(MutationStrategy):
         r_mol: Chem.Mol,
         context: StrategyContext,
         force_exploration: bool = False,
+        _diagnostics: list[str] | None = None,
     ) -> str | None:
         if r_mol is None:
+            if _diagnostics is not None:
+                _diagnostics.append("BRICS: product is None")
             return None
         try:
             Chem.SanitizeMol(r_mol)
         except Exception:
+            if _diagnostics is not None:
+                _diagnostics.append("BRICS: failed: invalid valence")
             return None
         s = Chem.MolToSmiles(r_mol)
         if not s:
+            if _diagnostics is not None:
+                _diagnostics.append("BRICS: failed: empty SMILES")
             return None
         product_ctx = MoleculeContext(smiles=s, mol=r_mol)
         if not product_ctx.is_valid_electrolyte_mol():
+            if _diagnostics is not None:
+                _diagnostics.append("BRICS: failed: invalid valence")
             return None
         if context.novelty_validator is not None and not context.novelty_validator.novelty_check(
             product_ctx, force_exploration=force_exploration,
         ):
+            if _diagnostics is not None:
+                _diagnostics.append("BRICS: failed: novelty check")
             return None
         if not is_electrolyte_like(product_ctx):
+            if _diagnostics is not None:
+                _diagnostics.append("BRICS: failed: not electrolyte-like")
             return None
         if _has_excessive_aliphatic_chain_fn(r_mol):
+            if _diagnostics is not None:
+                _diagnostics.append("BRICS: failed: excessive aliphatic chain")
             return None
         if combined_grounding_score(r_mol) < MIN_GROUNDING_SCORE:
+            if _diagnostics is not None:
+                _diagnostics.append("BRICS: failed: grounding score too low")
             return None
         return s
 
@@ -313,6 +346,7 @@ class BricsStrategy(MutationStrategy):
         valid_pairs: list[tuple[int, int]],
         context: StrategyContext,
         force_exploration: bool = False,
+        _diagnostics: list[str] | None = None,
     ) -> list[str]:
         generated: list[str] = []
         n_pairs = len(valid_pairs)
@@ -324,6 +358,7 @@ class BricsStrategy(MutationStrategy):
                     for r_mol in BRICS.BRICSBuild([all_frags[i], all_frags[j]]):
                         s = self._validate_brics_product(
                             r_mol, context, force_exploration=force_exploration,
+                            _diagnostics=_diagnostics,
                         )
                         if s:
                             generated.append(s)
@@ -338,6 +373,7 @@ class BricsStrategy(MutationStrategy):
         ctx: MoleculeContext,
         context: StrategyContext,
         force_exploration: bool = False,
+        _diagnostics: list[str] | None = None,
     ) -> list[str]:
         generated: list[str] = []
 
@@ -358,6 +394,7 @@ class BricsStrategy(MutationStrategy):
 
         generated = self._build_from_pairs(
             all_frags, valid_pairs, context, force_exploration=force_exploration,
+            _diagnostics=_diagnostics,
         )
         return list(set(generated))
 
@@ -454,6 +491,7 @@ class BricsStrategy(MutationStrategy):
         context: StrategyContext,
         batch_size: int = 50,
         force_exploration: bool = False,
+        diagnostics: list[str] | None = None,
     ) -> list[str]:
         candidates: set[str] = set()
 
@@ -468,6 +506,7 @@ class BricsStrategy(MutationStrategy):
 
         brics_results = self._brics_from_pool(
             ctx, context, force_exploration=force_exploration,
+            _diagnostics=diagnostics,
         )
         candidates.update(brics_results)
 

@@ -1079,6 +1079,7 @@ class TOMBackend(QuantumBackend):
         calibration_fps: list[Chem.DataStructs.ExplicitBitVect] | None = None,
         calibration_smiles: list[str] | None = None,
         calibration_path: str | None = None,
+        allow_fallback: bool = False,
     ) -> None:
         self._cache: dict[str, dict[str, float]] = {}
         self._allow_fallback = allow_fallback

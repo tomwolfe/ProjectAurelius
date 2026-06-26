@@ -338,7 +338,11 @@ class DiscoveryLoop:
 
     def _generate_candidates(self, generation: int, force_exploration: bool = False) -> list[str]:
         top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
-        single_candidates = list(self.engine.mutate_batch(top_seeds, self.batch_size * 3, force_exploration=force_exploration))
+        diagnostics: list[str] | None = None
+        if self.verbose:
+            diagnostics = []
+
+        single_candidates = list(self.engine.mutate_batch(top_seeds, self.batch_size * 3, force_exploration=force_exploration, diagnostics=diagnostics))
         mixture_candidates = list(self.engine.propose_mixture_candidates(
             top_seeds,
             n_mixtures=max(2, self.batch_size // 5),
@@ -346,6 +350,10 @@ class DiscoveryLoop:
         ))
         all_candidates = single_candidates + mixture_candidates
         random.shuffle(all_candidates)
+
+        if diagnostics and self.verbose:
+            log.info("Generation %d diagnostics: %s", generation, "; ".join(diagnostics))
+
         return all_candidates
 
     def _top_seeds_from_results(self) -> list[str]:

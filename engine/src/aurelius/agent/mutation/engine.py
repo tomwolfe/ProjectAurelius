@@ -310,6 +310,7 @@ class MutationEngine:
         smiles: str,
         batch_size: int = 50,
         force_exploration: bool = False,
+        diagnostics: list[str] | None = None,
     ) -> list[str]:
         ctx = self._get_ctx(smiles)
         if ctx is None:
@@ -318,7 +319,8 @@ class MutationEngine:
         candidates: set[str] = set()
         for strategy in self._strategies:
             results = strategy.mutate(
-                ctx, self._strategy_context, batch_size, force_exploration
+                ctx, self._strategy_context, batch_size, force_exploration,
+                diagnostics=diagnostics,
             )
             candidates.update(results)
             if len(candidates) >= batch_size:
@@ -342,10 +344,11 @@ class MutationEngine:
         batch_smiles: list[str],
         batch_size: int = 50,
         force_exploration: bool = False,
+        diagnostics: list[str] | None = None,
     ) -> list[str]:
         all_variants: list[str] = []
         for smi in batch_smiles:
-            variants = self.mutate(smi, batch_size, force_exploration=force_exploration)
+            variants = self.mutate(smi, batch_size, force_exploration=force_exploration, diagnostics=diagnostics)
             all_variants.extend(variants)
         return list(set(all_variants))
 
@@ -353,10 +356,11 @@ class MutationEngine:
         self,
         n_candidates: int = 1000,
         batch_size: int = 50,
+        diagnostics: list[str] | None = None,
     ) -> list[str]:
         all_variants: list[str] = []
         for smi in self.seed_pool:
-            variants = self.mutate(smi, batch_size)
+            variants = self.mutate(smi, batch_size, _diagnostics=diagnostics)
             all_variants.extend(variants)
 
         unique = list(dict.fromkeys(all_variants))
@@ -443,6 +447,7 @@ class MutationEngine:
         smiles: str,
         concept_names: list[str] | None = None,
         batch_size: int = 50,
+        diagnostics: list[str] | None = None,
     ) -> list[str]:
         """Mutate a seed SMILES while biasing toward specified electrolyte concepts.
 
@@ -492,6 +497,7 @@ class MutationEngine:
         for strategy in self._strategies:
             results = strategy.mutate(
                 ctx, self._strategy_context, batch_size, force_exploration=False,
+                _diagnostics=diagnostics,
             )
             for smi in results:
                 if smi not in candidates:

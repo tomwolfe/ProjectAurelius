@@ -305,7 +305,7 @@ class PropertyOracle:
                 return cached
 
         surrogate_penalty, s_homo, s_lumo, skip_quantum = self._run_surrogate(ctx)
-        homo, lumo, gap, quantum_method, quantum_confidence_val = self._compute_quantum(ctx, skip_quantum, s_homo, s_lumo)
+        homo, lumo, gap, quantum_method, quantum_confidence_val = self._compute_quantum(ctx, skip_quantum=skip_quantum, s_homo=s_homo, s_lumo=s_lumo)
         uq_penalty, diel_std, visc_std = self._compute_uq_penalty(ctx)
 
         gc_props = self._compute_gc_properties(ctx)

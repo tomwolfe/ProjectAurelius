@@ -1,5 +1,17 @@
 # Changelog
 
+## [10.2.1] - 2026-06-26
+
+### Changed
+- **Oracle decomposition:** `PropertyOracle.evaluate()` now delegates through clearly named private methods (`_run_surrogate`, `_compute_quantum`, `_compute_uq_penalty`, `_compute_gc_properties`, `_build_domain`, `_apply_sei_penalty`, `_assemble_result`) for improved readability and testability.
+- **Mutation diagnostics:** `MutationEngine.mutate()` and `mutate_batch()` now accept an optional `diagnostics: list[str] | None` parameter. When provided, rejection reasons are appended to the list (e.g., `"SMARTS: failed: invalid valence"`, `"BRICS: failed: novelty check"`), enabling verbose debugging.
+- **Loop verbose diagnostics:** `DiscoveryLoop._generate_candidates()` now passes a diagnostic list to mutation strategies when `self.verbose` is True, and logs the collected rejection reasons after generation.
+- **State lookup optimization:** `LoopState._fingerprint_dict` provides O(1) exact SMILES lookup via dict, while `screened_fingerprints` list is preserved for backward compatibility. `find_nearest_screened()` first checks the dict for exact matches before falling back to Tanimoto similarity search.
+
+### Added
+- `tests/test_oracle_decomposition.py`: Verifies that `evaluate()` correctly delegates to private methods and that mocking `_run_surrogate` to return `skip_quantum=True` correctly skips quantum evaluation.
+- `tests/test_state_performance.py`: Verifies O(1) exact SMILES lookup via `_fingerprint_dict` and benchmarks exact lookup to confirm < 1ms performance.
+
 ## [10.2.0] - 2026-06-23
 
 ### Added

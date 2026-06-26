@@ -93,15 +93,18 @@ class LoopState:
     """
 
     # --- Similarity caching ---
+    _fingerprint_dict: dict[str, tuple[Any, dict[str, Any]]] = field(
+        default_factory=dict,
+    )
+    """SMILES → (fingerprint, result_dict) mapping for O(1) exact lookup.
+    Prefer :meth:`add_screened_fingerprint` over direct mutation so that
+    the internal dict stays in sync.
+    """
+
+    # Legacy list kept for backward compatibility with callers that iterate.
     screened_fingerprints: list[tuple[str, Any, dict[str, Any]]] = field(
         default_factory=list
     )
-    """SMILES, ECFP4 fingerprint, and screening result for each screened molecule.
-    Used by find_nearest_screened to skip redundant oracle evaluations.
-
-    Prefer :meth:`add_screened_fingerprint` over direct ``.append()`` so that
-    the internal fingerprint cache stays in sync.
-    """
 
     # --- Batch metrics ---
     batch_means: list[float] = field(default_factory=list)
@@ -151,10 +154,11 @@ class LoopState:
     def add_screened_fingerprint(
         self, smi: str, fp: Any, result: dict[str, Any]
     ) -> None:
-        """Atomically append a screened fingerprint and mirror it in the cache."""
+        """Atomically append a screened fingerprint and mirror it in the dict."""
         with self._cache_lock:
             self.screened_fingerprints.append((smi, fp, result))
             self._cached_fingerprints.append(fp)
+            self._fingerprint_dict[smi] = (fp, result)
 
     # ------------------------------------------------------------------
     # Convergence
@@ -193,12 +197,19 @@ class LoopState:
     ) -> dict[str, Any] | None:
         """Return cached screening result if a similar molecule was already screened.
 
-        Uses BulkTanimotoSimilarity on ECFP4 fingerprints to find the nearest
-        match above the given threshold.
+        First checks for an exact SMILES match in O(1) time via the internal
+        ``_fingerprint_dict``.  If no exact match, falls back to
+        ``BulkTanimotoSimilarity`` on ``_cached_fingerprints`` to find the
+        nearest neighbour above *threshold*.
 
         Thread-safe via ``_cache_lock``.
         """
         with self._cache_lock:
+            exact = self._fingerprint_dict.get(ctx.smiles)
+            if exact is not None:
+                _, result = exact
+                return result
+
             if not self._cached_fingerprints:
                 return None
             stored_fps = self._cached_fingerprints
@@ -377,6 +388,10 @@ class LoopState:
                 self.active_learning_queue = data.get(
                     "active_learning_queue", []
                 )
+                # Rebuild _fingerprint_dict from stored fingerprints
+                for entry in data.get("screened_fingerprints", []):
+                    smi, fp, result = entry
+                    self._fingerprint_dict[smi] = (fp, result)
             except (json.JSONDecodeError, KeyError, TypeError, OSError):
                 pass
 
@@ -392,6 +407,10 @@ class LoopState:
                 "discoveries": self.discoveries,
                 "_all_results": self._all_results,
                 "active_learning_queue": self.active_learning_queue,
+                "screened_fingerprints": [
+                    (smi, fp, result)
+                    for smi, (fp, result) in self._fingerprint_dict.items()
+                ],
             }
             tmp_path = self.path + ".tmp"
             with open(tmp_path, "w") as f:
@@ -476,6 +495,7 @@ class LoopState:
             self._seen_scaffolds.clear()
             self.screened_fingerprints.clear()
             self._cached_fingerprints.clear()
+            self._fingerprint_dict.clear()
         with self._al_queue_lock:
             self.active_learning_queue.clear()
         MoleculeContext.from_smiles.cache_clear()
