@@ -21,7 +21,6 @@ references; historical tuning is documented in CHANGELOG.md.
 
 from __future__ import annotations
 
-import atexit
 import concurrent.futures
 import contextlib
 import json
@@ -30,10 +29,7 @@ import math
 import os
 import re
 import shutil
-import subprocess
 import tempfile
-import threading
-import time
 from abc import ABC, abstractmethod
 from typing import Any
 from collections.abc import Callable
@@ -42,46 +38,30 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit.DataStructs import BulkTanimotoSimilarity
 
+from aurelius.compute.xtb_pool import (
+    _HAS_XTB as _HAS_XTB,
+    _XTB_BIN as _XTB_BIN,
+    _XTB_HOMO_RE as _XTB_HOMO_RE,
+    _XTB_LUMO_RE as _XTB_LUMO_RE,
+    BatchXTBRunner as BatchXTBRunner,
+    _find_xtb_binary as _find_xtb_binary,
+    _parse_xtb_output as _parse_xtb_output,
+    _run_xtb as _run_xtb,
+    _run_xtb_from_file as _run_xtb_from_file,
+    has_xtb as has_xtb,
+    run_xtb_batch as run_xtb_batch,
+)
 from aurelius.constants import NITRILE_PATTERN
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
 
 
-def _find_xtb_binary() -> str | None:
-    """Locate the xTB binary on the system PATH."""
-    for candidate in ["xtb", "xtb_opt"]:
-        with contextlib.suppress(Exception):
-            result = subprocess.run(
-                [candidate, "--version"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 0:
-                return candidate
-    return None
-
-
-# Module-level caches for xTB binary path and temp workspace
-_XTB_BIN: str | None = _find_xtb_binary()
-_HAS_XTB: bool = _XTB_BIN is not None
-_XTB_BASE_TEMP: str | None = (
-    tempfile.mkdtemp(prefix="aurelius_xtb_pool_") if _HAS_XTB else None
+# Temp workspace for xTB — managed by aurelius.compute.xtb_pool
+_XTB_BASE_TEMP: str | None = getattr(
+    __import__("aurelius.compute.xtb_pool", fromlist=["_xtb_base_temp"]),
+    "_xtb_base_temp",
 )
-
-
-@atexit.register
-def _cleanup_xtb_workspace() -> None:
-    """Remove the shared xTB temp workspace on interpreter exit."""
-    global _XTB_BASE_TEMP
-    if _XTB_BASE_TEMP is not None and os.path.exists(_XTB_BASE_TEMP):
-        shutil.rmtree(_XTB_BASE_TEMP, ignore_errors=True)
-        _XTB_BASE_TEMP = None
-
-
-def has_xtb() -> bool:
-    """Return True if the xTB binary is available on PATH."""
-    return _HAS_XTB
-
 
 _N_CONFORMERS: int = 5
 _N_TOP_CONFORMERS: int = 3
@@ -132,9 +112,7 @@ def _generate_multi_xyz(
     be a high-energy, non-physical geometry that leads to garbage xTB/TOM
     predictions. Boltzmann weighting over multiple conformers stabilises
     predictions by down-weighting high-energy conformers and avoiding
-    false-positive narrow gaps from strained geometries. This is especially
-    important for flexible electrolyte molecules (e.g., glymes, long-chain
-    carbonates) that have many accessible conformations in solution.
+    false-positive narrow gaps from strained geometries.
 
     Returns:
         List of (xyz_string, uff_energy_kcal) tuples, sorted by energy
@@ -221,8 +199,8 @@ def _generate_xyz_geometry_optimized(mol: Chem.RWMol) -> str:
         mol = Chem.AddHs(mol)
 
     params = rdDistGeom.ETKDGv3()
-    params.randomSeed = 42  # type: ignore[assignment]
-    params.useRandomCoords = True  # type: ignore[assignment]
+    params.randomSeed = 42
+    params.useRandomCoords = True
     result = AllChem.EmbedMolecule(mol, params)
     if result != 0:
         with contextlib.suppress(Exception):
@@ -240,236 +218,6 @@ def _generate_xyz_geometry_optimized(mol: Chem.RWMol) -> str:
         pos = conf.GetAtomPosition(i)
         lines.append(f"{symb} {pos.x:.6f} {pos.y:.6f} {pos.z:.6f}")
     return "\n".join(lines)
-
-
-def _run_xtb(xyz_content: str, workdir: str | None = None) -> dict[str, float] | None:
-    """Run xTB single-point calculation and parse HOMO/LUMO from output.
-
-    Uses the module-level cached binary path and shared temp workspace
-    to avoid per-call binary discovery and repeated temp dir creation.
-    """
-    if _XTB_BIN is None:
-        return None
-    if workdir is None:
-        base = _XTB_BASE_TEMP or tempfile.gettempdir()
-        workdir = tempfile.mkdtemp(dir=base, prefix="mol_")
-
-    xyz_path = os.path.join(workdir, "input.xyz")
-    with open(xyz_path, "w") as f:
-        f.write(xyz_content)
-
-    try:
-        result = subprocess.run(
-            [_XTB_BIN, "--gfn", "2", "--sp", xyz_path],
-            cwd=workdir,
-            capture_output=True, text=True, timeout=120,
-        )
-        return _parse_xtb_output(result.stdout)
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError) as exc:
-        logger.debug("xTB run failed: %s", exc)
-        return None
-
-
-def _run_xtb_from_file(xyz_path: str) -> dict[str, float] | None:
-    """Run xTB on a single XYZ file path (no temp dir creation)."""
-    if _XTB_BIN is None:
-        return None
-    workdir = os.path.dirname(xyz_path)
-    try:
-        result = subprocess.run(
-            [_XTB_BIN, "--gfn", "2", "--sp", xyz_path],
-            cwd=workdir,
-            capture_output=True, text=True, timeout=120,
-        )
-        return _parse_xtb_output(result.stdout)
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError) as exc:
-        logger.debug("xTB file run failed for %s: %s", xyz_path, exc)
-        return None
-
-
-def run_xtb_batch(
-    xyz_list: list[str], max_workers: int = 4
-) -> list[dict[str, float] | None]:
-    """Run multiple xTB single-point calculations in parallel.
-
-    Optimised to reduce per-molecule overhead:
-      - Writes all XYZ files to a single shared temp directory
-      - Uses ``ThreadPoolExecutor`` instead of ``ProcessPoolExecutor`` (xTB
-        subprocess calls are I/O-bound, so threads are sufficient and avoid
-        pickling overhead)
-      - Cleans up the entire batch directory in one call
-
-    Args:
-        xyz_list: List of XYZ-format molecular geometry strings.
-        max_workers: Maximum parallel xTB processes (default 4).
-
-    Returns:
-        List of result dicts in the same order as xyz_list. Each entry is
-        None if xTB failed or is unavailable.
-    """
-    if _XTB_BIN is None:
-        return [None] * len(xyz_list)
-
-    base = _XTB_BASE_TEMP or tempfile.gettempdir()
-    batch_dir = tempfile.mkdtemp(dir=base, prefix="xtb_batch_")
-
-    xyz_paths: list[str] = []
-    for i, xyz_content in enumerate(xyz_list):
-        xyz_path = os.path.join(batch_dir, f"mol_{i}.xyz")
-        with open(xyz_path, "w") as f:
-            f.write(xyz_content)
-        xyz_paths.append(xyz_path)
-
-    results: list[dict[str, float] | None] = [None] * len(xyz_list)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-        future_map = {
-            pool.submit(_run_xtb_from_file, xyz_paths[i]): i
-            for i in range(len(xyz_list))
-        }
-        for future in concurrent.futures.as_completed(future_map):
-            idx = future_map[future]
-            try:
-                results[idx] = future.result()
-            except Exception as exc:
-                logger.debug("xTB batch item %d failed: %s", idx, exc)
-                results[idx] = None
-
-    shutil.rmtree(batch_dir, ignore_errors=True)
-
-    return results
-
-
-_XTB_HOMO_RE = re.compile(r"HOMO\s*:\s*([-+]?\d+\.?\d*)\s*eV")
-_XTB_LUMO_RE = re.compile(r"LUMO\s*:\s*([-+]?\d+\.?\d*)\s*eV")
-
-
-def _parse_xtb_output(output: str) -> dict[str, float] | None:
-    """Parse xTB output text for HOMO, LUMO, and dipole moment."""
-    homo_match = _XTB_HOMO_RE.search(output)
-    lumo_match = _XTB_LUMO_RE.search(output)
-
-    if homo_match and lumo_match:
-        homo = float(homo_match.group(1))
-        lumo = float(lumo_match.group(1))
-        logger.info("QuantumOracle (xTB): HOMO=%.3f eV, LUMO=%.3f eV", homo, lumo)
-        return {
-            "homo_eV": homo,
-            "lumo_eV": lumo,
-            "dipole_D": 0.0,
-        }
-
-    logger.debug("Could not parse HOMO/LUMO from xTB output")
-    return None
-
-
-# ---------------------------------------------------------------------------
-# BatchXTBRunner — Queues XYZ geometries, flushes in parallel batches
-# ---------------------------------------------------------------------------
-
-
-class _PendingJob:
-    """A queued xTB calculation awaiting batch dispatch."""
-
-    __slots__ = ("xyz", "future")
-
-    def __init__(self, xyz: str, future: concurrent.futures.Future[dict[str, float] | None]) -> None:
-        self.xyz = xyz
-        self.future = future
-
-
-class BatchXTBRunner:
-    """Batch xTB runner that queues XYZ geometries and runs them in parallel.
-
-    When the queue reaches *batch_size* or *flush_interval* seconds have
-    passed since the last flush, all pending XYZs are written to a shared
-    temp directory and xTB is invoked in parallel via ``run_xtb_batch``.
-
-    Thread-safe.  Intended to be shared across ``XTBBackend`` instances so
-    that conformer-level calculations from multiple molecules are batched
-    together, dramatically reducing per-molecule overhead.
-
-    Args:
-        batch_size: Flush when this many jobs accumulate (default 10).
-        flush_interval: Maximum seconds to wait before flushing (default 5.0).
-        max_workers: Maximum parallel xTB processes per batch (default 4).
-    """
-
-    def __init__(
-        self,
-        batch_size: int = 10,
-        flush_interval: float = 5.0,
-        max_workers: int = 4,
-    ) -> None:
-        self._batch_size = batch_size
-        self._flush_interval = flush_interval
-        self._max_workers = max_workers
-        self._lock = threading.RLock()
-        self._pending: list[_PendingJob] = []
-        self._timer: threading.Timer | None = None
-        self._last_flush = time.monotonic()
-
-    def submit(self, xyz: str) -> concurrent.futures.Future[dict[str, float] | None]:
-        """Submit an XYZ geometry for xTB evaluation.
-
-        Returns a ``Future`` that will be resolved when the batch is flushed.
-        """
-        future: concurrent.futures.Future[dict[str, float] | None] = concurrent.futures.Future()
-        job = _PendingJob(xyz, future)
-        with self._lock:
-            self._pending.append(job)
-            if len(self._pending) >= self._batch_size:
-                self.flush()
-            elif self._timer is None:
-                self._timer = threading.Timer(
-                    self._flush_interval, self._timed_flush,
-                )
-                self._timer.daemon = True
-                self._timer.start()
-        return future
-
-    def _timed_flush(self) -> None:
-        """Called by the background timer — flush any accumulated jobs."""
-        self._timer = None
-        self.flush()
-
-    def flush(self) -> None:
-        """Explicitly flush all pending jobs."""
-        now = time.monotonic()
-        with self._lock:
-            if self._timer is not None:
-                self._timer.cancel()
-                self._timer = None
-            batch = self._pending
-            self._pending = []
-            self._last_flush = now
-        if not batch:
-            return
-        xyzs = [j.xyz for j in batch]
-        results = run_xtb_batch(xyzs, max_workers=self._max_workers)
-        for job, result in zip(batch, results, strict=False):
-            if not job.future.set_running_or_notify_cancel():
-                continue
-            job.future.set_result(result)
-
-    def shutdown(self) -> None:
-        """Cancel any pending flush timer and drain remaining jobs."""
-        with self._lock:
-            if self._timer is not None:
-                self._timer.cancel()
-                self._timer = None
-            remaining = self._pending
-            self._pending = []
-        for job in remaining:
-            if not job.future.set_running_or_notify_cancel():
-                continue
-            result = _run_xtb(job.xyz)
-            job.future.set_result(result)
-
-    @property
-    def pending_count(self) -> int:
-        """Number of jobs currently queued."""
-        with self._lock:
-            return len(self._pending)
 
 
 # ---------------------------------------------------------------------------
@@ -607,12 +355,7 @@ def _topological_sanity_l(mol: Chem.Mol, L: int) -> int:
     perfectly planar, rigid conjugated system. Real molecules with long
     conjugation paths (L > 12) require structural support — sp3 carbons,
     branching, or ring fusion — to maintain planarity against torsional
-    disorder. A molecule with a long linear polyene chain but negligible sp3
-    character (sp3 fraction < 0.10) will have severe torsional disorder that
-    breaks conjugation, making the 1/L² gap scaling invalid. The effective
-    conjugation length is capped at 12 in such cases, which corresponds to
-    a gap floor of ~0.26 eV — realistically the minimum gap for any organic
-    electrolyte molecule in solution.
+    disorder.
     """
     if L <= 12:
         return L
@@ -630,17 +373,12 @@ def _topological_sanity_l(mol: Chem.Mol, L: int) -> int:
 
 
 # σ* LUMO corrections for S/P=O groups in non-conjugated molecules.
-# Physical basis: S=O and P=O bonds have low-lying σ* orbitals from
-# d-orbital participation that lower LUMO significantly below what the
-# inductive EW perturbation predicts. Each correction is applied once
-# if the group is present (not per-match, to avoid double counting).
 _SIGMA_STAR_LUMO: list[tuple[Chem.Mol, str, float]] = [
     (Chem.MolFromSmarts("S(=O)(=O)"), "sulfone", -0.70),
     (Chem.MolFromSmarts("[SX3](=O)"), "sulfoxide", -0.50),
     (Chem.MolFromSmarts("[PX4](=O)"), "phosphate", -0.30),
 ]
 
-# Pre-compiled SMARTS for phosphate HOMO correction (P=O in phosphates)
 _PHOSPHATE_PATTERN: Chem.Mol = Chem.MolFromSmarts("[PX4](=O)")
 
 
@@ -675,13 +413,13 @@ def _wiener_index(mol: Chem.Mol) -> float:
 
 
 _L_CORRECTIONS: list[tuple[str, Callable[..., int]]] = []
+_ENERGY_CORRECTIONS: list[tuple[str, Callable[..., tuple[float, float]]]] = []
+
 
 def _register_l(fn: Callable[..., int]) -> Callable[..., int]:
     _L_CORRECTIONS.append((fn.__name__, fn))
     return fn
 
-
-_ENERGY_CORRECTIONS: list[tuple[str, Callable[..., tuple[float, float]]]] = []
 
 def _register_energy(fn: Callable[..., tuple[float, float]]) -> Callable[..., tuple[float, float]]:
     _ENERGY_CORRECTIONS.append((fn.__name__, fn))
@@ -694,7 +432,6 @@ def _apply_wiener_compactness(mol: Chem.Mol, L: int, **kwargs: Any) -> int:
 
     Physical basis: Compact molecules (low Wiener index per atom) have stronger
     through-space orbital overlap, effectively shortening the conjugation path.
-    L is reduced by up to 30% based on compactness = 1 - W/W_linear.
     """
     n_atoms = mol.GetNumAtoms()
     w = _wiener_index(mol)
@@ -711,12 +448,7 @@ def _apply_wiener_compactness(mol: Chem.Mol, L: int, **kwargs: Any) -> int:
 def _conjugated_bond_deviation(
     mol: Chem.Mol, conf: Chem.Conformer, i: int, j: int
 ) -> float | None:
-    """Measure the torsional deviation from planarity for a conjugated bond (i-j).
-
-    Finds flanking conjugated neighbors on both sides of the bond and returns
-    the minimum angular deviation from 0° or 180° (planar). Returns None if
-    suitable flanking atoms cannot be found.
-    """
+    """Measure the torsional deviation from planarity for a conjugated bond (i-j)."""
     from rdkit.Chem import rdMolTransforms
 
     ai = mol.GetAtomWithIdx(i)
@@ -745,22 +477,7 @@ def _conjugated_bond_deviation(
 def _apply_torsional_strain_penalty(
     mol: Chem.Mol, L: int, xyz_content: str | None = None, **kwargs: Any
 ) -> int:
-    """Reduce effective conjugation length L if conjugated system is non-planar.
-
-    Physical basis: The particle-in-a-box model assumes a perfectly planar
-    conjugated system. Torsional strain (dihedral > 30°) between adjacent
-    conjugated atoms breaks pi-orbital overlap, effectively shortening the
-    conjugation path.
-
-    When xyz_content is provided, uses those coordinates directly. Otherwise
-    generates a conformer via ETKDGv3 with useRandomCoords and UFF relaxation.
-    For each conjugated bond with flanking neighbors, the dihedral angle is
-    measured. If any exceeds 30 deg, L is reduced by 30% (floor 2).
-
-    Note: This function is no longer auto-registered in the L-correction
-    pipeline. Use `use_geometry_correction=True` in `predict_tom_orbitals`
-    for the new per-bond 20% reduction logic.
-    """
+    """Reduce effective conjugation length L if conjugated system is non-planar."""
     if L <= 2:
         return L
     from rdkit.Chem import AllChem
@@ -810,22 +527,7 @@ def _apply_geometry_correction(mol: Chem.Mol, L: int) -> int:
 
     Generates a single low-energy conformer using ETKDGv3 and UFF relaxation.
     Measures dihedral angles along all conjugated bonds. For each bond with
-    a deviation >30° from planarity (0° or 180°), reduces effective L by
-    20%. The compounding reduction captures the cumulative effect of multiple
-    twisted bonds fragmenting the pi-system.
-
-    Physical basis: The particle-in-a-box model assumes a perfectly planar
-    conjugated system. Each twisted bond (>30° dihedral) breaks pi-orbital
-    overlap, effectively shortening the conjugation path. A 20% per-bond
-    reduction reflects the exponential decay of through-bond coupling with
-    the cosine of the dihedral angle (cos²θ attenuation).
-
-    Args:
-        mol: RDKit molecule.
-        L: Current effective conjugation length.
-
-    Returns:
-        Reduced conjugation length (minimum 2).
+    a deviation >30° from planarity (0° or 180°), reduces effective L by 20%.
     """
     if L <= 2:
         return L
@@ -865,8 +567,7 @@ def _apply_peierls_damping(_mol: Chem.Mol, L: int, **kwargs: Any) -> int:
     """Apply Peierls distortion damping to prevent 1/L² gap collapse for L > 8.
 
     Physical basis: Long polyenes undergo bond-length alternation that opens a
-    finite gap (ΔE ≈ 1.5-2.0 eV) even for infinite chains. The closed-form
-    saturation L_eff = 8 + (L-8)/(1+0.10·(L-8)) preserves moderate-L behavior.
+    finite gap (ΔE ≈ 1.5-2.0 eV) even for infinite chains.
     """
     if L <= 8:
         return L
@@ -879,7 +580,6 @@ def _compute_tom_base_energies(L: int) -> tuple[float, float]:
     """Compute base HOMO/LUMO from conjugation length using particle-in-a-box.
 
     The gap scales as ΔE = 37.6 / L² (eV). For L < 3, uses fixed base values.
-    Base offsets calibrated against orbital_calibration.json (45 references).
     """
     base_homo = -6.8
     base_lumo = 1.5
@@ -892,12 +592,7 @@ def _compute_tom_base_energies(L: int) -> tuple[float, float]:
 
 @_register_energy
 def _apply_heteroatom_perturbations(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
-    """Apply Hueckel-like heteroatom corrections to HOMO/LUMO.
-
-    Electron-withdrawing groups stabilise both orbitals; electron-donating
-    groups destabilise. EW coefficient -0.32, LUMO EW scaling 0.50 (strengthened
-    from 0.35 per ADR-2026-06-08 to better capture LUMO-lowering of EW groups).
-    """
+    """Apply Hueckel-like heteroatom corrections to HOMO/LUMO."""
     n_ew, n_ed, _ = _count_heteroatom_perturbations(mol)
     ew_shift = -0.32 * n_ew
     ed_shift = 0.12 * n_ed
@@ -914,24 +609,14 @@ def _apply_fluorine_correction(mol: Chem.Mol, L: int, homo: float, lumo: float, 
 
 @_register_energy
 def _apply_aromatic_stabilization(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
-    """Apply aromatic ring stabilization (-0.25 HOMO, -0.15 LUMO per ring).
-
-    Physical basis: Cyclic delocalisation (resonance energy ~1.5 eV for benzene)
-    stabilises both frontier orbitals beyond 1-D PIB confinement.
-    """
+    """Apply aromatic ring stabilization (-0.25 HOMO, -0.15 LUMO per ring)."""
     n_arom = _count_aromatic_rings(mol)
     return homo + -0.25 * n_arom, lumo + -0.15 * n_arom
 
 
 @_register_energy
 def _apply_nitrile_correction(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
-    """Apply nitrile C≡N π* LUMO lowering (-0.70 eV per nitrile, max -1.40 eV).
-
-    Physical basis: The C≡N π* orbital is ~0.7-1.0 eV lower than the general
-    N perturbation predicts. Capped at 2 nitrile groups per ADR-2026-06-08:
-    additional nitriles beyond 2 contribute diminishing returns due to
-    orbital localisation on the first-reduced C≡N.
-    """
+    """Apply nitrile C≡N π* LUMO lowering (-0.70 eV per nitrile, max -1.40 eV)."""
     n_nitrile = len(mol.GetSubstructMatches(NITRILE_PATTERN))
     shift = min(n_nitrile, 2) * -0.70
     return homo, lumo + shift
@@ -939,27 +624,14 @@ def _apply_nitrile_correction(mol: Chem.Mol, L: int, homo: float, lumo: float, *
 
 @_register_energy
 def _apply_phosphate_correction(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
-    """Apply phosphate HOMO correction (+0.50 per P=O) for σ-only P-O-C bonds.
-
-    Physical basis: σ-only P-O-C oxygen EW contributions are over-counted;
-    +0.50 corrects ~2/3 of the over-counting (~0.96 eV for trialkyl phosphates).
-    """
+    """Apply phosphate HOMO correction (+0.50 per P=O) for σ-only P-O-C bonds."""
     n_phosphate = len(mol.GetSubstructMatches(_PHOSPHATE_PATTERN))
     return homo + 0.50 * n_phosphate, lumo
 
 
 @_register_energy
 def _apply_sigma_star_correction(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
-    """Apply σ* LUMO correction for S/P=O groups (d-orbital participation).
-
-    Physical basis: S=O and P=O bonds have low-lying σ* orbitals from d-orbital
-    participation that lower LUMO by 0.3-0.7 eV. For non-conjugated molecules (L<3)
-    the LUMO is σ* in character and the full correction applies. For conjugated
-    molecules (L>=3) the LUMO is primarily π* in character, but σ-π mixing via
-    hyperconjugation means the σ* orbitals still contribute at reduced strength.
-    A scaling factor of 0.40 captures the mixing coefficient for conjugated systems
-    containing sulfone, sulfoxide or phosphate groups.
-    """
+    """Apply σ* LUMO correction for S/P=O groups (d-orbital participation)."""
     sigma_scale = 0.40 if L >= 3 else 1.0
     for _spattern, _sname, _sshift in _SIGMA_STAR_LUMO:
         if len(mol.GetSubstructMatches(_spattern)) > 0:
@@ -969,32 +641,14 @@ def _apply_sigma_star_correction(mol: Chem.Mol, L: int, homo: float, lumo: float
 
 @_register_energy
 def _apply_cross_conjugation_penalty(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
-    """Apply cross-conjugation penalty (+0.30 eV to LUMO).
-
-    Physical basis: Cross-conjugated systems disrupt pi-delocalisation; the
-    1D particle-in-a-box overestimates the gap. Widening by +0.30 eV corrects
-    for this overestimation (e.g., divinyl ketone, benzophenone).
-    """
+    """Apply cross-conjugation penalty (+0.30 eV to LUMO)."""
     if _is_cross_conjugated(mol):
         return homo, lumo + 0.30
     return homo, lumo
 
 
 def _detect_steric_crowding(mol: Chem.Mol) -> bool:
-    """Detect steric crowding in pi-systems via purely topological rules.
-
-    A molecule is sterically crowded if it contains an sp2 carbon in a
-    conjugated path that either:
-      - has >2 non-hydrogen neighbours, or
-      - is part of a ring with <5 members.
-
-    These topological patterns correlate with twisted/unstable pi-systems
-    (e.g., tetra-substituted alkenes, cyclobutadiene-like motifs) without
-    requiring 3D geometry or force-field calculations.
-
-    Returns:
-        True if any atom matches the crowding criteria.
-    """
+    """Detect steric crowding in pi-systems via purely topological rules."""
     ring_info = mol.GetRingInfo()
     atom_rings = ring_info.AtomRings()
 
@@ -1020,15 +674,7 @@ def _detect_steric_crowding(mol: Chem.Mol) -> bool:
 
 @_register_energy
 def _apply_steric_crowding_penalty(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
-    """Apply steric crowding penalty (+0.30 eV to both HOMO and LUMO).
-
-    Physical basis: Sterically crowded pi-systems (e.g., tetra-substituted
-    alkenes, small-ring sp2 carbons) are twisted or ring-strained, which
-    destabilises both frontier orbitals. The +0.30 eV shift across both
-    orbitals widens the effective gap and penalises molecules with distorted
-    pi-systems. This is a lightweight alternative to UFF optimisation:
-    purely topological, zero compute cost.
-    """
+    """Apply steric crowding penalty (+0.30 eV to both HOMO and LUMO)."""
     if _detect_steric_crowding(mol):
         return homo + 0.3, lumo + 0.3
     return homo, lumo
@@ -1038,20 +684,7 @@ def _evaluate_tom_single_conformer(
     mol: Chem.Mol, xyz_content: str | None = None,
     use_geometry_correction: bool = False,
 ) -> tuple[float, float]:
-    """Evaluate TOM for a single conformer with optional geometry-dependent penalty.
-
-    Extracted from ``predict_tom_orbitals`` to enable Boltzmann-weighted
-    averaging over multiple conformers without code duplication.
-
-    Args:
-        mol: RDKit molecule.
-        xyz_content: Optional XYZ string for conformer-specific torsional analysis.
-        use_geometry_correction: If True, apply per-bond 20% L reduction for
-            conjugated bonds with >30° dihedral deviation from planarity.
-
-    Returns:
-        (homo_eV, lumo_eV)
-    """
+    """Evaluate TOM for a single conformer with optional geometry-dependent penalty."""
     L = _longest_conjugation_path(mol)
     L = max(L, 2)
     L = _topological_sanity_l(mol, L)
@@ -1078,14 +711,13 @@ def predict_tom_orbitals(
         1. Longest conjugation path length (L)
         2. HOMO-LUMO gap from particle-in-a-box: ΔE ∝ 1/L²
         3. Heteroatom perturbations (electron-withdrawing/donating)
-        4. Aromatic ring stabilization (−0.25 eV HOMO, −0.15 eV LUMO per ring)
-        5. Wiener-index compactness adjustment (factor 0.30)
-        6. σ* LUMO correction for S/P=O groups in non-conjugated molecules
-        7. Phosphate HOMO correction (+0.50 per P=O) for σ-only P-O-C bonds
-        8. Base offset calibrated to 45 electrolyte molecules from DFT references.
-        9. Cross-conjugation penalty for branched pi-systems.
-        10. Steric crowding penalty (+0.30 eV to both HOMO and LUMO) for
-            sp2 carbons with >2 non-H neighbours or in rings <5 members.
+        4. Aromatic ring stabilization
+        5. Wiener-index compactness adjustment
+        6. σ* LUMO correction for S/P=O groups
+        7. Phosphate HOMO correction
+        8. Base offset calibrated to 45 electrolyte molecules from DFT.
+        9. Cross-conjugation penalty
+        10. Steric crowding penalty
 
     Uses Boltzmann-weighted averaging over the top 3 conformers to stabilise
     predictions for sterically hindered, flexible conjugated systems.
@@ -1094,7 +726,7 @@ def predict_tom_orbitals(
         mol: RDKit molecule.
         use_geometry_correction: If True, generate a conformer and reduce
             effective L by 20% for each conjugated bond with >30° dihedral
-            deviation from planarity. Default False (fast topological path).
+            deviation from planarity.
 
     Returns:
         (homo_eV, lumo_eV)
@@ -1126,21 +758,9 @@ def predict_tom_orbitals(
 # ---------------------------------------------------------------------------
 # Domain of Applicability (DoA) — TOM-specific epistemic uncertainty
 # ---------------------------------------------------------------------------
-# Physical justification: The TOM is calibrated against molecules with moderate
-# conjugation (L ≤ 12) and reasonable pi-electron counts. Molecules with extreme
-# conjugation paths lacking sp3 structural support, or excessive pi-systems,
-# fall outside the TOM calibration domain. The particle-in-a-box model assumes
-# a planar rigid system; long conjugation without sp3 breaks planarity, and
-# excessive pi-electrons violate the single-particle HMO approximation.
-# These are closed-form heuristics — no ML involved.
-
 
 def compute_quantum_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
     """Compute domain-of-applicability penalty for TOM predictions.
-
-    Penalises molecules with topological features that fall outside the
-    TOM calibration domain (conjugation > 12 without sp3 support, excessive
-    pi-electrons).
 
     Returns:
         (penalty_multiplier, reason_string)
@@ -1218,11 +838,7 @@ def _ensure_calibration_loaded() -> None:
 
 
 def _compute_max_tanimoto_to_calibration(mol: Chem.Mol) -> float:
-    """Compute max Tanimoto similarity of *mol* to the calibration set.
-
-    Returns a float in [0.0, 1.0]. Returns 0.0 if the calibration set
-    is unavailable.
-    """
+    """Compute max Tanimoto similarity of *mol* to the calibration set."""
     _ensure_calibration_loaded()
     if not _CALIBRATION_FPS:
         return 0.0
@@ -1246,29 +862,16 @@ class QuantumBackend(ABC):
 
     @abstractmethod
     def evaluate(self, mol: Chem.Mol) -> dict[str, float]:
-        """Run quantum evaluation on *mol*.
-
-        Returns:
-            Dict with keys:
-                - ``homo_eV`` (float)
-                - ``lumo_eV`` (float)
-                - ``dipole_D`` (float)
-                - ``quantum_confidence`` (str)
-                - ``conformer_variance`` (float, optional)
-                - ``confidence_score`` (float, optional)
-        """
         ...
 
     @property
     @abstractmethod
     def method(self) -> str:
-        """Human-readable description of this backend."""
         ...
 
     @property
     @abstractmethod
     def n_calls(self) -> int:
-        """Number of molecules evaluated by this backend."""
         ...
 
     def clear_cache(self) -> None:
@@ -1444,7 +1047,6 @@ class TOMBackend(QuantumBackend):
         L = _longest_conjugation_path(mol)
         n_rings = mol.GetRingInfo().NumRings()
 
-        # Confidence score based on Tanimoto similarity to calibration set
         max_sim = _compute_max_tanimoto_to_calibration(mol)
         if max_sim < 0.5:
             quantum_conf = "tom_low"

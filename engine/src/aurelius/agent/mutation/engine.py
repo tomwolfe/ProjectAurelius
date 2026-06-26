@@ -28,6 +28,7 @@ from aurelius.agent.mutation.base import (
 )
 from aurelius.agent.mutation.harvester import FragmentHarvester
 from aurelius.agent.mutation.novelty import NoveltyValidator
+from aurelius.cache.lru import LRUCache
 from aurelius.types import MoleculeContext, format_mixture_smiles
 from aurelius.utils.chem_utils import _deserialize_fp
 
@@ -97,7 +98,7 @@ class MutationEngine:
 
         self._seed_smiles, self._seed_scaffolds = self._init_smiles_and_scaffolds()
 
-        self._ctx_cache: dict[str, MoleculeContext | None] = {}
+        self._ctx_cache: LRUCache[MoleculeContext | None] = LRUCache(maxsize=4096)
         self._known_smiles: set[str] = set()
         self._load_known_electrolytes()
 

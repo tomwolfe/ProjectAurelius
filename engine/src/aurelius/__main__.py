@@ -20,10 +20,12 @@ from __future__ import annotations
 
 import json
 import sys
+from typing import Any
 
 import click
 
-from aurelius.pipeline import AureliusPipeline, _load_demo_kernel
+from aurelius.kernel_loader import _load_demo_kernel
+from aurelius.pipeline import AureliusPipeline
 from aurelius.types import MoleculeContext
 from aurelius.utils.dependencies import HAS_RDKIT
 
@@ -41,7 +43,7 @@ def _make_pipeline(pack: str = "electrolyte", demo: bool = False) -> AureliusPip
     if demo:
         kernel = _load_demo_kernel()
         if kernel:
-            _echo_colored("[bold green]✓ Demo kernel loaded.[/bold green]", style="green")
+            _echo_colored("[bold green]Demo kernel loaded.[/bold green]", style="green")
         else:
             _echo_colored("[yellow]Demo kernel not found — using default parameters.[/yellow]", style="yellow")
     return pipeline
@@ -70,7 +72,6 @@ def _echo_colored(message: str, style: str = "", **kwargs: Any) -> None:
     if _console is not None:
         _console.print(message, style=style, **kwargs)
     else:
-        # ANSI fallback when rich is unavailable
         _ANSI_COLORS = {
             "green": "\033[32m",
             "red": "\033[31m",
@@ -82,10 +83,8 @@ def _echo_colored(message: str, style: str = "", **kwargs: Any) -> None:
             "cyan": "\033[36m",
         }
         ansi_reset = "\033[0m"
-        clean = message
-        # Strip rich markup tags
         import re as _re
-        clean = _re.sub(r'\[/?\w+\]', '', clean)
+        clean = _re.sub(r'\[/?\w+\]', '', message)
         color_code = _ANSI_COLORS.get(style, "")
         if color_code:
             click.echo(f"{color_code}{clean}{ansi_reset}", **kwargs)
@@ -93,50 +92,151 @@ def _echo_colored(message: str, style: str = "", **kwargs: Any) -> None:
             click.echo(clean, **kwargs)
 
 
+def print_result_card(
+    smiles: str,
+    total_score: float,
+    is_viable: bool,
+    sub_scores: dict[str, float],
+    properties: dict[str, Any] | None = None,
+    rejection_reasons: list[str] | None = None,
+) -> None:
+    """Display a beautiful summary card of the screening result using rich if available.
+
+    Falls back to clean ASCII formatting when rich is not installed.
+    """
+    label = "DISCOVERY" if is_viable else "REJECTED"
+    style = "bold green" if is_viable else "bold red"
+
+    if _console is not None:
+        _print_result_card_rich(
+            _console, smiles, total_score, is_viable, label, style,
+            sub_scores, properties, rejection_reasons,
+        )
+    else:
+        _print_result_card_ascii(
+            smiles, total_score, is_viable, label,
+            sub_scores, properties, rejection_reasons,
+        )
+
+
+def _print_result_card_rich(
+    console: Any,
+    smiles: str,
+    total_score: float,
+    is_viable: bool,
+    label: str,
+    style: str,
+    sub_scores: dict[str, float],
+    properties: dict[str, Any] | None = None,
+    rejection_reasons: list[str] | None = None,
+) -> None:
+    """Rich-formatted result card."""
+    from rich.table import Table
+    from rich import box
+    from rich.panel import Panel
+
+    score_color = "green" if is_viable else "red"
+
+    # Main score panel
+    score_text = f"[bold {score_color}]{total_score:.1f}/100 — {label}[/bold {score_color}]"
+    console.print(Panel(score_text, title=f"[bold]Aurelius Screen[/bold]", width=60))
+    console.print(f"  SMILES: [cyan]{smiles}[/cyan]")
+
+    if properties:
+        prop_table = Table(title="Predicted Properties", box=box.SIMPLE, width=60)
+        prop_table.add_column("Property", style="cyan")
+        prop_table.add_column("Value", justify="right")
+        for key, val in properties.items():
+            if isinstance(val, float):
+                prop_table.add_row(key, f"{val:.4f}")
+            else:
+                prop_table.add_row(key, str(val))
+        console.print(prop_table)
+
+    if sub_scores:
+        sub_table = Table(title="Sub-Scores", box=box.SIMPLE, width=60)
+        sub_table.add_column("Objective", style="cyan")
+        sub_table.add_column("Score", justify="right")
+        sub_table.add_column("Bar", style="green", no_wrap=True)
+        for name, val in sorted(sub_scores.items(), key=lambda x: x[1], reverse=True):
+            bar_len = 20
+            filled = int(val * bar_len)
+            bar = "█" * filled + "░" * (bar_len - filled)
+            sub_table.add_row(name[:28], f"{val:.4f}", bar)
+        console.print(sub_table)
+
+    if rejection_reasons:
+        console.print("[bold red]Rejection Reasons:[/bold red]")
+        for r in rejection_reasons:
+            console.print(f"  [red]✗[/red] {r}")
+
+
+def _print_result_card_ascii(
+    smiles: str,
+    total_score: float,
+    is_viable: bool,
+    label: str,
+    sub_scores: dict[str, float],
+    properties: dict[str, Any] | None = None,
+    rejection_reasons: list[str] | None = None,
+) -> None:
+    """ASCII-fallback result card."""
+    bar_len = 30
+    _echo(f"\n{'=' * 60}")
+    _echo(f"  Project Aurelius v10.0 — {label}")
+    _echo(f"  SMILES: {smiles}")
+    _echo(f"  Score:  {total_score:5.1f}/100")
+    _echo(f"{'=' * 60}")
+
+    if properties:
+        _echo(f"\n  Predicted Properties:")
+        for key, val in properties.items():
+            if isinstance(val, float):
+                _echo(f"    {key:<30} {val:.4f}")
+            else:
+                _echo(f"    {key:<30} {val}")
+        _echo(f"{'-' * 60}")
+
+    if sub_scores:
+        _echo(f"\n  Sub-Scores:")
+        for name, val in sorted(sub_scores.items(), key=lambda x: x[1], reverse=True):
+            filled = int(val * bar_len)
+            bar = "█" * filled + "░" * (bar_len - filled)
+            _echo(f"    {name:<28} {val:.4f}  {bar}")
+        _echo(f"{'-' * 60}")
+
+    if rejection_reasons:
+        _echo(f"\n  Rejection Reasons:")
+        for r in rejection_reasons:
+            _echo(f"    ✗ {r}")
+
+    _echo(f"{'=' * 60}\n")
+
+
+# ---------------------------------------------------------------------------
+# CLI Commands
+# ---------------------------------------------------------------------------
+
+
 @click.group()
 @click.version_option(version="10.0.0", prog_name="Aurelius")
 def cli() -> None:
-    """Project Aurelius v10.0 - Evolutionary Algorithm Discovery Release.
-
-    Computational chemistry screening pipeline for battery electrolyte discovery.
-
-    Hybrid quantum (xTB / TOM) + fragment-additivity (GC) oracle for
-    physically valid screening of electrolyte molecules and mixtures.
-
-    \b
-    Examples:
-      aurelius screen "C1COC(=O)O1"
-      aurelius batch molecules.smi
-      aurelius agent --max-generations 100
-      aurelius doctor --verbose
-    """
+    """Project Aurelius v10.0 - Evolutionary Algorithm Discovery Release."""
     pass
 
 
 @cli.command()
-@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
+@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte")
 def init(pack: str) -> None:
-    """Initialize the Aurelius v10.0 pipeline.
-
-    \b
-    Examples:
-      aurelius init
-      aurelius init --pack organic_electronics
-    """
+    """Initialize the Aurelius v10.0 pipeline."""
     _make_pipeline(pack=pack, demo=False)
     _echo_colored("\n[bold green]Pipeline initialized successfully.[/bold green]", style="green")
 
 
 @cli.command()
-@click.option("--verbose", "-v", is_flag=True, default=False, help="Show detailed framework versions")
+@click.option("--verbose", "-v", is_flag=True, default=False)
 def doctor(verbose: bool) -> None:
-    """Validate dependencies, hardware, and configuration.
-
-    \b
-    Examples:
-      aurelius doctor
-      aurelius doctor --verbose
-    """
+    """Validate dependencies, hardware, and configuration."""
     import platform
     from aurelius.scoring.oracle import has_xtb
 
@@ -145,23 +245,22 @@ def doctor(verbose: bool) -> None:
         _echo_colored("  [green]OK[/green]      rdkit")
     else:
         _echo_colored("  [red]MISSING[/red]  rdkit")
-        _echo("         → conda install -c conda-forge rdkit")
-        _echo("         → pip install rdkit-pypi")
+        _echo("         \u2192 conda install -c conda-forge rdkit")
+        _echo("         \u2192 pip install rdkit-pypi")
         if platform.system() == "Linux":
-            _echo("         → sudo apt install python3-rdkit")
+            _echo("         \u2192 sudo apt install python3-rdkit")
         elif platform.system() == "Darwin":
-            _echo("         → brew install rdkit")
+            _echo("         \u2192 brew install rdkit")
 
     xtb_ok = has_xtb()
     if xtb_ok:
         _echo_colored("  [green]OK[/green]      xtb")
     else:
         _echo_colored("  [yellow]MISSING[/yellow]  xtb")
-        _echo("         → xTB not found. Install it via: https://github.com/grimme-lab/xtb/releases or run 'brew install xtb'.")
-        _echo("         → Add xtb directory to PATH after installation.")
+        _echo("         \u2192 xTB not found. Install via: https://github.com/grimme-lab/xtb/releases")
+        _echo("         \u2192 Add xtb directory to PATH after installation.")
 
     _echo("")
-
     _echo_colored("[bold]Hardware[/bold]")
     if HAS_RDKIT:
         _echo("  RDKit:    Available")
@@ -169,7 +268,6 @@ def doctor(verbose: bool) -> None:
         _echo("  RDKit:    Not installed (real model screening required)")
 
     _echo("")
-
     _echo_colored("[bold]Summary[/bold]")
     if not HAS_RDKIT:
         _echo_colored("  [red]ERROR:[/red] RDKit is missing. Pipeline will not function.", style="bold red")
@@ -180,24 +278,15 @@ def doctor(verbose: bool) -> None:
         _echo_colored("  [yellow]WARNING:[/yellow] xTB not on PATH — TOM fallback active (reduced accuracy).", style="bold yellow")
     else:
         _echo_colored("  [green]All core frameworks available. System ready for full pipeline.[/green]")
-
     _echo("")
 
 
 @cli.command("screen")
 @click.argument("smiles")
-@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
-@click.option("--demo", is_flag=True, default=False, help="Load pre-certified demo kernel (carbonate high-voltage)")
+@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte")
+@click.option("--demo", is_flag=True, default=False)
 def screen(smiles: str, pack: str, demo: bool) -> None:
-    """Screen a single molecule through the full Aurelius pipeline.
-
-    \b
-    Examples:
-      aurelius screen "C1COC(=O)O1"
-      aurelius screen "CC#N" --pack organic_electronics
-      aurelius screen "COC(=O)OC"
-      aurelius screen "C1COC(=O)O1" --demo
-    """
+    """Screen a single molecule through the full Aurelius pipeline."""
     pipeline = _make_pipeline(pack=pack, demo=demo)
     try:
         results = pipeline.screen_smiles(smiles)
@@ -206,30 +295,42 @@ def screen(smiles: str, pack: str, demo: bool) -> None:
         sys.exit(1)
 
     score = results.get("score", {})
+    t2 = results.get("tier2", {})
     total = score.get("total_score", 0.0)
     viable = score.get("is_viable", False)
-    style = "bold green" if viable else "bold red"
-    label = "DISCOVERY" if viable else "REJECTED"
-    _echo_colored(f"\n[bold]Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{label}[/]", style=style)
-    if score and not viable:
+
+    properties = None
+    if t2:
+        properties = {
+            "HOMO (eV)": t2.get("homo_eV"),
+            "LUMO (eV)": t2.get("lumo_eV"),
+            "Gap (eV)": t2.get("gap_eV"),
+            "Dielectric": t2.get("dielectric_proxy"),
+            "Viscosity": t2.get("viscosity_proxy"),
+            "Li+ Solvation": t2.get("li_solvation_proxy"),
+            "Quantum Confidence": t2.get("quantum_confidence"),
+            "Domain Applicable": t2.get("domain_applicable"),
+        }
+
+    print_result_card(
+        smiles=smiles,
+        total_score=total,
+        is_viable=viable,
+        sub_scores=score.get("sub_scores", {}),
+        properties=properties,
+        rejection_reasons=score.get("rejection_reasons"),
+    )
+
+    if not viable:
         sys.exit(1)
 
 
 @cli.command("view")
 @click.argument("smiles")
-@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
+@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte")
 @click.option("--output", type=click.Path(), help="Save HTML report to file instead of opening browser")
 def view_cmd(smiles: str, pack: str, output: str | None) -> None:
-    """Generate and open an HTML report for a molecule.
-
-    Displays the molecular structure, predicted properties, and a
-    Viability/REJECTED badge in the default web browser.
-
-    \b
-    Examples:
-      aurelius view "C1COC(=O)O1"
-      aurelius view "C1COC(=O)O1" --output report.html
-    """
+    """Generate and open an HTML report for a molecule."""
     from rdkit.Chem import Draw
     import tempfile
     import webbrowser
@@ -248,7 +349,6 @@ def view_cmd(smiles: str, pack: str, output: str | None) -> None:
     total = score.get("total_score", 0.0)
     viable = score.get("is_viable", False)
 
-    # Generate molecule image
     ctx = MoleculeContext.from_smiles(smiles)
     if ctx is not None:
         img = Draw.MolToImage(ctx.mol, size=(300, 300))
@@ -361,21 +461,10 @@ def view_cmd(smiles: str, pack: str, output: str | None) -> None:
 
 @cli.command("batch")
 @click.argument("file", type=click.Path(exists=True))
-@click.option("--output", type=click.Path(), help="Output JSON file")
-@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
-def batch(
-    file: str,
-    output: str | None,
-    pack: str,
-) -> None:
-    """Screen multiple molecules from a SMILES file (one per line).
-
-    \b
-    Examples:
-      aurelius batch molecules.smi
-      aurelius batch molecules.smi --output results.json
-      aurelius batch my_set.smi --pack organic_electronics
-    """
+@click.option("--output", type=click.Path())
+@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte")
+def batch(file: str, output: str | None, pack: str) -> None:
+    """Screen multiple molecules from a SMILES file (one per line)."""
     pipeline = _make_pipeline(pack=pack)
     smiles_list = []
     with open(file) as f:
@@ -416,16 +505,8 @@ def batch(
 
 @cli.command("score")
 @click.argument("smiles")
-def score(
-    smiles: str,
-) -> None:
-    """Compute the Aurelius v10.0 score for a molecule (quick mode).
-
-    \b
-    Examples:
-      aurelius score "C1COC(=O)O1"
-      aurelius score "CC#N"
-    """
+def score(smiles: str) -> None:
+    """Compute the Aurelius v10.0 score for a molecule (quick mode)."""
     pipeline = _make_pipeline()
     try:
         results = pipeline.screen_smiles(smiles)
@@ -443,17 +524,9 @@ def score(
 
 
 @cli.command("evaluate")
-@click.option("--smiles", default="CC(=O)OC1=CC(=O)O1", help="Molecule to evaluate")
-def evaluate_cmd(
-    smiles: str = "CC(=O)OC1=CC(=O)O1",
-) -> None:
-    """Run ML Oracle evaluation on a molecule.
-
-    \b
-    Examples:
-      aurelius evaluate --smiles "C1COC(=O)O1"
-      aurelius evaluate
-    """
+@click.option("--smiles", default="CC(=O)OC1=CC(=O)O1")
+def evaluate_cmd(smiles: str = "CC(=O)OC1=CC(=O)O1") -> None:
+    """Run ML Oracle evaluation on a molecule."""
     pipeline = _make_pipeline()
     try:
         results = pipeline.screen_smiles(smiles)
@@ -473,17 +546,10 @@ def evaluate_cmd(
 
 @cli.command("validate")
 @click.argument("smiles")
-@click.option("--pretty", is_flag=True, default=False, help="Print ASCII report card summary")
+@click.option("--pretty", is_flag=True, default=False)
 def validate_cmd(smiles: str, pretty: bool) -> None:
-    """Run the full pipeline on a SMILES and print a report card.
-
-    \b
-    Examples:
-      aurelius validate "C1COC(=O)O1"
-      aurelius validate "C1COC(=O)O1" --pretty
-      aurelius validate "CC#N"
-    """
-    from aurelius.pipeline import _OBJECTIVES
+    """Run the full pipeline on a SMILES and print a report card."""
+    from aurelius.scorer import _OBJECTIVES
 
     pipeline = _make_pipeline()
     try:
@@ -497,17 +563,6 @@ def validate_cmd(smiles: str, pretty: bool) -> None:
     total = score.get("total_score", 0.0)
     viable = score.get("is_viable", False)
     sub_scores = score.get("sub_scores", {})
-    reason_keywords: dict[str, tuple[str, str]] = {
-        "lumo": ("LUMO outside SEI window", "LUMO"),
-        "homo": ("HOMO too high — oxidative instability", "HOMO"),
-        "dielectric": ("Low dielectric — poor salt dissolution", "Dielectric"),
-        "viscosity": ("High viscosity — poor ion mobility", "Viscosity"),
-        "li_solvation": ("Li+ binding outside ideal range", "Li Solvation"),
-        "ced": ("Low CED — weak SEI cohesion", "CED"),
-        "sa": ("Hard to synthesise", "SA Score"),
-        "gas_evolution": ("High gas evolution risk", "Gas Evo"),
-        "hydrolysis": ("High hydrolysis risk", "Hydrolysis"),
-    }
 
     _echo(f"\n{'=' * 56}")
     _echo_colored("  [bold]Project Aurelius v10.0 — Validate[/bold]")
@@ -523,24 +578,22 @@ def validate_cmd(smiles: str, pretty: bool) -> None:
         weighted = obj.weight * sub
         label = obj.name[:28]
         if sub >= 0.7:
-            icon = "[green]✓[/green]"
+            icon = "[green]\u2713[/green]"
         elif sub >= 0.4:
             icon = "[yellow]~[/yellow]"
         else:
-            icon = "[red]✗[/red]"
+            icon = "[red]\u2717[/red]"
             all_passed = False
-        eng = reason_keywords.get(obj.name.split("_")[0], ("", ""))[0] if sub < 0.4 else ""
-        eng_note = f" — {eng}" if eng else ""
-        _echo(f"  {icon} {label:<26} raw={raw:>7.3f}  w={obj.weight:.2f}  sub={weighted:.4f}{eng_note}")
+        _echo(f"  {icon} {label:<26} raw={raw:>7.3f}  w={obj.weight:.2f}  sub={weighted:.4f}")
 
     _echo(f"  {'-' * 56}")
-    verdict = "[green]✓[/green]" if viable else "[red]✗[/red]"
+    verdict = "[green]\u2713[/green]" if viable else "[red]\u2717[/red]"
     style = "bold green" if viable else "bold red"
     label = "DISCOVERY" if viable else "REJECTED"
     _echo_colored(f"  {verdict} TOTAL: {total:>7.1f}/100  {label}", style=style)
     if score.get("rejection_reasons"):
         for reason in score["rejection_reasons"]:
-            _echo_colored(f"     [red]✗[/red] {reason}")
+            _echo_colored(f"     [red]\u2717[/red] {reason}")
     if t2:
         _echo(f"\n  {'=' * 56}")
         _echo_colored("  [bold]Predicted Properties:[/bold]")
@@ -553,68 +606,38 @@ def validate_cmd(smiles: str, pretty: bool) -> None:
     _echo(f"{'=' * 56}")
 
     if pretty:
-        if _console is not None:
-            from rich.table import Table
-            from rich import box
-
-            label = "DISCOVERY" if viable else "REJECTED"
-            table = Table(title=f"Score: {total:.1f}/100 — {label}", box=box.SIMPLE)
-            table.add_column("Objective", style="cyan")
-            table.add_column("Raw", justify="right")
-            table.add_column("Score", justify="right")
-            table.add_column("Bar", style="green", no_wrap=True)
-            for name, val in sorted(sub_scores.items(), key=lambda x: x[1], reverse=True):
-                bar_len = 20
-                filled = int(val * bar_len)
-                bar = "█" * filled + "░" * (bar_len - filled)
-                raw_val = t2.get(name[:name.rfind("_")], "")
-                table.add_row(name[:26], f"{raw_val if raw_val else '':>7}", f"{val:.3f}", bar)
-            _console.print(table)
-        else:
-            bar_len = 20
-            label = "DISCOVERY" if viable else "REJECTED"
-            _echo(f"\n  {'─' * 40}")
-            _echo(f"  Score: {total:5.1f}/100 {label}")
-            if sub_scores:
-                best = max(sub_scores.values())
-                best_name = max(sub_scores, key=sub_scores.get)
-                worst = min(sub_scores.values())
-                worst_name = min(sub_scores, key=sub_scores.get)
-                _echo(f"  Best:  {best_name:<22} {best:.3f}")
-                _echo(f"  Worst: {worst_name:<22} {worst:.3f}")
-                for name, val in sorted(sub_scores.items(), key=lambda x: x[1], reverse=True):
-                    filled = int(val * bar_len)
-                    bar = "█" * filled + "░" * (bar_len - filled)
-                    _echo(f"    {name:<22} {bar} {val:.2f}")
-            _echo(f"  {'─' * 40}")
+        properties = None
+        if t2:
+            properties = {
+                "HOMO (eV)": t2.get("homo_eV"),
+                "LUMO (eV)": t2.get("lumo_eV"),
+                "Gap (eV)": t2.get("gap_eV"),
+                "Dielectric": t2.get("dielectric_proxy"),
+                "Viscosity": t2.get("viscosity_proxy"),
+                "Li+ Solvation": t2.get("li_solvation_proxy"),
+                "Quantum Confidence": t2.get("quantum_confidence"),
+            }
+        print_result_card(
+            smiles=smiles,
+            total_score=total,
+            is_viable=viable,
+            sub_scores=sub_scores,
+            properties=properties,
+            rejection_reasons=score.get("rejection_reasons"),
+        )
 
     if not viable:
         sys.exit(1)
 
 
 @cli.command("agent")
-@click.option("--max-generations", type=int, default=50, help="Maximum generations to run")
-@click.option("--batch-size", type=int, default=50, help="Candidates per batch")
-@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
-@click.option("--verbose", "-v", is_flag=True, default=False, help="Show per-generation score histogram")
-@click.option("--strict", is_flag=True, default=False, help="Raise on SMARTS/BRICS failures instead of logging warnings")
-def agent(
-    max_generations: int,
-    batch_size: int,
-    pack: str,
-    verbose: bool,
-    strict: bool,
-) -> None:
-    """Evolve electrolyte candidates via BRICS mutation + multi-objective screening.
-
-    \b
-    Examples:
-      aurelius agent
-      aurelius agent --max-generations 100 --batch-size 25
-
-    \b
-    Tip: Run 'aurelius doctor' first to verify dependencies.
-    """
+@click.option("--max-generations", type=int, default=50)
+@click.option("--batch-size", type=int, default=50)
+@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte")
+@click.option("--verbose", "-v", is_flag=True, default=False)
+@click.option("--strict", is_flag=True, default=False)
+def agent(max_generations: int, batch_size: int, pack: str, verbose: bool, strict: bool) -> None:
+    """Evolve electrolyte candidates via BRICS mutation + multi-objective screening."""
     from aurelius.agent.loop import AgentConfig, run_screening
 
     cfg = AgentConfig(max_generations=max_generations, batch_size=batch_size, pack=pack, verbose=verbose, strict=strict)
@@ -674,25 +697,12 @@ def _report_mixture_result(result: dict, label: str) -> None:
 @cli.command("mixture")
 @click.argument("smiles_a")
 @click.argument("smiles_b")
-@click.option("--frac", type=float, default=0.5, help="Volume fraction of component A (0.0 to 1.0)")
-@click.option("--smiles-c", type=str, default=None, help="Third component SMILES (ternary mixture)")
-@click.option("--frac-a", type=float, default=None, help="Volume fraction of component A (ternary)")
-@click.option("--frac-b", type=float, default=None, help="Volume fraction of component B (ternary)")
+@click.option("--frac", type=float, default=0.5)
+@click.option("--smiles-c", type=str, default=None)
+@click.option("--frac-a", type=float, default=None)
+@click.option("--frac-b", type=float, default=None)
 def mixture_cmd(smiles_a: str, smiles_b: str, frac: float, smiles_c: str | None, frac_a: float | None, frac_b: float | None) -> None:
-    """Screen a binary or ternary electrolyte mixture.
-
-    Thermodynamic mixing rules with synergy bonus for complementary pairs
-    (high-dielectric + low-viscosity).
-
-    \b
-    Binary:
-      aurelius mixture "C1COC(=O)O1" "COCCOC"
-      aurelius mixture "C1COC(=O)O1" "COCCOC" --frac 0.3
-
-    \b
-    Ternary:
-      aurelius mixture "C1COC(=O)O1" "COCCOC" --smiles-c "CC#N" --frac-a 0.4 --frac-b 0.4
-    """
+    """Screen a binary or ternary electrolyte mixture."""
     pipeline = _make_pipeline()
     ctx_a, ctx_b = _validate_component_smiles(smiles_a, smiles_b)
 
@@ -705,7 +715,7 @@ def mixture_cmd(smiles_a: str, smiles_b: str, frac: float, smiles_c: str | None,
 
 
 # ---------------------------------------------------------------------------
-# Local Lightweight Kernel Tuner (no Stripe, JWT, or Postgres)
+# Local Lightweight Kernel Tuner
 # ---------------------------------------------------------------------------
 
 
@@ -850,21 +860,10 @@ def _nelder_mead(
 
 @cli.command("tune")
 @click.argument("csv_path", type=click.Path(exists=True))
-@click.option("--output", default="aurelius_kernel.json", help="Output kernel file path")
-@click.option("--max-iter", default=200, help="Maximum Nelder-Mead iterations")
+@click.option("--output", default="aurelius_kernel.json")
+@click.option("--max-iter", default=200)
 def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
-    """Tune kernel parameters from a CSV of experimental data.
-
-    CSV must have columns: smiles, property, value
-
-    Runs a local Nelder-Mead optimizer (no Stripe/JWT/Postgres required)
-    and writes the tuned kernel to --output (default: aurelius_kernel.json).
-
-    \b
-    Examples:
-      aurelius tune experiments.csv
-      aurelius tune experiments.csv --output my_kernel.json --max-iter 500
-    """
+    """Tune kernel parameters from a CSV of experimental data."""
     try:
         import numpy as np  # noqa: F401
     except ImportError:
@@ -907,7 +906,6 @@ def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
         "gc_scale": float(result_x[2]),
     }
 
-    # Compute validation metrics
     from aurelius.scoring.oracle import PropertyOracle
     oracle = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=False)
     predictions: list[float] = []
@@ -966,7 +964,7 @@ def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
     _echo(f"  HOMO offset:  {tom_parameters['homo_offset']:+.4f}")
     _echo(f"  LUMO offset:  {tom_parameters['lumo_offset']:+.4f}")
     _echo(f"  GC scale:     {tom_parameters['gc_scale']:.4f}")
-    _echo(f"  Spearman ρ:   {spearman:.4f}")
+    _echo(f"  Spearman \u03c1:   {spearman:.4f}")
     _echo(f"  MAE:          {mae:.4f}")
     _echo(f"  RMSE:         {rmse:.4f}")
     _echo(f"  Training pts: {len(valid_smiles)}")
@@ -975,18 +973,9 @@ def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
 @cli.command("verify-kernel")
 @click.argument("kernel_path", type=click.Path(exists=True))
 def verify_kernel_cmd(kernel_path: str) -> None:
-    """Verify a kernel's Ed25519 signature using the public key in constants.
-
-    KERNEL_PATH is the path to a signed aurelius_kernel.json file.
-
-    \b
-    Examples:
-      aurelius verify-kernel aurelius_kernel.json
-      aurelius verify-kernel ~/lab/signed_kernel.json
-    """
+    """Verify a kernel's Ed25519 signature using the public key in constants."""
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
         from aurelius.constants import KERNEL_PUBLIC_KEY
 
         with open(kernel_path) as f:

@@ -35,6 +35,26 @@ if TYPE_CHECKING:
 ParsedMixture = tuple[str, str, float] | tuple[str, str, str, float, float]
 
 
+class MoleculeParseError(ValueError):
+    """Raised when a SMILES string cannot be parsed into a valid molecule."""
+
+
+class SanitizationError(MoleculeParseError):
+    """Raised when RDKit sanitization fails (e.g. valence error, kekulization)."""
+
+
+class UnmatchedParenthesesError(MoleculeParseError):
+    """Raised when SMILES contains unmatched parentheses."""
+
+
+class UnmatchedBracketsError(MoleculeParseError):
+    """Raised when SMILES contains unmatched square brackets."""
+
+
+class UnmatchedRingDigitsError(MoleculeParseError):
+    """Raised when SMILES contains unmatched ring digits."""
+
+
 class EmpiricalFeedbackEntry(TypedDict):
     """Empirical wet-lab feedback entry for GC UQ ensemble retraining.
 
@@ -97,28 +117,59 @@ class MoleculeContext:
     @classmethod
     @lru_cache(maxsize=1024)
     def from_smiles(cls, smiles: str) -> MoleculeContext | None:
+        """Parse a SMILES string into a ``MoleculeContext``.
+
+        Returns ``None`` (with a logged error message) on failure.
+        For a version that raises specific exceptions, use
+        ``from_smiles_strict()``.
+        """
+        result, error = cls._from_smiles_impl(smiles)
+        if error:
+            logger.error(error)
+        return result
+
+    @classmethod
+    def from_smiles_strict(cls, smiles: str) -> MoleculeContext:
+        """Parse a SMILES string, raising on failure.
+
+        Raises:
+            MoleculeParseError: If the SMILES cannot be parsed.
+            SanitizationError: If RDKit sanitization fails.
+            UnmatchedParenthesesError: If parentheses are unmatched.
+            UnmatchedBracketsError: If brackets are unmatched.
+            UnmatchedRingDigitsError: If ring digits are unmatched.
+        """
+        result, error = cls._from_smiles_impl(smiles)
+        if result is not None:
+            return result
+        if "Unmatched parentheses" in (error or ""):
+            raise UnmatchedParenthesesError(error)
+        if "Unmatched brackets" in (error or ""):
+            raise UnmatchedBracketsError(error)
+        if "Unmatched ring" in (error or ""):
+            raise UnmatchedRingDigitsError(error)
+        if "Sanitization failed" in (error or ""):
+            msg = (error or "Sanitization failed").replace("Sanitization failed for ", "").replace("':", ":")
+            raise SanitizationError(msg)
+        raise MoleculeParseError(error or f"Unknown error parsing SMILES: '{smiles}'")
+
+    @classmethod
+    def _from_smiles_impl(cls, smiles: str) -> tuple[MoleculeContext | None, str | None]:
+        """Internal: parse SMILES, return (context, error_string)."""
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
-            # Provide specific feedback for common SMILES errors
             if smiles.count("(") != smiles.count(")"):
-                logger.error("Unmatched parentheses in SMILES: '%s'", smiles)
-            elif smiles.count("[") != smiles.count("]"):
-                logger.error("Unmatched brackets in SMILES: '%s'", smiles)
-            elif any(d in smiles for d in "0123456789") and not any(
-                int(d) < 10
-                for d in "0123456789"
-                if smiles.count(d) > 0 and smiles.count(d) % 2 != 0
-            ):
-                logger.error("Unmatched ring digit in SMILES: '%s'", smiles)
-            else:
-                logger.error("RDKit could not parse SMILES: '%s'", smiles)
-            return None
+                return None, f"Unmatched parentheses in SMILES: '{smiles}'"
+            if smiles.count("[") != smiles.count("]"):
+                return None, f"Unmatched brackets in SMILES: '{smiles}'"
+            if any(d in smiles for d in "0123456789"):
+                return None, f"Unmatched ring digit in SMILES: '{smiles}'"
+            return None, f"RDKit could not parse SMILES: '{smiles}'"
         try:
             Chem.SanitizeMol(mol)
         except Exception as exc:
-            logger.error("Sanitization failed for '%s': %s", smiles, exc)
-            return None
-        return cls(smiles=smiles, mol=mol)
+            return None, f"Sanitization failed for '{smiles}': {exc}"
+        return cls(smiles=smiles, mol=mol), None
 
     @classmethod
     def from_brics_fragment(cls, smiles: str) -> MoleculeContext | None:
@@ -259,14 +310,3 @@ def format_mixture_smiles(
     if smi_c is not None and frac_b is not None:
         return f"{smi_a}{_MIXTURE_SEP}{smi_b}{_MIXTURE_SEP}{smi_c}{_MIXTURE_SEP}{frac_a:.4f}{_MIXTURE_SEP}{frac_b:.4f}"
     return f"{smi_a}{_MIXTURE_SEP}{smi_b}{_MIXTURE_SEP}{frac_a:.4f}"
-
-
-__all__ = [
-    "EmpiricalFeedbackEntry",
-    "MoleculeContext",
-    "ParsedMixture",
-    "ScreeningResult",
-    "is_mixture_smiles",
-    "parse_mixture_smiles",
-    "format_mixture_smiles",
-]

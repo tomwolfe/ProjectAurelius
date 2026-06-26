@@ -110,9 +110,7 @@ class TestFragmentHarvesting:
         engine = MutationEngine(seed_smiles=["C1COCCO1"])
         engine.harvest_fragments("COC(=O)OC(F)(F)F")
 
-        candidates = engine._brics_from_pool(
-            MoleculeContext.from_smiles("C1COCCO1")  # type: ignore[arg-type]
-        )
+        candidates = engine.mutate("C1COCCO1")
         assert isinstance(candidates, list)
 
     def test_invalid_smiles_harvest_does_not_crash(self):

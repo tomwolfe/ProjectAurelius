@@ -51,6 +51,7 @@ from aurelius.scoring.oracle.quantum import (
     _HAS_XTB,
     _XTB_HOMO_RE,
     _XTB_LUMO_RE,
+    BatchXTBRunner,
     QuantumBackend,
     QuantumOracle,
     TOMBackend,
@@ -77,6 +78,7 @@ from aurelius.scoring.oracle.surrogate import (
 )
 
 __all__ = [
+    "BatchXTBRunner",
     "ElectrolytePack",
     "OrganicElectronicsPack",
     "PropertyOracle",

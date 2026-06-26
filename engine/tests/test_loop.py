@@ -287,25 +287,23 @@ class TestDiscoveryLoop:
         # Pre-populate the cache with a molecule and its screening result
         ctx = MoleculeContext.from_smiles("CC(=O)OC")
         assert ctx is not None
-        state.screened_fingerprints = [
-            (ctx.smiles, ctx.get_ecfp4(), {
-                "score": {
-                    "total_score": 85.0,
-                    "is_viable": True,
-                    "rejection_reasons": [],
-                    "sa_score": 3.5,
-                    "sub_scores": {},
-                },
-                "tier2": {
-                    "homo_eV": -6.5,
-                    "lumo_eV": -0.5,
-                    "dielectric_proxy": 8.0,
-                    "viscosity_proxy": 2.0,
-                    "li_solvation_proxy": 1.5,
-                    "ced_proxy": 0.3,
-                },
-            }),
-        ]
+        state.add_screened_fingerprint(ctx.smiles, ctx.get_ecfp4(), {
+            "score": {
+                "total_score": 85.0,
+                "is_viable": True,
+                "rejection_reasons": [],
+                "sa_score": 3.5,
+                "sub_scores": {},
+            },
+            "tier2": {
+                "homo_eV": -6.5,
+                "lumo_eV": -0.5,
+                "dielectric_proxy": 8.0,
+                "viscosity_proxy": 2.0,
+                "li_solvation_proxy": 1.5,
+                "ced_proxy": 0.3,
+            },
+        })
 
         loop = DiscoveryLoop(
             pipeline=mock_pipeline,

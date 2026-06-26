@@ -196,27 +196,29 @@ class TestScaffoldHoppingInjection:
 
     def test_scaffold_library_exists(self):
         """The scaffold library must be populated."""
-        from aurelius.agent.mutation.engine import MutationEngine
-        engine = MutationEngine(seed_smiles=["COC(=O)OC"])
-        assert len(engine._SCAFFOLD_LIBRARY) >= 5, (
-            f"Scaffold library has {len(engine._SCAFFOLD_LIBRARY)} entries, expected >= 5"
+        from aurelius.agent.mutation.base import BricsStrategy
+        brics = BricsStrategy()
+        assert len(brics._SCAFFOLD_LIBRARY) >= 5, (
+            f"Scaffold library has {len(brics._SCAFFOLD_LIBRARY)} entries, expected >= 5"
         )
 
     def test_scaffold_hop_probability_is_set(self):
         """The scaffold hop probability must be defined and non-zero."""
-        from aurelius.agent.mutation.engine import MutationEngine
-        engine = MutationEngine(seed_smiles=["COC(=O)OC"])
-        assert engine._SCAFFOLD_HOP_PROBABILITY == 0.05, (
-            f"Scaffold hop probability is {engine._SCAFFOLD_HOP_PROBABILITY}, expected 0.05"
+        from aurelius.agent.mutation.base import BricsStrategy
+        brics = BricsStrategy()
+        assert brics._SCAFFOLD_HOP_PROBABILITY == 0.05, (
+            f"Scaffold hop probability is {brics._SCAFFOLD_HOP_PROBABILITY}, expected 0.05"
         )
 
     def test_random_scaffold_replacement_returns_list(self):
         """_random_scaffold_replacement must return a list (possibly empty)."""
         from aurelius.agent.mutation.engine import MutationEngine
+        from aurelius.agent.mutation.base import BricsStrategy, StrategyContext
         engine = MutationEngine(seed_smiles=["COC(=O)OC", "C1COCCO1"])
         ctx = MoleculeContext.from_smiles("COC(=O)OC")
         assert ctx is not None
-        result = engine._random_scaffold_replacement(ctx)
+        brics = next(s for s in engine._strategies if isinstance(s, BricsStrategy))
+        result = brics._random_scaffold_replacement(ctx, engine._strategy_context)
         assert isinstance(result, list), "Scaffold replacement must return a list"
 
     def test_scaffold_hop_does_not_crash_mutate(self):

@@ -12,15 +12,10 @@ All stages accept a pre-parsed MoleculeContext to enforce single-point parsing.
 
 from __future__ import annotations
 
-import json
 import logging
-import math
-import os
 import time
-from abc import ABC, abstractmethod
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from typing import Any
 
 from rdkit import Chem
@@ -71,6 +66,22 @@ from aurelius.constants import (
 from aurelius.constants import (
     SULFONYL_F_PATTERN as _SULFONYL_F_PATTERN,
 )
+from aurelius.filter import Filter
+from aurelius.kernel_loader import JSONKernelLoader, KernelLoader, _load_demo_kernel
+from aurelius.mixer import screen_mixture as _screen_mixture
+from aurelius.scorer import (
+    _apply_domain_penalty,
+    _check_al_corrosion_risk,
+    _check_building_block_grounding,
+    _check_hydrolytic_instability,
+    _check_hypofluorite_instability,
+    _gaussian,
+    _OBJECTIVES,
+    _sigmoid,
+    compute_score as _compute_score,
+    format_score as _format_score,
+    Objective,
+)
 from aurelius.scoring.oracle import (
     _GC_FRAGMENTS,
     PropertyOracle,
@@ -85,73 +96,10 @@ from aurelius.scoring.oracle import (
     predict_mixture_viscosity,
 )
 from aurelius.scoring.oracle.gc import BasePropertyModel
-from aurelius.screening.tier1 import Filter
 from aurelius.types import MoleculeContext
 from aurelius.utils.chem_utils import electrolyte_synthetic_accessibility
 
 logger = logging.getLogger(__name__)
-
-
-def _gaussian(value: float, target: float, sigma: float) -> float:
-    return math.exp(-0.5 * ((value - target) / sigma) ** 2)
-
-
-def _sigmoid(value: float, target: float, steepness: float, higher_is_better: bool = True) -> float:
-    if higher_is_better:
-        return 1.0 / (1.0 + math.exp(-steepness * (value - target)))
-    return 1.0 / (1.0 + math.exp(steepness * (value - target)))
-
-
-@dataclass
-class Objective:
-    """A single scoring objective with a direct callable function.
-
-    Each objective defines how a raw property value is converted to a
-    sub-score via a callable function, then weighted in the final composite.
-    """
-
-    name: str
-    property_key: str
-    weight: float
-    function: Callable[[float], float]
-    failure_reason_template: str = "{name}={value:.3f} (below threshold)"
-
-    def __call__(self, value: float) -> float:
-        return self.function(value)
-
-
-_OBJECTIVES: list[Objective] = [
-    Objective("lumo_reward", "lumo_eV", SCORE_WEIGHT_LUMO,
-              lambda v: _gaussian(v, LUMO_TARGET, 0.75),
-              failure_reason_template="LUMO={value:.3f}eV (poor SEI formation)"),
-    Objective("homo_penalty", "homo_eV", SCORE_WEIGHT_HOMO,
-              lambda v: _sigmoid(v, HOMO_THRESHOLD, 5.0, False),
-              failure_reason_template="HOMO={value:.3f}eV (oxidative instability)"),
-    Objective("dielectric_reward", "dielectric_proxy", SCORE_WEIGHT_DIELECTRIC,
-              lambda v: _sigmoid(v, DIELECTRIC_TARGET, 1.5),
-              failure_reason_template="dielectric_proxy={value:.3f} (poor salt dissolution)"),
-    Objective("viscosity_penalty", "viscosity_proxy", SCORE_WEIGHT_VISCOSITY,
-              lambda v: _sigmoid(v, VISCOSITY_THRESHOLD, 2.0, False),
-              failure_reason_template="viscosity_proxy={value:.3f} (poor ion mobility)"),
-    Objective("li_solvation_reward", "li_solvation_proxy", SCORE_WEIGHT_LI_SOLVATION,
-              lambda v: _gaussian(v, LI_SOLVATION_TARGET, 1.0),
-              failure_reason_template="li_solvation_proxy={value:.3f} (poor Li+ binding)"),
-    Objective("ced_reward", "ced_proxy", SCORE_WEIGHT_CED,
-              lambda v: _sigmoid(v, CED_TARGET, CED_SIGMOID_STEEPNESS),
-              failure_reason_template="CED proxy={value:.3f} (poor SEI mechanical robustness)"),
-    Objective("sei_fracture_reward", "sei_fracture_toughness_proxy", SCORE_WEIGHT_SEI_FRACTURE,
-              lambda v: _sigmoid(v, SEI_FRACTURE_TARGET, SEI_FRACTURE_SIGMOID_STEEPNESS),
-              failure_reason_template="SEI fracture proxy={value:.3f} (poor SEI mechanical robustness)"),
-    Objective("sa_penalty", "sa_score", SCORE_WEIGHT_SA,
-              lambda v: _sigmoid(v, SA_THRESHOLD, 2.0, False),
-              failure_reason_template="SA score={value:.2f} (hard to synthesize)"),
-    Objective("gas_evolution_penalty", "gas_evolution_proxy", SCORE_WEIGHT_GAS_EVOLUTION,
-              lambda v: _sigmoid(v, 0.5, 2.0, False),
-              failure_reason_template="gas_evolution_proxy={value:.3f} (high degradation risk)"),
-    Objective("hydrolysis_penalty", "hydrolysis_risk_proxy", SCORE_WEIGHT_HYDROLYSIS,
-              lambda v: _sigmoid(v, HYDROLYSIS_RISK_THRESHOLD, 3.0, False),
-              failure_reason_template="hydrolysis_risk_proxy={value:.3f} (high hydrolysis risk)"),
-]
 
 
 DEFAULT_DOMAIN_BOUNDARIES: dict[str, tuple[float, float]] = {
@@ -183,117 +131,16 @@ def check_kernel_health(ctx: MoleculeContext) -> bool:
     return inside
 
 
-# ---------------------------------------------------------------------------
-# KernelLoader — Pluggable kernel loading interface
-# ---------------------------------------------------------------------------
-
-
-class KernelLoader(ABC):
-    """Abstract base for kernel parameter loaders.
-
-    Implementations load a signed kernel from any source (local file,
-    database, API) and return a dict of calibrated parameters.
-    """
-
-    @abstractmethod
-    def load(self, path: str) -> dict[str, Any] | None:
-        """Load a kernel from the given *path*.
-
-        Returns a dict of kernel parameters (without the ``signature``
-        field) on success, or ``None`` if loading/verification fails.
-        """
-        ...
-
-    @abstractmethod
-    def verify(self, kernel: dict[str, Any]) -> bool:
-        """Verify the Ed25519 signature of *kernel*.
-
-        Returns ``True`` if the signature is valid, ``False`` otherwise.
-        """
-        ...
-
-
-class JSONKernelLoader(KernelLoader):
-    """Load and verify a kernel from a signed JSON file.
-
-    This is the default kernel loader used by the pipeline. It loads
-    a ``.json`` file, verifies its Ed25519 signature, and returns the
-    kernel parameters.
-    """
-
-    def load(self, path: str) -> dict[str, Any] | None:
-        try:
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-            from aurelius.constants import KERNEL_PUBLIC_KEY
-
-            with open(path) as f:
-                kernel = json.load(f)
-
-            stored = kernel.get("signature", "")
-            if not stored:
-                logger.warning("Kernel %s: no signature field — using defaults.", path)
-                return None
-
-            if not self.verify(kernel):
-                logger.warning(
-                    "Kernel %s: signature verification failed — using defaults.",
-                    path,
-                )
-                return None
-
-            logger.info("Kernel %s: signature verified successfully.", path)
-            return {k: v for k, v in kernel.items() if k != "signature"}
-        except ImportError:
-            logger.warning(
-                "Kernel %s: cryptography not installed — cannot verify signature. Using defaults.",
-                path,
-            )
-            return None
-        except Exception as exc:
-            logger.warning(
-                "Kernel %s: loading failed (%s) — using defaults.",
-                path, exc,
-            )
-            return None
-
-    @staticmethod
-    def verify(kernel: dict[str, Any]) -> bool:
-        try:
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-            from aurelius.constants import KERNEL_PUBLIC_KEY
-
-            stored = kernel.get("signature", "")
-            if not stored:
-                return False
-
-            payload = {k: v for k, v in kernel.items() if k != "signature"}
-            canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-
-            pub = Ed25519PublicKey.from_public_bytes(KERNEL_PUBLIC_KEY)
-            pub.verify(bytes.fromhex(stored), canonical.encode("utf-8"))
-            return True
-        except Exception:
-            return False
-
-
-def _load_demo_kernel() -> dict[str, Any] | None:
-    """Load the pre-certified carbonate high-voltage demo kernel.
-
-    Returns kernel parameters dict or ``None`` if not found.
-    """
-    module_dir = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        os.path.join(module_dir, "..", "..", "..", "docs", "examples", "kernels", "carbonate_high_voltage.json"),
-        os.path.join(module_dir, "..", "..", "docs", "examples", "kernels", "carbonate_high_voltage.json"),
-        os.path.join(module_dir, "..", "docs", "examples", "kernels", "carbonate_high_voltage.json"),
-    ]
-    for c in candidates:
-        resolved = os.path.abspath(c)
-        if os.path.exists(resolved):
-            loader = JSONKernelLoader()
-            return loader.load(resolved)
-    logger.warning("Demo kernel not found at any known path.")
-    return None
+__all__ = [
+    "AureliusPipeline",
+    "KernelLoader",
+    "JSONKernelLoader",
+    "_load_demo_kernel",
+    "_OBJECTIVES",
+    "Objective",
+    "DEFAULT_DOMAIN_BOUNDARIES",
+    "check_kernel_health",
+]
 
 
 class AureliusPipeline:
@@ -468,7 +315,7 @@ class AureliusPipeline:
             )
 
         quantum_confidence = t2_result.get("quantum_confidence", "unknown") if t2_result else "unknown"
-        score = self._compute_score(
+        score = _compute_score(
             homo_eV, lumo_eV,
             dielectric_proxy=dielectric_proxy,
             viscosity_proxy=viscosity_proxy,
@@ -481,10 +328,10 @@ class AureliusPipeline:
             quantum_confidence=quantum_confidence,
         )
 
-        score = self._apply_domain_penalty(score, t2_result)
+        score = _apply_domain_penalty(score, t2_result)
         results["score"] = score
 
-        logger.debug("Scorecard:\n%s", self._format_score(score))
+        logger.debug("Scorecard:\n%s", _format_score(score))
 
         total_ms = (time.perf_counter() - pipeline_start) * 1000
         timing_lines = []
@@ -505,259 +352,28 @@ class AureliusPipeline:
     ) -> dict[str, Any]:
         """Score a binary or ternary mixture using thermodynamic mixing rules with synergy bonus.
 
-        Evaluates each component individually via screen_molecule, then
-        computes mixture dielectric/viscosity using thermodynamic mixing
-        rules and applies a non-linear synergy bonus for complementary pairs
-        (high-dielectric + low-viscosity).
-
-        For ternary blends, evaluates all three binary pairs within the
-        mixture and applies the dominant synergy bonus via the extended
-        Margules-inspired non-ideal mixing term.
-
-        Args:
-            ctx1: First component MoleculeContext.
-            ctx2: Second component MoleculeContext.
-            frac1: Volume fraction of first component.
-            ctx3: Optional third component for ternary mixtures.
-            frac2: Volume fraction of second component (only for ternary).
-
-        Returns:
-            Dict with component results, mixture properties, and score.
+        Delegates to ``aurelius.mixer.screen_mixture``.
         """
-        if ctx3 is not None and frac2 is not None:
-            return self._screen_ternary_mixture(ctx1, ctx2, ctx3, frac1, frac2)
-
-        res1 = self.screen_molecule(ctx1)
-        res2 = self.screen_molecule(ctx2)
-
-        p1 = res1.get("tier2", {})
-        p2 = res2.get("tier2", {})
-        if p1 is None:
-            p1 = {}
-        if p2 is None:
-            p2 = {}
-        f2 = 1.0 - frac1
-
-        d1 = p1.get("dielectric_proxy", 0.0)
-        d2 = p2.get("dielectric_proxy", 0.0)
-        v1 = p1.get("viscosity_proxy", 99.0)
-        v2 = p2.get("viscosity_proxy", 99.0)
-
-        d_mix = predict_mixture_dielectric(d1, d2, frac1)
-        v_mix = predict_mixture_viscosity(v1, v2, frac1)
-        ls_mix = predict_mixture_li_solvation(
-            p1.get("li_solvation_proxy", 0.0),
-            p2.get("li_solvation_proxy", 0.0),
-            frac1,
-        )
-        h_mix = frac1 * p1.get("homo_eV", -99.0) + f2 * p2.get("homo_eV", -99.0)
-        l_mix = frac1 * p1.get("lumo_eV", -99.0) + f2 * p2.get("lumo_eV", -99.0)
-
-        synergy = mixture_synergy_bonus(d1, d2, v1, v2, frac1)
-
-        s1 = res1.get("score", {}).get("total_score", 0.0)
-        s2 = res2.get("score", {}).get("total_score", 0.0)
-        weighted_base = frac1 * s1 + f2 * s2
-
-        total = min(100.0, weighted_base + synergy)
-        is_viable = total >= VIABILITY_THRESHOLD
-
-        score: dict[str, Any] = {
-            "total_score": total,
-            "is_viable": is_viable,
-            "synergy_bonus": round(synergy, 4),
-            "weighted_base": round(weighted_base, 4),
-            "sub_scores": {
-                "component1_score": round(s1, 4),
-                "component2_score": round(s2, 4),
-            },
-            "rejection_reasons": [],
-        }
-
-        mixture_props: dict[str, float] = {
-            "dielectric_proxy": round(d_mix, 4),
-            "viscosity_proxy": round(v_mix, 4),
-            "li_solvation_proxy": round(ls_mix, 4),
-            "homo_eV": round(h_mix, 4),
-            "lumo_eV": round(l_mix, 4),
-            "synergy_bonus": round(synergy, 4),
-        }
-
-        return {
-            "component1": res1,
-            "component2": res2,
-            "mixture_properties": mixture_props,
-            "score": score,
-        }
-
-    def _screen_ternary_mixture(
-        self,
-        ctx1: MoleculeContext,
-        ctx2: MoleculeContext,
-        ctx3: MoleculeContext,
-        frac1: float,
-        frac2: float,
-    ) -> dict[str, Any]:
-        """Score a ternary mixture with full three-component synergy.
-
-        Evaluates each component, computes pairwise mixing properties,
-        and applies the ternary Margules-inspired synergy bonus.
-        """
-        res1 = self.screen_molecule(ctx1)
-        res2 = self.screen_molecule(ctx2)
-        res3 = self.screen_molecule(ctx3)
-
-        p1 = res1.get("tier2", {}) or {}
-        p2 = res2.get("tier2", {}) or {}
-        p3 = res3.get("tier2", {}) or {}
-        frac3 = max(0.0, 1.0 - frac1 - frac2)
-
-        d1 = p1.get("dielectric_proxy", 0.0)
-        d2 = p2.get("dielectric_proxy", 0.0)
-        d3 = p3.get("dielectric_proxy", 0.0)
-        v1 = p1.get("viscosity_proxy", 99.0)
-        v2 = p2.get("viscosity_proxy", 99.0)
-        v3 = p3.get("viscosity_proxy", 99.0)
-
-        d_mix = frac1 * d1 + frac2 * d2 + frac3 * d3
-        ln_v = (
-            frac1 * math.log(max(v1, 0.001))
-            + frac2 * math.log(max(v2, 0.001))
-            + frac3 * math.log(max(v3, 0.001))
-        )
-        v_mix = math.exp(ln_v)
-        ls_mix = (
-            frac1 * p1.get("li_solvation_proxy", 0.0)
-            + frac2 * p2.get("li_solvation_proxy", 0.0)
-            + frac3 * p3.get("li_solvation_proxy", 0.0)
-        )
-        h_mix = (
-            frac1 * p1.get("homo_eV", -99.0)
-            + frac2 * p2.get("homo_eV", -99.0)
-            + frac3 * p3.get("homo_eV", -99.0)
-        )
-        l_mix = (
-            frac1 * p1.get("lumo_eV", -99.0)
-            + frac2 * p2.get("lumo_eV", -99.0)
-            + frac3 * p3.get("lumo_eV", -99.0)
-        )
-
-        synergy = mixture_synergy_bonus_ternary(d1, d2, d3, v1, v2, v3, frac1, frac2)
-
-        s1 = res1.get("score", {}).get("total_score", 0.0)
-        s2 = res2.get("score", {}).get("total_score", 0.0)
-        s3 = res3.get("score", {}).get("total_score", 0.0)
-        weighted_base = frac1 * s1 + frac2 * s2 + frac3 * s3
-
-        total = min(100.0, weighted_base + synergy)
-        is_viable = total >= VIABILITY_THRESHOLD
-
-        score: dict[str, Any] = {
-            "total_score": total,
-            "is_viable": is_viable,
-            "synergy_bonus": round(synergy, 4),
-            "weighted_base": round(weighted_base, 4),
-            "sub_scores": {
-                "component1_score": round(s1, 4),
-                "component2_score": round(s2, 4),
-                "component3_score": round(s3, 4),
-            },
-            "rejection_reasons": [],
-        }
-
-        mixture_props: dict[str, float] = {
-            "dielectric_proxy": round(d_mix, 4),
-            "viscosity_proxy": round(v_mix, 4),
-            "li_solvation_proxy": round(ls_mix, 4),
-            "homo_eV": round(h_mix, 4),
-            "lumo_eV": round(l_mix, 4),
-            "synergy_bonus": round(synergy, 4),
-        }
-
-        return {
-            "component1": res1,
-            "component2": res2,
-            "component3": res3,
-            "mixture_properties": mixture_props,
-            "score": score,
-        }
+        return _screen_mixture(self.screen_molecule, ctx1, ctx2, frac1, ctx3, frac2)
 
     @staticmethod
     def _check_hydrolytic_instability(mol: Chem.Mol) -> float:
-        """Check for hydrolytically unstable motifs.
-
-        Returns a multiplier in [0.5, 1.0].
-        """
-        penalty = 1.0
-        for pattern, name, severity in _HYDRO_PATTERNS:
-            if pattern is not None and mol.HasSubstructMatch(pattern):
-                penalty *= (1.0 - severity)
-                logger.debug("Hydrolytic instability detected: %s (penalty %.2f)", name, severity)
-        return max(penalty, 0.5)
+        return _check_hydrolytic_instability(mol)
 
     @staticmethod
     def _check_hypofluorite_instability(mol: Chem.Mol) -> float:
-        """Penalise molecules with O-F (hypofluorite) bonds.
-
-        Hypofluorites are violently reactive oxidisers — they decompose
-        exothermically at room temperature and cannot be used as battery
-        electrolyte solvents. The EA's methyl-to-fluorine SMARTS reaction
-        generates these from carbonate/ether seed molecules, exploiting
-        the scoring function's fluorine reward.
-
-        Returns a multiplier in [0.50, 1.0].
-        """
-        if _HYPOFLUORITE_PATTERN is not None and mol.HasSubstructMatch(_HYPOFLUORITE_PATTERN):
-            return _HYPOFLUORITE_PENALTY
-        return 1.0
+        return _check_hypofluorite_instability(mol)
 
     @staticmethod
     def _check_al_corrosion_risk(mol: Chem.Mol) -> float:
-        """Check for Al corrosion risk in high-LUMO fluorinated molecules.
-
-        High-LUMO fluorinated solvents can corrode Al cathode current
-        collectors via AlF3 formation. Returns a penalty multiplier in [0.7, 1.0].
-
-        The penalty applies when:
-          1. The molecule has AL_CORROSION_MIN_FLUORINE or more fluorine atoms
-             AND at least one CF3 group (electron-withdrawing environment), OR
-          2. The molecule has >= 3 fluorine atoms attached directly to
-             electron-withdrawing groups (carbonyl-adjacent or sulfonyl-adjacent).
-
-        Note: LUMO threshold check is done in _compute_score; this function
-        only checks the structural criteria.
-        """
-        # Count fluorine atoms
-        n_f = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
-
-        # Count CF3 groups
-        n_cf3 = len(mol.GetSubstructMatches(_CF3_PATTERN))
-
-        # Count fluorine adjacent to carbonyl or sulfonyl
-        n_f_ewg = len(mol.GetSubstructMatches(_CARBONYL_F_PATTERN))
-        n_f_ewg += len(mol.GetSubstructMatches(_SULFONYL_F_PATTERN))
-
-        if n_f >= AL_CORROSION_MIN_FLUORINE and (n_cf3 >= 1 or n_f_ewg >= 1):
-            return AL_CORROSION_PENALTY_FACTOR
-        return 1.0
+        return _check_al_corrosion_risk(mol)
 
     @staticmethod
     def _check_building_block_grounding(mol: Chem.Mol) -> float:
-        """Penalty for molecules with BRICS fragments not matching commercial precursors.
+        return _check_building_block_grounding(mol)
 
-        Uses combined BRICS + functional-group grounding so that molecules with
-        novel scaffolds but commercial functional groups are not over-penalised.
-
-        Returns a multiplier in [0.7, 1.0] where 0% fragment coverage → 0.7x
-        (softened from 0.5x to avoid strangling novel scaffold discovery)
-        and 100% coverage → 1.0x.
-        """
-        from aurelius.agent.mutation.brics import combined_grounding_score
-        coverage = combined_grounding_score(mol)
-        return 0.7 + 0.3 * coverage
-
+    @staticmethod
     def _compute_score(
-        self,
         homo_eV: float = -99.0,
         lumo_eV: float = -99.0,
         dielectric_proxy: float = 0.0,
@@ -770,126 +386,29 @@ class AureliusPipeline:
         ctx: MoleculeContext | None = None,
         quantum_confidence: str = "unknown",
     ) -> dict[str, Any]:
-        """Compute the multi-objective composite Aurelius Score.
-
-        ADR-2026-06-02: Added quantum_confidence multiplier. Physical
-        justification: The TOM fallback's particle-in-a-box model has MAE
-        ~1.07 eV on conjugated/novel scaffolds (quantum_confidence="tom_low").
-        Without a penalty, the EA can exploit TOM's blind spots by generating
-        highly conjugated molecules that score well on paper but are physically
-        unreliable. The 0.85x multiplier softens the score for low-confidence
-        predictions, biasing selection toward xTB-validated or simple-TOM
-        candidates without hard-rejecting novel scaffolds (which may still
-        have genuine merit). The multiplier is intentionally mild (0.85 vs.
-        0.70) to avoid strangling discovery while imposing epistemic humility.
-
-        Iterates over the declarative ``_OBJECTIVES`` list, applies
-        each objective's mathematical transform to the corresponding
-        property value, and aggregates into a weighted composite.
-
-        Args:
-            homo_eV: Predicted HOMO energy.
-            lumo_eV: Predicted LUMO energy.
-            dielectric_proxy: Predicted dielectric proxy.
-            viscosity_proxy: Predicted viscosity proxy.
-            li_solvation_proxy: Predicted Li+ solvation proxy.
-            hydrolysis_risk_proxy: Predicted hydrolysis risk (GC fragment-additivity).
-            ctx: Pre-parsed MoleculeContext for substructure checks.
-            quantum_confidence: Confidence level from quantum backend
-                ("xtb", "tom_high", or "tom_low").
-
-        Returns:
-            Dict with total_score, is_viable, sub_scores, rejection_reasons.
-        """
-        raw_values: dict[str, float] = {
-            "lumo_eV": lumo_eV,
-            "homo_eV": homo_eV,
-            "dielectric_proxy": dielectric_proxy,
-            "viscosity_proxy": viscosity_proxy,
-            "li_solvation_proxy": li_solvation_proxy,
-            "ced_proxy": ced_proxy,
-            "sei_fracture_toughness_proxy": sei_fracture_toughness_proxy,
-            "gas_evolution_proxy": gas_evolution_proxy,
-            "hydrolysis_risk_proxy": hydrolysis_risk_proxy,
-        }
-
-        sub_scores: dict[str, float] = {}
-        total_score = 0.0
-
-        # Compute custom SA score once
-        sa_score: float = 5.0
-        if ctx is not None:
-            try:
-                sa_score = electrolyte_synthetic_accessibility(ctx)
-            except Exception:
-                sa_score = 5.0
-        raw_values["sa_score"] = sa_score
-
-        for obj in _OBJECTIVES:
-            score = obj(raw_values[obj.property_key])
-            sub_scores[obj.name] = round(score, 4)
-            total_score += obj.weight * score
-
-        total_score *= 100.0
-
-        total_score = self._apply_penalties(total_score, lumo_eV, ctx)
-        total_score = max(0.0, min(100.0, total_score))
-
-        if quantum_confidence == "tom_low":
-            total_score *= 0.85
-            total_score = max(0.0, min(100.0, total_score))
-
-        is_viable = total_score >= VIABILITY_THRESHOLD
-
-        rejection_reasons = self._build_rejection_reasons(
-            total_score, sub_scores, raw_values, is_viable, ctx
+        return _compute_score(
+            homo_eV, lumo_eV,
+            dielectric_proxy=dielectric_proxy,
+            viscosity_proxy=viscosity_proxy,
+            li_solvation_proxy=li_solvation_proxy,
+            ced_proxy=ced_proxy,
+            sei_fracture_toughness_proxy=sei_fracture_toughness_proxy,
+            gas_evolution_proxy=gas_evolution_proxy,
+            hydrolysis_risk_proxy=hydrolysis_risk_proxy,
+            ctx=ctx,
+            quantum_confidence=quantum_confidence,
         )
-
-        return {
-            "total_score": total_score,
-            "is_viable": is_viable,
-            "sub_scores": sub_scores,
-            "sa_score": round(sa_score, 4),
-            "rejection_reasons": rejection_reasons,
-        }
 
     @staticmethod
     def _apply_domain_penalty(score: dict[str, Any], t2_result: dict[str, Any] | None) -> dict[str, Any]:
-        if t2_result is not None:
-            domain_penalty = t2_result.get("domain_penalty", 1.0)
-            if domain_penalty < 1.0:
-                score["total_score"] *= domain_penalty
-                score["domain_penalty_applied"] = domain_penalty
-                reason = t2_result.get("domain_reason", "")
-                if reason:
-                    score.setdefault("rejection_reasons", []).append(
-                        f"Domain penalty {domain_penalty:.2f}: {reason}"
-                    )
-        score["total_score"] = max(0.0, min(100.0, score["total_score"]))
-        score["is_viable"] = score["total_score"] >= VIABILITY_THRESHOLD
-        return score
+        return _apply_domain_penalty(score, t2_result)
 
     @staticmethod
     def _apply_penalties(
         total_score: float, lumo_eV: float, ctx: MoleculeContext | None
     ) -> float:
-        al_corrosion_penalty = 1.0
-        if ctx is None:
-            return total_score
-        total_score *= AureliusPipeline._check_hydrolytic_instability(ctx.mol)
-        total_score *= AureliusPipeline._check_hypofluorite_instability(ctx.mol)
-        if lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
-            al_corrosion_penalty = AureliusPipeline._check_al_corrosion_risk(ctx.mol)
-        total_score *= al_corrosion_penalty
-        total_score *= AureliusPipeline._check_building_block_grounding(ctx.mol)
-
-        if total_score >= DISCOVERY_THRESHOLD:
-            from aurelius.agent.mutation.brics import combined_grounding_score
-            grounding = combined_grounding_score(ctx.mol)
-            if grounding < 0.6:
-                total_score *= 0.8
-
-        return total_score
+        from aurelius.scorer import _apply_penalties
+        return _apply_penalties(total_score, lumo_eV, ctx)
 
     @staticmethod
     def _build_rejection_reasons(
@@ -899,59 +418,12 @@ class AureliusPipeline:
         is_viable: bool,
         ctx: MoleculeContext | None,
     ) -> list[str]:
-        if is_viable:
-            return []
-
-        _PROP_GC_IDX: dict[str, int] = {
-            "dielectric_proxy": 2,
-            "viscosity_proxy": 3,
-            "li_solvation_proxy": 4,
-            "ced_proxy": 5,
-        }
-
-        counts = None
-        if ctx is not None:
-            counts = _count_fragments(ctx.mol)
-
-        reasons = []
-        for obj in _OBJECTIVES:
-            s = sub_scores.get(obj.name, 0.0)
-            if s < 0.3:
-                value = raw_values.get(obj.property_key, 0.0)
-                reason = obj.failure_reason_template.format(value=value)
-                if counts is not None and obj.property_key in _PROP_GC_IDX:
-                    contrib_idx = _PROP_GC_IDX[obj.property_key]
-                    contribs: list[tuple[str, float]] = []
-                    for _, name, *vals in _GC_FRAGMENTS:
-                        raw_c = vals[contrib_idx - 2]
-                        n = counts.get(name, 0)
-                        if n > 0 and abs(raw_c) > 1e-6:
-                            total = _saturate_contrib(n, raw_c * 2.0)
-                            contribs.append((name, total))
-                    contribs.sort(key=lambda x: abs(x[1]), reverse=True)
-                    top = contribs[:3]
-                    if top:
-                        parts = []
-                        for name, total in top:
-                            sign = "+" if total >= 0 else ""
-                            parts.append(f"{name} ({sign}{total:.1f})")
-                        reason += " Top contributors: " + ", ".join(parts) + "."
-                reasons.append(reason)
-
-        if ctx is not None:
-            if AureliusPipeline._check_al_corrosion_risk(ctx.mol) < 1.0:
-                reasons.append("Al corrosion risk (high-LUMO fluorinated molecule)")
-            if AureliusPipeline._check_hypofluorite_instability(ctx.mol) < 1.0:
-                reasons.append("hypofluorite (O-F) bond — violently reactive")
-        return [
-            f"Aurelius Score {total_score:.1f} below threshold: {'; '.join(reasons)}"
-        ]
+        from aurelius.scorer import _build_rejection_reasons
+        return _build_rejection_reasons(total_score, sub_scores, raw_values, is_viable, ctx)
 
     @staticmethod
     def _format_score(score: dict[str, Any]) -> str:
-        total = score.get("total_score", 0.0)
-        viable = score.get("is_viable", False)
-        return f"Score: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}"
+        return _format_score(score)
 
     def screen_smiles(self, smiles: str) -> dict[str, Any]:
         """Convenience: parse a SMILES string then screen it.

@@ -5,6 +5,7 @@ from __future__ import annotations
 from rdkit import Chem
 
 from aurelius.agent.mutation import MutationEngine, _find_max_conjugated_path
+from aurelius.agent.mutation.smarts import is_electrolyte_like
 from aurelius.agent.state import LoopState
 from aurelius.constants import (
     ALDEHYDE_PATTERN,
@@ -69,10 +70,10 @@ class TestSmartsPrecompilation:
 
     def test_mutation_engine_uses_precompiled(self):
         """MutationEngine should use pre-compiled patterns from constants."""
-        engine = MutationEngine(seed_smiles=["CC"])
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
         ctx = MoleculeContext.from_smiles("COC(=O)OC")
         assert ctx is not None
-        assert engine._is_electrolyte_like(ctx) is True
+        assert is_electrolyte_like(ctx) is True
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +91,7 @@ class TestAntiGaming:
         # fails other checks (O+F ratio < 0.25)
         ctx = MoleculeContext.from_smiles("C(F)(F)(F)F")
         assert ctx is not None
-        assert engine._is_electrolyte_like(ctx) is False
+        assert is_electrolyte_like(ctx) is False
 
     def test_rejects_heavy_halogen_spam(self):
         """Molecule with >50% Cl/Br should be rejected."""
@@ -98,7 +99,7 @@ class TestAntiGaming:
         # CCl4: 1 C, 4 Cl -> 4/5 = 80% heavy halogen
         ctx = MoleculeContext.from_smiles("C(Cl)(Cl)(Cl)Cl")
         if ctx is not None:
-            assert engine._is_electrolyte_like(ctx) is False
+            assert is_electrolyte_like(ctx) is False
 
     def test_allows_fluorinated_electrolytes(self):
         """Heavily fluorinated molecules with solvation sites should pass.
@@ -111,22 +112,22 @@ class TestAntiGaming:
         # FEC (fluoroethylene carbonate): 14% F, has O for solvation
         ctx = MoleculeContext.from_smiles("O=C1OC(F)CO1")
         assert ctx is not None
-        assert engine._is_electrolyte_like(ctx) is True
+        assert is_electrolyte_like(ctx) is True
 
         # Bis(trifluoroethyl) carbonate: 6 F atoms, 3 O atoms for solvation
         ctx = MoleculeContext.from_smiles("O=C(OCC(F)(F)F)OCC(F)(F)F")
         assert ctx is not None
-        assert engine._is_electrolyte_like(ctx) is True
+        assert is_electrolyte_like(ctx) is True
 
         # TFSI-like: high F but has O, N, S for solvation
         ctx = MoleculeContext.from_smiles("C(F)(F)S(=O)(=O)[N-]S(=O)(=O)C(F)(F)F")
         if ctx is not None:
-            assert engine._is_electrolyte_like(ctx) is True
+            assert is_electrolyte_like(ctx) is True
 
         # Trifluoromethyl ethylene carbonate variant
         ctx = MoleculeContext.from_smiles("O=C1OC(C(F)(F)F)CO1")
         if ctx is not None:
-            assert engine._is_electrolyte_like(ctx) is True
+            assert is_electrolyte_like(ctx) is True
 
     def test_rejects_excess_conjugation(self):
         """Infinitely conjugated 'Frankenstein' should be rejected."""
@@ -136,7 +137,7 @@ class TestAntiGaming:
         if ctx is not None:
             max_conj = _find_max_conjugated_path(ctx.mol)
             assert max_conj > 16  # Should be detected as over-conjugated
-            assert engine._is_electrolyte_like(ctx) is False
+            assert is_electrolyte_like(ctx) is False
 
     def test_rejects_impossible_valence(self):
         """Molecule with impossible valence (F with 2 bonds) should be rejected."""
@@ -154,21 +155,21 @@ class TestAntiGaming:
         if ctx is not None:
             mw = ctx.mw
             if mw > 200:
-                assert engine._is_electrolyte_like(ctx) is False
+                assert is_electrolyte_like(ctx) is False
 
     def test_rejects_hydrolytically_unstable(self):
         """Molecule with anhydride motif should be rejected by mutation engine."""
         engine = MutationEngine(seed_smiles=["CC"])
         ctx = MoleculeContext.from_smiles("CC(=O)OC(=O)CC")  # Anhydride
         assert ctx is not None
-        assert engine._is_electrolyte_like(ctx) is False
+        assert is_electrolyte_like(ctx) is False
 
     def test_rejects_electrochemically_unstable(self):
         """Molecule with peroxide motif should be rejected by mutation engine."""
         engine = MutationEngine(seed_smiles=["CC"])
         ctx = MoleculeContext.from_smiles("CCOOC")  # Peroxide
         assert ctx is not None
-        assert engine._is_electrolyte_like(ctx) is False
+        assert is_electrolyte_like(ctx) is False
 
     def test_rejects_reductive_cleavage_sec(self):
         """Molecule with secondary O-alkyl carbonate/ester should be rejected."""
@@ -176,7 +177,7 @@ class TestAntiGaming:
         # Isopropyl methyl carbonate — branched secondary O-alkyl prone to CO₂ loss
         ctx = MoleculeContext.from_smiles("COC(=O)OC(C)C")
         assert ctx is not None
-        assert engine._is_electrolyte_like(ctx) is False
+        assert is_electrolyte_like(ctx) is False
 
     def test_rejects_reductive_cleavage_tert(self):
         """Molecule with tertiary O-alkyl carbonate/ester should be rejected."""
@@ -184,7 +185,7 @@ class TestAntiGaming:
         # tert-Butyl methyl carbonate — highly branched, prone to reductive cleavage
         ctx = MoleculeContext.from_smiles("COC(=O)OC(C)(C)C")
         assert ctx is not None
-        assert engine._is_electrolyte_like(ctx) is False
+        assert is_electrolyte_like(ctx) is False
 
     def test_allows_fluorinated_branched_carbonate(self):
         """Fluorinated branched carbonate should pass despite branching."""
@@ -192,7 +193,7 @@ class TestAntiGaming:
         # Hexafluoroisopropyl methyl carbonate — fluorination stabilises the C-O bond
         ctx = MoleculeContext.from_smiles("COC(=O)OC(C(F)(F)F)C(F)(F)F")
         assert ctx is not None
-        assert engine._is_electrolyte_like(ctx) is True, (
+        assert is_electrolyte_like(ctx) is True, (
             "Fluorinated branched carbonate should be allowed"
         )
 

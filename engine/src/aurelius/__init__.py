@@ -32,7 +32,10 @@ from aurelius.agent.reporting import (
     generate_run_summary,
 )
 from aurelius.agent.state import LoopState
+from aurelius.filter import Filter
+from aurelius.kernel_loader import JSONKernelLoader, KernelLoader, _load_demo_kernel
 from aurelius.pipeline import AureliusPipeline
+from aurelius.scorer import Objective, _OBJECTIVES, compute_score, format_score
 from aurelius.scoring.oracle import PropertyOracle
 from aurelius.types import MoleculeContext, ScreeningResult
 
@@ -40,11 +43,19 @@ __all__ = [
     "__version__",
     "AureliusPipeline",
     "DiscoveryLoop",
+    "Filter",
+    "JSONKernelLoader",
+    "KernelLoader",
     "LoopState",
     "MoleculeContext",
     "MutationEngine",
+    "Objective",
     "PropertyOracle",
     "ScreeningResult",
+    "_OBJECTIVES",
+    "_load_demo_kernel",
+    "compute_score",
+    "format_score",
     "generate_discoveries_sdf",
     "generate_run_summary",
 ]
