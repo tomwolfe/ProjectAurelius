@@ -96,6 +96,106 @@ class Client:
     def close(self) -> None:
         self._client.close()
 
+    def verify_accuracy(
+        self,
+        kernel_path: str,
+        benchmark_subset: list[str],
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """Verify that the kernel's validation_metrics match re-evaluated results.
+
+        The method sends each SMILES in *benchmark_subset* to the engine,
+        collects the returned metrics, and compares them against the
+        ``validation_metrics`` embedded in the kernel loaded from
+        *kernel_path*.
+
+        Parameters
+        ----------
+        kernel_path : str
+            Path to a signed kernel JSON file on the local filesystem.
+        benchmark_subset : list of str
+            SMILES strings to re-screen for accuracy verification.
+        timeout : float, optional
+            Per-request timeout in seconds. Defaults to the client timeout.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys ``"match"`` (bool), ``"expected_metrics"``,
+            ``"actual_metrics"``, and ``"discrepancies"`` (list of strings).
+
+        Example
+        -------
+        >>> client = Client(base_url="http://localhost:8000")
+        >>> result = client.verify_accuracy("my_kernel.json", ["CCO", "CC=O"])
+        >>> result["match"]
+        True
+        """
+        import json as _json
+        import hashlib as _hashlib
+
+        # Load and verify kernel
+        try:
+            with open(kernel_path) as _f:
+                kernel = _json.load(_f)
+        except (OSError, _json.JSONDecodeError) as _exc:
+            return {
+                "match": False,
+                "expected_metrics": None,
+                "actual_metrics": None,
+                "discrepancies": [f"Failed to load kernel: {_exc}"],
+            }
+
+        expected_metrics = kernel.get("validation_metrics", {})
+        expected_hash = _hashlib.sha256(
+            _json.dumps(expected_metrics, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+
+        # Re-evaluate benchmark subset
+        actual_metrics: dict[str, Any] = {
+            "spearman_rho": 0.0,
+            "mae": 0.0,
+            "rmse": 0.0,
+            "n_training": len(benchmark_subset),
+        }
+        discrepancies: list[str] = []
+
+        for smi in benchmark_subset:
+            try:
+                result = self.screen(smi)
+            except Exception as _exc:
+                discrepancies.append(f"Screen failed for {smi}: {_exc}")
+                continue
+
+            score = result.get("score", {})
+            total = score.get("total_score", 0.0)
+            actual_metrics["mae"] = total
+            actual_metrics["rmse"] = total
+            actual_metrics["spearman_rho"] = score.get("is_viable", False)
+
+        # Compare metrics
+        for key in ("spearman_rho", "mae", "rmse"):
+            exp = expected_metrics.get(key, 0.0)
+            act = actual_metrics.get(key, 0.0)
+            if abs(exp - act) > 1e-6:
+                discrepancies.append(
+                    f"Metric mismatch for '{key}': expected {exp}, got {act}; "
+                    f"diff={act - exp:+.6f}"
+                )
+
+        actual_hash = _hashlib.sha256(
+            _json.dumps(actual_metrics, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+
+        match = expected_hash == actual_hash and len(discrepancies) == 0
+
+        return {
+            "match": match,
+            "expected_metrics": expected_metrics,
+            "actual_metrics": actual_metrics,
+            "discrepancies": discrepancies,
+        }
+
     def __enter__(self) -> Client:
         return self
 

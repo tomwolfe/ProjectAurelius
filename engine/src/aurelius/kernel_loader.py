@@ -8,13 +8,16 @@ dynamic downloading from GitHub Releases.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 from typing import Any
+
+__all__ = ["KernelLoader", "JSONKernelLoader", "compute_validation_hash"]
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +65,7 @@ class JSONKernelLoader(KernelLoader):
     def load(self, path: str) -> dict[str, Any] | None:
         try:
             from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
             from aurelius.constants import KERNEL_PUBLIC_KEY
 
             with open(path) as f:
@@ -98,6 +102,7 @@ class JSONKernelLoader(KernelLoader):
     def verify(kernel: dict[str, Any]) -> bool:
         try:
             from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
             from aurelius.constants import KERNEL_PUBLIC_KEY
 
             stored = kernel.get("signature", "")
@@ -148,6 +153,36 @@ def _download_kernel(url: str, dest_path: str) -> bool:
     except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
         logger.debug("Failed to download demo kernel from %s: %s", url, exc)
         return False
+
+
+def compute_validation_hash(kernel: dict[str, Any]) -> str:
+    """Compute a SHA-256 hash of the validation_metrics embedded in *kernel*.
+
+    The hash is computed over a canonical JSON serialisation of the
+    ``validation_metrics`` value (sorted keys, compact separators) so
+    that any change to the metrics — even a single floating-point digit
+    — will produce a different hash.
+
+    Parameters
+    ----------
+    kernel : dict
+        A kernel dictionary that must contain a ``validation_metrics`` key.
+
+    Returns
+    -------
+    str
+        Hex-encoded SHA-256 digest of the validation_metrics.
+
+    Raises
+    ------
+    KeyError
+        If *kernel* does not contain a ``validation_metrics`` key.
+    """
+    metrics = kernel.get("validation_metrics")
+    if metrics is None:
+        raise KeyError("'validation_metrics' is required in the kernel dict.")
+    canonical = json.dumps(metrics, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _load_demo_kernel() -> dict[str, Any] | None:

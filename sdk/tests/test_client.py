@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from unittest.mock import patch
+
 import pytest
 
 from aurelius_sdk import Client
@@ -42,3 +45,53 @@ class TestClient:
         assert client._base_url == "http://test:9000"
         assert client._headers["X-API-Key"] == "key"
         assert client._timeout == 15.0
+
+    def test_verify_accuracy_missing_kernel_returns_match_false(self, tmp_path: Any) -> None:
+        """verify_accuracy must return match=False when kernel file doesn't exist."""
+        client = Client()
+        result = client.verify_accuracy(
+            str(tmp_path / "nonexistent.json"),
+            ["CCO"],
+        )
+        assert result["match"] is False
+        assert len(result["discrepancies"]) > 0
+
+    def test_verify_accuracy_empty_benchmark(self, tmp_path: Any) -> None:
+        """verify_accuracy with [] benchmark should return match based on empty kernel."""
+        kernel_path = tmp_path / "empty_kernel.json"
+        kernel_path.write_text('{"validation_metrics": {"spearman_rho": 0.0, "mae": 0.0, "rmse": 0.0, "n_training": 0}}')
+
+        client = Client()
+        with patch.object(client, 'screen', return_value={"score": {"total_score": 0.0}}):
+            result = client.verify_accuracy(str(kernel_path), [])
+        assert result["match"] is True
+        assert result["actual_metrics"]["n_training"] == 0
+
+    def test_verify_accuracy_invalid_json(self, tmp_path: Any) -> None:
+        """verify_accuracy must handle malformed JSON gracefully."""
+        kernel_path = tmp_path / "invalid.json"
+        kernel_path.write_text("{invalid json content")
+
+        client = Client()
+        result = client.verify_accuracy(str(kernel_path), ["CCO"])
+        assert result["match"] is False
+
+    def test_verify_accuracy_single_molecule(self, tmp_path: Any) -> None:
+        """verify_accuracy with single molecule should return consistent results."""
+        kernel_path = tmp_path / "single_kernel.json"
+        kernel_path.write_text(
+            json.dumps({
+                "validation_metrics": {
+                    "spearman_rho": 0.85,
+                    "mae": 0.12,
+                    "rmse": 0.18,
+                    "n_training": 1,
+                },
+            })
+        )
+
+        client = Client()
+        result = client.verify_accuracy(str(kernel_path), ["CCO"])
+        assert "actual_metrics" in result
+        assert "expected_metrics" in result
+        assert "discrepancies" in result
