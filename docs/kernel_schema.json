@@ -20,6 +20,54 @@
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
       "examples": ["1.0.0"]
     },
+    "metadata": {
+      "description": "Optional metadata about the kernel's creation and certification.",
+      "type": "object",
+      "properties": {
+        "author": {
+          "type": "string",
+          "description": "Name or identifier of the individual or organisation that created the kernel.",
+          "examples": ["Certification Lab v1.2", "Thomas Wolfe"]
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of kernel creation or last certification.",
+          "examples": ["2026-06-01T12:00:00Z"]
+        },
+        "lab_version": {
+          "type": "string",
+          "description": "Version of the Certification Lab used to produce this kernel.",
+          "examples": ["1.2.0"]
+        }
+      },
+      "examples": [{
+        "author": "Certification Lab v1.2",
+        "date": "2026-06-01T12:00:00Z",
+        "lab_version": "1.2.0"
+      }]
+    },
+    "provenance": {
+      "description": "Optional provenance trail describing how this kernel was built.",
+      "type": "object",
+      "properties": {
+        "data_sources": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of data sources used for kernel calibration (e.g., DFT, experimental, public datasets).",
+          "examples": [["orbital_calibration.json", "QM9", "PubChemQC"]]
+        },
+        "tuning_method": {
+          "type": "string",
+          "description": "Description of the optimisation algorithm used to tune kernel parameters.",
+          "examples": ["Nelder-Mead", "Bayesian optimisation", "grid search"]
+        }
+      },
+      "examples": [{
+        "data_sources": ["orbital_calibration.json", "QM9"],
+        "tuning_method": "Nelder-Mead"
+      }]
+    },
     "domain_boundary": {
       "description": "Defines the chemical space this kernel is certified for.",
       "type": "object",

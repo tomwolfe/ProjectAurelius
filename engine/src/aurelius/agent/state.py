@@ -394,21 +394,22 @@ class LoopState:
                 pass
 
     def save(self) -> None:
-        data = {
-            "total_screened": self.total_screened,
-            "best_score": self.best_score,
-            "viable_count": self.viable_count,
-            "invalid_discarded": self.invalid_discarded,
-            "started_at": self.started_at,
-            "last_updated": datetime.now(UTC).isoformat(),
-            "discoveries": self.discoveries,
-            "_all_results": self._all_results,
-            "active_learning_queue": self.active_learning_queue,
-        }
-        tmp_path = self.path + ".tmp"
-        with open(tmp_path, "w") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp_path, self.path)
+        with self._state_lock:
+            data = {
+                "total_screened": self.total_screened,
+                "best_score": self.best_score,
+                "viable_count": self.viable_count,
+                "invalid_discarded": self.invalid_discarded,
+                "started_at": self.started_at,
+                "last_updated": datetime.now(UTC).isoformat(),
+                "discoveries": self.discoveries,
+                "_all_results": self._all_results,
+                "active_learning_queue": self.active_learning_queue,
+            }
+            tmp_path = self.path + ".tmp"
+            with open(tmp_path, "w") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_path, self.path)
 
     def add_discovery(self, discovery: dict[str, Any] | ScreeningResult) -> None:
         with self._state_lock:

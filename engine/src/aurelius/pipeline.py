@@ -15,7 +15,9 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import time
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -181,6 +183,119 @@ def check_kernel_health(ctx: MoleculeContext) -> bool:
     return inside
 
 
+# ---------------------------------------------------------------------------
+# KernelLoader — Pluggable kernel loading interface
+# ---------------------------------------------------------------------------
+
+
+class KernelLoader(ABC):
+    """Abstract base for kernel parameter loaders.
+
+    Implementations load a signed kernel from any source (local file,
+    database, API) and return a dict of calibrated parameters.
+    """
+
+    @abstractmethod
+    def load(self, path: str) -> dict[str, Any] | None:
+        """Load a kernel from the given *path*.
+
+        Returns a dict of kernel parameters (without the ``signature``
+        field) on success, or ``None`` if loading/verification fails.
+        """
+        ...
+
+    @abstractmethod
+    def verify(self, kernel: dict[str, Any]) -> bool:
+        """Verify the Ed25519 signature of *kernel*.
+
+        Returns ``True`` if the signature is valid, ``False`` otherwise.
+        """
+        ...
+
+
+class JSONKernelLoader(KernelLoader):
+    """Load and verify a kernel from a signed JSON file.
+
+    This is the default kernel loader used by the pipeline. It loads
+    a ``.json`` file, verifies its Ed25519 signature, and returns the
+    kernel parameters.
+    """
+
+    def load(self, path: str) -> dict[str, Any] | None:
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+            from aurelius.constants import KERNEL_PUBLIC_KEY
+
+            with open(path) as f:
+                kernel = json.load(f)
+
+            stored = kernel.get("signature", "")
+            if not stored:
+                logger.warning("Kernel %s: no signature field — using defaults.", path)
+                return None
+
+            if not self.verify(kernel):
+                logger.warning(
+                    "Kernel %s: signature verification failed — using defaults.",
+                    path,
+                )
+                return None
+
+            logger.info("Kernel %s: signature verified successfully.", path)
+            return {k: v for k, v in kernel.items() if k != "signature"}
+        except ImportError:
+            logger.warning(
+                "Kernel %s: cryptography not installed — cannot verify signature. Using defaults.",
+                path,
+            )
+            return None
+        except Exception as exc:
+            logger.warning(
+                "Kernel %s: loading failed (%s) — using defaults.",
+                path, exc,
+            )
+            return None
+
+    @staticmethod
+    def verify(kernel: dict[str, Any]) -> bool:
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+            from aurelius.constants import KERNEL_PUBLIC_KEY
+
+            stored = kernel.get("signature", "")
+            if not stored:
+                return False
+
+            payload = {k: v for k, v in kernel.items() if k != "signature"}
+            canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+            pub = Ed25519PublicKey.from_public_bytes(KERNEL_PUBLIC_KEY)
+            pub.verify(bytes.fromhex(stored), canonical.encode("utf-8"))
+            return True
+        except Exception:
+            return False
+
+
+def _load_demo_kernel() -> dict[str, Any] | None:
+    """Load the pre-certified carbonate high-voltage demo kernel.
+
+    Returns kernel parameters dict or ``None`` if not found.
+    """
+    module_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(module_dir, "..", "..", "..", "docs", "examples", "kernels", "carbonate_high_voltage.json"),
+        os.path.join(module_dir, "..", "..", "docs", "examples", "kernels", "carbonate_high_voltage.json"),
+        os.path.join(module_dir, "..", "docs", "examples", "kernels", "carbonate_high_voltage.json"),
+    ]
+    for c in candidates:
+        resolved = os.path.abspath(c)
+        if os.path.exists(resolved):
+            loader = JSONKernelLoader()
+            return loader.load(resolved)
+    logger.warning("Demo kernel not found at any known path.")
+    return None
+
+
 class AureliusPipeline:
     """Full Aurelius screening pipeline orchestrator.
 
@@ -193,11 +308,13 @@ class AureliusPipeline:
         self,
         use_real_models: bool = True,
         property_pack: BasePropertyModel | None = None,
+        kernel_loader: KernelLoader | None = None,
     ) -> None:
         self._filter: Filter | None = None
         self._use_real_models = use_real_models
         self._oracle: PropertyOracle | None = None
         self._property_pack = property_pack
+        self._kernel_loader: KernelLoader = kernel_loader or JSONKernelLoader()
 
     def initialize(self) -> None:
         """Initialise all pipeline components."""
@@ -220,51 +337,16 @@ class AureliusPipeline:
         logger.info("Oracle (PropertyOracle): ENABLED")
 
     def load_kernel(self, kernel_path: str) -> dict[str, Any] | None:
-        """Load a signed kernel JSON file with Ed25519 signature verification.
-
-        Verifies the kernel's Ed25519 signature against ``KERNEL_PUBLIC_KEY``
-        before applying its parameters. If verification fails, logs a warning
-        and returns default parameters (no crash).
+        """Load a signed kernel via the configured ``KernelLoader``.
 
         Args:
-            kernel_path: Path to a signed ``aurelius_kernel.json`` file.
+            kernel_path: Path to a signed kernel file.
 
         Returns:
             Dict of kernel parameters on successful verification, or ``None``
             to indicate the caller should use defaults.
         """
-        try:
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
-            from aurelius.constants import KERNEL_PUBLIC_KEY
-
-            with open(kernel_path) as f:
-                kernel = json.load(f)
-
-            stored = kernel.get("signature", "")
-            if not stored:
-                logger.warning("Kernel %s: no signature field — using defaults.", kernel_path)
-                return None
-
-            payload = {k: v for k, v in kernel.items() if k != "signature"}
-            canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-
-            pub = Ed25519PublicKey.from_public_bytes(KERNEL_PUBLIC_KEY)
-            pub.verify(bytes.fromhex(stored), canonical.encode("utf-8"))
-            logger.info("Kernel %s: signature verified successfully.", kernel_path)
-            return {k: v for k, v in kernel.items() if k != "signature"}
-        except ImportError:
-            logger.warning(
-                "Kernel %s: cryptography not installed — cannot verify signature. Using defaults.",
-                kernel_path,
-            )
-            return None
-        except Exception as exc:
-            logger.warning(
-                "Kernel %s: signature verification failed (%s) — using defaults.",
-                kernel_path, exc,
-            )
-            return None
+        return self._kernel_loader.load(kernel_path)
 
     def _generate_failed_run(self, smiles: str, reason: str) -> dict[str, Any]:
         t1_result = {

@@ -6,6 +6,7 @@ Examples:
     aurelius screen "C1COC(=O)O1" --pack organic_electronics
     aurelius batch molecules.smi --output results.json
     aurelius score "CC#N"
+    aurelius view "C1COC(=O)O1"
     aurelius validate "C1COC(=O)O1"
     aurelius mixture "C1COC(=O)O1" "COCCOC" --frac 0.3
     aurelius mixture "C1COC(=O)O1" "COCCOC" --smiles-c "CC#N" --frac-a 0.4 --frac-b 0.4
@@ -22,12 +23,12 @@ import sys
 
 import click
 
-from aurelius.pipeline import AureliusPipeline
+from aurelius.pipeline import AureliusPipeline, _load_demo_kernel
 from aurelius.types import MoleculeContext
 from aurelius.utils.dependencies import HAS_RDKIT
 
 
-def _make_pipeline(pack: str = "electrolyte") -> AureliusPipeline:
+def _make_pipeline(pack: str = "electrolyte", demo: bool = False) -> AureliusPipeline:
     """Create and initialize a pipeline."""
     from aurelius.scoring.oracle.gc import ElectrolytePack
     from aurelius.scoring.oracle.packs import OrganicElectronicsPack
@@ -37,6 +38,12 @@ def _make_pipeline(pack: str = "electrolyte") -> AureliusPipeline:
     }
     pipeline = AureliusPipeline(property_pack=pack_map[pack])
     pipeline.initialize()
+    if demo:
+        kernel = _load_demo_kernel()
+        if kernel:
+            _echo_colored("[bold green]✓ Demo kernel loaded.[/bold green]", style="green")
+        else:
+            _echo_colored("[yellow]Demo kernel not found — using default parameters.[/yellow]", style="yellow")
     return pipeline
 
 
@@ -63,7 +70,27 @@ def _echo_colored(message: str, style: str = "", **kwargs: Any) -> None:
     if _console is not None:
         _console.print(message, style=style, **kwargs)
     else:
-        click.echo(message, **kwargs)
+        # ANSI fallback when rich is unavailable
+        _ANSI_COLORS = {
+            "green": "\033[32m",
+            "red": "\033[31m",
+            "yellow": "\033[33m",
+            "bold": "\033[1m",
+            "bold green": "\033[1;32m",
+            "bold red": "\033[1;31m",
+            "bold yellow": "\033[1;33m",
+            "cyan": "\033[36m",
+        }
+        ansi_reset = "\033[0m"
+        clean = message
+        # Strip rich markup tags
+        import re as _re
+        clean = _re.sub(r'\[/?\w+\]', '', clean)
+        color_code = _ANSI_COLORS.get(style, "")
+        if color_code:
+            click.echo(f"{color_code}{clean}{ansi_reset}", **kwargs)
+        else:
+            click.echo(clean, **kwargs)
 
 
 @click.group()
@@ -96,7 +123,7 @@ def init(pack: str) -> None:
       aurelius init
       aurelius init --pack organic_electronics
     """
-    _make_pipeline(pack=pack)
+    _make_pipeline(pack=pack, demo=False)
     _echo_colored("\n[bold green]Pipeline initialized successfully.[/bold green]", style="green")
 
 
@@ -130,8 +157,8 @@ def doctor(verbose: bool) -> None:
         _echo_colored("  [green]OK[/green]      xtb")
     else:
         _echo_colored("  [yellow]MISSING[/yellow]  xtb")
-        _echo("         → https://github.com/grimme-lab/xtb/releases")
-        _echo("         → Add xtb directory to PATH")
+        _echo("         → xTB not found. Install it via: https://github.com/grimme-lab/xtb/releases or run 'brew install xtb'.")
+        _echo("         → Add xtb directory to PATH after installation.")
 
     _echo("")
 
@@ -160,7 +187,8 @@ def doctor(verbose: bool) -> None:
 @cli.command("screen")
 @click.argument("smiles")
 @click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
-def screen(smiles: str, pack: str) -> None:
+@click.option("--demo", is_flag=True, default=False, help="Load pre-certified demo kernel (carbonate high-voltage)")
+def screen(smiles: str, pack: str, demo: bool) -> None:
     """Screen a single molecule through the full Aurelius pipeline.
 
     \b
@@ -168,8 +196,9 @@ def screen(smiles: str, pack: str) -> None:
       aurelius screen "C1COC(=O)O1"
       aurelius screen "CC#N" --pack organic_electronics
       aurelius screen "COC(=O)OC"
+      aurelius screen "C1COC(=O)O1" --demo
     """
-    pipeline = _make_pipeline(pack=pack)
+    pipeline = _make_pipeline(pack=pack, demo=demo)
     try:
         results = pipeline.screen_smiles(smiles)
     except ValueError as e:
@@ -180,9 +209,121 @@ def screen(smiles: str, pack: str) -> None:
     total = score.get("total_score", 0.0)
     viable = score.get("is_viable", False)
     style = "bold green" if viable else "bold red"
-    _echo_colored(f"\n[bold]Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{'VIABLE' if viable else 'REJECTED'}[/]", style=style)
+    label = "DISCOVERY" if viable else "REJECTED"
+    _echo_colored(f"\n[bold]Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{label}[/]", style=style)
     if score and not viable:
         sys.exit(1)
+
+
+@cli.command("view")
+@click.argument("smiles")
+@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
+@click.option("--output", type=click.Path(), help="Save HTML report to file instead of opening browser")
+def view_cmd(smiles: str, pack: str, output: str | None) -> None:
+    """Generate and open an HTML report for a molecule.
+
+    Displays the molecular structure, predicted properties, and a
+    Viability/REJECTED badge in the default web browser.
+
+    \b
+    Examples:
+      aurelius view "C1COC(=O)O1"
+      aurelius view "C1COC(=O)O1" --output report.html
+    """
+    from rdkit.Chem import Draw
+    import tempfile
+    import webbrowser
+    import base64
+    from io import BytesIO
+
+    pipeline = _make_pipeline(pack=pack)
+    try:
+        results = pipeline.screen_smiles(smiles)
+    except ValueError as e:
+        _echo_colored(f"[red]Invalid SMILES:[/red] {e}", style="bold red", err=True)
+        sys.exit(1)
+
+    score = results.get("score", {})
+    t2 = results.get("tier2", {})
+    total = score.get("total_score", 0.0)
+    viable = score.get("is_viable", False)
+
+    # Generate molecule image
+    ctx = MoleculeContext.from_smiles(smiles)
+    if ctx is not None:
+        img = Draw.MolToImage(ctx.mol, size=(300, 300))
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+    else:
+        img_b64 = ""
+
+    badge_color = "green" if viable else "red"
+    badge_text = "DISCOVERY" if viable else "REJECTED"
+
+    props_html = ""
+    if t2:
+        prop_rows = [
+            ("HOMO", f'{t2.get("homo_eV", "N/A")} eV'),
+            ("LUMO", f'{t2.get("lumo_eV", "N/A")} eV'),
+            ("Gap", f'{t2.get("gap_eV", "N/A")} eV'),
+            ("Dielectric Proxy", f'{t2.get("dielectric_proxy", "N/A")}'),
+            ("Viscosity Proxy", f'{t2.get("viscosity_proxy", "N/A")}'),
+            ("Li+ Solvation", f'{t2.get("li_solvation_proxy", "N/A")}'),
+            ("CED Proxy", f'{t2.get("ced_proxy", "N/A")}'),
+            ("SEI Fracture Toughness", f'{t2.get("sei_fracture_toughness_proxy", "N/A")}'),
+            ("Quantum Confidence", t2.get("quantum_confidence", "N/A")),
+            ("Domain Penalty", f'{t2.get("domain_penalty", "N/A")}'),
+        ]
+        for name, val in prop_rows:
+            props_html += f"<tr><td style='padding:4px 12px;font-weight:600'>{name}</td><td style='padding:4px 12px'>{val}</td></tr>\n"
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Aurelius Report — {smiles}</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; background: #f5f5f5; }}
+        .card {{ background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 2em; margin-bottom: 1.5em; }}
+        h1 {{ font-size: 1.4em; margin-top: 0; }}
+        .badge {{ display: inline-block; padding: 4px 14px; border-radius: 12px; color: #fff; font-weight: 700; font-size: 0.9em; background: {badge_color}; }}
+        .molecule-img {{ text-align: center; margin: 1em 0; }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        tr:nth-child(even) {{ background: #f9f9f9; }}
+        td {{ padding: 4px 12px; }}
+        .score {{ font-size: 2em; font-weight: 700; text-align: center; margin: 0.5em 0; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Aurelius v10 — Molecular Report</h1>
+        <p><strong>SMILES:</strong> <code>{smiles}</code></p>
+        <div class="molecule-img"><img src="data:image/png;base64,{img_b64}" alt="Molecule structure"></div>
+        <div class="score">
+            <span>{total:.1f}/100</span>
+            <span class="badge">{badge_text}</span>
+        </div>
+    </div>
+    <div class="card">
+        <h2>Predicted Properties</h2>
+        <table>
+            {props_html}
+        </table>
+    </div>
+</body>
+</html>"""
+
+    if output:
+        with open(output, "w") as f:
+            f.write(html)
+        _echo_colored(f"[green]Report saved to[/green] {output}", style="green")
+    else:
+        with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w") as f:
+            f.write(html)
+            html_path = f.name
+        webbrowser.open(f"file://{html_path}")
+        _echo_colored("[green]HTML report opened in browser.[/green]", style="green")
 
 
 @cli.command("batch")
@@ -264,7 +405,8 @@ def score(
         total = score.get("total_score", 0.0)
         viable = score.get("is_viable", False)
         style = "bold green" if viable else "bold red"
-        _echo_colored(f"\n[bold]Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{'VIABLE' if viable else 'REJECTED'}[/]", style=style)
+        label = "DISCOVERY" if viable else "REJECTED"
+        _echo_colored(f"\n[bold]Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{label}[/]", style=style)
 
 
 @cli.command("evaluate")
@@ -286,7 +428,8 @@ def evaluate_cmd(
         total = score.get("total_score", 0.0)
         viable = score.get("is_viable", False)
         style = "bold green" if viable else "bold red"
-        _echo_colored(f"\n[bold]Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{'VIABLE' if viable else 'REJECTED'}[/]", style=style)
+        label = "DISCOVERY" if viable else "REJECTED"
+        _echo_colored(f"\n[bold]Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{label}[/]", style=style)
     except ValueError as e:
         _echo_colored(f"[red]Invalid SMILES:[/red] {e}", style="bold red", err=True)
         sys.exit(1)
@@ -360,7 +503,8 @@ def validate_cmd(smiles: str, pretty: bool) -> None:
     _echo(f"  {'-' * 56}")
     verdict = "[green]✓[/green]" if viable else "[red]✗[/red]"
     style = "bold green" if viable else "bold red"
-    _echo_colored(f"  {verdict} TOTAL: {total:>7.1f}/100  {'VIABLE' if viable else 'REJECTED'}", style=style)
+    label = "DISCOVERY" if viable else "REJECTED"
+    _echo_colored(f"  {verdict} TOTAL: {total:>7.1f}/100  {label}", style=style)
     if score.get("rejection_reasons"):
         for reason in score["rejection_reasons"]:
             _echo_colored(f"     [red]✗[/red] {reason}")
@@ -380,7 +524,8 @@ def validate_cmd(smiles: str, pretty: bool) -> None:
             from rich.table import Table
             from rich import box
 
-            table = Table(title=f"Score: {total:.1f}/100 — {'VIABLE' if viable else 'REJECTED'}", box=box.SIMPLE)
+            label = "DISCOVERY" if viable else "REJECTED"
+            table = Table(title=f"Score: {total:.1f}/100 — {label}", box=box.SIMPLE)
             table.add_column("Objective", style="cyan")
             table.add_column("Raw", justify="right")
             table.add_column("Score", justify="right")
@@ -394,8 +539,9 @@ def validate_cmd(smiles: str, pretty: bool) -> None:
             _console.print(table)
         else:
             bar_len = 20
+            label = "DISCOVERY" if viable else "REJECTED"
             _echo(f"\n  {'─' * 40}")
-            _echo(f"  Score: {total:5.1f}/100 {'✓' if viable else '✗'}")
+            _echo(f"  Score: {total:5.1f}/100 {label}")
             if sub_scores:
                 best = max(sub_scores.values())
                 best_name = max(sub_scores, key=sub_scores.get)
@@ -483,7 +629,8 @@ def _report_mixture_result(result: dict, label: str) -> None:
     total = score.get("total_score", 0.0)
     viable = score.get("is_viable", False)
     style = "bold green" if viable else "bold red"
-    _echo_colored(f"\n[bold]{label} Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{'VIABLE' if viable else 'REJECTED'}[/]", style=style)
+    verdict_label = "DISCOVERY" if viable else "REJECTED"
+    _echo_colored(f"\n[bold]{label} Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{verdict_label}[/]", style=style)
     _echo(f"  Synergy Bonus: {mix_props.get('synergy_bonus', 0.0):.4f}")
     _echo(f"  Dielectric Proxy: {mix_props.get('dielectric_proxy', 0.0):.2f}")
     _echo(f"  Viscosity Proxy:  {mix_props.get('viscosity_proxy', 0.0):.2f}")

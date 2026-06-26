@@ -144,25 +144,17 @@ class PropertyOracle:
     def _compute_quantum(self, ctx: MoleculeContext, skip_quantum: bool, s_homo: float, s_lumo: float) -> tuple[float, float, float, str, Any]:
         """Compute or skip quantum evaluation.
 
-        Two-tier architecture:
-          1. xTB (via QuantumOracle) — preferred real QM
-          2. TOM — closed-form topological fallback (last resort)
+        Delegates to the ``QuantumOracle`` which uses a pluggable backend
+        (XTBBackend or TOMBackend). Falls back to TOM if xTB fails.
         """
         if skip_quantum:
             gap = s_lumo - s_homo
             return s_homo, s_lumo, gap, "surrogate", "surrogate"
 
-        # Tier 1: xTB (if available)
-        if self._quantum._use_xtb:
-            qr = self._quantum.evaluate(ctx.mol)
-            if "conformer_variance" in qr:
-                gap = qr["lumo_eV"] - qr["homo_eV"]
-                return qr["homo_eV"], qr["lumo_eV"], gap, "xTB (Boltzmann-weighted)", qr.get("quantum_confidence", "xtb")
-
-        # Tier 2: TOM fallback
         qr = self._quantum.evaluate(ctx.mol)
         gap = qr["lumo_eV"] - qr["homo_eV"]
-        return qr["homo_eV"], qr["lumo_eV"], gap, "TOM (Topological Orbital Model)", qr.get("quantum_confidence", "tom_low")
+        method = self._quantum.method
+        return qr["homo_eV"], qr["lumo_eV"], gap, method, qr.get("quantum_confidence", "unknown")
 
     def _compute_uq_penalty(self, ctx: MoleculeContext) -> tuple[float, float, float]:
         """Compute GC uncertainty penalty — graded by number of flagged properties.

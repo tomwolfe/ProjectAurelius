@@ -24,6 +24,7 @@ from __future__ import annotations
 import atexit
 import concurrent.futures
 import contextlib
+import json
 import logging
 import math
 import os
@@ -31,10 +32,13 @@ import re
 import shutil
 import subprocess
 import tempfile
+from abc import ABC, abstractmethod
 from typing import Any
 from collections.abc import Callable
 
 from rdkit import Chem
+from rdkit.Chem import AllChem
+from rdkit.DataStructs import BulkTanimotoSimilarity
 
 from aurelius.constants import NITRILE_PATTERN
 from aurelius.types import MoleculeContext
@@ -1057,57 +1061,154 @@ def compute_quantum_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
 
 
 # ---------------------------------------------------------------------------
-# QuantumOracle — Unified interface for xTB + TOM fallback
+# Calibration-based confidence for TOM
+# ---------------------------------------------------------------------------
+
+_CALIBRATION_FPS: list[Chem.DataStructs.ExplicitBitVect] | None = None
+_CALIBRATION_SMILES: list[str] | None = None
+
+
+def _ensure_calibration_loaded() -> None:
+    """Lazy-load orbital_calibration.json fingerprints into module-level cache."""
+    global _CALIBRATION_FPS, _CALIBRATION_SMILES
+    if _CALIBRATION_FPS is not None:
+        return
+    _CALIBRATION_FPS = []
+    _CALIBRATION_SMILES = []
+    module_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(module_dir, "..", "..", "..", "..", "src", "aurelius", "data", "orbital_calibration.json"),
+        os.path.join(module_dir, "..", "..", "data", "orbital_calibration.json"),
+        os.path.join(module_dir, "..", "data", "orbital_calibration.json"),
+    ]
+    path: str | None = None
+    for c in candidates:
+        resolved = os.path.abspath(c)
+        if os.path.exists(resolved):
+            path = resolved
+            break
+    if path is None:
+        logger.warning("orbital_calibration.json not found — TOM confidence will be based on structural heuristics only.")
+        return
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        for entry in data:
+            smi = entry.get("smiles", "")
+            mol = Chem.MolFromSmiles(smi)
+            if mol is not None:
+                fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+                _CALIBRATION_FPS.append(fp)
+                _CALIBRATION_SMILES.append(smi)
+        logger.info("Loaded %d calibration fingerprints from %s", len(_CALIBRATION_FPS), path)
+    except Exception as exc:
+        logger.warning("Failed to load calibration set: %s", exc)
+
+
+def _compute_max_tanimoto_to_calibration(mol: Chem.Mol) -> float:
+    """Compute max Tanimoto similarity of *mol* to the calibration set.
+
+    Returns a float in [0.0, 1.0]. Returns 0.0 if the calibration set
+    is unavailable.
+    """
+    _ensure_calibration_loaded()
+    if not _CALIBRATION_FPS:
+        return 0.0
+    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+    sims = BulkTanimotoSimilarity(fp, _CALIBRATION_FPS)
+    return float(max(sims))
+
+
+# ---------------------------------------------------------------------------
+# QuantumBackend — Abstract base for quantum chemistry backends
 # ---------------------------------------------------------------------------
 
 
-class QuantumOracle:
-    """Quantum-chemical oracle for frontier orbital energies.
+class QuantumBackend(ABC):
+    """Abstract quantum chemistry backend.
 
-    Two-tier evaluation:
-       1. xTB (GFN2-xTB) via subprocess — preferred, real QM
-       2. Topological Orbital Model (TOM) — conjugation-aware fallback
+    Implementations must provide an ``evaluate(mol)`` method that returns a
+    dict with at minimum ``homo_eV``, ``lumo_eV``, ``dipole_D``, and
+    ``quantum_confidence``.
+    """
 
-    When xTB is available, generates multiple conformers via ETKDGv3,
-    UFF-optimises each, computes Boltzmann weights, and runs xTB on the
-    top-3 lowest-energy conformers. The final HOMO/LUMO is the
-    Boltzmann-weighted average, and ``quantum_confidence`` reports the
-    conformer energy variance as a proxy for prediction stability.
+    @abstractmethod
+    def evaluate(self, mol: Chem.Mol) -> dict[str, float]:
+        """Run quantum evaluation on *mol*.
 
-    Results are cached by SMILES to avoid redundant computation.
+        Returns:
+            Dict with keys:
+                - ``homo_eV`` (float)
+                - ``lumo_eV`` (float)
+                - ``dipole_D`` (float)
+                - ``quantum_confidence`` (str)
+                - ``conformer_variance`` (float, optional)
+                - ``confidence_score`` (float, optional)
+        """
+        ...
+
+    @property
+    @abstractmethod
+    def method(self) -> str:
+        """Human-readable description of this backend."""
+        ...
+
+    @property
+    @abstractmethod
+    def n_calls(self) -> int:
+        """Number of molecules evaluated by this backend."""
+        ...
+
+    def clear_cache(self) -> None:
+        """Clear any internal caches. Default no-op."""
+        return
+
+    def get_cache_size(self) -> int:
+        """Number of cached entries. Default 0."""
+        return 0
+
+
+class XTBBackend(QuantumBackend):
+    """xTB (GFN2-xTB) quantum chemistry backend.
+
+    Evaluates frontier orbitals by running the xTB binary on an embedded 3D
+    conformer. Uses Boltzmann-weighted multi-conformer averaging for robust
+    predictions.
     """
 
     def __init__(
         self,
-        use_xtb: bool = True,
         n_conformers: int = _N_CONFORMERS,
         n_top_conformers: int = _N_TOP_CONFORMERS,
         max_workers: int = 4,
     ) -> None:
-        self._use_xtb = use_xtb and _HAS_XTB
+        if not _HAS_XTB:
+            raise RuntimeError(
+                "XTBBackend requires the xTB binary on PATH. "
+                "Install via: brew install xtb  or  https://github.com/grimme-lab/xtb/releases"
+            )
         self._n_conformers = n_conformers
         self._n_top_conformers = n_top_conformers
         self._max_workers = max_workers
         self._cache: dict[str, dict[str, float]] = {}
-        self._n_xtb_calls = 0
-        self._n_tom_calls = 0
-
-        if use_xtb and not _HAS_XTB:
-            logger.info("QuantumOracle: xTB binary not found — using TOM fallback.")
-        elif self._use_xtb:
-            logger.info("QuantumOracle: xTB backend ENABLED.")
+        self._n_calls = 0
 
     @property
     def method(self) -> str:
-        return "xTB (GFN2-xTB)" if self._use_xtb else "TOM (Topological Orbital Model)"
+        return "xTB (GFN2-xTB)"
 
     @property
-    def n_quantum_calls(self) -> int:
-        return self._n_xtb_calls + self._n_tom_calls
+    def n_calls(self) -> int:
+        return self._n_calls
+
+    def clear_cache(self) -> None:
+        self._cache.clear()
+
+    def get_cache_size(self) -> int:
+        return len(self._cache)
 
     @staticmethod
     def _run_xtb_flat(conformers: list[tuple[str, float]], n_top: int) -> tuple[list[dict[str, float]], list[float]]:
-        """Run xTB on top N conformers, return (results, energies)."""
         top = conformers[:n_top]
         results: list[dict[str, float]] = []
         energies: list[float] = []
@@ -1120,7 +1221,7 @@ class QuantumOracle:
 
     @staticmethod
     def _boltzmann_average(xtb_results: list[dict[str, float]], energies: list[float]) -> dict[str, float]:
-        """Compute Boltzmann-weighted average HOMO/LUMO/dipole from xTB results."""
+        import numpy as np
         weights = _boltzmann_weights(energies)
         homo_w = sum(w * r["homo_eV"] for w, r in zip(weights, xtb_results, strict=False))
         lumo_w = sum(w * r["lumo_eV"] for w, r in zip(weights, xtb_results, strict=False))
@@ -1134,79 +1235,219 @@ class QuantumOracle:
             "dipole_D": dipole_w,
             "conformer_variance": round(conformer_variance, 4),
             "quantum_confidence": conf,
+            "confidence_score": 1.0,
         }
 
     def _evaluate_with_boltzmann(self, mol: Chem.Mol) -> dict[str, float]:
-        """Evaluate using Boltzmann-weighted multi-conformer averaging.
-
-        Generates up to N conformers, runs xTB on the top-3 lowest UFF
-        energy conformers, and computes Boltzmann-weighted average
-        HOMO/LUMO. Returns a quantum_confidence metric based on the
-        standard deviation of HOMO across conformers.
-        """
         conformers = _generate_multi_xyz(mol, n_conformers=self._n_conformers)
         if not conformers:
             result = _run_xtb(_generate_xyz(mol))
             if result is not None:
-                self._n_xtb_calls += 1
+                self._n_calls += 1
                 result["quantum_confidence"] = "xtb"
+                result["confidence_score"] = 1.0
                 return result
-            return self._evaluate_tom(mol)
+            msg = "xTB evaluation failed — no conformers could be generated or evaluated."
+            raise RuntimeError(msg)
 
         xtb_results, energies = self._run_xtb_flat(conformers, self._n_top_conformers)
 
         if not xtb_results:
-            self._n_xtb_calls += 1
+            self._n_calls += 1
             result = _run_xtb(conformers[0][0])
             if result is not None:
-                self._n_xtb_calls += 1
+                self._n_calls += 1
                 result["quantum_confidence"] = "xtb"
+                result["confidence_score"] = 1.0
                 return result
-            return self._evaluate_tom(mol)
+            msg = "xTB evaluation failed — all conformer calculations returned no result."
+            raise RuntimeError(msg)
 
-        self._n_xtb_calls += len(xtb_results)
+        self._n_calls += len(xtb_results)
 
         if len(xtb_results) == 1:
             result = dict(xtb_results[0])
             result["quantum_confidence"] = "xtb"
+            result["confidence_score"] = 1.0
             return result
 
         return self._boltzmann_average(xtb_results, energies)
-
-    def _evaluate_tom(self, mol: Chem.Mol) -> dict[str, float]:
-        """Fallback TOM evaluation."""
-        homo, lumo = predict_tom_orbitals(mol)
-        L = _longest_conjugation_path(mol)
-        n_rings = mol.GetRingInfo().NumRings()
-        conf_var = 0.0
-        result: dict[str, float] = {
-            "homo_eV": homo,
-            "lumo_eV": lumo,
-            "dipole_D": 0.0,
-            "conformer_variance": conf_var,
-            "quantum_confidence": "tom_high" if L <= 8 and n_rings <= 2 else "tom_low",
-        }
-        return result
 
     def evaluate(self, mol: Chem.Mol) -> dict[str, float]:
         smiles = Chem.MolToSmiles(mol)
         if smiles in self._cache:
             return dict(self._cache[smiles])
 
-        if self._use_xtb:
-            result = self._evaluate_with_boltzmann(mol)
-            if result is not None and "conformer_variance" in result:
-                self._cache[smiles] = result
-                return dict(result)
-            logger.warning("QuantumOracle: xTB calculation failed — falling back to TOM.")
+        result = self._evaluate_with_boltzmann(mol)
 
-        result = self._evaluate_tom(mol)
-        self._n_tom_calls += 1
+        if result is not None and "quantum_confidence" in result:
+            self._cache[smiles] = result
+            return dict(result)
+
+        msg = "xTB evaluation returned no result."
+        raise RuntimeError(msg)
+
+
+class TOMBackend(QuantumBackend):
+    """Topological Orbital Model (TOM) fallback backend.
+
+    Uses the particle-in-a-box model for pi-electrons with heteroatom
+    perturbations and a calibration-set Tanimoto confidence score.
+    """
+
+    def __init__(self) -> None:
+        self._cache: dict[str, dict[str, float]] = {}
+        self._n_calls = 0
+
+    @property
+    def method(self) -> str:
+        return "TOM (Topological Orbital Model)"
+
+    @property
+    def n_calls(self) -> int:
+        return self._n_calls
+
+    def clear_cache(self) -> None:
+        self._cache.clear()
+
+    def get_cache_size(self) -> int:
+        return len(self._cache)
+
+    def evaluate(self, mol: Chem.Mol) -> dict[str, float]:
+        smiles = Chem.MolToSmiles(mol)
+        if smiles in self._cache:
+            return dict(self._cache[smiles])
+
+        self._n_calls += 1
+        homo, lumo = predict_tom_orbitals(mol)
+        L = _longest_conjugation_path(mol)
+        n_rings = mol.GetRingInfo().NumRings()
+
+        # Confidence score based on Tanimoto similarity to calibration set
+        max_sim = _compute_max_tanimoto_to_calibration(mol)
+        if max_sim < 0.5:
+            quantum_conf = "tom_low"
+        elif L <= 8 and n_rings <= 2:
+            quantum_conf = "tom_high"
+        else:
+            quantum_conf = "tom_low"
+
+        result: dict[str, float] = {
+            "homo_eV": homo,
+            "lumo_eV": lumo,
+            "dipole_D": 0.0,
+            "conformer_variance": 0.0,
+            "quantum_confidence": quantum_conf,
+            "confidence_score": round(max_sim, 4),
+        }
+        self._cache[smiles] = result
+        return dict(result)
+
+
+def _resolve_backend(
+    backend: QuantumBackend | None = None,
+    use_xtb: bool = True,
+    n_conformers: int = _N_CONFORMERS,
+    n_top_conformers: int = _N_TOP_CONFORMERS,
+    max_workers: int = 4,
+) -> QuantumBackend:
+    """Resolve a quantum backend from parameters.
+
+    Args:
+        backend: Explicit backend instance (takes precedence).
+        use_xtb: Whether to attempt using xTB.
+        n_conformers: Number of conformers to generate.
+        n_top_conformers: Number of top conformers for averaging.
+        max_workers: Max workers for xTB batch.
+
+    Returns:
+        A ``QuantumBackend`` instance.
+    """
+    if backend is not None:
+        return backend
+    if use_xtb and _HAS_XTB:
+        return XTBBackend(
+            n_conformers=n_conformers,
+            n_top_conformers=n_top_conformers,
+            max_workers=max_workers,
+        )
+    return TOMBackend()
+
+
+# ---------------------------------------------------------------------------
+# QuantumOracle — Unified interface for xTB + TOM fallback
+# ---------------------------------------------------------------------------
+
+
+class QuantumOracle:
+    """Quantum-chemical oracle for frontier orbital energies.
+
+    Two-tier evaluation:
+       1. xTB (GFN2-xTB) via subprocess — preferred, real QM
+       2. Topological Orbital Model (TOM) — conjugation-aware fallback
+
+    Uses a pluggable ``QuantumBackend``. If no backend is supplied, defaults
+    to ``XTBBackend`` (if xTB binary is on PATH) or ``TOMBackend``.
+
+    Results are cached by SMILES to avoid redundant computation.
+    """
+
+    def __init__(
+        self,
+        backend: QuantumBackend | None = None,
+        use_xtb: bool = True,
+        n_conformers: int = _N_CONFORMERS,
+        n_top_conformers: int = _N_TOP_CONFORMERS,
+        max_workers: int = 4,
+    ) -> None:
+        self._backend = _resolve_backend(
+            backend=backend,
+            use_xtb=use_xtb,
+            n_conformers=n_conformers,
+            n_top_conformers=n_top_conformers,
+            max_workers=max_workers,
+        )
+        self._cache: dict[str, dict[str, float]] = {}
+
+        if isinstance(self._backend, TOMBackend):
+            logger.info("QuantumOracle: xTB binary not found — using TOM fallback.")
+        else:
+            logger.info("QuantumOracle: xTB backend ENABLED.")
+
+    @property
+    def method(self) -> str:
+        return self._backend.method
+
+    @property
+    def n_quantum_calls(self) -> int:
+        return self._backend.n_calls
+
+    @property
+    def backend(self) -> QuantumBackend:
+        """Access the underlying backend instance."""
+        return self._backend
+
+    def evaluate(self, mol: Chem.Mol) -> dict[str, float]:
+        smiles = Chem.MolToSmiles(mol)
+        if smiles in self._cache:
+            return dict(self._cache[smiles])
+
+        try:
+            result = self._backend.evaluate(mol)
+        except RuntimeError:
+            logger.warning(
+                "QuantumOracle: %s failed — falling back to TOM.",
+                self._backend.method,
+            )
+            fallback = TOMBackend()
+            result = fallback.evaluate(mol)
+
         self._cache[smiles] = result
         return dict(result)
 
     def clear_cache(self) -> None:
         self._cache.clear()
+        self._backend.clear_cache()
 
     def get_cache_size(self) -> int:
         return len(self._cache)
