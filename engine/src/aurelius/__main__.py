@@ -1,19 +1,16 @@
-"""Project Aurelius v10.0 - Evolutionary Algorithm Discovery CLI.
+"""Project Aurelius v10.0 — Discovery CLI.
 
 Examples:
-    aurelius init
     aurelius screen "C1COC(=O)O1"
+    aurelius screen "C1COC(=O)O1" --verbose
+    aurelius screen "C1COC(=O)O1" --json
+    aurelius screen "C1COC(=O)O1" --report
     aurelius screen "C1COC(=O)O1" --pack organic_electronics
+    aurelius screen molecules.smi --output results.json
     aurelius batch molecules.smi --output results.json
-    aurelius score "CC#N"
-    aurelius view "C1COC(=O)O1"
-    aurelius validate "C1COC(=O)O1"
     aurelius mixture "C1COC(=O)O1" "COCCOC" --frac 0.3
-    aurelius mixture "C1COC(=O)O1" "COCCOC" --smiles-c "CC#N" --frac-a 0.4 --frac-b 0.4
     aurelius doctor --verbose
     aurelius agent --max-generations 100 --batch-size 25
-    aurelius tune experiments.csv --output my_kernel.json
-    aurelius verify-kernel my_kernel.json
 """
 
 from __future__ import annotations
@@ -100,7 +97,7 @@ def print_result_card(
     properties: dict[str, Any] | None = None,
     rejection_reasons: list[str] | None = None,
 ) -> None:
-    """Display a beautiful summary card of the screening result using rich if available.
+    """Display a summary card of the screening result using rich if available.
 
     Falls back to clean ASCII formatting when rich is not installed.
     """
@@ -137,9 +134,8 @@ def _print_result_card_rich(
 
     score_color = "green" if is_viable else "red"
 
-    # Main score panel
     score_text = f"[bold {score_color}]{total_score:.1f}/100 — {label}[/bold {score_color}]"
-    console.print(Panel(score_text, title=f"[bold]Aurelius Screen[/bold]", width=60))
+    console.print(Panel(score_text, title="[bold]Aurelius Screen[/bold]", width=60))
     console.print(f"  SMILES: [cyan]{smiles}[/cyan]")
 
     if properties:
@@ -281,23 +277,35 @@ def doctor(verbose: bool) -> None:
     _echo("")
 
 
-@cli.command("screen")
-@click.argument("smiles")
-@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte")
-@click.option("--demo", is_flag=True, default=False)
-def screen(smiles: str, pack: str, demo: bool) -> None:
-    """Screen a single molecule through the full Aurelius pipeline."""
-    pipeline = _make_pipeline(pack=pack, demo=demo)
+def _run_screen(
+    pipeline: AureliusPipeline,
+    smiles: str,
+    verbose: bool = False,
+    json_output: bool = False,
+) -> dict[str, Any] | None:
+    """Screen a single molecule and optionally print results."""
     try:
         results = pipeline.screen_smiles(smiles)
     except ValueError as e:
         _echo_colored(f"[red]Invalid SMILES:[/red] {e}", style="bold red", err=True)
-        sys.exit(1)
+        return None
 
     score = results.get("score", {})
     t2 = results.get("tier2", {})
     total = score.get("total_score", 0.0)
     viable = score.get("is_viable", False)
+    sub_scores = score.get("sub_scores", {})
+    rejection_reasons = score.get("rejection_reasons", [])
+
+    if json_output:
+        return {
+            "smiles": smiles,
+            "total_score": total,
+            "is_viable": viable,
+            "sub_scores": sub_scores,
+            "rejection_reasons": rejection_reasons,
+            "properties": t2,
+        }
 
     properties = None
     if t2:
@@ -316,28 +324,153 @@ def screen(smiles: str, pack: str, demo: bool) -> None:
         smiles=smiles,
         total_score=total,
         is_viable=viable,
-        sub_scores=score.get("sub_scores", {}),
+        sub_scores=sub_scores,
         properties=properties,
-        rejection_reasons=score.get("rejection_reasons"),
+        rejection_reasons=rejection_reasons,
     )
 
-    if not viable:
+    if verbose and sub_scores:
+        _echo("")
+        _echo_colored("[bold]Detailed Sub-Scores:[/bold]")
+        for name, val in sorted(sub_scores.items(), key=lambda x: x[1], reverse=True):
+            _echo(f"  {name:<28} {val:.4f}")
+
+    if verbose and rejection_reasons:
+        _echo("")
+        _echo_colored("[bold]Rejection Reasons:[/bold]")
+        for r in rejection_reasons:
+            _echo(f"  [red]✗[/red] {r}")
+
+    return None
+
+
+@cli.command("screen")
+@click.argument("smiles", required=False)
+@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte")
+@click.option("--demo", is_flag=True, default=False)
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Show sub-scores and rejection reasons")
+@click.option("--json", "json_output", is_flag=True, default=False, help="Output raw JSON")
+@click.option("--report", is_flag=True, default=False, help="Generate and open HTML report")
+@click.option("--output", type=click.Path(), help="Save JSON/HTML output to file")
+def screen(
+    smiles: str | None,
+    pack: str,
+    demo: bool,
+    verbose: bool,
+    json_output: bool,
+    report: bool,
+    output: str | None,
+) -> None:
+    """Screen a molecule or file of molecules through the full Aurelius pipeline.
+
+    Provide a single SMILES string or a path to a file (one SMILES per line).
+    """
+    pipeline = _make_pipeline(pack=pack, demo=demo)
+
+    if smiles is None and output is None:
+        _echo_colored("[red]Error:[/red] SMILES argument or file input required.", style="bold red", err=True)
+        sys.exit(1)
+
+    # File input: one SMILES per line
+    if smiles is not None and _is_file(smiles):
+        _screen_file(pipeline, smiles, verbose, json_output, report, output)
+        return
+
+    # Single SMILES
+    if smiles is None:
+        _echo_colored("[red]Error:[/red] SMILES argument required.", style="bold red", err=True)
+        sys.exit(1)
+
+    result = _run_screen(pipeline, smiles, verbose, json_output)
+    if result is None:
+        sys.exit(1)
+
+    if json_output:
+        _emit_json(result, output)
+        return
+
+    if report:
+        _generate_report(pipeline, smiles, output)
+        return
+
+    score = result
+    if not score["is_viable"]:
         sys.exit(1)
 
 
-@cli.command("view")
-@click.argument("smiles")
-@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte")
-@click.option("--output", type=click.Path(), help="Save HTML report to file instead of opening browser")
-def view_cmd(smiles: str, pack: str, output: str | None) -> None:
-    """Generate and open an HTML report for a molecule."""
+def _is_file(path: str) -> bool:
+    """Check if a path looks like a file (exists and not a SMILES string)."""
+    import os
+    if not os.path.exists(path):
+        return False
+    if len(path) > 200:
+        return False
+    # Check if it looks like a SMILES (contains typical chemistry chars)
+    smiles_chars = set("CCOcNnOoSsPpFfClBrIHh#()[]=@1234567890\\/")
+    path_chars = set(path)
+    # If it's a short string with mostly SMILES characters, treat as SMILES
+    if len(path) < 100 and path_chars.issubset(smiles_chars):
+        return False
+    return os.path.isfile(path)
+
+
+def _screen_file(
+    pipeline: AureliusPipeline,
+    file_path: str,
+    verbose: bool,
+    json_output: bool,
+    report: bool,
+    output: str | None,
+) -> None:
+    """Screen multiple molecules from a SMILES file."""
+    smiles_list: list[str] = []
+    with open(file_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                smiles_list.append(line)
+
+    if not smiles_list:
+        _echo_colored("[red]Error:[/red] No SMILES found in file.", style="bold red", err=True)
+        sys.exit(1)
+
+    _echo(f"Screening {len(smiles_list)} molecules...")
+
+    results: list[dict[str, Any]] = []
+    for smi in smiles_list:
+        result = _run_screen(pipeline, smi, verbose, json_output=True)
+        if result is not None:
+            results.append(result)
+
+    if json_output or output:
+        _emit_json(results, output)
+        return
+
+    viable = sum(1 for r in results if r["is_viable"])
+    pct = 100 * viable / max(len(results), 1)
+    color = "green" if pct > 50 else "yellow"
+    _echo_colored(f"\n[bold]Batch complete:[/bold] {viable}/{len(results)} viable ({pct:.0f}%)", style=color)
+
+
+def _emit_json(data: Any, output: str | None) -> None:
+    """Print or save JSON output."""
+    text = json.dumps(data, indent=2)
+    if output:
+        with open(output, "w") as f:
+            f.write(text)
+        _echo(f"[green]Results saved to[/green] {output}")
+    else:
+        click.echo(text)
+
+
+def _generate_report(pipeline: AureliusPipeline, smiles: str, output: str | None) -> None:
+    """Generate an HTML report for a single molecule."""
     from rdkit.Chem import Draw
     import tempfile
     import webbrowser
     import base64
     from io import BytesIO
 
-    pipeline = _make_pipeline(pack=pack)
     try:
         results = pipeline.screen_smiles(smiles)
     except ValueError as e:
@@ -503,133 +636,6 @@ def batch(file: str, output: str | None, pack: str) -> None:
         _echo(f"[green]Results saved to[/green] {output}")
 
 
-@cli.command("score")
-@click.argument("smiles")
-def score(smiles: str) -> None:
-    """Compute the Aurelius v10.0 score for a molecule (quick mode)."""
-    pipeline = _make_pipeline()
-    try:
-        results = pipeline.screen_smiles(smiles)
-    except ValueError as e:
-        _echo_colored(f"[red]Invalid SMILES:[/red] {e}", style="bold red", err=True)
-        sys.exit(1)
-
-    score = results.get("score", {})
-    if score:
-        total = score.get("total_score", 0.0)
-        viable = score.get("is_viable", False)
-        style = "bold green" if viable else "bold red"
-        label = "DISCOVERY" if viable else "REJECTED"
-        _echo_colored(f"\n[bold]Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{label}[/]", style=style)
-
-
-@cli.command("evaluate")
-@click.option("--smiles", default="CC(=O)OC1=CC(=O)O1")
-def evaluate_cmd(smiles: str = "CC(=O)OC1=CC(=O)O1") -> None:
-    """Run ML Oracle evaluation on a molecule."""
-    pipeline = _make_pipeline()
-    try:
-        results = pipeline.screen_smiles(smiles)
-        score = results.get("score", {})
-        total = score.get("total_score", 0.0)
-        viable = score.get("is_viable", False)
-        style = "bold green" if viable else "bold red"
-        label = "DISCOVERY" if viable else "REJECTED"
-        _echo_colored(f"\n[bold]Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{label}[/]", style=style)
-    except ValueError as e:
-        _echo_colored(f"[red]Invalid SMILES:[/red] {e}", style="bold red", err=True)
-        sys.exit(1)
-    except Exception as e:
-        _echo_colored(f"[red]Evaluation failed:[/red] {e}", style="bold red", err=True)
-        sys.exit(1)
-
-
-@cli.command("validate")
-@click.argument("smiles")
-@click.option("--pretty", is_flag=True, default=False)
-def validate_cmd(smiles: str, pretty: bool) -> None:
-    """Run the full pipeline on a SMILES and print a report card."""
-    from aurelius.scorer import _OBJECTIVES
-
-    pipeline = _make_pipeline()
-    try:
-        results = pipeline.screen_smiles(smiles)
-    except ValueError as e:
-        _echo_colored(f"[red]Invalid SMILES:[/red] {e}", style="bold red", err=True)
-        sys.exit(1)
-    score = results.get("score", {})
-    t2 = results.get("tier2", {})
-
-    total = score.get("total_score", 0.0)
-    viable = score.get("is_viable", False)
-    sub_scores = score.get("sub_scores", {})
-
-    _echo(f"\n{'=' * 56}")
-    _echo_colored("  [bold]Project Aurelius v10.0 — Validate[/bold]")
-    _echo(f"  SMILES: {smiles}")
-    _echo(f"{'=' * 56}")
-
-    all_passed = True
-    for obj in _OBJECTIVES:
-        raw = t2.get(obj.property_key, 0.0)
-        if obj.property_key == "sa_score":
-            raw = score.get("sa_score", 0.0)
-        sub = sub_scores.get(obj.name, 0.0)
-        weighted = obj.weight * sub
-        label = obj.name[:28]
-        if sub >= 0.7:
-            icon = "[green]\u2713[/green]"
-        elif sub >= 0.4:
-            icon = "[yellow]~[/yellow]"
-        else:
-            icon = "[red]\u2717[/red]"
-            all_passed = False
-        _echo(f"  {icon} {label:<26} raw={raw:>7.3f}  w={obj.weight:.2f}  sub={weighted:.4f}")
-
-    _echo(f"  {'-' * 56}")
-    verdict = "[green]\u2713[/green]" if viable else "[red]\u2717[/red]"
-    style = "bold green" if viable else "bold red"
-    label = "DISCOVERY" if viable else "REJECTED"
-    _echo_colored(f"  {verdict} TOTAL: {total:>7.1f}/100  {label}", style=style)
-    if score.get("rejection_reasons"):
-        for reason in score["rejection_reasons"]:
-            _echo_colored(f"     [red]\u2717[/red] {reason}")
-    if t2:
-        _echo(f"\n  {'=' * 56}")
-        _echo_colored("  [bold]Predicted Properties:[/bold]")
-        _echo(f"    HOMO:               {t2.get('homo_eV', 'N/A')} eV")
-        _echo(f"    LUMO:               {t2.get('lumo_eV', 'N/A')} eV")
-        _echo(f"    Gap:                {t2.get('gap_eV', 'N/A')} eV")
-        _echo(f"    Dielectric proxy:   {t2.get('dielectric_proxy', 'N/A')}")
-        _echo(f"    Viscosity proxy:    {t2.get('viscosity_proxy', 'N/A')}")
-        _echo(f"    Li+ solvation:      {t2.get('li_solvation_proxy', 'N/A')}")
-    _echo(f"{'=' * 56}")
-
-    if pretty:
-        properties = None
-        if t2:
-            properties = {
-                "HOMO (eV)": t2.get("homo_eV"),
-                "LUMO (eV)": t2.get("lumo_eV"),
-                "Gap (eV)": t2.get("gap_eV"),
-                "Dielectric": t2.get("dielectric_proxy"),
-                "Viscosity": t2.get("viscosity_proxy"),
-                "Li+ Solvation": t2.get("li_solvation_proxy"),
-                "Quantum Confidence": t2.get("quantum_confidence"),
-            }
-        print_result_card(
-            smiles=smiles,
-            total_score=total,
-            is_viable=viable,
-            sub_scores=sub_scores,
-            properties=properties,
-            rejection_reasons=score.get("rejection_reasons"),
-        )
-
-    if not viable:
-        sys.exit(1)
-
-
 @cli.command("agent")
 @click.option("--max-generations", type=int, default=50)
 @click.option("--batch-size", type=int, default=50)
@@ -714,9 +720,148 @@ def mixture_cmd(smiles_a: str, smiles_b: str, frac: float, smiles_c: str | None,
     _report_mixture_result(result, label)
 
 
-# ---------------------------------------------------------------------------
-# Local Lightweight Kernel Tuner
-# ---------------------------------------------------------------------------
+@cli.command("tune")
+@click.argument("csv_path", type=click.Path(exists=True))
+@click.option("--output", default="aurelius_kernel.json")
+@click.option("--max-iter", default=200)
+def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
+    """Tune kernel parameters from a CSV of experimental data."""
+    try:
+        import numpy as np  # noqa: F401
+    except ImportError:
+        _echo_colored("[red]Error:[/red] 'aurelius tune' requires numpy. Install with: pip install -e '.[ml]'", style="bold red", err=True)
+        sys.exit(1)
+
+    _echo(f"Loading training data from {csv_path}...")
+    import csv
+    smiles_list: list[str] = []
+    property_names: list[str] = []
+    values: list[float] = []
+    with open(csv_path, newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            smiles_list.append(row["smiles"].strip())
+            prop = row.get("property", "homo").strip()
+            property_names.append(prop)
+            values.append(float(row["value"]))
+
+    n = len(smiles_list)
+    if n < 3:
+        click.echo(f"Error: need at least 3 data points, got {n}", err=True)
+        sys.exit(1)
+    _echo(f"Loaded {n} data points. Running Nelder-Mead optimization...")
+
+    x0 = [0.0, 0.0, 1.0]
+    bounds = [(-5.0, 5.0), (-5.0, 5.0), (0.1, 10.0)]
+
+    def _tune_objective(
+        params: list[float],
+        s_list: list[str],
+        p_names: list[str],
+        exp_vals: list[float],
+    ) -> float:
+        import numpy as np
+        from aurelius.scoring.oracle import PropertyOracle
+
+        oracle = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=False)
+        predictions: list[float] = []
+        for smi, prop in zip(s_list, p_names):
+            try:
+                result = oracle.evaluate_smiles(smi)
+                raw = result.get("homo_eV", 0.0)
+                if prop in ("homo", "homo_eV"):
+                    pred = raw + params[0]
+                elif prop in ("lumo", "lumo_eV"):
+                    pred = raw + params[1]
+                else:
+                    pred = raw * params[2]
+                predictions.append(pred)
+            except Exception as exc:
+                _echo(f"  Skipping {smi}: {exc}", err=True)
+                continue
+        if len(predictions) < 2:
+            return 999.0
+        pred_arr = np.array(predictions, dtype=np.float64)
+        exp_arr = np.array(exp_vals[:len(predictions)], dtype=np.float64)
+        return float(np.sqrt(np.mean((pred_arr - exp_arr) ** 2)))
+
+    result_x = _nelder_mead(
+        _tune_objective,
+        x0,
+        args=(smiles_list, property_names, values),
+        bounds=bounds,
+        max_iter=max_iter,
+    )
+
+    tom_parameters = {
+        "homo_offset": float(result_x[0]),
+        "lumo_offset": float(result_x[1]),
+        "gc_scale": float(result_x[2]),
+    }
+
+    from aurelius.scoring.oracle import PropertyOracle
+    oracle = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=False)
+    predictions: list[float] = []
+    valid_smiles: list[str] = []
+    for smi, prop in zip(smiles_list, property_names):
+        try:
+            result = oracle.evaluate_smiles(smi)
+            raw = result.get("homo_eV", 0.0)
+            if prop in ("homo", "homo_eV"):
+                pred = raw + tom_parameters["homo_offset"]
+            elif prop in ("lumo", "lumo_eV"):
+                pred = raw + tom_parameters["lumo_offset"]
+            else:
+                pred = raw * tom_parameters["gc_scale"]
+            predictions.append(pred)
+            valid_smiles.append(smi)
+        except Exception:
+            continue
+
+    if len(predictions) >= 2:
+        residuals = [p - v for p, v in zip(predictions, values[:len(predictions)])]
+        mae = sum(abs(r) for r in residuals) / len(residuals)
+        rmse = (sum(r * r for r in residuals) / len(residuals)) ** 0.5
+        spearman = _spearman_rho(predictions, values[:len(predictions)])
+    else:
+        mae, rmse, spearman = 0.0, 0.0, 0.0
+
+    kernel = {
+        "version": "1.0.0",
+        "domain_boundary": {"domain": "electrolyte"},
+        "tom_parameters": tom_parameters,
+        "gc_fragments": [
+            "ester", "carboxylic_acid", "amide", "ketone", "aldehyde",
+            "carbonate", "ether", "alcohol", "primary_amine", "secondary_amine",
+            "tertiary_amine", "nitrile", "alkene", "alkyne", "aromatic_carbon",
+            "fluorine", "chlorine", "bromine", "sulfone", "sulfonate",
+            "sulfonyl_fluoride", "cyclic_sulfone_5", "cyclic_sulfone_6",
+            "sultone_5", "sultone_6", "phosphate", "trifluoromethyl",
+            "difluoromethylene", "boronate", "borate", "thioether",
+            "fluorinated_ether", "phosphazene", "glyme_chelating", "sulfonimide",
+            "fluorinated_carbonate", "sulfoxide", "aromatic_nitrogen",
+            "phosphonate", "hf_scavenger", "cyclic_carbonate",
+        ],
+        "uq_weights": {"ensemble_weight": 0.5},
+        "validation_metrics": {
+            "spearman_rho": round(spearman, 4),
+            "mae": round(mae, 4),
+            "rmse": round(rmse, 4),
+            "n_training": len(valid_smiles),
+        },
+    }
+
+    with open(output, "w") as f:
+        json.dump(kernel, f, indent=2)
+
+    _echo_colored(f"\n[bold green]Tuning complete.[/bold green] Results written to [cyan]{output}[/cyan]", style="green")
+    _echo(f"  HOMO offset:  {tom_parameters['homo_offset']:+.4f}")
+    _echo(f"  LUMO offset:  {tom_parameters['lumo_offset']:+.4f}")
+    _echo(f"  GC scale:     {tom_parameters['gc_scale']:.4f}")
+    _echo(f"  Spearman ρ:   {spearman:.4f}")
+    _echo(f"  MAE:          {mae:.4f}")
+    _echo(f"  RMSE:         {rmse:.4f}")
+    _echo(f"  Training pts: {len(valid_smiles)}")
 
 
 def _spearman_rho(x: list[float], y: list[float]) -> float:
@@ -733,54 +878,6 @@ def _spearman_rho(x: list[float], y: list[float]) -> float:
     d = x_rank - y_rank
     rho = 1.0 - (6.0 * np.sum(d ** 2)) / (n * (n ** 2 - 1.0))
     return 0.0 if np.isnan(rho) else float(rho)
-
-
-def _adjust_prediction(
-    oracle_result: dict,
-    property_name: str,
-    homo_offset: float,
-    lumo_offset: float,
-    gc_scale: float,
-) -> float:
-    raw = oracle_result.get(property_name, 0.0)
-    if not raw:
-        raw = oracle_result.get("homo_eV", 0.0)
-    if property_name in ("homo", "homo_eV"):
-        return raw + homo_offset
-    if property_name in ("lumo", "lumo_eV"):
-        return raw + lumo_offset
-    return raw * gc_scale
-
-
-def _tune_objective(
-    params: list[float],
-    smiles_list: list[str],
-    property_names: list[str],
-    exp_values: list[float],
-) -> float:
-    import numpy as np
-    from aurelius.scoring.oracle import PropertyOracle
-
-    oracle = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=False)
-    predictions: list[float] = []
-    for smi, prop in zip(smiles_list, property_names):
-        try:
-            result = oracle.evaluate_smiles(smi)
-            pred = _adjust_prediction(
-                result, prop,
-                homo_offset=params[0],
-                lumo_offset=params[1],
-                gc_scale=params[2],
-            )
-            predictions.append(pred)
-        except Exception as exc:
-            _echo(f"  Skipping {smi}: {exc}", err=True)
-            continue
-    if len(predictions) < 2:
-        return 999.0
-    pred_arr = np.array(predictions, dtype=np.float64)
-    exp_arr = np.array(exp_values[:len(predictions)], dtype=np.float64)
-    return float(np.sqrt(np.mean((pred_arr - exp_arr) ** 2)))
 
 
 def _nelder_mead(
@@ -856,118 +953,6 @@ def _nelder_mead(
 
     best_idx = int(np.argmin(f_vals))
     return simplex[best_idx].tolist()
-
-
-@cli.command("tune")
-@click.argument("csv_path", type=click.Path(exists=True))
-@click.option("--output", default="aurelius_kernel.json")
-@click.option("--max-iter", default=200)
-def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
-    """Tune kernel parameters from a CSV of experimental data."""
-    try:
-        import numpy as np  # noqa: F401
-    except ImportError:
-        _echo_colored("[red]Error:[/red] 'aurelius tune' requires numpy. Install with: pip install -e '.[ml]'", style="bold red", err=True)
-        sys.exit(1)
-
-    _echo(f"Loading training data from {csv_path}...")
-    import csv
-    smiles_list: list[str] = []
-    property_names: list[str] = []
-    values: list[float] = []
-    with open(csv_path, newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            smiles_list.append(row["smiles"].strip())
-            prop = row.get("property", "homo").strip()
-            property_names.append(prop)
-            values.append(float(row["value"]))
-
-    n = len(smiles_list)
-    if n < 3:
-        click.echo(f"Error: need at least 3 data points, got {n}", err=True)
-        sys.exit(1)
-    _echo(f"Loaded {n} data points. Running Nelder-Mead optimization...")
-
-    x0 = [0.0, 0.0, 1.0]
-    bounds = [(-5.0, 5.0), (-5.0, 5.0), (0.1, 10.0)]
-
-    result_x = _nelder_mead(
-        _tune_objective,
-        x0,
-        args=(smiles_list, property_names, values),
-        bounds=bounds,
-        max_iter=max_iter,
-    )
-
-    tom_parameters = {
-        "homo_offset": float(result_x[0]),
-        "lumo_offset": float(result_x[1]),
-        "gc_scale": float(result_x[2]),
-    }
-
-    from aurelius.scoring.oracle import PropertyOracle
-    oracle = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=False)
-    predictions: list[float] = []
-    valid_smiles: list[str] = []
-    for smi, prop in zip(smiles_list, property_names):
-        try:
-            result = oracle.evaluate_smiles(smi)
-            pred = _adjust_prediction(
-                result, prop,
-                homo_offset=tom_parameters["homo_offset"],
-                lumo_offset=tom_parameters["lumo_offset"],
-                gc_scale=tom_parameters["gc_scale"],
-            )
-            predictions.append(pred)
-            valid_smiles.append(smi)
-        except Exception:
-            continue
-
-    if len(predictions) >= 2:
-        residuals = [p - v for p, v in zip(predictions, values[:len(predictions)])]
-        mae = sum(abs(r) for r in residuals) / len(residuals)
-        rmse = (sum(r * r for r in residuals) / len(residuals)) ** 0.5
-        spearman = _spearman_rho(predictions, values[:len(predictions)])
-    else:
-        mae, rmse, spearman = 0.0, 0.0, 0.0
-
-    kernel = {
-        "version": "1.0.0",
-        "domain_boundary": {"domain": "electrolyte"},
-        "tom_parameters": tom_parameters,
-        "gc_fragments": [
-            "ester", "carboxylic_acid", "amide", "ketone", "aldehyde",
-            "carbonate", "ether", "alcohol", "primary_amine", "secondary_amine",
-            "tertiary_amine", "nitrile", "alkene", "alkyne", "aromatic_carbon",
-            "fluorine", "chlorine", "bromine", "sulfone", "sulfonate",
-            "sulfonyl_fluoride", "cyclic_sulfone_5", "cyclic_sulfone_6",
-            "sultone_5", "sultone_6", "phosphate", "trifluoromethyl",
-            "difluoromethylene", "boronate", "borate", "thioether",
-            "fluorinated_ether", "phosphazene", "glyme_chelating", "sulfonimide",
-            "fluorinated_carbonate", "sulfoxide", "aromatic_nitrogen",
-            "phosphonate", "hf_scavenger", "cyclic_carbonate",
-        ],
-        "uq_weights": {"ensemble_weight": 0.5},
-        "validation_metrics": {
-            "spearman_rho": round(spearman, 4),
-            "mae": round(mae, 4),
-            "rmse": round(rmse, 4),
-            "n_training": len(valid_smiles),
-        },
-    }
-
-    with open(output, "w") as f:
-        json.dump(kernel, f, indent=2)
-
-    _echo_colored(f"\n[bold green]Tuning complete.[/bold green] Results written to [cyan]{output}[/cyan]", style="green")
-    _echo(f"  HOMO offset:  {tom_parameters['homo_offset']:+.4f}")
-    _echo(f"  LUMO offset:  {tom_parameters['lumo_offset']:+.4f}")
-    _echo(f"  GC scale:     {tom_parameters['gc_scale']:.4f}")
-    _echo(f"  Spearman \u03c1:   {spearman:.4f}")
-    _echo(f"  MAE:          {mae:.4f}")
-    _echo(f"  RMSE:         {rmse:.4f}")
-    _echo(f"  Training pts: {len(valid_smiles)}")
 
 
 @cli.command("verify-kernel")

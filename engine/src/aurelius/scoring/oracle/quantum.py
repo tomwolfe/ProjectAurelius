@@ -793,58 +793,60 @@ def compute_quantum_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
 
 
 # ---------------------------------------------------------------------------
-# Calibration-based confidence for TOM
+# Calibration loading — helper that returns data, never modifies globals
 # ---------------------------------------------------------------------------
 
-_CALIBRATION_FPS: list[Chem.DataStructs.ExplicitBitVect] | None = None
-_CALIBRATION_SMILES: list[str] | None = None
+CalibrationData = tuple[list[Chem.DataStructs.ExplicitBitVect], list[str]]
 
 
-def _ensure_calibration_loaded() -> None:
-    """Lazy-load orbital_calibration.json fingerprints into module-level cache."""
-    global _CALIBRATION_FPS, _CALIBRATION_SMILES
-    if _CALIBRATION_FPS is not None:
-        return
-    _CALIBRATION_FPS = []
-    _CALIBRATION_SMILES = []
+def _resolve_calibration_path() -> str | None:
+    """Search common paths for ``orbital_calibration.json``."""
     module_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
         os.path.join(module_dir, "..", "..", "..", "..", "src", "aurelius", "data", "orbital_calibration.json"),
         os.path.join(module_dir, "..", "..", "data", "orbital_calibration.json"),
         os.path.join(module_dir, "..", "data", "orbital_calibration.json"),
     ]
-    path: str | None = None
     for c in candidates:
         resolved = os.path.abspath(c)
         if os.path.exists(resolved):
-            path = resolved
-            break
+            return resolved
+    return None
+
+
+def load_calibration_fingerprints(
+    path: str | None = None,
+) -> CalibrationData:
+    """Load orbital_calibration fingerprints from a JSON file.
+
+    Returns a (fingerprints, smiles) pair.  Returns empty lists
+    if the file cannot be found or parsed.
+    """
     if path is None:
-        logger.warning("orbital_calibration.json not found — TOM confidence will be based on structural heuristics only.")
-        return
+        path = _resolve_calibration_path()
+    if path is None or not os.path.exists(path):
+        logger.warning(
+            "orbital_calibration.json not found — "
+            "TOM confidence will be based on structural heuristics only."
+        )
+        return [], []
+
+    fps: list[Chem.DataStructs.ExplicitBitVect] = []
+    smiles: list[str] = []
     try:
         with open(path) as f:
             data = json.load(f)
         for entry in data:
             smi = entry.get("smiles", "")
-            mol = Chem.MolFromSmiles(smi)
-            if mol is not None:
-                fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-                _CALIBRATION_FPS.append(fp)
-                _CALIBRATION_SMILES.append(smi)
-        logger.info("Loaded %d calibration fingerprints from %s", len(_CALIBRATION_FPS), path)
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is not None:
+                fp = ctx.get_ecfp4()
+                fps.append(fp)
+                smiles.append(smi)
+        logger.info("Loaded %d calibration fingerprints from %s", len(fps), path)
     except Exception as exc:
         logger.warning("Failed to load calibration set: %s", exc)
-
-
-def _compute_max_tanimoto_to_calibration(mol: Chem.Mol) -> float:
-    """Compute max Tanimoto similarity of *mol* to the calibration set."""
-    _ensure_calibration_loaded()
-    if not _CALIBRATION_FPS:
-        return 0.0
-    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-    sims = BulkTanimotoSimilarity(fp, _CALIBRATION_FPS)
-    return float(max(sims))
+    return fps, smiles
 
 
 # ---------------------------------------------------------------------------
@@ -1017,11 +1019,30 @@ class TOMBackend(QuantumBackend):
 
     Uses the particle-in-a-box model for pi-electrons with heteroatom
     perturbations and a calibration-set Tanimoto confidence score.
+
+    Parameters
+    ----------
+    calibration_fps : list[ExplicitBitVect] | None
+        Pre-loaded calibration fingerprints.  If ``None`` the backend
+        will attempt to load them from disk on first evaluation.
+    calibration_smiles : list[str] | None
+        Corresponding SMILES strings (same length as *calibration_fps*).
+    calibration_path : str | None
+        Path to ``orbital_calibration.json``.  Only used if
+        *calibration_fps* is ``None``.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        calibration_fps: list[Chem.DataStructs.ExplicitBitVect] | None = None,
+        calibration_smiles: list[str] | None = None,
+        calibration_path: str | None = None,
+    ) -> None:
         self._cache: dict[str, dict[str, float]] = {}
         self._n_calls = 0
+        self._calibration_fps: list[Chem.DataStructs.ExplicitBitVect] | None = calibration_fps
+        self._calibration_smiles: list[str] | None = calibration_smiles
+        self._calibration_path: str | None = calibration_path
 
     @property
     def method(self) -> str:
@@ -1037,6 +1058,23 @@ class TOMBackend(QuantumBackend):
     def get_cache_size(self) -> int:
         return len(self._cache)
 
+    def _ensure_calibration_loaded(self) -> None:
+        """Lazy-load calibration fingerprints if not already set."""
+        if self._calibration_fps is not None:
+            return
+        fps, smiles = load_calibration_fingerprints(self._calibration_path)
+        self._calibration_fps = fps
+        self._calibration_smiles = smiles
+
+    def _compute_max_tanimoto_to_calibration(self, mol: Chem.Mol) -> float:
+        """Compute max Tanimoto similarity of *mol* to the calibration set."""
+        self._ensure_calibration_loaded()
+        if not self._calibration_fps:
+            return 0.0
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+        sims = BulkTanimotoSimilarity(fp, self._calibration_fps)
+        return float(max(sims))
+
     def evaluate(self, mol: Chem.Mol) -> dict[str, float]:
         smiles = Chem.MolToSmiles(mol)
         if smiles in self._cache:
@@ -1047,7 +1085,7 @@ class TOMBackend(QuantumBackend):
         L = _longest_conjugation_path(mol)
         n_rings = mol.GetRingInfo().NumRings()
 
-        max_sim = _compute_max_tanimoto_to_calibration(mol)
+        max_sim = self._compute_max_tanimoto_to_calibration(mol)
         if max_sim < 0.5:
             quantum_conf = "tom_low"
         elif L <= 8 and n_rings <= 2:

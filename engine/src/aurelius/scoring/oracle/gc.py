@@ -203,12 +203,12 @@ def _count_fragments(mol: Chem.Mol) -> dict[str, int]:
 @lru_cache(maxsize=2048)
 def _cached_count_fragments(smiles: str) -> dict[str, int]:
     """LRU-cached fragment counting — keyed by canonical SMILES."""
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
+    ctx = MoleculeContext.from_smiles(smiles)
+    if ctx is None:
         return {}
     counts: dict[str, int] = {}
     for pattern, name, _dd, _dv, _ls, _dc in _GC_FRAGMENTS:
-        matches = mol.GetSubstructMatches(pattern)
+        matches = ctx.mol.GetSubstructMatches(pattern)
         counts[name] = len(matches)
     return counts
 
