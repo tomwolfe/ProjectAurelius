@@ -346,7 +346,14 @@ class AureliusPipeline:
             Dict of kernel parameters on successful verification, or ``None``
             to indicate the caller should use defaults.
         """
-        return self._kernel_loader.load(kernel_path)
+        result = self._kernel_loader.load(kernel_path)
+        if result is None:
+            logger.warning(
+                "No valid certified kernel loaded. Using default parameters. "
+                "Results may be less accurate. "
+                "Consider tuning with Aurelius Certification Lab."
+            )
+        return result
 
     def _generate_failed_run(self, smiles: str, reason: str) -> dict[str, Any]:
         t1_result = {

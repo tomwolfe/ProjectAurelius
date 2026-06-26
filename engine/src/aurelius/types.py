@@ -92,6 +92,7 @@ class MoleculeContext:
     mol: Chem.Mol
     fingerprint_ecfp4: Any | None = None
     feature_vector: np.ndarray[Any, Any] | None = None
+    gc_feature_vector: np.ndarray[Any, Any] | None = None
 
     @classmethod
     @lru_cache(maxsize=1024)

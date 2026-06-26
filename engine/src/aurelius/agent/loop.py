@@ -763,35 +763,41 @@ class DiscoveryLoop:
         result_contexts: list[MoleculeContext],
         all_scores: list[float],
     ) -> tuple[list[MoleculeContext], list[float]] | None:
-        """If the active learning queue has items, select from it using UCB.
+        """If the active learning queue has items, select from it in FIFO order.
 
         Returns (selected, scores) or None if the queue is empty.
+        Prioritises molecules already in the queue over random selection,
+        consuming them in FIFO order up to ``batch_size``.
         """
         if not self.state.active_learning_queue:
             return None
-        queue_set = set(self.state.active_learning_queue)
-        queue_contexts: list[MoleculeContext] = []
-        queue_scores: list[float] = []
-        for ctx, score in zip(result_contexts, all_scores, strict=False):
-            if ctx.smiles in queue_set:
-                queue_contexts.append(ctx)
-                queue_scores.append(score)
 
-        if not queue_contexts:
+        result_by_smiles: dict[str, tuple[MoleculeContext, float]] = {
+            ctx.smiles: (ctx, score)
+            for ctx, score in zip(result_contexts, all_scores, strict=False)
+        }
+
+        selected_contexts: list[MoleculeContext] = []
+        selected_scores: list[float] = []
+        remaining_queue: list[str] = []
+
+        for smi in self.state.active_learning_queue:
+            if smi in result_by_smiles:
+                ctx, score = result_by_smiles[smi]
+                if len(selected_contexts) < self.batch_size:
+                    selected_contexts.append(ctx)
+                    selected_scores.append(score)
+                else:
+                    remaining_queue.append(smi)
+            else:
+                remaining_queue.append(smi)
+
+        self.state.active_learning_queue = remaining_queue
+
+        if not selected_contexts:
             return None
 
-        uncertainties = self._get_uncertainties(self.pipeline, queue_contexts)
-        selected = select_for_active_learning(
-            queue_contexts, queue_scores, uncertainties,
-            batch_size=self.batch_size,
-        )
-        selected_scores = [queue_scores[queue_contexts.index(ctx)] for ctx in selected]
-
-        for ctx in selected:
-            if ctx.smiles in self.state.active_learning_queue:
-                self.state.active_learning_queue.remove(ctx.smiles)
-
-        return selected, selected_scores
+        return selected_contexts, selected_scores
 
     def _ucb_select_all(
         self,

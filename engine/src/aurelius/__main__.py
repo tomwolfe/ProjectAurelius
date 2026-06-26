@@ -261,6 +261,9 @@ def view_cmd(smiles: str, pack: str, output: str | None) -> None:
     badge_color = "green" if viable else "red"
     badge_text = "DISCOVERY" if viable else "REJECTED"
 
+    sub_scores = score.get("sub_scores", {})
+    rejection_reasons = score.get("rejection_reasons", [])
+
     props_html = ""
     if t2:
         prop_rows = [
@@ -278,6 +281,18 @@ def view_cmd(smiles: str, pack: str, output: str | None) -> None:
         for name, val in prop_rows:
             props_html += f"<tr><td style='padding:4px 12px;font-weight:600'>{name}</td><td style='padding:4px 12px'>{val}</td></tr>\n"
 
+    subs_html = ""
+    if sub_scores:
+        for name, val in sorted(sub_scores.items(), key=lambda x: x[1], reverse=True):
+            bar = int(val * 20)
+            bar_str = "&#9608;" * bar + "&#9617;" * (20 - bar)
+            subs_html += f"<tr><td style='padding:4px 12px;font-weight:600'>{name}</td><td style='padding:4px 12px'>{val:.3f}</td><td style='padding:4px 12px;font-family:monospace'>{bar_str}</td></tr>\n"
+
+    reasons_html = ""
+    if rejection_reasons:
+        for r in rejection_reasons:
+            reasons_html += f"<li style='color:#d32f2f;margin-bottom:4px'>{r}</li>\n"
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -287,12 +302,15 @@ def view_cmd(smiles: str, pack: str, output: str | None) -> None:
         body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; background: #f5f5f5; }}
         .card {{ background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 2em; margin-bottom: 1.5em; }}
         h1 {{ font-size: 1.4em; margin-top: 0; }}
+        h2 {{ font-size: 1.1em; margin-top: 0; }}
         .badge {{ display: inline-block; padding: 4px 14px; border-radius: 12px; color: #fff; font-weight: 700; font-size: 0.9em; background: {badge_color}; }}
         .molecule-img {{ text-align: center; margin: 1em 0; }}
         table {{ width: 100%; border-collapse: collapse; }}
         tr:nth-child(even) {{ background: #f9f9f9; }}
         td {{ padding: 4px 12px; }}
+        th {{ padding: 4px 12px; text-align: left; border-bottom: 2px solid #ddd; }}
         .score {{ font-size: 2em; font-weight: 700; text-align: center; margin: 0.5em 0; }}
+        ul {{ padding-left: 1.2em; }}
     </style>
 </head>
 <body>
@@ -310,8 +328,23 @@ def view_cmd(smiles: str, pack: str, output: str | None) -> None:
         <table>
             {props_html}
         </table>
-    </div>
-</body>
+    </div>"""
+    if subs_html:
+        html += f"""    <div class="card">
+        <h2>Sub-Scores</h2>
+        <table>
+            <tr><th>Objective</th><th>Score</th><th>Bar</th></tr>
+            {subs_html}
+        </table>
+    </div>"""
+    if reasons_html:
+        html += f"""    <div class="card">
+        <h2>Rejection Reasons</h2>
+        <ul>
+            {reasons_html}
+        </ul>
+    </div>"""
+    html += """</body>
 </html>"""
 
     if output:

@@ -2,6 +2,5 @@
     "certification-lab": {
         "known_good_hash": "0000000000000000000000000000000000000000",
         "description": "Update this hash to the known-good commit of the certification-lab submodule. Run `git submodule status` to get the current hash."
-    },
-    "known_good_hash": null
+    }
 }
