@@ -474,6 +474,7 @@ class LoopState:
         self._seen_scaffolds.clear()
         self.screened_fingerprints.clear()
         self.active_learning_queue.clear()
+        MoleculeContext.from_smiles.cache_clear()
         self.save()
 
 

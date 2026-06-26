@@ -72,6 +72,8 @@ class AgentConfig:
     max_generations: int = 50
     batch_size: int = 50
     pack: str = "electrolyte"
+    verbose: bool = False
+    strict: bool = False
     wet_lab_feedback: Callable[[list[ScreeningResult], dict[str, float]], None] | None = None
 
 
@@ -120,7 +122,7 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
     """Run the autonomous screening loop and generate deliverables."""
     output_dir = None
 
-    engine = MutationEngine()
+    engine = MutationEngine(strict=agent_cfg.strict)
     state = LoopState(output_dir=output_dir)
 
     resumed = state.total_screened > 0
@@ -143,6 +145,7 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
         state=state,
         max_generations=agent_cfg.max_generations,
         batch_size=agent_cfg.batch_size,
+        verbose=agent_cfg.verbose,
     )
     results = loop.execute()
 
@@ -249,6 +252,7 @@ class DiscoveryLoop:
         max_wall_time: float = 43200.0,
         wet_lab_feedback: Callable[[list[ScreeningResult], dict[str, float]], None] | None = None,
         exploration_beta: float = 0.5,
+        verbose: bool = False,
     ) -> None:
         self.pipeline = pipeline
         self.engine = engine
@@ -258,6 +262,7 @@ class DiscoveryLoop:
         self.max_wall_time = max_wall_time
         self.wet_lab_feedback = wet_lab_feedback
         self.exploration_beta = exploration_beta
+        self.verbose = verbose
         self._wall_start: float = 0.0
 
     def _wall_time_exceeded(self) -> bool:
@@ -930,6 +935,10 @@ class DiscoveryLoop:
         self._evolve_seed_pool(batch_contexts, batch_scores)
         self._record_scaffolds(batch_contexts)
         self.state.record_batch(batch_scores, batch_viable)
+
+        if self.verbose:
+            from aurelius.agent.reporting import print_score_distribution
+            print_score_distribution(batch_scores)
 
         mean_div = compute_pairwise_diversity(batch_contexts)
         log.info(

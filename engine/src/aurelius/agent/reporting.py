@@ -24,6 +24,31 @@ from aurelius.scoring.oracle.gc import GcUqEnsemble
 from aurelius.types import MoleculeContext, ScreeningResult
 
 
+def print_score_distribution(scores: list[float], bins: int = 10) -> None:
+    """Print a simple ASCII histogram of the current generation's scores."""
+    if not scores:
+        print("  [score distribution] no scores to display")
+        return
+    min_s, max_s = min(scores), max(scores)
+    if max_s - min_s < 1e-9:
+        print(f"  [score distribution] all scores = {min_s:.1f}")
+        return
+    width = 40
+    interval = (max_s - min_s) / bins
+    counts = [0] * bins
+    for s in scores:
+        idx = min(int((s - min_s) / interval), bins - 1)
+        counts[idx] += 1
+    max_count = max(counts)
+    print(f"  Score distribution ({len(scores)} candidates):")
+    for i in range(bins):
+        lo = min_s + i * interval
+        hi = lo + interval
+        bar_len = int(counts[i] / max_count * width) if max_count > 0 else 0
+        bar = "█" * bar_len
+        print(f"    {lo:>6.1f}-{hi:<6.1f} |{bar:<{width}}| {counts[i]}")
+
+
 def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str:
     if output_dir is not None:
         return str(Path(output_dir) / path)

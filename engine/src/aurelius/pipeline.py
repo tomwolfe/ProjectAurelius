@@ -152,6 +152,35 @@ _OBJECTIVES: list[Objective] = [
 ]
 
 
+DEFAULT_DOMAIN_BOUNDARIES: dict[str, tuple[float, float]] = {
+    "mw": (30.0, 500.0),
+    "logp": (-2.0, 6.0),
+    "tpsa": (0.0, 200.0),
+    "hba": (1, 12),
+    "hbd": (0, 6),
+    "ring_count": (1, 6),
+}
+
+
+def check_kernel_health(ctx: MoleculeContext) -> bool:
+    """Compare molecule properties against the default kernel domain boundary.
+
+    Returns True if the molecule is inside the domain, False if outside.
+    Logs a warning when outside the domain.
+    """
+    inside = True
+    for prop, (lo, hi) in DEFAULT_DOMAIN_BOUNDARIES.items():
+        value = getattr(ctx, prop, None)
+        if value is not None and not (lo <= value <= hi):
+            logger.warning(
+                "Molecule outside default kernel domain: %s=%s (domain [%s, %s]). "
+                "Consider tuning via Certification Lab.",
+                prop, value, lo, hi,
+            )
+            inside = False
+    return inside
+
+
 class AureliusPipeline:
     """Full Aurelius screening pipeline orchestrator.
 
@@ -300,6 +329,8 @@ class AureliusPipeline:
         else:
             results = {}
             tier_timings = {}
+
+        check_kernel_health(ctx)
 
         t2_result = None
         homo_eV = -99.0

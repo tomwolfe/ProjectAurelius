@@ -17,20 +17,56 @@ import random
 from typing import Any
 
 import numpy as np
-from rdkit.DataStructs import BulkTanimotoSimilarity, TanimotoSimilarity
+from rdkit.DataStructs import BulkTanimotoSimilarity
 
 from aurelius.types import MoleculeContext
 
 log = logging.getLogger(__name__)
 
 
-def _adjusted_score(idx: int, scores: list[float], fps_list: list[Any], selected_fps: list[Any], diversity_lambda: float) -> float:
-    """Compute diversity-penalised score for a candidate."""
-    if not selected_fps:
+def _fp_to_array(fp: Any, n_bits: int = 2048) -> np.ndarray:
+    """Convert an RDKit BitVect to a fixed-size numpy uint8 array."""
+    arr = np.zeros(n_bits, dtype=np.uint8)
+    for idx in fp.GetOnBits():
+        arr[idx] = 1
+    return arr
+
+
+def _batch_max_tanimoto(
+    fps_arr: np.ndarray,
+    selected_arr: np.ndarray,
+) -> np.ndarray:
+    """Vectorised max-Tanimoto of each row in fps_arr against rows in selected_arr.
+
+    Both arrays have shape (N, n_bits). Returns an (N,) array where
+    entry i is max_j Tanimoto(fps_arr[i], selected_arr[j]).
+    """
+    if selected_arr.shape[0] == 0:
+        return np.zeros(fps_arr.shape[0], dtype=np.float64)
+    intersection = np.bitwise_and(fps_arr[:, None, :], selected_arr[None, :, :]).sum(axis=2)
+    union = np.bitwise_or(fps_arr[:, None, :], selected_arr[None, :, :]).sum(axis=2)
+    sims = np.divide(
+        intersection.astype(np.float64),
+        union.astype(np.float64),
+        out=np.zeros_like(intersection, dtype=np.float64),
+        where=union > 0,
+    )
+    return sims.max(axis=1)
+
+
+def _adjusted_score(
+    idx: int,
+    scores: list[float],
+    max_sims: list[float] | np.ndarray,
+    diversity_lambda: float,
+) -> float:
+    """Compute diversity-penalised score for a candidate.
+
+    Uses pre-computed max-similarity values so the caller can vectorise.
+    """
+    if len(max_sims) == 0:
         return scores[idx]
-    fp = fps_list[idx]
-    max_sim = max(TanimotoSimilarity(fp, sfp) for sfp in selected_fps)
-    return scores[idx] * (1.0 - diversity_lambda * max_sim)
+    return scores[idx] * (1.0 - diversity_lambda * float(max_sims[idx]))
 
 
 def _ucb_score(
@@ -61,16 +97,19 @@ def _ucb_score(
 def _best_in_tournament(
     tournament: list[int],
     scores: list[float],
-    fps_list: list[Any],
-    selected_fps: list[Any],
+    max_sims: np.ndarray,
     diversity_lambda: float,
 ) -> tuple[int, float]:
-    """Find the best candidate in a tournament, adjusted for diversity."""
+    """Find the best candidate in a tournament, adjusted for diversity.
+
+    ``max_sims`` is a pre-computed (n_candidates,) array with the max
+    Tanimoto similarity of each candidate against the currently selected set.
+    """
     best_idx = max(tournament, key=lambda i: scores[i])
-    best_adj = _adjusted_score(best_idx, scores, fps_list, selected_fps, diversity_lambda)
+    best_adj = _adjusted_score(best_idx, scores, max_sims, diversity_lambda)
 
     for i in tournament:
-        adj = _adjusted_score(i, scores, fps_list, selected_fps, diversity_lambda)
+        adj = _adjusted_score(i, scores, max_sims, diversity_lambda)
         if adj > best_adj:
             best_adj = adj
             best_idx = i
@@ -109,9 +148,10 @@ def tournament_select(
         return list(contexts)
 
     rng = random.Random(rng_seed)
-    fps_list = [ctx.get_ecfp4() for ctx in contexts]
+    # Pre-convert all fingerprints to a single (n, 2048) uint8 array
+    fps_arr = np.array([_fp_to_array(ctx.get_ecfp4()) for ctx in contexts], dtype=np.uint8)
     selected: list[MoleculeContext] = []
-    selected_fps: list[Any] = []
+    selected_rows: list[int] = []
     used_indices: set[int] = set()
 
     # Use UCB acquisition when in exploration mode
@@ -121,19 +161,32 @@ def tournament_select(
         else scores
     )
 
+    # max_sims will be recomputed each round as selected_rows grows
     for _ in range(min(batch_size, n)):
         pool = [i for i in range(n) if i not in used_indices]
         if not pool:
             break
 
+        # Compute max Tanimoto for every pool candidate vs. selected set
+        if selected_rows:
+            selected_arr = fps_arr[selected_rows]
+            pool_arr = fps_arr[pool]
+            pool_max_sims = _batch_max_tanimoto(pool_arr, selected_arr)
+            # Build full-size max_sims array (default 0 for unselected indices)
+            max_sims = np.zeros(n, dtype=np.float64)
+            for pi, psi in zip(pool, pool_max_sims):
+                max_sims[pi] = psi
+        else:
+            max_sims = np.zeros(n, dtype=np.float64)
+
         tournament = rng.sample(pool, min(tournament_size, len(pool)))
         best_idx, _ = _best_in_tournament(
-            tournament, effective_scores, fps_list, selected_fps, diversity_lambda,
+            tournament, effective_scores, max_sims, diversity_lambda,
         )
 
         used_indices.add(best_idx)
         selected.append(contexts[best_idx])
-        selected_fps.append(fps_list[best_idx])
+        selected_rows.append(best_idx)
 
     return selected
 

@@ -417,25 +417,28 @@ def validate_cmd(smiles: str, pretty: bool) -> None:
 @click.option("--max-generations", type=int, default=50, help="Maximum generations to run")
 @click.option("--batch-size", type=int, default=50, help="Candidates per batch")
 @click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Show per-generation score histogram")
+@click.option("--strict", is_flag=True, default=False, help="Raise on SMARTS/BRICS failures instead of logging warnings")
 def agent(
     max_generations: int,
     batch_size: int,
     pack: str,
+    verbose: bool,
+    strict: bool,
 ) -> None:
-    """Run the autonomous screening agent.
-
-    Uses BRICS mutation, multi-objective hybrid oracle, and tournament
-    selection to evolve electrolyte candidates over multiple generations.
+    """Evolve electrolyte candidates via BRICS mutation + multi-objective screening.
 
     \b
     Examples:
       aurelius agent
       aurelius agent --max-generations 100 --batch-size 25
-      aurelius agent --pack organic_electronics
+
+    \b
+    Tip: Run 'aurelius doctor' first to verify dependencies.
     """
     from aurelius.agent.loop import AgentConfig, run_screening
 
-    cfg = AgentConfig(max_generations=max_generations, batch_size=batch_size, pack=pack)
+    cfg = AgentConfig(max_generations=max_generations, batch_size=batch_size, pack=pack, verbose=verbose, strict=strict)
     run_screening(cfg)
 
 

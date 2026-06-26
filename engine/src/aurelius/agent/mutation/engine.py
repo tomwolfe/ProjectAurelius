@@ -85,7 +85,8 @@ class MutationEngine:
     components (NoveltyValidator, FragmentHarvester).
     """
 
-    def __init__(self, seed_smiles: list[str] | None = None, known_fps_hex: list[str] | None = None, adaptive_bias: bool = True) -> None:
+    def __init__(self, seed_smiles: list[str] | None = None, known_fps_hex: list[str] | None = None, adaptive_bias: bool = True, strict: bool = False) -> None:
+        self.strict = strict
         self.seed_pool, self.seed_contexts, self.seed_fingerprints = self._init_seeds(seed_smiles)
 
         self._commercial_fps = []
@@ -315,8 +316,10 @@ class MutationEngine:
                             p_smi = self._process_smarts_product(product, ctx.smiles, reaction_name=name, force_exploration=force_exploration)
                             if p_smi:
                                 results.append(p_smi)
-            except Exception:
-                logger.debug("SMARTS reaction '%s' failed for %s", name, ctx.smiles)
+            except Exception as exc:
+                logger.warning("SMARTS reaction failed for %s: %s", ctx.smiles, exc)
+                if self.strict:
+                    raise
         return list(set(results))
 
     def record_reaction_success(self, smiles: str, score: float) -> None:
@@ -347,7 +350,10 @@ class MutationEngine:
                         frag_ctx = MoleculeContext.from_brics_fragment(fs)
                         if frag_ctx is not None:
                             frags.append(frag_ctx.mol)
-            except Exception:
+            except Exception as exc:
+                logger.warning("BRICS decomposition failed for %s: %s", smi, exc)
+                if self.strict:
+                    raise
                 continue
         return frags
 
@@ -369,7 +375,10 @@ class MutationEngine:
         try:
             with _suppress_stderr():
                 seed_frag_smiles = list(BRICS.BRICSDecompose(ctx.mol))
-        except Exception:
+        except Exception as exc:
+            logger.warning("BRICS decomposition failed for %s: %s", ctx.smiles, exc)
+            if self.strict:
+                raise
             return []
         seed_frags: list[Chem.Mol] = []
         for fs in seed_frag_smiles:
@@ -422,8 +431,10 @@ class MutationEngine:
                         s = self._validate_brics_product(r_mol, force_exploration=force_exploration)
                         if s:
                             generated.append(s)
-            except Exception:
-                continue
+            except Exception as exc:
+                logger.warning("BRICS build failed: %s", exc)
+                if self.strict:
+                    raise
         return generated
 
     def _brics_from_pool(self, ctx: MoleculeContext, force_exploration: bool = False) -> list[str]:
