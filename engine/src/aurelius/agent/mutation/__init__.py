@@ -16,6 +16,12 @@ Decomposed into:
 
 from __future__ import annotations
 
+from aurelius.agent.mutation.base import (
+    BricsStrategy,
+    MutationStrategy,
+    SmartsStrategy,
+    StrategyContext,
+)
 from aurelius.agent.mutation.brics import (
     _BRICS_LINKER_FRAGMENTS,
     _MAX_HARVESTED_FRAGMENTS,
@@ -49,6 +55,10 @@ from aurelius.agent.mutation.smarts import (
 
 __all__ = [
     "MutationEngine",
+    "MutationStrategy",
+    "SmartsStrategy",
+    "BricsStrategy",
+    "StrategyContext",
     "NoveltyValidator",
     "FragmentHarvester",
     "ELECTROLYTE_SMARTS",

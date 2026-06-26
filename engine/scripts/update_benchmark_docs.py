@@ -218,13 +218,15 @@ def _generate_validation_table(
     return "\n".join(lines)
 
 
-def main() -> None:
-    docs_dir = Path(__file__).resolve().parent.parent / "docs"
-    docs_dir.mkdir(exist_ok=True)
-    output_file = docs_dir / "BENCHMARKS.md"
-    brief_file = docs_dir / "synthesis_brief.md"
-    history_path = docs_dir / "BENCHMARKS_HISTORY.json"
+def _generate_content(
+    docs_dir: Path,
+    brief_file: Path,
+    history_path: Path,
+) -> tuple[str, str | None]:
+    """Generate the full BENCHMARKS.md content without writing it.
 
+    Returns (content, output_file_path_as_str_or_None_for_error).
+    """
     available: list[str] = []
     unavailable: list[str] = []
     for module in _TIMEOUTS:
@@ -232,9 +234,6 @@ def main() -> None:
             available.append(module)
         else:
             unavailable.append(module)
-
-    if unavailable:
-        print(f"Warning: benchmark modules not found: {', '.join(unavailable)}", file=sys.stderr)
 
     ext_val_output = _capture("benchmarks.benchmark_external_validation") if "benchmarks.benchmark_external_validation" in available else "*Benchmark module not available — skip*"
     reality = _capture("benchmarks.benchmark_reality_check") if "benchmarks.benchmark_reality_check" in available else "*Benchmark module not available — skip*"
@@ -292,22 +291,57 @@ def main() -> None:
         "```\n",
     ]
 
-    with open(output_file, "w") as f:
-        f.writelines(parts)
-
     if brief_file.exists():
-        with open(output_file, "a") as f:
-            f.write("\n## Synthesis Target Brief\n\n")
-            f.write("*Auto-generated — see [synthesis_brief.md](synthesis_brief.md) for full table.*\n")
+        parts.append("\n## Synthesis Target Brief\n\n")
+        parts.append("*Auto-generated — see [synthesis_brief.md](synthesis_brief.md) for full table.*\n")
+
+    note = None
+    if unavailable:
+        note = f"Note: {len(unavailable)} benchmark(s) were unavailable (check PYTHONPATH):\n" + "\n".join(f"  - {m}" for m in unavailable)
+
+    return "".join(parts), note
+
+
+def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate benchmark documentation.")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Check whether docs/BENCHMARKS.md is up-to-date. Exit with code 1 if changes are needed.",
+    )
+    args = parser.parse_args()
+
+    docs_dir = Path(__file__).resolve().parent.parent / "docs"
+    docs_dir.mkdir(exist_ok=True)
+    output_file = docs_dir / "BENCHMARKS.md"
+    brief_file = docs_dir / "synthesis_brief.md"
+    history_path = docs_dir / "BENCHMARKS_HISTORY.json"
+
+    content, note = _generate_content(docs_dir, brief_file, history_path)
+
+    if args.check:
+        if output_file.exists():
+            existing = output_file.read_text()
+            if existing == content:
+                print("Benchmark docs are up-to-date.")
+                return
+            print("ERROR: docs/BENCHMARKS.md is out of date.", file=sys.stderr)
+            print("Run `python scripts/update_benchmark_docs.py` and commit the changes.", file=sys.stderr)
+            sys.exit(1)
+        else:
+            print("ERROR: docs/BENCHMARKS.md does not exist. Run `python scripts/update_benchmark_docs.py` first.", file=sys.stderr)
+            sys.exit(1)
+
+    with open(output_file, "w") as f:
+        f.write(content)
 
     print(f"Successfully updated {output_file}")
     if brief_file.exists():
         print(f"Synthesis brief: {brief_file}")
 
-    if unavailable:
-        print(f"\nNote: {len(unavailable)} benchmark(s) were unavailable (check PYTHONPATH):")
-        for m in unavailable:
-            print(f"  - {m}")
+    if note:
+        print(f"\n{note}")
 
 
 if __name__ == "__main__":

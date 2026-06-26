@@ -689,14 +689,14 @@ class DiscoveryLoop:
             if result is None:
                 return None
             # Store fingerprint and result for future similarity lookups
-            self.state.screened_fingerprints.append((smi, ctx.get_ecfp4(), result))
+            self.state.add_screened_fingerprint(smi, ctx.get_ecfp4(), result)
 
         score_data = result.get("score")
         if score_data is None:
             return None
 
         if gc_uq is not None:
-            self._check_uq_and_queue(smi, gc_uq)
+            self._check_uq_and_queue(ctx, gc_uq)
 
         self.engine.add_to_db(smi)
 
@@ -716,24 +716,21 @@ class DiscoveryLoop:
         self.state.add_result(sr)
         return total_score, t2
 
-    def _check_uq_and_queue(self, smi: str, gc_uq: Any) -> None:
+    def _check_uq_and_queue(self, ctx: MoleculeContext, gc_uq: Any) -> None:
         """Add molecule to active learning queue if GC UQ variance exceeds threshold.
 
         If the ensemble predicts std > 15% of the mean for either dielectric
         or viscosity, the SMILES is queued for real QuantumOracle evaluation
         instead of being evaluated via surrogate.
         """
+        smi = ctx.smiles
         try:
-            _, _, diel_high = gc_uq.predict_dielectric(
-                MoleculeContext.from_smiles(smi),
-            )
+            _, _, diel_high = gc_uq.predict_dielectric(ctx)
         except Exception:
             return
 
         try:
-            _, _, visc_high = gc_uq.predict_viscosity(
-                MoleculeContext.from_smiles(smi),
-            )
+            _, _, visc_high = gc_uq.predict_viscosity(ctx)
         except Exception:
             return
 

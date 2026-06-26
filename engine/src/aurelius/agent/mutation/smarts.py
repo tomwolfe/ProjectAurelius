@@ -414,10 +414,10 @@ def cross_conjugation_check(ctx: MoleculeContext) -> bool:
     """
     if _has_cross_conjugation(ctx.mol):
         return False
-    for motif in _CROSS_CONJ_MOTIFS:
-        if motif is not None and ctx.mol.HasSubstructMatch(motif):
-            return False
-    return True
+    return all(
+        not (motif is not None and ctx.mol.HasSubstructMatch(motif))
+        for motif in _CROSS_CONJ_MOTIFS
+    )
 
 
 def is_electrolyte_like(ctx: MoleculeContext) -> bool:

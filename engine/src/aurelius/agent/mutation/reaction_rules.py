@@ -73,7 +73,7 @@ def check_retrosynthetic_feasibility(mol: Chem.Mol) -> float:
         0.0 = no matching reaction rule found.
     """
     best_score = 0.0
-    for name, pat, weight in _RULE_SMARTS:
+    for _name, pat, weight in _RULE_SMARTS:
         if mol.HasSubstructMatch(pat):
             best_score = max(best_score, weight)
     return best_score

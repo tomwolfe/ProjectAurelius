@@ -12,6 +12,11 @@ is available, LoopState tracks the correlation between each predicted property
 (dielectric, viscosity, Li solvation) and the empirical target metric (e.g.,
 cycle_life). Weights are adjusted proportionally to correlation strength,
 allowing the EA to upweight properties that empirically matter most.
+
+ADR-2026-06-26: Added ``_cached_fingerprints`` mirror list to keep
+``find_nearest_screened`` from rebuilding a list comprehension on every
+call. Use ``add_screened_fingerprint()`` instead of directly appending to
+``screened_fingerprints`` to keep the cache in sync.
 """
 
 from __future__ import annotations
@@ -52,7 +57,9 @@ def _resolve_output_path(path: str, output_dir: str | Path | None = None) -> str
     return path
 
 
-def check_score_plateau(batch_means: list[float], n_batches: int = 3, tolerance: float = 0.01) -> bool:
+def check_score_plateau(
+    batch_means: list[float], n_batches: int = 3, tolerance: float = 0.01
+) -> bool:
     """Check if mean scores have plateaued over the last n_batches."""
     if len(batch_means) < n_batches:
         return False
@@ -63,7 +70,11 @@ def check_score_plateau(batch_means: list[float], n_batches: int = 3, tolerance:
     return all(abs(v - ref) / abs(ref) < tolerance for v in recent[1:])
 
 
-def check_structural_saturation(new_scaffolds_per_batch: list[list[str]], n_batches: int = 2, threshold: int = 3) -> bool:
+def check_structural_saturation(
+    new_scaffolds_per_batch: list[list[str]],
+    n_batches: int = 2,
+    threshold: int = 3,
+) -> bool:
     """Check if the number of new scaffolds per batch has saturated."""
     if len(new_scaffolds_per_batch) < n_batches:
         return False
@@ -80,9 +91,15 @@ class LoopState:
     """
 
     # --- Similarity caching ---
-    screened_fingerprints: list[tuple[str, Any, dict[str, Any]]] = field(default_factory=list)
+    screened_fingerprints: list[tuple[str, Any, dict[str, Any]]] = field(
+        default_factory=list
+    )
     """SMILES, ECFP4 fingerprint, and screening result for each screened molecule.
-    Used by find_nearest_screened to skip redundant oracle evaluations."""
+    Used by find_nearest_screened to skip redundant oracle evaluations.
+
+    Prefer :meth:`add_screened_fingerprint` over direct ``.append()`` so that
+    the internal fingerprint cache stays in sync.
+    """
 
     # --- Batch metrics ---
     batch_means: list[float] = field(default_factory=list)
@@ -115,7 +132,21 @@ class LoopState:
             self.started_at = datetime.now(UTC).isoformat()
         self._cache_lock = threading.Lock()
         self._state_lock = threading.Lock()
+        # Mirror list of fingerprints for fast lookup in find_nearest_screened
+        self._cached_fingerprints: list[Any] = []
         self._load()
+
+    # ------------------------------------------------------------------
+    # Similarity-cache helpers
+    # ------------------------------------------------------------------
+
+    def add_screened_fingerprint(
+        self, smi: str, fp: Any, result: dict[str, Any]
+    ) -> None:
+        """Atomically append a screened fingerprint and mirror it in the cache."""
+        with self._cache_lock:
+            self.screened_fingerprints.append((smi, fp, result))
+            self._cached_fingerprints.append(fp)
 
     # ------------------------------------------------------------------
     # Convergence
@@ -157,14 +188,16 @@ class LoopState:
         Uses BulkTanimotoSimilarity on ECFP4 fingerprints to find the nearest
         match above the given threshold.
 
-        Thread-safe via _cache_lock.
+        Thread-safe via ``_cache_lock``.
         """
-        if not self.screened_fingerprints:
-            return None
-        fp = ctx.get_ecfp4()
         with self._cache_lock:
-            stored_fps = [entry[1] for entry in self.screened_fingerprints]
+            if not self._cached_fingerprints:
+                return None
+            stored_fps = self._cached_fingerprints
+
+        fp = ctx.get_ecfp4()
         from rdkit.DataStructs import BulkTanimotoSimilarity
+
         sims = BulkTanimotoSimilarity(fp, stored_fps)
         max_sim = max(sims)
         if max_sim >= threshold:
@@ -196,16 +229,6 @@ class LoopState:
 
     @property
     def scientific_yield(self) -> float:
-        """Fraction of screened molecules with novel scaffolds.
-
-        Computed as the number of unique Murcko scaffolds observed across
-        all batches divided by the total number of molecules screened.
-        A higher value indicates the EA is exploring diverse chemical
-        space rather than rediscovering known scaffolds.
-
-        Returns:
-            Float in [0.0, 1.0]; 0.0 if no molecules have been screened.
-        """
         if self.total_screened <= 0:
             return 0.0
         return len(self._seen_scaffolds) / self.total_screened
@@ -215,32 +238,12 @@ class LoopState:
     # ------------------------------------------------------------------
 
     _empirical_feedback: list[dict[str, Any]] = field(default_factory=list)
-    """Accumulated empirical wet-lab feedback for dynamic weight adjustment.
-    Each entry: {smiles, cycle_life, coulombic_efficiency, dielectric_proxy,
-    viscosity_proxy, li_solvation_proxy}"""
-
     active_learning_queue: list[str] = field(default_factory=list)
-    """SMILES strings of high-uncertainty molecules queued for active learning
-    (real QuantumOracle evaluation instead of surrogate)."""
 
     def record_empirical_feedback(self, feedback: list[dict[str, Any]]) -> None:
-        """Record empirical wet-lab feedback for dynamic weight adjustment.
-
-        Each entry should contain at minimum 'smiles' and 'cycle_life'.
-        Optionally includes predicted properties for correlation analysis.
-        """
         self._empirical_feedback.extend(feedback)
 
-    def _compute_property_correlations(
-        self,
-    ) -> dict[str, float]:
-        """Compute Pearson correlation between each predicted property
-        and empirical cycle_life.
-
-        Returns a dict mapping property_key -> correlation coefficient
-        (r in [-1, 1]). Higher absolute r means the property is a stronger
-        predictor of empirical cycle_life.
-        """
+    def _compute_property_correlations(self) -> dict[str, float]:
         if len(self._empirical_feedback) < 3:
             return {
                 "dielectric_proxy": 0.0,
@@ -250,10 +253,14 @@ class LoopState:
 
         props = ["dielectric_proxy", "viscosity_proxy", "li_solvation_proxy"]
         correlations: dict[str, float] = {}
-        cycle_lives = np.array([e.get("cycle_life", 0.0) for e in self._empirical_feedback])
+        cycle_lives = np.array(
+            [e.get("cycle_life", 0.0) for e in self._empirical_feedback]
+        )
 
         for prop in props:
-            values = np.array([e.get(prop, 0.0) for e in self._empirical_feedback])
+            values = np.array(
+                [e.get(prop, 0.0) for e in self._empirical_feedback]
+            )
             if np.std(values) < 1e-6 or np.std(cycle_lives) < 1e-6:
                 correlations[prop] = 0.0
             else:
@@ -267,26 +274,6 @@ class LoopState:
         base_weights: dict[str, float] | None = None,
         learning_rate: float = 0.1,
     ) -> dict[str, float]:
-        """Compute dynamically adjusted score weights based on empirical feedback.
-
-        Physical justification: If empirical data shows viscosity is strongly
-        correlated with cycle_life (r > 0.5), the SCORE_WEIGHT_VISCOSITY
-        should increase because viscosity is a more important predictor of
-        real-world battery performance than initially calibrated. Conversely,
-        a property with weak correlation (r < 0.1) has its weight slightly
-        decreased.
-
-        The adjustment uses a soft learning rate to prevent oscillation:
-          new_weight = base_weight + learning_rate * |correlation| * base_weight
-
-        Args:
-            base_weights: Dict of weight_name -> base_value. If None, uses
-                the current aurelius.constants values.
-            learning_rate: Fractional adjustment per feedback cycle (default 0.1).
-
-        Returns:
-            Dict of adjusted weight_name -> new_value. Total still sums to 1.0.
-        """
         if base_weights is None:
             from aurelius.constants import (
                 SCORE_WEIGHT_CED,
@@ -308,8 +295,6 @@ class LoopState:
             }
 
         correlations = self._compute_property_correlations()
-
-        # Map empirical property names to weight keys
         prop_to_weight: dict[str, str] = {
             "dielectric_proxy": "SCORE_WEIGHT_DIELECTRIC",
             "viscosity_proxy": "SCORE_WEIGHT_VISCOSITY",
@@ -319,13 +304,11 @@ class LoopState:
         adjusted = dict(base_weights)
         for prop_name, weight_key in prop_to_weight.items():
             r = correlations.get(prop_name, 0.0)
-            # Use absolute correlation as importance signal
             importance = abs(r)
             adjusted[weight_key] = base_weights.get(weight_key, 0.1) * (
                 1.0 + learning_rate * importance
             )
 
-        # Normalise to sum to 1.0
         total = sum(adjusted.values())
         if total > 0.0:
             adjusted = {k: v / total for k, v in adjusted.items()}
@@ -333,25 +316,15 @@ class LoopState:
         return adjusted
 
     def apply_dynamic_weights(self, pipeline: Any) -> None:
-        """Apply dynamically adjusted weights to the pipeline's objectives.
-
-        Updates the SCORE_WEIGHT_* constants in the aurelius.constants module
-        and refreshes the pipeline's _OBJECTIVES list so subsequent scoring
-        uses the adjusted weights.
-
-        Args:
-            pipeline: An AureliusPipeline instance whose objectives will be updated.
-        """
         adjusted = self.compute_adjusted_weights()
 
-        # Update module-level constants
         import aurelius.constants as consts
+
         for key, value in adjusted.items():
             if hasattr(consts, key):
                 setattr(consts, key, value)
 
-        # Update pipeline's _OBJECTIVES weights
-        if hasattr(pipeline, '_OBJECTIVES'):
+        if hasattr(pipeline, "_OBJECTIVES"):
             for obj in pipeline._OBJECTIVES:
                 weight_key = {
                     "lumo_reward": "SCORE_WEIGHT_LUMO",
@@ -387,9 +360,15 @@ class LoopState:
                 self.last_updated = data.get("last_updated")
                 self.discoveries = data.get("discoveries", [])
                 self._all_results = data.get("_all_results", [])
-                self._seen_smiles = set(r.get("smiles", "") for r in data.get("_all_results", []))
-                self._empirical_feedback = data.get("_empirical_feedback", [])
-                self.active_learning_queue = data.get("active_learning_queue", [])
+                self._seen_smiles = set(
+                    r.get("smiles", "") for r in data.get("_all_results", [])
+                )
+                self._empirical_feedback = data.get(
+                    "_empirical_feedback", []
+                )
+                self.active_learning_queue = data.get(
+                    "active_learning_queue", []
+                )
             except (json.JSONDecodeError, KeyError, TypeError, OSError):
                 pass
 
@@ -411,54 +390,65 @@ class LoopState:
                 json.dump(data, f, indent=2)
             os.replace(tmp_path, self.path)
 
-    def add_discovery(self, discovery: dict[str, Any] | ScreeningResult) -> None:
+    def add_discovery(
+        self, discovery: dict[str, Any] | ScreeningResult
+    ) -> None:
         with self._state_lock:
             if isinstance(discovery, dict):
                 self.discoveries.append(discovery)
             else:
-                self.discoveries.append({
-                    "smiles": discovery.smiles,
-                    "total_score": discovery.total_score,
-                    "is_viable": discovery.is_viable,
-                    "rejection_reasons": discovery.rejection_reasons,
-                })
-            self.discoveries.sort(key=lambda d: d.get("total_score", 0), reverse=True)
+                self.discoveries.append(
+                    {
+                        "smiles": discovery.smiles,
+                        "total_score": discovery.total_score,
+                        "is_viable": discovery.is_viable,
+                        "rejection_reasons": discovery.rejection_reasons,
+                    }
+                )
+            self.discoveries.sort(
+                key=lambda d: d.get("total_score", 0), reverse=True
+            )
             self.discoveries = self.discoveries[:_MAX_DISCOVERIES]
 
     def add_result(self, sr: Any) -> None:
         with self._state_lock:
             self._seen_smiles.add(sr.smiles)
-            self._all_results.append({
-                "smiles": sr.smiles,
-                "total_score": sr.total_score,
-                "is_viable": sr.is_viable,
-                "rejection_reasons": sr.rejection_reasons,
-                "novelty_to_seed": sr.novelty_to_seed,
-                "homo_eV": sr.homo_eV,
-                "lumo_eV": sr.lumo_eV,
-                "dielectric_proxy": sr.dielectric_proxy,
-                "viscosity_proxy": sr.viscosity_proxy,
-                "li_solvation_proxy": sr.li_solvation_proxy,
-                "sa_score": sr.sa_score,
-                "sub_scores": sr.sub_scores,
-            })
+            self._all_results.append(
+                {
+                    "smiles": sr.smiles,
+                    "total_score": sr.total_score,
+                    "is_viable": sr.is_viable,
+                    "rejection_reasons": sr.rejection_reasons,
+                    "novelty_to_seed": sr.novelty_to_seed,
+                    "homo_eV": sr.homo_eV,
+                    "lumo_eV": sr.lumo_eV,
+                    "dielectric_proxy": sr.dielectric_proxy,
+                    "viscosity_proxy": sr.viscosity_proxy,
+                    "li_solvation_proxy": sr.li_solvation_proxy,
+                    "sa_score": sr.sa_score,
+                    "sub_scores": sr.sub_scores,
+                }
+            )
 
     def top_scored_smiles(self, divisor: int = 5) -> list[str]:
-        scored = [(r["total_score"], r["smiles"]) for r in self._all_results if r["total_score"] > 0]
+        scored = [
+            (r["total_score"], r["smiles"])
+            for r in self._all_results
+            if r["total_score"] > 0
+        ]
         scored.sort(key=lambda x: -x[0])
         n = max(5, len(scored) // divisor)
         return [s for _, s in scored[:n]]
 
     def export_active_learning_queue(self, path: str) -> None:
-        """Save the active learning queue SMILES list to a JSON file.
-
-        Args:
-            path: Destination file path for the JSON export.
-        """
         resolved = _resolve_output_path(path, self.output_dir)
         with open(resolved, "w") as f:
             json.dump(self.active_learning_queue, f, indent=2)
-        log.info("Exported active learning queue (%d SMILES) to %s", len(self.active_learning_queue), resolved)
+        log.info(
+            "Exported active learning queue (%d SMILES) to %s",
+            len(self.active_learning_queue),
+            resolved,
+        )
 
     def clear(self) -> None:
         self.batch_means.clear()
@@ -474,6 +464,7 @@ class LoopState:
         self._seen_smiles.clear()
         self._seen_scaffolds.clear()
         self.screened_fingerprints.clear()
+        self._cached_fingerprints.clear()
         self.active_learning_queue.clear()
         MoleculeContext.from_smiles.cache_clear()
         self.save()
