@@ -29,13 +29,16 @@ project-aurelius/
 │   │   │       └── packs/           # Property pack modules
 │   │   │           ├── organic_electronics.py
 │   │   │           └── __init__.py
+│   │   ├── analysis/                # Post-discovery analysis
+│   │   │   └── mixture_postprocess.py  # analyze_top_mixtures()
 │   │   ├── agent/                   # Evolutionary algorithm loop
-│   │   │   ├── loop.py              # DiscoveryLoop
+│   │   │   ├── loop.py              # DiscoveryLoop (orchestration only)
+│   │   │   ├── active_learning.py   # ActiveLearningManager
 │   │   │   ├── selection.py         # Tournament selection, UCB
 │   │   │   ├── mutation/            # BRICS, SMILES mutation
 │   │   │   └── state.py             # LoopState
 │   │   ├── screening/
-│   │   │   └── tier1/               # Physical pre-filters
+│   │   │   └── tier1/               # Physical pre-filters (gap check)
 │   │   └── utils/                   # Dependency checks, chem utils
 │   ├── tests/
 │   └── pyproject.toml
@@ -64,6 +67,9 @@ Filters molecules that violate basic physical constraints before running the exp
 - MW > 500 → reject (too heavy for electrolyte use)
 - Rotatable bonds > 20 → reject (too flexible)
 - Extreme fluorination without polar groups → domain penalty
+- **Conjugated gap ≤ 0 eV** → If the molecule has a conjugated pi-system,
+  a quick TOM preview estimates the HOMO-LUMO gap; a non-positive gap is
+  flagged as "Unphysical electronic structure" and rejected.
 
 ### 2. Oracle — Hybrid Property Prediction
 
@@ -87,9 +93,18 @@ A weighted sum of six objectives:
 
 ### 4. Agent — Evolutionary Loop
 
-The `DiscoveryLoop` runs iteratively:
+The `DiscoveryLoop` orchestrates — it does NOT handle active learning or
+post-processing directly. Those concerns are delegated to:
+
+- **`ActiveLearningManager`** (`aurelius/agent/active_learning.py`): Manages
+  the active learning queue, uncertainty-based routing to real QuantumOracle,
+  and FIFO queue consumption.
+- **`analyze_top_mixtures()`** (`aurelius/analysis/mixture_postprocess.py`):
+  Post-loop pairwise mixture synergy analysis.
+
+The loop itself only orchestrates:
 1. **Mutate** seed molecules via BRICS / SMILES transformations
-2. **Filter** invalid or duplicate candidates
+2. **Filter** invalid or duplicate candidates (Tier 1 gap check included)
 3. **Evaluate** via pipeline
 4. **Select** top candidates (tournament selection + diversity penalty)
 5. **Feed back** discoveries into seed pool

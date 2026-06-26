@@ -752,6 +752,25 @@ def predict_tom_orbitals(
 
     homo_w = sum(w * h for w, h in zip(weights, homo_vals))
     lumo_w = sum(w * l for w, l in zip(weights, lumo_vals))
+
+    # Sanity check: LUMO must be above HOMO for a physical gap.
+    # If TOM returns an inverted gap (LUMO <= HOMO), swap and log a warning,
+    # then apply a minimum gap penalty.
+    if lumo_w <= homo_w:
+        logger.warning(
+            "TOM predicted non-physical gap: HOMO=%.3f, LUMO=%.3f. Swapping and "
+            "applying minimum gap penalty.",
+            homo_w, lumo_w,
+        )
+        # Swap to maintain physical ordering
+        if lumo_w < homo_w:
+            lumo_w, homo_w = homo_w, lumo_w
+        # Ensure at least a minimum gap of 0.5 eV
+        if lumo_w - homo_w < 0.5:
+            mid = (homo_w + lumo_w) / 2.0
+            homo_w = mid - 0.25
+            lumo_w = mid + 0.25
+
     return homo_w, lumo_w
 
 

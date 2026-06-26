@@ -15,6 +15,14 @@ This repository follows an **Open Core** model:
 
 ## Quick Start (Open-Source Engine)
 
+**Dependency note:** The engine requires **RDKit** for all chemical graph
+processing (molecular fingerprints, SMILES parsing, conformer generation,
+substructure matching). Install via:
+```bash
+conda install -c conda-forge rdkit
+# or: pip install rdkit-pypi
+```
+
 ```bash
 pip install aurelius-engine
 aurelius screen "CC(=O)OC1=CC=CC=C1"

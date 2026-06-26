@@ -8,6 +8,11 @@ per molecule per generation via ``MoleculeContext``.
 ``AgentConfig`` and ``run_screening`` are the consolidated entry points for
 agent execution — ``__main__.py`` imports these rather than duplicate the logic.
 
+Active learning queue management has been extracted to
+:class:`~aurelius.agent.active_learning.ActiveLearningManager` and post-loop
+mixture analysis to :func:`~aurelius.analysis.mixture_postprocess.analyze_top_mixtures`,
+giving ``DiscoveryLoop`` a single responsibility: orchestration.
+
 ADR-2026-06-01: Reduced scaffold stagnation threshold from 3→2 repeated batches
 before force_exploration. Physical justification: in the benchmark, 3 batches of
 stagnation means ~15-24 evaluations (3 × batch_size=5-8) before pivoting to BRICS
@@ -29,6 +34,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
+from aurelius.analysis.mixture_postprocess import analyze_top_mixtures
+from aurelius.agent.active_learning import ActiveLearningManager
 from aurelius.agent.mutation import MutationEngine
 from aurelius.agent.reporting import generate_discoveries_sdf, generate_run_summary
 from aurelius.agent.selection import (
@@ -78,42 +85,6 @@ class AgentConfig:
 
 
 # ---------------------------------------------------------------------------
-# Helper: post-loop mixture synergy analysis
-# ---------------------------------------------------------------------------
-
-
-def _analyze_top_mixtures(
-    pipeline: Any,
-    discoveries: list[ScreeningResult],
-) -> list[dict[str, Any]] | None:
-    """Analyze pairwise synergy of top 10 discoveries."""
-    top_10 = sorted(discoveries, key=lambda r: -r.total_score)[:10]
-    if len(top_10) < 2:
-        return None
-
-    mixture_results = []
-    for i in range(len(top_10)):
-        for j in range(i + 1, len(top_10)):
-            ctx_i = MoleculeContext.from_smiles(top_10[i].smiles)
-            ctx_j = MoleculeContext.from_smiles(top_10[j].smiles)
-            if ctx_i is None or ctx_j is None:
-                continue
-            mix = pipeline.screen_mixture(ctx_i, ctx_j, 0.5)
-            mix_score = mix.get("score", {}).get("total_score", 0.0)
-            synergy = mix.get("mixture_properties", {}).get("synergy_bonus", 0.0)
-            mixture_results.append({
-                "component1_smiles": top_10[i].smiles,
-                "component2_smiles": top_10[j].smiles,
-                "component1_score": top_10[i].total_score,
-                "component2_score": top_10[j].total_score,
-                "mixture_score": round(mix_score, 4),
-                "synergy_bonus": round(synergy, 4),
-            })
-    mixture_results.sort(key=lambda m: -m["mixture_score"])
-    return mixture_results[:3]
-
-
-# ---------------------------------------------------------------------------
 # Consolidated agent entry point
 # ---------------------------------------------------------------------------
 
@@ -152,7 +123,7 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
     all_results = results["all_results"]
     discoveries = results["discoveries"]
 
-    top_mixtures = _analyze_top_mixtures(pipeline, discoveries)
+    top_mixtures = analyze_top_mixtures(pipeline, discoveries)
     if top_mixtures:
         log.info("Top-3 mixtures from post-loop analysis:")
         for m in top_mixtures:
@@ -240,6 +211,9 @@ class DiscoveryLoop:
     4. Select top candidates via tournament selection + diversity penalty
     5. Record results, evolve seed pool, harvest fragments
     6. Check convergence, save checkpoint
+
+    Active learning queue management and real-quantum evaluation are delegated
+    to :class:`~aurelius.agent.active_learning.ActiveLearningManager`.
     """
 
     def __init__(
@@ -264,6 +238,13 @@ class DiscoveryLoop:
         self.exploration_beta = exploration_beta
         self.verbose = verbose
         self._wall_start: float = 0.0
+        self.al_manager = ActiveLearningManager(
+            pipeline=pipeline,
+            engine=engine,
+            state=state,
+            batch_size=batch_size,
+            max_wall_time=max_wall_time,
+        )
 
     def _wall_time_exceeded(self) -> bool:
         return self._wall_start > 0 and time.time() - self._wall_start > self.max_wall_time
@@ -288,6 +269,7 @@ class DiscoveryLoop:
 
     def execute(self) -> dict[str, Any]:
         self._wall_start = time.time()
+        self.al_manager.set_wall_start(self._wall_start)
 
         for generation in range(1, self.max_generations + 1):
             if self._wall_time_exceeded():
@@ -562,77 +544,6 @@ class DiscoveryLoop:
 
         return result_contexts, all_scores
 
-    def _evaluate_with_real_quantum(
-        self, ctx: MoleculeContext, result_map: dict[str, Any]
-    ) -> tuple[float, dict[str, Any]] | None:
-        """Evaluate a candidate using the real QuantumOracle (bypassing surrogate).
-
-        Used for molecules in the active learning queue to get genuine
-        quantum chemical properties instead of surrogate predictions.
-        """
-        from aurelius.scoring.oracle.gc import (
-            predict_ced_proxy,
-            predict_dielectric_proxy,
-            predict_li_solvation_proxy,
-            predict_viscosity_proxy,
-        )
-        if self._wall_time_exceeded():
-            return None
-
-        from aurelius.scoring.oracle.quantum import QuantumOracle
-
-        qo = QuantumOracle()
-        qr = qo.evaluate(ctx.mol)
-
-        homo_eV = qr.get("homo_eV", -99.0)
-        lumo_eV = qr.get("lumo_eV", -99.0)
-
-        dielectric = predict_dielectric_proxy(ctx)
-        viscosity = predict_viscosity_proxy(ctx)
-        li_solvation = predict_li_solvation_proxy(ctx)
-        ced = predict_ced_proxy(ctx)
-
-        score = self.pipeline._compute_score(
-            homo_eV=homo_eV, lumo_eV=lumo_eV,
-            dielectric_proxy=dielectric,
-            viscosity_proxy=viscosity,
-            li_solvation_proxy=li_solvation,
-            ced_proxy=ced,
-            ctx=ctx,
-            quantum_confidence="xtb",
-        )
-
-        t2 = {
-            "homo_eV": homo_eV,
-            "lumo_eV": lumo_eV,
-            "gap_eV": qr.get("gap_eV", lumo_eV - homo_eV),
-            "dielectric_proxy": dielectric,
-            "viscosity_proxy": viscosity,
-            "li_solvation_proxy": li_solvation,
-            "ced_proxy": ced,
-        }
-
-        smi = ctx.smiles
-        result_map[smi] = t2
-        self.engine.add_to_db(smi)
-
-        total_score = score.get("total_score", 0.0)
-        self.engine.record_reaction_success(smi, total_score)
-
-        novelty = self._compute_novelty(ctx)
-        sr = self._build_screening_result(
-            smi, total_score, score, t2, novelty, ctx, score.get("sub_scores", {}),
-        )
-        if self._is_discovery(total_score, score):
-            self.state.add_discovery(sr)
-            log.info("  ** DISCOVERY (active learning) ** %s (score=%.1f)", smi, total_score)
-        self.state.add_result(sr)
-        log.info(
-            "  ** ACTIVE LEARNING ** %s evaluated via real QuantumOracle",
-            smi,
-        )
-        return total_score, t2
-
     def _process_single_candidate(
         self, ctx: MoleculeContext, result_map: dict[str, Any]
     ) -> tuple[float, dict[str, Any]] | None:
@@ -640,18 +551,14 @@ class DiscoveryLoop:
 
         Returns (total_score, tier2_dict) on success, None to skip.
 
-        Uncertainty-Aware Bypass (Phase 1): If the surrogate predicts high
-        epistemic uncertainty (std dev > 0.5 eV), the candidate is NOT skipped
-        but sent to _evaluate_with_real_quantum for accurate evaluation.
+        Delegates active-learning queue checks and real-quantum evaluation
+        to :attr:`al_manager`.
         """
         smi = ctx.smiles
 
         if smi in self.state.active_learning_queue:
-            return self._evaluate_with_real_quantum(ctx, result_map)
+            return self.al_manager.evaluate_with_real_quantum(ctx, result_map)
 
-        # Phase 11: Check GcUqEnsemble uncertainty before surrogate evaluation.
-        # If the ensemble flags high uncertainty (std > 15% of mean), bypass
-        # the surrogate and force a real quantum evaluation.
         gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
         if gc_uq is not None:
             try:
@@ -661,24 +568,20 @@ class DiscoveryLoop:
                     if smi not in self.state.active_learning_queue:
                         self.state.active_learning_queue.append(smi)
                         log.info("  Added %s to active learning queue (high UQ from GcUqEnsemble)", smi)
-                    return self._evaluate_with_real_quantum(ctx, result_map)
+                    return self.al_manager.evaluate_with_real_quantum(ctx, result_map)
             except Exception:
                 pass
 
-        # Uncertainty-Aware Bypass: check surrogate uncertainty first
         try:
             from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
             surrogate = SurrogateQuantumOracle()
             homo, lumo, uncertainty = surrogate.predict(ctx)
             penalty = surrogate.compute_penalty(homo, uncertainty)
-
-            # If high uncertainty, skip penalty and evaluate with real quantum
             if penalty == 1.0 and uncertainty > 0.5:
-                return self._evaluate_with_real_quantum(ctx, result_map)
+                return self.al_manager.evaluate_with_real_quantum(ctx, result_map)
         except Exception:
             pass
 
-        # Check similarity cache before expensive oracle evaluation
         cached = self.state.find_nearest_screened(ctx)
         if cached is not None:
             result = cached
@@ -688,7 +591,6 @@ class DiscoveryLoop:
             result = self._screen_molecule(ctx)
             if result is None:
                 return None
-            # Store fingerprint and result for future similarity lookups
             self.state.add_screened_fingerprint(smi, ctx.get_ecfp4(), result)
 
         score_data = result.get("score")
@@ -696,7 +598,7 @@ class DiscoveryLoop:
             return None
 
         if gc_uq is not None:
-            self._check_uq_and_queue(ctx, gc_uq)
+            self.al_manager.check_uq_and_queue(ctx, gc_uq)
 
         self.engine.add_to_db(smi)
 
@@ -716,96 +618,13 @@ class DiscoveryLoop:
         self.state.add_result(sr)
         return total_score, t2
 
-    def _check_uq_and_queue(self, ctx: MoleculeContext, gc_uq: Any) -> None:
-        """Add molecule to active learning queue if GC UQ variance exceeds threshold.
-
-        If the ensemble predicts std > 15% of the mean for either dielectric
-        or viscosity, the SMILES is queued for real QuantumOracle evaluation
-        instead of being evaluated via surrogate.
-        """
-        smi = ctx.smiles
-        try:
-            _, _, diel_high = gc_uq.predict_dielectric(ctx)
-        except Exception:
-            return
-
-        try:
-            _, _, visc_high = gc_uq.predict_viscosity(ctx)
-        except Exception:
-            return
-
-        if (diel_high or visc_high) and smi not in self.state.active_learning_queue:
-            self.state.active_learning_queue.append(smi)
-            log.info("  Added %s to active learning queue (high UQ)", smi)
-
-    @staticmethod
-    def _get_uncertainties(
-        pipeline: Any,
-        contexts: list[MoleculeContext],
-    ) -> list[float]:
-        """Compute combined UQ uncertainties for a list of contexts."""
-        gc_uq = getattr(getattr(pipeline, '_oracle', None), '_gc_uq', None)
-        uncertainties: list[float] = []
-        for ctx in contexts:
-            if gc_uq is not None:
-                try:
-                    _, diel_std, _ = gc_uq.predict_dielectric(ctx)
-                    _, visc_std, _ = gc_uq.predict_viscosity(ctx)
-                    uncertainties.append((diel_std + visc_std) / 2.0)
-                except Exception:
-                    uncertainties.append(0.0)
-            else:
-                uncertainties.append(0.0)
-        return uncertainties
-
-    def _select_from_active_learning_queue(
-        self,
-        result_contexts: list[MoleculeContext],
-        all_scores: list[float],
-    ) -> tuple[list[MoleculeContext], list[float]] | None:
-        """If the active learning queue has items, select from it in FIFO order.
-
-        Returns (selected, scores) or None if the queue is empty.
-        Prioritises molecules already in the queue over random selection,
-        consuming them in FIFO order up to ``batch_size``.
-        """
-        if not self.state.active_learning_queue:
-            return None
-
-        result_by_smiles: dict[str, tuple[MoleculeContext, float]] = {
-            ctx.smiles: (ctx, score)
-            for ctx, score in zip(result_contexts, all_scores, strict=False)
-        }
-
-        selected_contexts: list[MoleculeContext] = []
-        selected_scores: list[float] = []
-        remaining_queue: list[str] = []
-
-        for smi in self.state.active_learning_queue:
-            if smi in result_by_smiles:
-                ctx, score = result_by_smiles[smi]
-                if len(selected_contexts) < self.batch_size:
-                    selected_contexts.append(ctx)
-                    selected_scores.append(score)
-                else:
-                    remaining_queue.append(smi)
-            else:
-                remaining_queue.append(smi)
-
-        self.state.active_learning_queue = remaining_queue
-
-        if not selected_contexts:
-            return None
-
-        return selected_contexts, selected_scores
-
     def _ucb_select_all(
         self,
         result_contexts: list[MoleculeContext],
         all_scores: list[float],
     ) -> tuple[list[MoleculeContext], list[float]]:
         """UCB-based selection: score + beta * uncertainty for every candidate."""
-        uncertainties = self._get_uncertainties(self.pipeline, result_contexts)
+        uncertainties = self.al_manager.get_uncertainties(result_contexts)
         selected = select_for_active_learning(
             result_contexts, all_scores, uncertainties,
             batch_size=self.batch_size, beta=self.exploration_beta,
@@ -874,7 +693,7 @@ class DiscoveryLoop:
             return [], []
 
         # Prioritise active learning queue, then exploration, then default
-        al_result = self._select_from_active_learning_queue(result_contexts, all_scores)
+        al_result = self.al_manager.select_from_queue(result_contexts, all_scores)
         if al_result is not None:
             return al_result
 

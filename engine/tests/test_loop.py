@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
+from aurelius.agent.active_learning import ActiveLearningManager
 from aurelius.agent.loop import DiscoveryLoop, ScreeningResult
 from aurelius.agent.state import LoopState
 from aurelius.types import MoleculeContext
@@ -261,7 +262,7 @@ class TestDiscoveryLoop:
         assert ctx is not None
         result_map: dict = {}
 
-        with patch.object(loop, '_evaluate_with_real_quantum') as mock_quantum:
+        with patch.object(loop.al_manager, 'evaluate_with_real_quantum') as mock_quantum:
             mock_quantum.return_value = (85.0, {"homo_eV": -6.5})
             result = loop._process_single_candidate(ctx, result_map)
 

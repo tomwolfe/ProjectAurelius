@@ -327,8 +327,8 @@ class TestGcUqActiveLearning:
         mock_ctx = MagicMock()
         mock_ctx.smiles = "CCO"
 
-        # Call _check_uq_and_queue directly
-        loop._check_uq_and_queue(mock_ctx, mock_gc_uq)
+        # Call check_uq_and_queue via the ActiveLearningManager
+        loop.al_manager.check_uq_and_queue(mock_ctx, mock_gc_uq)
 
         # Assert that the SMILES was added to the active learning queue
         assert "CCO" in mock_state.active_learning_queue, (

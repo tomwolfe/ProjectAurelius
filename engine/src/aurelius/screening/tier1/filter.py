@@ -12,6 +12,9 @@ electrolyte-specific viability criteria for battery discovery:
    ion solvation.
 5. **LogP <= 2.5** — Electrolytes must be highly polar to dissolve
    Li/Na salts; high LogP indicates poor salt solubility.
+6. **Conjugated system gap > 0 eV** — If the molecule has a conjugated
+   pi-system, a quick Topological Orbital Model (TOM) preview estimates
+   the HOMO-LUMO gap. A non-positive gap is flagged as unphysical.
 
 Accepts a pre-parsed ``MoleculeContext`` to avoid redundant RDKit parsing.
 
@@ -26,10 +29,15 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
+from rdkit import Chem
+
 from aurelius.types import MoleculeContext
+
+logger = logging.getLogger(__name__)
 
 
 class Filter:
@@ -89,6 +97,19 @@ class Filter:
         if logp > 2.5:
             violations.append(f"LogP too high ({logp:.2f} > 2.5) — poor salt solubility")
 
+        # Physical gate: conjugated-system gap check via quick TOM preview.
+        # Molecules with conjugated pi-systems that yield a non-positive
+        # HOMO-LUMO gap have unphysical electronic structure.
+        if _has_conjugated_system(ctx.mol):
+            try:
+                from aurelius.scoring.oracle.quantum import predict_tom_orbitals
+                homo, lumo = predict_tom_orbitals(ctx.mol)
+                gap = lumo - homo
+                if gap <= 0:
+                    violations.append("Unphysical electronic structure (conjugated gap <= 0 eV)")
+            except Exception as exc:
+                logger.debug("TOM preview failed for %s: %s", ctx.smiles, exc)
+
         is_viable = len(violations) == 0
         elapsed_ms = (time.perf_counter() - start) * 1000
 
@@ -144,3 +165,19 @@ class Filter:
             return result["is_viable"]
         except Exception:
             return False
+
+
+def _has_conjugated_system(mol: Chem.Mol) -> bool:
+    """Check whether the molecule contains any conjugated or aromatic bonds."""
+    for bond in mol.GetBonds():
+        if bond.GetIsConjugated():
+            return True
+        bt = bond.GetBondType()
+        if bt in (Chem.BondType.DOUBLE, Chem.BondType.TRIPLE, Chem.BondType.AROMATIC):
+            return True
+    ring_info = mol.GetRingInfo()
+    if ring_info.NumRings() > 0:
+        for ring in ring_info.AtomRings():
+            if all(mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring):
+                return True
+    return False
