@@ -15,7 +15,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-from typing import Any
+from typing import Any, Generator
 
 import numpy as np
 from rdkit import Chem, rdBase
@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 
 @contextlib.contextmanager
-def _suppress_stderr():
+def _suppress_stderr() -> Generator[None, None, None]:
     """Redirect stderr to /dev/null for the duration of the block."""
     stderr_fd = os.dup(2)
     devnull = os.open(os.devnull, os.O_WRONLY)
@@ -433,3 +433,94 @@ class MutationEngine:
             idx = self._rng.choice(len(unique), size=n_mixtures, replace=False)
             unique = [unique[i] for i in idx]
         return unique
+
+    # ------------------------------------------------------------------
+    # Concept-Grounded Mutation
+    # ------------------------------------------------------------------
+
+    def mutate_by_concept(
+        self,
+        smiles: str,
+        concept_names: list[str] | None = None,
+        batch_size: int = 50,
+    ) -> list[str]:
+        """Mutate a seed SMILES while biasing toward specified electrolyte concepts.
+
+        The mutation engine applies SMARTS and BRICS strategies, but this method
+        post-filters and re-weights candidates to prefer molecules that preserve
+        or introduce the named concepts (e.g. ``"cyclic_carbonate"`` or
+        ``"fluorinated_ether"``).
+
+        Args:
+            smiles: Seed SMILES string to mutate.
+            concept_names: List of concept names from the concept library.
+                If None, all concepts in the library are used.
+            batch_size: Maximum number of candidate SMILES to return.
+
+        Returns:
+            Up to *batch_size* candidate SMILES strings, biased toward
+            molecules that match the specified concepts.
+        """
+        ctx = self._get_ctx(smiles)
+        if ctx is None:
+            return []
+
+        from importlib import resources
+
+        package_dir = resources.files("aurelius.data")
+        concept_path = package_dir / "concept_library.json"
+
+        try:
+            with concept_path.open("r") as fh:
+                import json
+                library = json.load(fh)
+        except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+            logger.warning("Concept library not found (%s); returning empty.", exc)
+            return []
+
+        concepts = library.get("concepts", [])
+        if not concept_names:
+            targets = [c["name"] for c in concepts]
+        else:
+            concept_map = {c["name"]: c for c in concepts}
+            targets = [n for n in concept_names if n in concept_map]
+
+        if not targets:
+            return []
+
+        candidates: dict[str, float] = {}
+        for strategy in self._strategies:
+            results = strategy.mutate(
+                ctx, self._strategy_context, batch_size, force_exploration=False,
+            )
+            for smi in results:
+                if smi not in candidates:
+                    candidates[smi] = 0.0
+
+        scored: list[tuple[str, float]] = []
+        for smi, _base in candidates.items():
+            match_ctx = MoleculeContext.from_smiles(smi)
+            if match_ctx is None:
+                continue
+            score = 0.0
+            for target in targets:
+                for concept in concepts:
+                    if concept["name"] != target:
+                        continue
+                    pattern = Chem.MolFromSmarts(concept["smarts"])
+                    if pattern is not None and match_ctx.mol.HasSubstructMatch(pattern):
+                        score += 1.0
+                        break
+            if score > 0:
+                scored.append((smi, score))
+
+        if not scored:
+            for smi in candidates:
+                scored.append((smi, 0.0))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        n = min(batch_size, len(scored))
+        if n == 0:
+            return []
+        indices = self._rng.choice(len(scored), size=n, replace=False)
+        return [scored[i][0] for i in indices]

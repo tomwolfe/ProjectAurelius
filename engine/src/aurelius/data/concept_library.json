@@ -1,0 +1,76 @@
+{
+  "version": "1.0.0",
+  "description": "Electrolyte concept library for concept-grounded mutation and scoring. Each concept defines a SMARTS pattern that identifies a structural motif common in battery electrolytes.",
+  "concepts": [
+    {
+      "name": "cyclic_carbonate",
+      "label": "Cyclic Carbonate",
+      "smarts": "[OX2]1[CX3](=O)[OX2][CX4]1",
+      "description": "Five-membered cyclic carbonate ring (e.g. ethylene carbonate, propylene carbonate). Core SEI-forming motif.",
+      "category": "ring"
+    },
+    {
+      "name": "fluorinated_ether",
+      "label": "Fluorinated Ether",
+      "smarts": "[CX4](F)(F)F",
+      "description": "Trifluoromethyl or perfluoroalkyl group. Drives LiF-rich SEI formation and suppresses Al corrosion.",
+      "category": "halogenated"
+    },
+    {
+      "name": "borate_ester",
+      "label": "Borate Ester",
+      "smarts": "[B](O[CX4])([OX2])[OX2]",
+      "description": "Tris(fluoroalkyl/borato)borate or similar boron-based anion fragment. HF-scavenging additive.",
+      "category": "anion"
+    },
+    {
+      "name": "sulfone",
+      "label": "Sulfone",
+      "smarts": "S(=O)(=O)",
+      "description": "Sulfonyl group. Contributes to mechanical SEI toughness and acts as an HF scavenger.",
+      "category": "sulfur"
+    },
+    {
+      "name": "carbonate",
+      "label": "Carbonate",
+      "smarts": "O=C([OX2])[OX2]",
+      "description": "Carbonate functional group (linear or cyclic). Primary salt-dissociation and SEI-forming motif.",
+      "category": "ring"
+    },
+    {
+      "name": "nitrile",
+      "label": "Nitrile",
+      "smarts": "[C]#[N]",
+      "description": "Cyano group. High-dielectric contributor and Li+ solvation enhancer.",
+      "category": "nitrogen"
+    },
+    {
+      "name": "sultone",
+      "label": "Sultone",
+      "smarts": "[SX4](=O)(=O)1[CX4][CX4][CX4][OX2]1",
+      "description": "Five-membered cyclic sulfonate ester. HF-scavenging and cross-linking SEI former.",
+      "category": "ring"
+    },
+    {
+      "name": "phosphate_ester",
+      "label": "Phosphate Ester",
+      "smarts": "[PX4](=O)([OX2][CX4])([OX2][CX4])[OX2][CX4]",
+      "description": "Organophosphate with at least two alkoxy groups. High dielectric constant and Li+ solvation.",
+      "category": "phosphorus"
+    },
+    {
+      "name": "glyme_chain",
+      "label": "Glyme Chain",
+      "smarts": "[OX2][CX4][CX4][OX2][CX4]",
+      "description": "Linear ether chain (e.g. DME, G2). Primary Li+ solvation via oxygen lone pairs.",
+      "category": "ether"
+    },
+    {
+      "name": "imidazolium_salt",
+      "label": "Imidazolium Salt",
+      "smarts": "[nR]1[C]([OX2])[OX2][NX3][nR]1",
+      "description": "Imidazolium-based cation or salt fragment. High ionic conductivity component for ionic liquids.",
+      "category": "nitrogen"
+    }
+  ]
+}

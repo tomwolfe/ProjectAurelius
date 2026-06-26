@@ -185,6 +185,40 @@ def _check_building_block_grounding(mol: Chem.Mol) -> float:
     return 0.7 + 0.3 * coverage
 
 
+def _concept_grounding_score(mol: Chem.Mol) -> int:
+    """Count how many distinct concepts from the concept library a molecule matches.
+
+    A concept is considered matched if the molecule contains the concept's SMARTS
+    pattern as a substructure. Returns the number of distinct concepts matched
+    (0-based).
+
+    Physical justification: Electrolyte molecules that preserve multiple known
+    functional motifs (cyclic carbonates, fluorinated ethers, sulfones, etc.)
+    are more likely to be synthetically accessible and electrochemically viable.
+    This coarse-grained grounding score supplements the BRICS-based grounding
+    check by rewarding concept retention during mutation.
+    """
+    from importlib import resources
+
+    package_dir = resources.files("aurelius.data")
+    concept_path = package_dir / "concept_library.json"
+
+    try:
+        with concept_path.open("r") as fh:
+            import json
+            library = json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return 0
+
+    concepts = library.get("concepts", [])
+    matches = 0
+    for concept in concepts:
+        pattern = Chem.MolFromSmarts(concept["smarts"])
+        if pattern is not None and mol.HasSubstructMatch(pattern):
+            matches += 1
+    return matches
+
+
 def _apply_penalties(
     total_score: float, lumo_eV: float, ctx: MoleculeContext | None
 ) -> float:
