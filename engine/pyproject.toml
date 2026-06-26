@@ -18,6 +18,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+cli = [
+    "rich>=13.7.0",
+]
 ml = [
     "numpy>=1.26.0",
     "scikit-learn>=1.4.0",
@@ -30,10 +33,10 @@ web = [
     "diskcache>=5.6.0",
 ]
 all = [
-    "aurelius-engine[ml,web,dev]",
+    "aurelius-engine[ml,web,dev,cli]",
 ]
 dev = [
-    "aurelius-engine[ml]",
+    "aurelius-engine[cli,ml]",
     "pytest>=8.0",
     "pytest-cov>=4.1.0",
     "ruff>=0.3.0",

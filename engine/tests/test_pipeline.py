@@ -9,6 +9,8 @@ Verifies that:
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from aurelius.pipeline import AureliusPipeline
@@ -326,3 +328,76 @@ def test_ternary_cli_acceptance() -> None:
     assert pc == smi_c
     assert abs(fa - frac_a) < 1e-4
     assert abs(fb - frac_b) < 1e-4
+
+
+# ---------------------------------------------------------------------------
+# Kernel Signature Verification
+# ---------------------------------------------------------------------------
+
+
+def test_load_kernel_with_valid_signature(tmp_path, monkeypatch) -> None:
+    """A properly signed kernel should load and verify successfully."""
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+    except ImportError:
+        pytest.skip("cryptography not installed")
+
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key()
+    public_bytes = public_key.public_bytes_raw()
+
+    # Patch KERNEL_PUBLIC_KEY to match the generated key pair
+    monkeypatch.setattr(
+        "aurelius.constants.KERNEL_PUBLIC_KEY",
+        public_bytes,
+    )
+
+    kernel = {
+        "version": "1.0.0",
+        "tom_parameters": {"homo_offset": -0.1, "lumo_offset": 0.2, "gc_scale": 1.0},
+    }
+    canonical = json.dumps(
+        {k: v for k, v in kernel.items()}, sort_keys=True, separators=(",", ":"),
+    )
+    signature = private_key.sign(canonical.encode("utf-8")).hex()
+    kernel["signature"] = signature
+
+    kernel_path = tmp_path / "signed_kernel.json"
+    with open(kernel_path, "w") as f:
+        json.dump(kernel, f)
+
+    pl = AureliusPipeline()
+    result = pl.load_kernel(str(kernel_path))
+
+    assert result is not None
+    assert result["tom_parameters"]["homo_offset"] == -0.1
+
+
+def test_load_kernel_missing_signature_returns_defaults(tmp_path) -> None:
+    """A kernel without a signature field should return None (use defaults)."""
+    kernel = {"version": "1.0.0", "tom_parameters": {"homo_offset": 0.0}}
+    kernel_path = tmp_path / "unsigned_kernel.json"
+    with open(kernel_path, "w") as f:
+        json.dump(kernel, f)
+
+    pl = AureliusPipeline()
+    result = pl.load_kernel(str(kernel_path))
+
+    assert result is None, "Missing signature should return None (use defaults)"
+
+
+def test_load_kernel_tampered_signature_returns_defaults(tmp_path) -> None:
+    """A kernel with an invalid signature should return None (use defaults)."""
+    kernel = {
+        "version": "1.0.0",
+        "tom_parameters": {"homo_offset": 0.1, "lumo_offset": -0.2, "gc_scale": 0.9},
+        "signature": "deadbeef" * 8,
+    }
+    kernel_path = tmp_path / "tampered_kernel.json"
+    with open(kernel_path, "w") as f:
+        json.dump(kernel, f)
+
+    pl = AureliusPipeline()
+    result = pl.load_kernel(str(kernel_path))
+
+    assert result is None, "Tampered signature should return None (use defaults)"

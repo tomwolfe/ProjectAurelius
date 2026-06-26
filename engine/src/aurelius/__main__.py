@@ -1,15 +1,18 @@
 """Project Aurelius v10.0 - Evolutionary Algorithm Discovery CLI.
 
-Usage:
-    aurelius init                    Initialize pipeline
-    aurelius doctor                  Validate dependencies, hardware, and xTB backend
-    aurelius screen <smiles>         Screen a single molecule
-    aurelius batch <file>            Screen molecules from SMILES file
-    aurelius score <smiles>          Compute Aurelius score only
-    aurelius evaluate <smiles>       Run full pipeline evaluation
-    aurelius agent                   Run the autonomous screening agent
-    aurelius mixture <smi_a> <smi_b> [--frac]  Screen a binary electrolyte mixture
-    aurelius verify-kernel <path>    Verify a kernel's Ed25519 signature
+Examples:
+    aurelius init
+    aurelius screen "C1COC(=O)O1"
+    aurelius screen "C1COC(=O)O1" --pack organic_electronics
+    aurelius batch molecules.smi --output results.json
+    aurelius score "CC#N"
+    aurelius validate "C1COC(=O)O1"
+    aurelius mixture "C1COC(=O)O1" "COCCOC" --frac 0.3
+    aurelius mixture "C1COC(=O)O1" "COCCOC" --smiles-c "CC#N" --frac-a 0.4 --frac-b 0.4
+    aurelius doctor --verbose
+    aurelius agent --max-generations 100 --batch-size 25
+    aurelius tune experiments.csv --output my_kernel.json
+    aurelius verify-kernel my_kernel.json
 """
 
 from __future__ import annotations
@@ -37,81 +40,147 @@ def _make_pipeline(pack: str = "electrolyte") -> AureliusPipeline:
     return pipeline
 
 
+def _get_console():
+    """Return a rich Console if available, otherwise fall back to click.echo."""
+    try:
+        from rich.console import Console
+        return Console()
+    except ImportError:
+        return None
+
+
+_console = _get_console()
+
+
+def _echo(message: str = "", **kwargs: Any) -> None:
+    if _console is not None:
+        _console.print(message, **kwargs)
+    else:
+        click.echo(message, **kwargs)
+
+
+def _echo_colored(message: str, style: str = "", **kwargs: Any) -> None:
+    if _console is not None:
+        _console.print(message, style=style, **kwargs)
+    else:
+        click.echo(message, **kwargs)
+
+
 @click.group()
 @click.version_option(version="10.0.0", prog_name="Aurelius")
 def cli() -> None:
     """Project Aurelius v10.0 - Evolutionary Algorithm Discovery Release.
 
     Computational chemistry screening pipeline for battery electrolyte discovery.
-    Hybrid quantum + fragment-additivity oracle for physically valid screening.
+
+    Hybrid quantum (xTB / TOM) + fragment-additivity (GC) oracle for
+    physically valid screening of electrolyte molecules and mixtures.
+
+    \b
+    Examples:
+      aurelius screen "C1COC(=O)O1"
+      aurelius batch molecules.smi
+      aurelius agent --max-generations 100
+      aurelius doctor --verbose
     """
     pass
 
 
 @cli.command()
-def init() -> None:
-    """Initialize the Aurelius v10.0 pipeline."""
-    _make_pipeline()
-    click.echo("\nPipeline initialized successfully.")
+@click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
+def init(pack: str) -> None:
+    """Initialize the Aurelius v10.0 pipeline.
+
+    \b
+    Examples:
+      aurelius init
+      aurelius init --pack organic_electronics
+    """
+    _make_pipeline(pack=pack)
+    _echo_colored("\n[bold green]Pipeline initialized successfully.[/bold green]", style="green")
 
 
 @cli.command()
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Show detailed framework versions")
 def doctor(verbose: bool) -> None:
-    """Validate dependencies, hardware, and configuration."""
+    """Validate dependencies, hardware, and configuration.
+
+    \b
+    Examples:
+      aurelius doctor
+      aurelius doctor --verbose
+    """
     import platform
     from aurelius.scoring.oracle import has_xtb
 
-    click.echo("[Frameworks]")
-    icon = "OK" if HAS_RDKIT else "MISSING"
-    click.echo(f"  [{icon:>7}] rdkit")
-    if not HAS_RDKIT:
-        _ = platform.system()
-        click.echo("         → conda install -c conda-forge rdkit")
+    _echo_colored("[bold]Frameworks[/bold]")
+    if HAS_RDKIT:
+        _echo_colored("  [green]OK[/green]      rdkit")
+    else:
+        _echo_colored("  [red]MISSING[/red]  rdkit")
+        _echo("         → conda install -c conda-forge rdkit")
+        _echo("         → pip install rdkit-pypi")
+        if platform.system() == "Linux":
+            _echo("         → sudo apt install python3-rdkit")
+        elif platform.system() == "Darwin":
+            _echo("         → brew install rdkit")
 
     xtb_ok = has_xtb()
-    click.echo(f"  [{'OK' if xtb_ok else 'MISSING':>7}] xtb")
-    if not xtb_ok:
-        click.echo("         → https://github.com/grimme-lab/xtb/releases")
-        click.echo("         → Add xtb directory to PATH")
+    if xtb_ok:
+        _echo_colored("  [green]OK[/green]      xtb")
+    else:
+        _echo_colored("  [yellow]MISSING[/yellow]  xtb")
+        _echo("         → https://github.com/grimme-lab/xtb/releases")
+        _echo("         → Add xtb directory to PATH")
 
-    click.echo("")
+    _echo("")
 
-    click.echo("[Hardware]")
+    _echo_colored("[bold]Hardware[/bold]")
     if HAS_RDKIT:
-        click.echo("  RDKit:    Available")
+        _echo("  RDKit:    Available")
     else:
-        click.echo("  RDKit:    Not installed (real model screening required)")
+        _echo("  RDKit:    Not installed (real model screening required)")
 
-    click.echo("")
+    _echo("")
 
-    click.echo("[Summary]")
+    _echo_colored("[bold]Summary[/bold]")
     if not HAS_RDKIT:
-        click.echo("  WARNING: RDKit is missing. Pipeline will not function.")
+        _echo_colored("  [red]ERROR:[/red] RDKit is missing. Pipeline will not function.", style="bold red")
+        _echo("  Install with:")
+        _echo("    conda install -c conda-forge rdkit")
+        _echo("    pip install rdkit-pypi")
     elif not xtb_ok:
-        click.echo("  WARNING: xTB not on PATH — TOM fallback active (reduced accuracy).")
+        _echo_colored("  [yellow]WARNING:[/yellow] xTB not on PATH — TOM fallback active (reduced accuracy).", style="bold yellow")
     else:
-        click.echo("  All core frameworks available. System ready for full pipeline.")
+        _echo_colored("  [green]All core frameworks available. System ready for full pipeline.[/green]")
 
-    click.echo("")
+    _echo("")
 
 
 @cli.command("screen")
 @click.argument("smiles")
 @click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte", help="Property pack (default: electrolyte)")
 def screen(smiles: str, pack: str) -> None:
-    """Screen a single molecule through the full Aurelius pipeline."""
+    """Screen a single molecule through the full Aurelius pipeline.
+
+    \b
+    Examples:
+      aurelius screen "C1COC(=O)O1"
+      aurelius screen "CC#N" --pack organic_electronics
+      aurelius screen "COC(=O)OC"
+    """
     pipeline = _make_pipeline(pack=pack)
     try:
         results = pipeline.screen_smiles(smiles)
     except ValueError as e:
-        click.echo(f"Invalid SMILES: {e}", err=True)
+        _echo_colored(f"[red]Invalid SMILES:[/red] {e}", style="bold red", err=True)
         sys.exit(1)
 
     score = results.get("score", {})
     total = score.get("total_score", 0.0)
     viable = score.get("is_viable", False)
-    click.echo(f"\nAurelius Score: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}")
+    style = "bold green" if viable else "bold red"
+    _echo_colored(f"\n[bold]Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{'VIABLE' if viable else 'REJECTED'}[/]", style=style)
     if score and not viable:
         sys.exit(1)
 
@@ -125,7 +194,14 @@ def batch(
     output: str | None,
     pack: str,
 ) -> None:
-    """Screen multiple molecules from a SMILES file (one per line)."""
+    """Screen multiple molecules from a SMILES file (one per line).
+
+    \b
+    Examples:
+      aurelius batch molecules.smi
+      aurelius batch molecules.smi --output results.json
+      aurelius batch my_set.smi --pack organic_electronics
+    """
     pipeline = _make_pipeline(pack=pack)
     smiles_list = []
     with open(file) as f:
@@ -134,7 +210,7 @@ def batch(
             if line and not line.startswith("#"):
                 smiles_list.append(line)
 
-    click.echo(f"Screening {len(smiles_list)} molecules...")
+    _echo(f"Screening {len(smiles_list)} molecules...")
     contexts = []
     for smi in smiles_list:
         ctx = MoleculeContext.from_smiles(smi)
@@ -143,7 +219,9 @@ def batch(
     results = pipeline.screen_batch(contexts)
 
     viable = sum(1 for r in results if r["score"].get("is_viable", False) if r.get("score"))
-    click.echo(f"\nBatch complete: {viable}/{len(smiles_list)} viable ({100 * viable / max(len(smiles_list), 1):.0f}%)")
+    pct = 100 * viable / max(len(smiles_list), 1)
+    color = "green" if pct > 50 else "yellow"
+    _echo_colored(f"\n[bold]Batch complete:[/bold] {viable}/{len(smiles_list)} viable ({pct:.0f}%)", style=color)
 
     if output:
         serializable = []
@@ -159,7 +237,7 @@ def batch(
             )
         with open(output, "w") as f:
             json.dump(serializable, f, indent=2)
-        click.echo(f"Results saved to {output}")
+        _echo(f"[green]Results saved to[/green] {output}")
 
 
 @cli.command("score")
@@ -167,17 +245,26 @@ def batch(
 def score(
     smiles: str,
 ) -> None:
-    """Compute the Aurelius v10.0 score for a molecule (quick mode)."""
+    """Compute the Aurelius v10.0 score for a molecule (quick mode).
+
+    \b
+    Examples:
+      aurelius score "C1COC(=O)O1"
+      aurelius score "CC#N"
+    """
     pipeline = _make_pipeline()
     try:
         results = pipeline.screen_smiles(smiles)
     except ValueError as e:
-        click.echo(f"Invalid SMILES: {e}", err=True)
+        _echo_colored(f"[red]Invalid SMILES:[/red] {e}", style="bold red", err=True)
         sys.exit(1)
 
     score = results.get("score", {})
     if score:
-        click.echo(f"\nAurelius Score v10.0: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
+        total = score.get("total_score", 0.0)
+        viable = score.get("is_viable", False)
+        style = "bold green" if viable else "bold red"
+        _echo_colored(f"\n[bold]Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{'VIABLE' if viable else 'REJECTED'}[/]", style=style)
 
 
 @cli.command("evaluate")
@@ -185,19 +272,26 @@ def score(
 def evaluate_cmd(
     smiles: str = "CC(=O)OC1=CC(=O)O1",
 ) -> None:
-    """Run ML Oracle evaluation on a molecule."""
+    """Run ML Oracle evaluation on a molecule.
+
+    \b
+    Examples:
+      aurelius evaluate --smiles "C1COC(=O)O1"
+      aurelius evaluate
+    """
     pipeline = _make_pipeline()
     try:
         results = pipeline.screen_smiles(smiles)
         score = results.get("score", {})
         total = score.get("total_score", 0.0)
         viable = score.get("is_viable", False)
-        click.echo(f"\nAurelius Score v10.0: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}")
+        style = "bold green" if viable else "bold red"
+        _echo_colored(f"\n[bold]Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{'VIABLE' if viable else 'REJECTED'}[/]", style=style)
     except ValueError as e:
-        click.echo(f"Invalid SMILES: {e}", err=True)
+        _echo_colored(f"[red]Invalid SMILES:[/red] {e}", style="bold red", err=True)
         sys.exit(1)
     except Exception as e:
-        click.echo(f"[Aurelius Pipeline] Evaluation failed: {e}", err=True)
+        _echo_colored(f"[red]Evaluation failed:[/red] {e}", style="bold red", err=True)
         sys.exit(1)
 
 
@@ -205,14 +299,21 @@ def evaluate_cmd(
 @click.argument("smiles")
 @click.option("--pretty", is_flag=True, default=False, help="Print ASCII report card summary")
 def validate_cmd(smiles: str, pretty: bool) -> None:
-    """Run the full pipeline on a SMILES and print a report card."""
+    """Run the full pipeline on a SMILES and print a report card.
+
+    \b
+    Examples:
+      aurelius validate "C1COC(=O)O1"
+      aurelius validate "C1COC(=O)O1" --pretty
+      aurelius validate "CC#N"
+    """
     from aurelius.pipeline import _OBJECTIVES
 
     pipeline = _make_pipeline()
     try:
         results = pipeline.screen_smiles(smiles)
     except ValueError as e:
-        click.echo(f"Invalid SMILES: {e}", err=True)
+        _echo_colored(f"[red]Invalid SMILES:[/red] {e}", style="bold red", err=True)
         sys.exit(1)
     score = results.get("score", {})
     t2 = results.get("tier2", {})
@@ -232,10 +333,10 @@ def validate_cmd(smiles: str, pretty: bool) -> None:
         "hydrolysis": ("High hydrolysis risk", "Hydrolysis"),
     }
 
-    click.echo(f"\n{'=' * 56}")
-    click.echo("  Project Aurelius v10.0 — Validate")
-    click.echo(f"  SMILES: {smiles}")
-    click.echo(f"{'=' * 56}")
+    _echo(f"\n{'=' * 56}")
+    _echo_colored("  [bold]Project Aurelius v10.0 — Validate[/bold]")
+    _echo(f"  SMILES: {smiles}")
+    _echo(f"{'=' * 56}")
 
     all_passed = True
     for obj in _OBJECTIVES:
@@ -246,49 +347,67 @@ def validate_cmd(smiles: str, pretty: bool) -> None:
         weighted = obj.weight * sub
         label = obj.name[:28]
         if sub >= 0.7:
-            icon = "✅"
+            icon = "[green]✓[/green]"
         elif sub >= 0.4:
-            icon = "⚠️"
+            icon = "[yellow]~[/yellow]"
         else:
-            icon = "❌"
+            icon = "[red]✗[/red]"
             all_passed = False
         eng = reason_keywords.get(obj.name.split("_")[0], ("", ""))[0] if sub < 0.4 else ""
         eng_note = f" — {eng}" if eng else ""
-        click.echo(f"  {icon} {label:<26} raw={raw:>7.3f}  w={obj.weight:.2f}  sub={weighted:.4f}{eng_note}")
+        _echo(f"  {icon} {label:<26} raw={raw:>7.3f}  w={obj.weight:.2f}  sub={weighted:.4f}{eng_note}")
 
-    click.echo(f"  {'-' * 56}")
-    verdict_icon = "✅" if viable else "❌"
-    click.echo(f"  {verdict_icon} TOTAL: {total:>7.1f}/100  {'VIABLE' if viable else 'REJECTED'}")
+    _echo(f"  {'-' * 56}")
+    verdict = "[green]✓[/green]" if viable else "[red]✗[/red]"
+    style = "bold green" if viable else "bold red"
+    _echo_colored(f"  {verdict} TOTAL: {total:>7.1f}/100  {'VIABLE' if viable else 'REJECTED'}", style=style)
     if score.get("rejection_reasons"):
         for reason in score["rejection_reasons"]:
-            click.echo(f"     ❌ {reason}")
+            _echo_colored(f"     [red]✗[/red] {reason}")
     if t2:
-        click.echo(f"\n  {'=' * 56}")
-        click.echo("  Predicted Properties:")
-        click.echo(f"    HOMO:               {t2.get('homo_eV', 'N/A')} eV")
-        click.echo(f"    LUMO:               {t2.get('lumo_eV', 'N/A')} eV")
-        click.echo(f"    Gap:                {t2.get('gap_eV', 'N/A')} eV")
-        click.echo(f"    Dielectric proxy:   {t2.get('dielectric_proxy', 'N/A')}")
-        click.echo(f"    Viscosity proxy:    {t2.get('viscosity_proxy', 'N/A')}")
-        click.echo(f"    Li+ solvation:      {t2.get('li_solvation_proxy', 'N/A')}")
-    click.echo(f"{'=' * 56}")
+        _echo(f"\n  {'=' * 56}")
+        _echo_colored("  [bold]Predicted Properties:[/bold]")
+        _echo(f"    HOMO:               {t2.get('homo_eV', 'N/A')} eV")
+        _echo(f"    LUMO:               {t2.get('lumo_eV', 'N/A')} eV")
+        _echo(f"    Gap:                {t2.get('gap_eV', 'N/A')} eV")
+        _echo(f"    Dielectric proxy:   {t2.get('dielectric_proxy', 'N/A')}")
+        _echo(f"    Viscosity proxy:    {t2.get('viscosity_proxy', 'N/A')}")
+        _echo(f"    Li+ solvation:      {t2.get('li_solvation_proxy', 'N/A')}")
+    _echo(f"{'=' * 56}")
 
     if pretty:
-        bar_len = 20
-        click.echo(f"\n  {'─' * 40}")
-        click.echo(f"  Score: {total:5.1f}/100 {'✓' if viable else '✗'}")
-        if sub_scores:
-            best = max(sub_scores.values())
-            best_name = max(sub_scores, key=sub_scores.get)
-            worst = min(sub_scores.values())
-            worst_name = min(sub_scores, key=sub_scores.get)
-            click.echo(f"  Best:  {best_name:<22} {best:.3f}")
-            click.echo(f"  Worst: {worst_name:<22} {worst:.3f}")
+        if _console is not None:
+            from rich.table import Table
+            from rich import box
+
+            table = Table(title=f"Score: {total:.1f}/100 — {'VIABLE' if viable else 'REJECTED'}", box=box.SIMPLE)
+            table.add_column("Objective", style="cyan")
+            table.add_column("Raw", justify="right")
+            table.add_column("Score", justify="right")
+            table.add_column("Bar", style="green", no_wrap=True)
             for name, val in sorted(sub_scores.items(), key=lambda x: x[1], reverse=True):
+                bar_len = 20
                 filled = int(val * bar_len)
                 bar = "█" * filled + "░" * (bar_len - filled)
-                click.echo(f"    {name:<22} {bar} {val:.2f}")
-        click.echo(f"  {'─' * 40}")
+                raw_val = t2.get(name[:name.rfind("_")], "")
+                table.add_row(name[:26], f"{raw_val if raw_val else '':>7}", f"{val:.3f}", bar)
+            _console.print(table)
+        else:
+            bar_len = 20
+            _echo(f"\n  {'─' * 40}")
+            _echo(f"  Score: {total:5.1f}/100 {'✓' if viable else '✗'}")
+            if sub_scores:
+                best = max(sub_scores.values())
+                best_name = max(sub_scores, key=sub_scores.get)
+                worst = min(sub_scores.values())
+                worst_name = min(sub_scores, key=sub_scores.get)
+                _echo(f"  Best:  {best_name:<22} {best:.3f}")
+                _echo(f"  Worst: {worst_name:<22} {worst:.3f}")
+                for name, val in sorted(sub_scores.items(), key=lambda x: x[1], reverse=True):
+                    filled = int(val * bar_len)
+                    bar = "█" * filled + "░" * (bar_len - filled)
+                    _echo(f"    {name:<22} {bar} {val:.2f}")
+            _echo(f"  {'─' * 40}")
 
     if not viable:
         sys.exit(1)
@@ -303,7 +422,17 @@ def agent(
     batch_size: int,
     pack: str,
 ) -> None:
-    """Run the autonomous screening agent."""
+    """Run the autonomous screening agent.
+
+    Uses BRICS mutation, multi-objective hybrid oracle, and tournament
+    selection to evolve electrolyte candidates over multiple generations.
+
+    \b
+    Examples:
+      aurelius agent
+      aurelius agent --max-generations 100 --batch-size 25
+      aurelius agent --pack organic_electronics
+    """
     from aurelius.agent.loop import AgentConfig, run_screening
 
     cfg = AgentConfig(max_generations=max_generations, batch_size=batch_size, pack=pack)
@@ -314,24 +443,24 @@ def _validate_component_smiles(smiles_a: str, smiles_b: str) -> tuple[MoleculeCo
     ctx_a = MoleculeContext.from_smiles(smiles_a)
     ctx_b = MoleculeContext.from_smiles(smiles_b)
     if ctx_a is None:
-        click.echo(f"Invalid SMILES: could not parse '{smiles_a}'", err=True)
+        _echo_colored(f"[red]Invalid SMILES:[/red] could not parse '{smiles_a}'", style="bold red", err=True)
         sys.exit(1)
     if ctx_b is None:
-        click.echo(f"Invalid SMILES: could not parse '{smiles_b}'", err=True)
+        _echo_colored(f"[red]Invalid SMILES:[/red] could not parse '{smiles_b}'", style="bold red", err=True)
         sys.exit(1)
     return ctx_a, ctx_b
 
 
 def _screen_ternary(pipeline: AureliusPipeline, ctx_a: MoleculeContext, ctx_b: MoleculeContext, smiles_c: str, frac_a: float | None, frac_b: float | None) -> tuple[dict, str]:
     if frac_a is None or frac_b is None:
-        click.echo("Error: --frac-a and --frac-b required for ternary mixtures", err=True)
+        _echo_colored("[red]Error:[/red] --frac-a and --frac-b required for ternary mixtures", style="bold red", err=True)
         sys.exit(1)
     if not (0.0 < frac_a < 1.0 and 0.0 < frac_b < 1.0 and frac_a + frac_b < 1.0):
-        click.echo("Error: frac_a and frac_b must be in (0,1) and sum < 1.0", err=True)
+        _echo_colored("[red]Error:[/red] frac_a and frac_b must be in (0,1) and sum < 1.0", style="bold red", err=True)
         sys.exit(1)
     ctx_c = MoleculeContext.from_smiles(smiles_c)
     if ctx_c is None:
-        click.echo("Error: Invalid SMILES for third component.", err=True)
+        _echo_colored("[red]Error:[/red] Invalid SMILES for third component.", style="bold red", err=True)
         sys.exit(1)
     result = pipeline.screen_mixture(ctx_a, ctx_b, frac_a, ctx3=ctx_c, frac2=frac_b)
     return result, "Ternary Mixture"
@@ -339,7 +468,7 @@ def _screen_ternary(pipeline: AureliusPipeline, ctx_a: MoleculeContext, ctx_b: M
 
 def _screen_binary(pipeline: AureliusPipeline, ctx_a: MoleculeContext, ctx_b: MoleculeContext, frac: float) -> tuple[dict, str]:
     if not (0.0 <= frac <= 1.0):
-        click.echo("Error: --frac must be between 0.0 and 1.0", err=True)
+        _echo_colored("[red]Error:[/red] --frac must be between 0.0 and 1.0", style="bold red", err=True)
         sys.exit(1)
     result = pipeline.screen_mixture(ctx_a, ctx_b, frac)
     return result, "Binary Mixture"
@@ -348,10 +477,13 @@ def _screen_binary(pipeline: AureliusPipeline, ctx_a: MoleculeContext, ctx_b: Mo
 def _report_mixture_result(result: dict, label: str) -> None:
     score = result.get("score", {})
     mix_props = result.get("mixture_properties", {})
-    click.echo(f"\n{label} Aurelius Score: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
-    click.echo(f"  Synergy Bonus: {mix_props.get('synergy_bonus', 0.0):.4f}")
-    click.echo(f"  Dielectric Proxy: {mix_props.get('dielectric_proxy', 0.0):.2f}")
-    click.echo(f"  Viscosity Proxy:  {mix_props.get('viscosity_proxy', 0.0):.2f}")
+    total = score.get("total_score", 0.0)
+    viable = score.get("is_viable", False)
+    style = "bold green" if viable else "bold red"
+    _echo_colored(f"\n[bold]{label} Aurelius Score:[/bold] {total:.1f}/100 [{'green' if viable else 'red'}]{'VIABLE' if viable else 'REJECTED'}[/]", style=style)
+    _echo(f"  Synergy Bonus: {mix_props.get('synergy_bonus', 0.0):.4f}")
+    _echo(f"  Dielectric Proxy: {mix_props.get('dielectric_proxy', 0.0):.2f}")
+    _echo(f"  Viscosity Proxy:  {mix_props.get('viscosity_proxy', 0.0):.2f}")
     if not score.get("is_viable", False):
         sys.exit(1)
 
@@ -366,8 +498,17 @@ def _report_mixture_result(result: dict, label: str) -> None:
 def mixture_cmd(smiles_a: str, smiles_b: str, frac: float, smiles_c: str | None, frac_a: float | None, frac_b: float | None) -> None:
     """Screen a binary or ternary electrolyte mixture.
 
-    Binary: SMILES_A SMILES_B [--frac FRAC]
-    Ternary: SMILES_A SMILES_B --smiles-c SMILES_C --frac-a FRAC_A --frac-b FRAC_B
+    Thermodynamic mixing rules with synergy bonus for complementary pairs
+    (high-dielectric + low-viscosity).
+
+    \b
+    Binary:
+      aurelius mixture "C1COC(=O)O1" "COCCOC"
+      aurelius mixture "C1COC(=O)O1" "COCCOC" --frac 0.3
+
+    \b
+    Ternary:
+      aurelius mixture "C1COC(=O)O1" "COCCOC" --smiles-c "CC#N" --frac-a 0.4 --frac-b 0.4
     """
     pipeline = _make_pipeline()
     ctx_a, ctx_b = _validate_component_smiles(smiles_a, smiles_b)
@@ -440,7 +581,7 @@ def _tune_objective(
             )
             predictions.append(pred)
         except Exception as exc:
-            click.echo(f"  Skipping {smi}: {exc}", err=True)
+            _echo(f"  Skipping {smi}: {exc}", err=True)
             continue
     if len(predictions) < 2:
         return 999.0
@@ -535,14 +676,19 @@ def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
 
     Runs a local Nelder-Mead optimizer (no Stripe/JWT/Postgres required)
     and writes the tuned kernel to --output (default: aurelius_kernel.json).
+
+    \b
+    Examples:
+      aurelius tune experiments.csv
+      aurelius tune experiments.csv --output my_kernel.json --max-iter 500
     """
     try:
         import numpy as np  # noqa: F401
     except ImportError:
-        click.echo("Error: 'aurelius tune' requires numpy. Install with: pip install -e '.[ml]'", err=True)
+        _echo_colored("[red]Error:[/red] 'aurelius tune' requires numpy. Install with: pip install -e '.[ml]'", style="bold red", err=True)
         sys.exit(1)
 
-    click.echo(f"Loading training data from {csv_path}...")
+    _echo(f"Loading training data from {csv_path}...")
     import csv
     smiles_list: list[str] = []
     property_names: list[str] = []
@@ -559,7 +705,7 @@ def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
     if n < 3:
         click.echo(f"Error: need at least 3 data points, got {n}", err=True)
         sys.exit(1)
-    click.echo(f"Loaded {n} data points. Running Nelder-Mead optimization...")
+    _echo(f"Loaded {n} data points. Running Nelder-Mead optimization...")
 
     x0 = [0.0, 0.0, 1.0]
     bounds = [(-5.0, 5.0), (-5.0, 5.0), (0.1, 10.0)]
@@ -633,14 +779,14 @@ def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
     with open(output, "w") as f:
         json.dump(kernel, f, indent=2)
 
-    click.echo(f"\nTuning complete. Results written to {output}")
-    click.echo(f"  HOMO offset:  {tom_parameters['homo_offset']:+.4f}")
-    click.echo(f"  LUMO offset:  {tom_parameters['lumo_offset']:+.4f}")
-    click.echo(f"  GC scale:     {tom_parameters['gc_scale']:.4f}")
-    click.echo(f"  Spearman ρ:   {spearman:.4f}")
-    click.echo(f"  MAE:          {mae:.4f}")
-    click.echo(f"  RMSE:         {rmse:.4f}")
-    click.echo(f"  Training pts: {len(valid_smiles)}")
+    _echo_colored(f"\n[bold green]Tuning complete.[/bold green] Results written to [cyan]{output}[/cyan]", style="green")
+    _echo(f"  HOMO offset:  {tom_parameters['homo_offset']:+.4f}")
+    _echo(f"  LUMO offset:  {tom_parameters['lumo_offset']:+.4f}")
+    _echo(f"  GC scale:     {tom_parameters['gc_scale']:.4f}")
+    _echo(f"  Spearman ρ:   {spearman:.4f}")
+    _echo(f"  MAE:          {mae:.4f}")
+    _echo(f"  RMSE:         {rmse:.4f}")
+    _echo(f"  Training pts: {len(valid_smiles)}")
 
 
 @cli.command("verify-kernel")
@@ -649,6 +795,11 @@ def verify_kernel_cmd(kernel_path: str) -> None:
     """Verify a kernel's Ed25519 signature using the public key in constants.
 
     KERNEL_PATH is the path to a signed aurelius_kernel.json file.
+
+    \b
+    Examples:
+      aurelius verify-kernel aurelius_kernel.json
+      aurelius verify-kernel ~/lab/signed_kernel.json
     """
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -660,7 +811,7 @@ def verify_kernel_cmd(kernel_path: str) -> None:
 
         stored = kernel.get("signature", "")
         if not stored:
-            click.echo("FAIL: No signature field found in kernel.", err=True)
+            _echo_colored("[red]FAIL:[/red] No signature field found in kernel.", style="bold red", err=True)
             sys.exit(1)
 
         payload = {k: v for k, v in kernel.items() if k != "signature"}
@@ -668,12 +819,12 @@ def verify_kernel_cmd(kernel_path: str) -> None:
 
         pub = Ed25519PublicKey.from_public_bytes(KERNEL_PUBLIC_KEY)
         pub.verify(bytes.fromhex(stored), canonical.encode("utf-8"))
-        click.echo("OK: Kernel signature verified successfully.")
+        _echo_colored("[bold green]OK:[/bold green] Kernel signature verified successfully.", style="green")
     except json.JSONDecodeError:
-        click.echo(f"FAIL: Could not parse {kernel_path} as JSON.", err=True)
+        _echo_colored(f"[red]FAIL:[/red] Could not parse {kernel_path} as JSON.", style="bold red", err=True)
         sys.exit(1)
     except Exception as exc:
-        click.echo(f"FAIL: Signature verification failed: {exc}", err=True)
+        _echo_colored(f"[red]FAIL:[/red] Signature verification failed: {exc}", style="bold red", err=True)
         sys.exit(1)
 
 

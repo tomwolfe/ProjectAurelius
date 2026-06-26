@@ -25,6 +25,7 @@ import logging
 import random
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
@@ -810,6 +811,13 @@ class DiscoveryLoop:
     ) -> tuple[list[MoleculeContext], list[float]]:
         """Evaluate all valid candidates through the Oracle and select the top batch.
 
+        Uses ``ThreadPoolExecutor`` to run the oracle evaluation in parallel.
+        State mutations are applied sequentially in the main thread after all
+        parallel evaluations complete.  The pipeline's ``screen_molecule`` and
+        ``_process_single_candidate`` are safe for thread-level parallelism
+        because the heavy lifting (RDKit, GC fragment-additivity, xTB subprocess)
+        releases the GIL via C extensions and I/O-bound calls.
+
         When exploration_beta > 0, uses UCB-based selection (score + beta * uncertainty)
         instead of raw tournament selection, biasing toward high-uncertainty regions
         to maximise information gain. This is triggered automatically when scaffold
@@ -819,16 +827,36 @@ class DiscoveryLoop:
         result_contexts: list[MoleculeContext] = []
         result_map: dict[str, Any] = {}
 
-        for ctx in valid_contexts:
-            if self._wall_time_exceeded():
-                log.info("Wall time limit reached — stopping evaluation mid-generation.")
-                break
-            processed = self._process_single_candidate(ctx, result_map)
-            if processed is None:
-                continue
-            total_score = processed[0]
-            all_scores.append(total_score)
-            result_contexts.append(ctx)
+        # Pre-filter against seen_smiles in main thread (thread-safe read)
+        unseen_contexts = [
+            ctx for ctx in valid_contexts
+            if ctx.smiles not in self.state._seen_smiles
+        ]
+
+        import os
+        max_workers = min(os.cpu_count() or 4, max(1, len(unseen_contexts) // 4 + 1))
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self._process_single_candidate, ctx, result_map): ctx
+                for ctx in unseen_contexts
+            }
+
+            for future in as_completed(futures):
+                if self._wall_time_exceeded():
+                    log.info("Wall time limit reached — stopping evaluation mid-generation.")
+                    break
+                ctx = futures[future]
+                try:
+                    processed = future.result()
+                except Exception as exc:
+                    log.debug("Parallel evaluation failed for %s: %s", ctx.smiles, exc)
+                    continue
+                if processed is None:
+                    continue
+                total_score = processed[0]
+                all_scores.append(total_score)
+                result_contexts.append(ctx)
 
         mix_contexts, mix_scores = self._evaluate_mixture_pairs(valid_contexts, result_map)
         result_contexts.extend(mix_contexts)

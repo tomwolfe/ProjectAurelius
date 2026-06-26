@@ -264,13 +264,21 @@ def _run_xtb(xyz_content: str, workdir: str | None = None) -> dict[str, float] |
         return None
 
 
-def _run_xtb_worker(args: tuple[str, str]) -> dict[str, float] | None:
-    """Worker function for ProcessPoolExecutor — runs xTB on a single XYZ.
-
-    Each worker process handles its own temp dir and cleanup.
-    """
-    xyz_content, workdir = args
-    return _run_xtb(xyz_content, workdir)
+def _run_xtb_from_file(xyz_path: str) -> dict[str, float] | None:
+    """Run xTB on a single XYZ file path (no temp dir creation)."""
+    if _XTB_BIN is None:
+        return None
+    workdir = os.path.dirname(xyz_path)
+    try:
+        result = subprocess.run(
+            [_XTB_BIN, "--gfn", "2", "--sp", xyz_path],
+            cwd=workdir,
+            capture_output=True, text=True, timeout=120,
+        )
+        return _parse_xtb_output(result.stdout)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError) as exc:
+        logger.debug("xTB file run failed for %s: %s", xyz_path, exc)
+        return None
 
 
 def run_xtb_batch(
@@ -278,9 +286,12 @@ def run_xtb_batch(
 ) -> list[dict[str, float] | None]:
     """Run multiple xTB single-point calculations in parallel.
 
-    Uses a ProcessPoolExecutor to isolate xTB subprocess calls in
-    separate processes, avoiding GIL contention and ensuring clean
-    temp directory management in each worker.
+    Optimised to reduce per-molecule overhead:
+      - Writes all XYZ files to a single shared temp directory
+      - Uses ``ThreadPoolExecutor`` instead of ``ProcessPoolExecutor`` (xTB
+        subprocess calls are I/O-bound, so threads are sufficient and avoid
+        pickling overhead)
+      - Cleans up the entire batch directory in one call
 
     Args:
         xyz_list: List of XYZ-format molecular geometry strings.
@@ -294,17 +305,20 @@ def run_xtb_batch(
         return [None] * len(xyz_list)
 
     base = _XTB_BASE_TEMP or tempfile.gettempdir()
-    workdirs = [
-        tempfile.mkdtemp(dir=base, prefix=f"batch_{i}_")
-        for i in range(len(xyz_list))
-    ]
+    batch_dir = tempfile.mkdtemp(dir=base, prefix="xtb_batch_")
+
+    xyz_paths: list[str] = []
+    for i, xyz_content in enumerate(xyz_list):
+        xyz_path = os.path.join(batch_dir, f"mol_{i}.xyz")
+        with open(xyz_path, "w") as f:
+            f.write(xyz_content)
+        xyz_paths.append(xyz_path)
 
     results: list[dict[str, float] | None] = [None] * len(xyz_list)
-    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as pool:
-        args_list = list(zip(xyz_list, workdirs))
-        future_map: dict[concurrent.futures.Future[dict[str, float] | None], int] = {
-            pool.submit(_run_xtb_worker, args): i
-            for i, args in enumerate(args_list)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        future_map = {
+            pool.submit(_run_xtb_from_file, xyz_paths[i]): i
+            for i in range(len(xyz_list))
         }
         for future in concurrent.futures.as_completed(future_map):
             idx = future_map[future]
@@ -314,8 +328,7 @@ def run_xtb_batch(
                 logger.debug("xTB batch item %d failed: %s", idx, exc)
                 results[idx] = None
 
-    for wd in workdirs:
-        shutil.rmtree(wd, ignore_errors=True)
+    shutil.rmtree(batch_dir, ignore_errors=True)
 
     return results
 

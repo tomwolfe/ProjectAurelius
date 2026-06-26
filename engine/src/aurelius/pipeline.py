@@ -12,6 +12,7 @@ All stages accept a pre-parsed MoleculeContext to enforce single-point parsing.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import time
@@ -188,6 +189,53 @@ class AureliusPipeline:
         else:
             logger.info("Oracle (PropertyOracle): loaded from cache (%s).", oracle_cache)
         logger.info("Oracle (PropertyOracle): ENABLED")
+
+    def load_kernel(self, kernel_path: str) -> dict[str, Any] | None:
+        """Load a signed kernel JSON file with Ed25519 signature verification.
+
+        Verifies the kernel's Ed25519 signature against ``KERNEL_PUBLIC_KEY``
+        before applying its parameters. If verification fails, logs a warning
+        and returns default parameters (no crash).
+
+        Args:
+            kernel_path: Path to a signed ``aurelius_kernel.json`` file.
+
+        Returns:
+            Dict of kernel parameters on successful verification, or ``None``
+            to indicate the caller should use defaults.
+        """
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+            from aurelius.constants import KERNEL_PUBLIC_KEY
+
+            with open(kernel_path) as f:
+                kernel = json.load(f)
+
+            stored = kernel.get("signature", "")
+            if not stored:
+                logger.warning("Kernel %s: no signature field — using defaults.", kernel_path)
+                return None
+
+            payload = {k: v for k, v in kernel.items() if k != "signature"}
+            canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+            pub = Ed25519PublicKey.from_public_bytes(KERNEL_PUBLIC_KEY)
+            pub.verify(bytes.fromhex(stored), canonical.encode("utf-8"))
+            logger.info("Kernel %s: signature verified successfully.", kernel_path)
+            return {k: v for k, v in kernel.items() if k != "signature"}
+        except ImportError:
+            logger.warning(
+                "Kernel %s: cryptography not installed — cannot verify signature. Using defaults.",
+                kernel_path,
+            )
+            return None
+        except Exception as exc:
+            logger.warning(
+                "Kernel %s: signature verification failed (%s) — using defaults.",
+                kernel_path, exc,
+            )
+            return None
 
     def _generate_failed_run(self, smiles: str, reason: str) -> dict[str, Any]:
         t1_result = {

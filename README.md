@@ -24,7 +24,13 @@ For detailed explanations of proxy values (dielectric, viscosity, Li+ solvation)
 with curated examples and troubleshooting, see
 [`docs/quickstart_chemist.md`](docs/quickstart_chemist.md).
 
-For full CLI reference, see [`engine/README.md`](engine/README.md).
+For full user guide (installation, CLI reference, property system, agent usage),
+see [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
+
+For the engine-specific README (architecture, quantum backend, project structure),
+see [`engine/README.md`](engine/README.md).
+
+For a detailed architecture breakdown, see [`docs/ARCHITECTURE.md`](docs/architecture.md).
 
 ### Pre-Certified Kernels (Quick Start)
 

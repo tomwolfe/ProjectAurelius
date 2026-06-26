@@ -114,6 +114,7 @@ class LoopState:
         if not self.started_at:
             self.started_at = datetime.now(UTC).isoformat()
         self._cache_lock = threading.Lock()
+        self._state_lock = threading.Lock()
         self._load()
 
     # ------------------------------------------------------------------
@@ -410,34 +411,36 @@ class LoopState:
         os.replace(tmp_path, self.path)
 
     def add_discovery(self, discovery: dict[str, Any] | ScreeningResult) -> None:
-        if isinstance(discovery, dict):
-            self.discoveries.append(discovery)
-        else:
-            self.discoveries.append({
-                "smiles": discovery.smiles,
-                "total_score": discovery.total_score,
-                "is_viable": discovery.is_viable,
-                "rejection_reasons": discovery.rejection_reasons,
-            })
-        self.discoveries.sort(key=lambda d: d.get("total_score", 0), reverse=True)
-        self.discoveries = self.discoveries[:_MAX_DISCOVERIES]
+        with self._state_lock:
+            if isinstance(discovery, dict):
+                self.discoveries.append(discovery)
+            else:
+                self.discoveries.append({
+                    "smiles": discovery.smiles,
+                    "total_score": discovery.total_score,
+                    "is_viable": discovery.is_viable,
+                    "rejection_reasons": discovery.rejection_reasons,
+                })
+            self.discoveries.sort(key=lambda d: d.get("total_score", 0), reverse=True)
+            self.discoveries = self.discoveries[:_MAX_DISCOVERIES]
 
     def add_result(self, sr: Any) -> None:
-        self._seen_smiles.add(sr.smiles)
-        self._all_results.append({
-            "smiles": sr.smiles,
-            "total_score": sr.total_score,
-            "is_viable": sr.is_viable,
-            "rejection_reasons": sr.rejection_reasons,
-            "novelty_to_seed": sr.novelty_to_seed,
-            "homo_eV": sr.homo_eV,
-            "lumo_eV": sr.lumo_eV,
-            "dielectric_proxy": sr.dielectric_proxy,
-            "viscosity_proxy": sr.viscosity_proxy,
-            "li_solvation_proxy": sr.li_solvation_proxy,
-            "sa_score": sr.sa_score,
-            "sub_scores": sr.sub_scores,
-        })
+        with self._state_lock:
+            self._seen_smiles.add(sr.smiles)
+            self._all_results.append({
+                "smiles": sr.smiles,
+                "total_score": sr.total_score,
+                "is_viable": sr.is_viable,
+                "rejection_reasons": sr.rejection_reasons,
+                "novelty_to_seed": sr.novelty_to_seed,
+                "homo_eV": sr.homo_eV,
+                "lumo_eV": sr.lumo_eV,
+                "dielectric_proxy": sr.dielectric_proxy,
+                "viscosity_proxy": sr.viscosity_proxy,
+                "li_solvation_proxy": sr.li_solvation_proxy,
+                "sa_score": sr.sa_score,
+                "sub_scores": sr.sub_scores,
+            })
 
     def top_scored_smiles(self, divisor: int = 5) -> list[str]:
         scored = [(r["total_score"], r["smiles"]) for r in self._all_results if r["total_score"] > 0]
