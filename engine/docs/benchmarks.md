@@ -4,23 +4,98 @@
 
 ## External Property Validation
 
-External validation results not available.
+### External Property Validation — Summary
+
+| Property | Spearman ρ | Threshold | Pass/Fail | Trend |
+|----------|-----------:|:----------|:----------|:------|
+| Dielectric ε | +0.7329 | ρ > 0.5 | ✅ Pass | — |
+| Viscosity η | +0.6202 | ρ > 0.5 | ✅ Pass | — |
+| Donor Number | +0.6892 | ρ > 0.5 | ✅ Pass | — |
+| HOMO | +0.8537 | ρ > 0.5 | ✅ Pass | — |
+| LUMO | +0.5337 | ρ > 0.5 | ✅ Pass | — |
+
 
 ### External Property Validation — Raw Output
 ```text
-*Benchmark module not available — skip*```
+========================================================================
+  EXTERNAL PROPERTY VALIDATION — Spearman Rank Correlation
+========================================================================
+
+  Compares Aurelius oracle predictions against published experimental
+  values for common electrolyte solvents.
+
+  Benchmark molecules: 69
+
+  Skipped: 7
+
+  ┌──────────────────────┬────────────┬──────────┬───────────┐
+  │ Property             │     N      │    ρ     │   p-val   │
+  ├──────────────────────┼────────────┼──────────┼───────────┤
+  │ Dielectric ε         │   59        │ +0.7329  │ 0.0000 *** │
+  │   top: 1,2-Butylene carbonate    pred=14.964 exp=89.780 │
+  │   bot: Cyclohexanone             pred=2.412 exp=2.210 │
+  │ Viscosity η          │   59        │ +0.6202  │ 0.0000 *** │
+  │   top: Bis(2,2,2-trifluoroethyl) sulfone pred=5.994 exp=10.300 │
+  │   bot: DEE                       pred=0.220 exp=0.240 │
+  │ Donor Number         │   42        │ +0.6892  │ 0.0000 *** │
+  │   top: DMSO                      pred=6.606 exp=33.100 │
+  │   bot: Cyclohexanone             pred=1.096 exp=8.000 │
+  │ HOMO                 │   56        │ +0.8537  │ 0.0000 *** │
+  │   top: Benzonitrile              pred=-3.304 exp=-4.244 │
+  │   bot: Bis(2,2,2-trifluoroethyl) sulfone pred=-10.580 exp=-10.580 │
+  │ LUMO                 │   56        │ +0.5337  │ 0.0000 *** │
+  │   top: Cyclohexanone             pred=1.640 exp=1.500 │
+  │   bot: Benzonitrile              pred=-2.676 exp=-2.452 │
+  └──────────────────────┴────────────┴──────────┴───────────┘
+
+  Significance: * p<0.05  ** p<0.01  *** p<0.001
+
+  Properties with ρ > 0: 5/5
+
+  EXTERNAL VALIDATION: ALL PROPERTIES SHOW POSITIVE RANK CORRELATION
+
+__BENCHMARK_RESULTS__
+{
+  "dielectric_constant": {
+    "rho": 0.7329,
+    "n": 59
+  },
+  "viscosity_cP": {
+    "rho": 0.6202,
+    "n": 59
+  },
+  "donor_number": {
+    "rho": 0.6892,
+    "n": 42
+  },
+  "homo_eV": {
+    "rho": 0.8537,
+    "n": 56
+  },
+  "lumo_eV": {
+    "rho": 0.5337,
+    "n": 56
+  }
+}
+```
 
 ## Reality Check: EA Discoveries vs. Known Electrolytes
 ```text
-*Benchmark module not available — skip*```
+[Benchmark failed with exit code 1 — no stderr output]```
 
 ## Mixture Synergy Validation
 ```text
-*Benchmark module not available — skip*```
+  PASS: Complementary pair synergy=2.9666 > 0.5
+  PASS: Frankenstein pair synergy=0.0000 == 0.0
+  PASS: Ternary complementary synergy=3.1531 > 0.5
+  PASS: Ternary homogeneous synergy=0.0000 == 0.0
+
+MIXTURE SYNERGY BONUS: ALL CHECKS PASSED
+```
 
 ## Scientific Yield
 ```text
-Scientific yield (novel scaffolds / total screened): 0.0909
+Scientific yield (novel scaffolds / total screened): 0.0000
 ```
 
 ## Synthesis Target Brief

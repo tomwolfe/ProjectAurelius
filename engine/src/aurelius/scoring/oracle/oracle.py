@@ -276,6 +276,10 @@ class PropertyOracle:
             diel_std > abs(dielectric) * _UQ_THRESHOLD_FRACTION
             or visc_std > abs(viscosity) * _UQ_THRESHOLD_FRACTION
         )
+        # Epistemic uncertainty score: mean of normalised dielectric and viscosity stds
+        diel_norm = diel_std / max(abs(dielectric), 1.0)
+        visc_norm = visc_std / max(abs(viscosity), 1.0)
+        result["uncertainty_score"] = round((diel_norm + visc_norm) / 2.0, 4)
         if self._surrogate is not None:
             result["surrogate_skipped"] = skip_quantum
         return result

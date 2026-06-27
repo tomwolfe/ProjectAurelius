@@ -265,6 +265,7 @@ class DiscoveryLoop:
             sa_score=d.get("sa_score"),
             sub_scores=d.get("sub_scores"),
             estimated_cost_score=d.get("estimated_cost_score"),
+            uncertainty_score=d.get("uncertainty_score"),
         )
 
     def execute(self) -> dict[str, Any]:
@@ -338,11 +339,20 @@ class DiscoveryLoop:
 
     def _generate_candidates(self, generation: int, force_exploration: bool = False) -> list[str]:
         top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
+
+        # Inject 20% of the active learning queue into the mutation seed pool
+        al_seeds: list[str] = []
+        if self.state.active_learning_queue:
+            n_al = max(1, len(top_seeds) // 5)
+            al_seeds = list(self.state.active_learning_queue[:n_al])
+            log.info("  Injecting %d AL queue SMILES into mutation seed pool", len(al_seeds))
+
+        mutation_seeds = list(dict.fromkeys(top_seeds + al_seeds))
         diagnostics: list[str] | None = None
         if self.verbose:
             diagnostics = []
 
-        single_candidates = list(self.engine.mutate_batch(top_seeds, self.batch_size * 3, force_exploration=force_exploration, diagnostics=diagnostics))
+        single_candidates = list(self.engine.mutate_batch(mutation_seeds, self.batch_size * 3, force_exploration=force_exploration, diagnostics=diagnostics))
         mixture_candidates = list(self.engine.propose_mixture_candidates(
             top_seeds,
             n_mixtures=max(2, self.batch_size // 5),
@@ -437,6 +447,7 @@ class DiscoveryLoop:
             sa_score=score_data.get("sa_score"),
             sub_scores=sub_scores,
             estimated_cost_score=compute_estimated_cost_score(ctx),
+            uncertainty_score=t2.get("uncertainty_score"),
         )
 
     @staticmethod
@@ -640,6 +651,30 @@ class DiscoveryLoop:
         selected_scores = [all_scores[result_contexts.index(ctx)] for ctx in selected]
         return selected, selected_scores
 
+    def _populate_active_learning_queue(
+        self,
+        result_contexts: list[MoleculeContext],
+        result_map: dict[str, Any],
+    ) -> None:
+        """Identify top 10% of candidates with highest uncertainty_score and add to AL queue."""
+        scored: list[tuple[str, float]] = []
+        for ctx in result_contexts:
+            t2 = result_map.get(ctx.smiles)
+            if t2 is None:
+                continue
+            uq = t2.get("uncertainty_score", 0.0) or 0.0
+            scored.append((ctx.smiles, uq))
+
+        if len(scored) < 2:
+            return
+
+        scored.sort(key=lambda x: -x[1])
+        n_queue = max(1, len(scored) // 10)
+        for smi, _ in scored[:n_queue]:
+            if smi not in self.state.active_learning_queue:
+                self.state.active_learning_queue.append(smi)
+                log.info("  Added %s to active learning queue (uncertainty_score=%.4f)", smi, _)
+
     def _evaluate_and_select(
         self,
         valid_contexts: list[MoleculeContext],
@@ -657,6 +692,11 @@ class DiscoveryLoop:
         instead of raw tournament selection, biasing toward high-uncertainty regions
         to maximise information gain. This is triggered automatically when scaffold
         stagnation is detected, or can be forced via the exploration_beta parameter.
+
+        After selection, the top 10% of candidates with the highest uncertainty_score
+        are added to the active learning queue for forced exploration in future
+        generations. The queue is drained at 20% per generation into the mutation
+        seed pool.
         """
         all_scores: list[float] = []
         result_contexts: list[MoleculeContext] = []
@@ -692,6 +732,9 @@ class DiscoveryLoop:
                 total_score = processed[0]
                 all_scores.append(total_score)
                 result_contexts.append(ctx)
+
+        # Populate active learning queue with top 10% highest-uncertainty candidates
+        self._populate_active_learning_queue(result_contexts, result_map)
 
         mix_contexts, mix_scores = self._evaluate_mixture_pairs(valid_contexts, result_map)
         result_contexts.extend(mix_contexts)

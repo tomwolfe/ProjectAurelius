@@ -229,6 +229,7 @@ def _build_screening_result(
         sa_score=score_data.get("sa_score"),
         sub_scores=sub_scores,
         estimated_cost_score=compute_estimated_cost_score(ctx),
+        uncertainty_score=t2.get("uncertainty_score"),
     )
 
 

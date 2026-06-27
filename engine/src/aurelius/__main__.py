@@ -284,6 +284,50 @@ def doctor(verbose: bool) -> None:
     _echo("")
 
 
+def _print_chemist_summary(smiles: str, t2: dict[str, Any] | None) -> None:
+    """Print a 'Chemist's Summary' with GC fragment contributions to low scores."""
+    ctx = MoleculeContext.from_smiles(smiles)
+    if ctx is None:
+        return
+    try:
+        from aurelius.scoring.oracle.gc import _GC_FRAGMENTS, _count_fragments
+        counts = _count_fragments(ctx.mol)
+    except Exception:
+        return
+
+    _echo("")
+    _echo_colored("[bold]Chemist's Summary — GC Fragment Analysis:[/bold]")
+
+    if t2 is None:
+        _echo("  [yellow]Tier 1 filter rejected — no GC properties computed.[/yellow]")
+        return
+
+    dielectric = t2.get("dielectric_proxy", 0.0) or 0.0
+    viscosity = t2.get("viscosity_proxy", 0.0) or 0.0
+    uncertainty = t2.get("uncertainty_score", 0.0) or 0.0
+
+    if dielectric < 5.0:
+        missing_high = []
+        for _pat, name, dd, _dv, _ls, _dc in _GC_FRAGMENTS:
+            if dd > 2.0 and counts.get(name, 0) == 0:
+                missing_high.append(name)
+        _echo(f"  [yellow]Low Dielectric ({dielectric:.2f}):[/yellow] Missing high-contribution fragments: {', '.join(missing_high[:5]) or 'none identified'}")
+        if "cyclic_carbonate" in counts and counts["cyclic_carbonate"] > 0:
+            _echo("    [green]Cyclic carbonate present — good for dielectric.[/green]")
+
+    if viscosity > 2.5:
+        high_visc = []
+        for _pat, name, _dd, dv, _ls, _dc in _GC_FRAGMENTS:
+            if dv > 0.3 and counts.get(name, 0) > 0:
+                high_visc.append(f"{name} (×{counts[name]})")
+        _echo(f"  [yellow]High Viscosity ({viscosity:.2f}):[/yellow] Contributing fragments: {', '.join(high_visc[:5]) or 'none identified'}")
+
+    if uncertainty > 0.15:
+        _echo(f"  [yellow]High Prediction Uncertainty ({uncertainty:.3f}):[/yellow] Molecule may be out-of-distribution for GC model.")
+
+    _echo(f"  [cyan]GC Fragment Counts:[/cyan] {dict(sorted(counts.items()))}")
+
+
 def _run_screen(
     pipeline: AureliusPipeline,
     smiles: str,
@@ -347,6 +391,9 @@ def _run_screen(
         _echo_colored("[bold]Rejection Reasons:[/bold]")
         for r in rejection_reasons:
             _echo(f"  [red]✗[/red] {r}")
+
+    if verbose:
+        _print_chemist_summary(smiles, t2)
 
     return None
 

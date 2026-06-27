@@ -101,7 +101,7 @@ class TestMoleculeContextLruCache:
     def test_cache_clear_forces_recomputation(self):
         """After clearing cache, the same SMILES should produce a new object."""
         ctx1 = MoleculeContext.from_smiles("CCO")
-        MoleculeContext.from_smiles.cache_clear()
+        MoleculeContext.cache_clear()
         ctx2 = MoleculeContext.from_smiles("CCO")
         assert ctx1 is not ctx2
         assert ctx1.smiles == ctx2.smiles
@@ -109,7 +109,7 @@ class TestMoleculeContextLruCache:
     def test_cache_clear_different_invalid(self):
         """Clearing the cache should also invalidate None results."""
         r1 = MoleculeContext.from_smiles("invalid##")
-        MoleculeContext.from_smiles.cache_clear()
+        MoleculeContext.cache_clear()
         r2 = MoleculeContext.from_smiles("invalid##")
         assert r1 is r2  # both should be None, but different None isn't possible
         assert r1 is None

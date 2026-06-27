@@ -498,7 +498,7 @@ class LoopState:
             self._fingerprint_dict.clear()
         with self._al_queue_lock:
             self.active_learning_queue.clear()
-        MoleculeContext.from_smiles.cache_clear()
+        MoleculeContext.cache_clear()
         self.save()
 
 

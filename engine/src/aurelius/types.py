@@ -20,11 +20,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from functools import cached_property, lru_cache
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
+
+from aurelius.cache.lru import LRUCache
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +91,11 @@ class ScreeningResult:
     li_dissociation_proxy: float | None = None
     sub_scores: dict[str, float] | None = None
     estimated_cost_score: float | None = None
+    uncertainty_score: float | None = None
+
+
+_molecule_ctx_cache: LRUCache[MoleculeContext | None] = LRUCache(maxsize=4096)
+"""Thread-safe LRU cache for MoleculeContext.from_smiles()."""
 
 
 @dataclass(frozen=True)
@@ -115,18 +122,27 @@ class MoleculeContext:
     gc_feature_vector: np.ndarray[Any, Any] | None = None
 
     @classmethod
-    @lru_cache(maxsize=1024)
     def from_smiles(cls, smiles: str) -> MoleculeContext | None:
         """Parse a SMILES string into a ``MoleculeContext``.
 
-        Returns ``None`` (with a logged error message) on failure.
-        For a version that raises specific exceptions, use
+        Uses a thread-safe LRU cache (maxsize=4096) to avoid redundant
+        RDKit parsing. Returns ``None`` (with a logged error message)
+        on failure.  For a version that raises specific exceptions, use
         ``from_smiles_strict()``.
         """
+        cached = _molecule_ctx_cache.get(smiles)
+        if cached is not None:
+            return cached
         result, error = cls._from_smiles_impl(smiles)
         if error:
             logger.error(error)
+        _molecule_ctx_cache.put(smiles, result)
         return result
+
+    @classmethod
+    def cache_clear(cls) -> None:
+        """Clear the global LRU cache for ``from_smiles``."""
+        _molecule_ctx_cache.clear()
 
     @classmethod
     def from_smiles_strict(cls, smiles: str) -> MoleculeContext:
