@@ -310,7 +310,7 @@ class DiscoveryLoop:
 
             self.state.save()
 
-            if self.state.active_learning_queue:
+            if self.al_manager.queue_size:
                 export_path = f"active_learning_queue_gen{generation}.json"
                 self.state.export_active_learning_queue(export_path)
 
@@ -341,10 +341,9 @@ class DiscoveryLoop:
         top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
 
         # Inject 20% of the active learning queue into the mutation seed pool
-        al_seeds: list[str] = []
-        if self.state.active_learning_queue:
-            n_al = max(1, len(top_seeds) // 5)
-            al_seeds = list(self.state.active_learning_queue[:n_al])
+        n_al = max(1, len(top_seeds) // 5)
+        al_seeds = self.al_manager.get_queue_smiles(n_al)
+        if al_seeds:
             log.info("  Injecting %d AL queue SMILES into mutation seed pool", len(al_seeds))
 
         mutation_seeds = list(dict.fromkeys(top_seeds + al_seeds))
@@ -575,31 +574,9 @@ class DiscoveryLoop:
         """
         smi = ctx.smiles
 
-        if smi in self.state.active_learning_queue:
-            return self.al_manager.evaluate_with_real_quantum(ctx, result_map)
-
-        gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
-        if gc_uq is not None:
-            try:
-                _, _, diel_high = gc_uq.predict_dielectric(ctx)
-                _, _, visc_high = gc_uq.predict_viscosity(ctx)
-                if diel_high or visc_high:
-                    if smi not in self.state.active_learning_queue:
-                        self.state.active_learning_queue.append(smi)
-                        log.info("  Added %s to active learning queue (high UQ from GcUqEnsemble)", smi)
-                    return self.al_manager.evaluate_with_real_quantum(ctx, result_map)
-            except Exception:
-                pass
-
-        try:
-            from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
-            surrogate = SurrogateQuantumOracle()
-            homo, lumo, uncertainty = surrogate.predict(ctx)
-            penalty = surrogate.compute_penalty(homo, uncertainty)
-            if penalty == 1.0 and uncertainty > 0.5:
-                return self.al_manager.evaluate_with_real_quantum(ctx, result_map)
-        except Exception:
-            pass
+        result = self.al_manager.check_and_queue(ctx, result_map)
+        if result is not None:
+            return result
 
         cached = self.state.find_nearest_screened(ctx)
         if cached is not None:
@@ -616,6 +593,7 @@ class DiscoveryLoop:
         if score_data is None:
             return None
 
+        gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
         if gc_uq is not None:
             self.al_manager.check_uq_and_queue(ctx, gc_uq)
 
@@ -650,30 +628,6 @@ class DiscoveryLoop:
         )
         selected_scores = [all_scores[result_contexts.index(ctx)] for ctx in selected]
         return selected, selected_scores
-
-    def _populate_active_learning_queue(
-        self,
-        result_contexts: list[MoleculeContext],
-        result_map: dict[str, Any],
-    ) -> None:
-        """Identify top 10% of candidates with highest uncertainty_score and add to AL queue."""
-        scored: list[tuple[str, float]] = []
-        for ctx in result_contexts:
-            t2 = result_map.get(ctx.smiles)
-            if t2 is None:
-                continue
-            uq = t2.get("uncertainty_score", 0.0) or 0.0
-            scored.append((ctx.smiles, uq))
-
-        if len(scored) < 2:
-            return
-
-        scored.sort(key=lambda x: -x[1])
-        n_queue = max(1, len(scored) // 10)
-        for smi, _ in scored[:n_queue]:
-            if smi not in self.state.active_learning_queue:
-                self.state.active_learning_queue.append(smi)
-                log.info("  Added %s to active learning queue (uncertainty_score=%.4f)", smi, _)
 
     def _evaluate_and_select(
         self,
@@ -734,7 +688,7 @@ class DiscoveryLoop:
                 result_contexts.append(ctx)
 
         # Populate active learning queue with top 10% highest-uncertainty candidates
-        self._populate_active_learning_queue(result_contexts, result_map)
+        self.al_manager.populate_from_uncertainties(result_contexts, result_map)
 
         mix_contexts, mix_scores = self._evaluate_mixture_pairs(valid_contexts, result_map)
         result_contexts.extend(mix_contexts)

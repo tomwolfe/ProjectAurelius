@@ -70,6 +70,58 @@ class ActiveLearningManager:
             self.state.active_learning_queue.append(smi)
             log.info("  Added %s to active learning queue (high UQ)", smi)
 
+    def check_and_queue(
+        self, ctx: MoleculeContext, result_map: dict[str, Any]
+    ) -> tuple[float, dict[str, Any]] | None:
+        """Check if the candidate qualifies for real-quantum evaluation.
+
+        Three pathways:
+        1. Already in the active learning queue
+        2. High GC UQ ensemble uncertainty (dielectric or viscosity)
+        3. High surrogate quantum uncertainty (>0.5)
+
+        If any pathway triggers, the molecule is added to the queue (if not
+        already present) and evaluated with the real ``QuantumOracle``.
+
+        Returns ``(total_score, tier2_dict)`` if real-quantum evaluation
+        was triggered, or ``None`` to proceed with the normal screening path.
+        """
+        smi = ctx.smiles
+
+        # PATH 1: Already in the active learning queue
+        if smi in self.state.active_learning_queue:
+            return self.evaluate_with_real_quantum(ctx, result_map)
+
+        # PATH 2: High GC UQ ensemble uncertainty
+        gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
+        if gc_uq is not None:
+            try:
+                _, _, diel_high = gc_uq.predict_dielectric(ctx)
+                _, _, visc_high = gc_uq.predict_viscosity(ctx)
+                if diel_high or visc_high:
+                    if smi not in self.state.active_learning_queue:
+                        self.state.active_learning_queue.append(smi)
+                        log.info(
+                            "  Added %s to active learning queue (high UQ from GcUqEnsemble)",
+                            smi,
+                        )
+                    return self.evaluate_with_real_quantum(ctx, result_map)
+            except Exception:
+                pass
+
+        # PATH 3: High surrogate quantum uncertainty
+        try:
+            from aurelius.scoring.oracle.surrogate import SurrogateQuantumOracle
+            surrogate = SurrogateQuantumOracle()
+            homo, lumo, uncertainty = surrogate.predict(ctx)
+            penalty = surrogate.compute_penalty(homo, uncertainty)
+            if penalty == 1.0 and uncertainty > 0.5:
+                return self.evaluate_with_real_quantum(ctx, result_map)
+        except Exception:
+            pass
+
+        return None
+
     def get_uncertainties(self, contexts: list[MoleculeContext]) -> list[float]:
         """Compute combined UQ uncertainties for a list of contexts."""
         gc_uq = getattr(getattr(self.pipeline, '_oracle', None), '_gc_uq', None)
@@ -85,6 +137,30 @@ class ActiveLearningManager:
             else:
                 uncertainties.append(0.0)
         return uncertainties
+
+    def populate_from_uncertainties(
+        self,
+        result_contexts: list[MoleculeContext],
+        result_map: dict[str, Any],
+    ) -> None:
+        """Identify top 10% of evaluated candidates with highest uncertainty_score and add to AL queue."""
+        scored: list[tuple[str, float]] = []
+        for ctx in result_contexts:
+            t2 = result_map.get(ctx.smiles)
+            if t2 is None:
+                continue
+            uq = t2.get("uncertainty_score", 0.0) or 0.0
+            scored.append((ctx.smiles, uq))
+
+        if len(scored) < 2:
+            return
+
+        scored.sort(key=lambda x: -x[1])
+        n_queue = max(1, len(scored) // 10)
+        for smi, unc in scored[:n_queue]:
+            if smi not in self.state.active_learning_queue:
+                self.state.active_learning_queue.append(smi)
+                log.info("  Added %s to active learning queue (uncertainty_score=%.4f)", smi, unc)
 
     # ------------------------------------------------------------------
     # Queue selection (FIFO)
@@ -128,6 +204,21 @@ class ActiveLearningManager:
             return None
 
         return selected_contexts, selected_scores
+
+    # ------------------------------------------------------------------
+    # Queue inspection helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def queue_size(self) -> int:
+        """Number of molecules currently in the active learning queue."""
+        return len(self.state.active_learning_queue)
+
+    def get_queue_smiles(self, n: int) -> list[str]:
+        """Return up to *n* SMILES from the front of the active learning queue."""
+        if not self.state.active_learning_queue:
+            return []
+        return list(self.state.active_learning_queue[:n])
 
     # ------------------------------------------------------------------
     # Real quantum evaluation (xTB / TOM)
