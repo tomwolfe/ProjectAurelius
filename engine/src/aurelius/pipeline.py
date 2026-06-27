@@ -18,7 +18,12 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from rdkit import Chem
+try:
+    from rdkit import Chem
+except ImportError:
+    raise ImportError(
+        "RDKit not found. Install via: conda install -c conda-forge rdkit"
+    ) from None
 
 from aurelius.constants import (
     AL_CORROSION_LUMO_THRESHOLD,
@@ -240,7 +245,10 @@ class AureliusPipeline:
                 f"got {type(ctx).__name__}. Use MoleculeContext.from_smiles() first."
             )
         if not self._oracle:
-            raise RuntimeError("Pipeline not initialised. Call initialize() first.")
+            raise RuntimeError(
+                "Pipeline not initialised. Call pipeline.initialize() first before "
+                "running screen_molecule() or screen_smiles()."
+            )
 
         smiles = ctx.smiles
         logger.info("Processing: %s", smiles)

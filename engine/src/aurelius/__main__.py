@@ -253,6 +253,13 @@ def doctor(verbose: bool) -> None:
     xtb_ok = has_xtb()
     if xtb_ok:
         _echo_colored("  [green]OK[/green]      xtb")
+        from aurelius.utils.dependencies import check_xtb_with_benchmark
+        bench_msg = check_xtb_with_benchmark()
+        if bench_msg:
+            is_good = "Expected" in bench_msg
+            _echo_colored(f"  {bench_msg}", style="green" if is_good else "yellow")
+        else:
+            _echo_colored("  xTB Active but slow/unstable.", style="yellow")
     else:
         _echo_colored("  [yellow]MISSING[/yellow]  xtb")
         if platform.system() == "Linux":
