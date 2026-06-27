@@ -32,6 +32,9 @@ web = [
     "uvicorn>=0.29.0",
     "diskcache>=5.6.0",
     "redis>=5.0.0",
+    "jinja2>=3.1.0",
+    "stripe>=7.0.0",
+    "sqlalchemy>=2.0.0",
 ]
 all = [
     "aurelius-engine[ml,web,dev,cli]",
@@ -54,7 +57,11 @@ aurelius = "aurelius.__main__:cli"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"aurelius.data" = ["tier0_seed_smiles.json"]
+"aurelius.data" = [
+    "tier0_seed_smiles.json",
+    "fragments.json",
+    "gc_cross_terms.json",
+]
 "aurelius.screening.tier1" = ["*.py"]
 
 [tool.ruff]

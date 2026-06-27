@@ -519,7 +519,11 @@ def _emit_json(data: Any, output: str | None) -> None:
 
 def _generate_report(pipeline: AureliusPipeline, smiles: str, output: str | None) -> None:
     """Generate an HTML report for a single molecule."""
-    from rdkit.Chem import Draw
+    try:
+        from rdkit.Chem import Draw
+    except ImportError:
+        _echo_colored("[red]Error:[/red] RDKit Draw module required for HTML report generation.", style="bold red", err=True)
+        sys.exit(1)
     import tempfile
     import webbrowser
     import base64
@@ -642,8 +646,12 @@ def _generate_report(pipeline: AureliusPipeline, smiles: str, output: str | None
         with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w") as f:
             f.write(html)
             html_path = f.name
-        webbrowser.open(f"file://{html_path}")
-        _echo_colored("[green]HTML report opened in browser.[/green]", style="green")
+        try:
+            webbrowser.open(f"file://{html_path}")
+        except Exception:
+            _echo(f"Report saved to [cyan]{html_path}[/cyan] (could not open browser)")
+        else:
+            _echo_colored("[green]HTML report opened in browser.[/green]", style="green")
 
 
 @cli.command("batch")

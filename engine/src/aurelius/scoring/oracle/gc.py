@@ -20,6 +20,7 @@ published experimental data; historical tuning is in CHANGELOG.md.
 from __future__ import annotations
 
 import abc
+import importlib.resources as _resources
 import json
 import logging
 import math
@@ -49,24 +50,24 @@ _DATA_SOURCE: str = "hybrid (GC bulk + Quantum orbital)"
 # Cross-term corrections loaded from external JSON for easy tuning.
 # Located in engine/src/aurelius/data/gc_cross_terms.json.
 # ---------------------------------------------------------------------------
-_CROSS_TERMS_PATH: str = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..", "..", "data", "gc_cross_terms.json",
-)
-with open(_CROSS_TERMS_PATH) as _f:
-    _CROSS_TERMS_DATA: list[dict[str, object]] = json.load(_f)
-# Keep as list of tuples for backward compatibility with iteration patterns.
-_CROSS_TERMS: list[tuple[str, str, float, str]] = [
-    (str(item["frag_a"]), str(item["frag_b"]), float(item["boost"]), str(item["description"]))
-    for item in _CROSS_TERMS_DATA
-]
+def _load_cross_terms() -> tuple[
+    list[tuple[str, str, float, str]],
+    dict[tuple[str, str], float],
+]:
+    """Load cross-term data from package resource."""
+    text = _resources.read_text("aurelius.data", "gc_cross_terms.json")
+    data: list[dict[str, object]] = json.loads(text)
+    terms: list[tuple[str, str, float, str]] = [
+        (str(item["frag_a"]), str(item["frag_b"]), float(item["boost"]), str(item["description"]))
+        for item in data
+    ]
+    lookup: dict[tuple[str, str], float] = {
+        (str(item["frag_a"]), str(item["frag_b"])): float(item["boost"])
+        for item in data
+    }
+    return terms, lookup
 
-# O(1) lookup table: (frag_a, frag_b) -> boost value.
-# Built once at module load time for constant-time cross-term resolution.
-_CROSS_TERM_LOOKUP: dict[tuple[str, str], float] = {
-    (str(item["frag_a"]), str(item["frag_b"])): float(item["boost"])
-    for item in _CROSS_TERMS_DATA
-}
+_CROSS_TERMS, _CROSS_TERM_LOOKUP = _load_cross_terms()
 
 
 def compute_estimated_cost_score(ctx: MoleculeContext) -> float:
@@ -129,15 +130,15 @@ def get_data_source() -> str:
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Fragment definitions loaded from external JSON (engine/src/aurelius/data/fragments.json)
+# Fragment definitions loaded from external JSON (fragments.json in aurelius.data)
 # for easy tuning without code changes.
 # ---------------------------------------------------------------------------
-_FRAGMENTS_PATH: str = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..", "..", "data", "fragments.json",
-)
-with open(_FRAGMENTS_PATH) as _ff:
-    _FRAGMENTS_DATA: list[dict[str, object]] = json.load(_ff)
+def _load_fragment_data() -> list[dict[str, object]]:
+    """Load fragment definitions from package resource."""
+    text = _resources.read_text("aurelius.data", "fragments.json")
+    return json.loads(text)
+
+_FRAGMENTS_DATA: list[dict[str, object]] = _load_fragment_data()
 
 # Compile SMARTS patterns once at module load and build the canonical tuple list.
 # (pattern, name, dielectric_contrib, viscosity_contrib, li_solvation_contrib, ced_contrib)
