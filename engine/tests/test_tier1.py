@@ -84,3 +84,20 @@ class TestFilter:
             self._ctx("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")
         )
         assert result["is_viable"] is False
+
+    def test_screen_does_not_call_get_ecfp4(self):
+        """ECFP4 fingerprint must not be computed during Tier 1 screening.
+
+        Tier 1 only checks MW, HBD, rotatable bonds, HBA count, and LogP.
+        Accessing the fingerprint during screening would waste computation
+        on molecules that will be rejected anyway.
+        """
+        import unittest.mock
+
+        with unittest.mock.patch(
+            "aurelius.types.MoleculeContext.get_ecfp4",
+        ) as mock_ecfp4:
+            ctx = self._ctx("COC(=O)OC")
+            result = self.filter.screen(ctx)
+            assert result["is_viable"] is True
+            mock_ecfp4.assert_not_called()

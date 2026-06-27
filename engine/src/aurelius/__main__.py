@@ -253,8 +253,15 @@ def doctor(verbose: bool) -> None:
         _echo_colored("  [green]OK[/green]      xtb")
     else:
         _echo_colored("  [yellow]MISSING[/yellow]  xtb")
-        _echo("         \u2192 xTB not found. Install via: https://github.com/grimme-lab/xtb/releases")
-        _echo("         \u2192 Add xtb directory to PATH after installation.")
+        if platform.system() == "Linux":
+            _echo("         \u2192 sudo apt install xtb")
+            _echo("         \u2192 pip install xtb")
+        elif platform.system() == "Darwin":
+            _echo("         \u2192 brew install xtb")
+        else:
+            _echo("         \u2192 conda install -c conda-forge xtb")
+        _echo("         \u2192 Check common paths: /usr/local/bin, ~/.local/bin")
+        _echo("         \u2192 Or download from: https://github.com/grimme-lab/xtb/releases")
 
     _echo("")
     _echo_colored("[bold]Hardware[/bold]")

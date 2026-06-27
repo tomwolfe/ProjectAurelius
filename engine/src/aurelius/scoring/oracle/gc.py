@@ -61,6 +61,13 @@ _CROSS_TERMS: list[tuple[str, str, float, str]] = [
     for item in _CROSS_TERMS_DATA
 ]
 
+# O(1) lookup table: (frag_a, frag_b) -> boost value.
+# Built once at module load time for constant-time cross-term resolution.
+_CROSS_TERM_LOOKUP: dict[tuple[str, str], float] = {
+    (str(item["frag_a"]), str(item["frag_b"])): float(item["boost"])
+    for item in _CROSS_TERMS_DATA
+}
+
 
 def compute_estimated_cost_score(ctx: MoleculeContext) -> float:
     """Estimate synthetic cost from fragment complexity.
@@ -227,7 +234,7 @@ def _compute_dielectric_cross_terms(counts: dict[str, int]) -> float:
     contribution.
     """
     correction = 0.0
-    for frag_a, frag_b, boost, _desc in _CROSS_TERMS:
+    for (frag_a, frag_b), boost in _CROSS_TERM_LOOKUP.items():
         if counts.get(frag_a, 0) > 0 and counts.get(frag_b, 0) > 0:
             correction += boost
 
@@ -1032,7 +1039,7 @@ class ElectrolytePack(BasePropertyModel):
 
     def _compute_dielectric_cross_terms(self, counts: dict[str, int]) -> float:
         correction = 0.0
-        for frag_a, frag_b, boost, _desc in self.cross_terms:
+        for (frag_a, frag_b), boost in _CROSS_TERM_LOOKUP.items():
             if counts.get(frag_a, 0) > 0 and counts.get(frag_b, 0) > 0:
                 correction += boost
         if (
