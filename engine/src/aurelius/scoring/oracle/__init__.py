@@ -71,6 +71,9 @@ from aurelius.scoring.oracle.quantum import (
     predict_tom_orbitals,
     run_xtb_batch,
 )
+from aurelius.scoring.oracle.optimizer import (
+    KernelOptimizer,
+)
 from aurelius.scoring.oracle.surrogate import (
     _SURROGATE_HOMO_THRESHOLD,
     _SURROGATE_PENALTY,
@@ -80,6 +83,7 @@ from aurelius.scoring.oracle.surrogate import (
 __all__ = [
     "BatchXTBRunner",
     "ElectrolytePack",
+    "KernelOptimizer",
     "OrganicElectronicsPack",
     "PropertyOracle",
     "QuantumBackend",

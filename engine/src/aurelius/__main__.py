@@ -796,7 +796,11 @@ def mixture_cmd(smiles_a: str, smiles_b: str, frac: float, smiles_c: str | None,
 @click.option("--output", default="aurelius_kernel.json")
 @click.option("--max-iter", default=200)
 def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
-    """Tune kernel parameters from a CSV of experimental data."""
+    """Tune kernel parameters from a CSV of experimental data.
+
+    The CSV must contain at least three columns: ``smiles``, ``property``, and ``value``
+    (or two columns: ``smiles`` and ``value`` with ``homo`` assumed for the property).
+    """
     try:
         import numpy as np  # noqa: F401
     except ImportError:
@@ -805,225 +809,40 @@ def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
 
     _echo(f"Loading training data from {csv_path}...")
     import csv
-    smiles_list: list[str] = []
-    property_names: list[str] = []
-    values: list[float] = []
+    training_pairs: list[tuple[str, ...]] = []
     with open(csv_path, newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            smiles_list.append(row["smiles"].strip())
-            prop = row.get("property", "homo").strip()
-            property_names.append(prop)
-            values.append(float(row["value"]))
+            training_pairs.append((
+                row["smiles"].strip(),
+                row.get("property", "homo").strip(),
+                row["value"],
+            ))
 
-    n = len(smiles_list)
+    n = len(training_pairs)
     if n < 3:
         click.echo(f"Error: need at least 3 data points, got {n}", err=True)
         sys.exit(1)
     _echo(f"Loaded {n} data points. Running Nelder-Mead optimization...")
 
-    x0 = [0.0, 0.0, 1.0]
-    bounds = [(-5.0, 5.0), (-5.0, 5.0), (0.1, 10.0)]
+    from aurelius.scoring.oracle import KernelOptimizer
 
-    def _tune_objective(
-        params: list[float],
-        s_list: list[str],
-        p_names: list[str],
-        exp_vals: list[float],
-    ) -> float:
-        import numpy as np
-        from aurelius.scoring.oracle import PropertyOracle
-
-        oracle = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=False)
-        predictions: list[float] = []
-        for smi, prop in zip(s_list, p_names):
-            try:
-                result = oracle.evaluate_smiles(smi)
-                raw = result.get("homo_eV", 0.0)
-                if prop in ("homo", "homo_eV"):
-                    pred = raw + params[0]
-                elif prop in ("lumo", "lumo_eV"):
-                    pred = raw + params[1]
-                else:
-                    pred = raw * params[2]
-                predictions.append(pred)
-            except Exception as exc:
-                _echo(f"  Skipping {smi}: {exc}", err=True)
-                continue
-        if len(predictions) < 2:
-            return 999.0
-        pred_arr = np.array(predictions, dtype=np.float64)
-        exp_arr = np.array(exp_vals[:len(predictions)], dtype=np.float64)
-        return float(np.sqrt(np.mean((pred_arr - exp_arr) ** 2)))
-
-    result_x = _nelder_mead(
-        _tune_objective,
-        x0,
-        args=(smiles_list, property_names, values),
-        bounds=bounds,
-        max_iter=max_iter,
-    )
-
-    tom_parameters = {
-        "homo_offset": float(result_x[0]),
-        "lumo_offset": float(result_x[1]),
-        "gc_scale": float(result_x[2]),
-    }
-
-    from aurelius.scoring.oracle import PropertyOracle
-    oracle = PropertyOracle(use_xtb=False, use_surrogate=False, use_gc_uq=False)
-    predictions: list[float] = []
-    valid_smiles: list[str] = []
-    for smi, prop in zip(smiles_list, property_names):
-        try:
-            result = oracle.evaluate_smiles(smi)
-            raw = result.get("homo_eV", 0.0)
-            if prop in ("homo", "homo_eV"):
-                pred = raw + tom_parameters["homo_offset"]
-            elif prop in ("lumo", "lumo_eV"):
-                pred = raw + tom_parameters["lumo_offset"]
-            else:
-                pred = raw * tom_parameters["gc_scale"]
-            predictions.append(pred)
-            valid_smiles.append(smi)
-        except Exception:
-            continue
-
-    if len(predictions) >= 2:
-        residuals = [p - v for p, v in zip(predictions, values[:len(predictions)])]
-        mae = sum(abs(r) for r in residuals) / len(residuals)
-        rmse = (sum(r * r for r in residuals) / len(residuals)) ** 0.5
-        spearman = _spearman_rho(predictions, values[:len(predictions)])
-    else:
-        mae, rmse, spearman = 0.0, 0.0, 0.0
-
-    kernel = {
-        "version": "1.0.0",
-        "domain_boundary": {"domain": "electrolyte"},
-        "tom_parameters": tom_parameters,
-        "gc_fragments": [
-            "ester", "carboxylic_acid", "amide", "ketone", "aldehyde",
-            "carbonate", "ether", "alcohol", "primary_amine", "secondary_amine",
-            "tertiary_amine", "nitrile", "alkene", "alkyne", "aromatic_carbon",
-            "fluorine", "chlorine", "bromine", "sulfone", "sulfonate",
-            "sulfonyl_fluoride", "cyclic_sulfone_5", "cyclic_sulfone_6",
-            "sultone_5", "sultone_6", "phosphate", "trifluoromethyl",
-            "difluoromethylene", "boronate", "borate", "thioether",
-            "fluorinated_ether", "phosphazene", "glyme_chelating", "sulfonimide",
-            "fluorinated_carbonate", "sulfoxide", "aromatic_nitrogen",
-            "phosphonate", "hf_scavenger", "cyclic_carbonate",
-        ],
-        "uq_weights": {"ensemble_weight": 0.5},
-        "validation_metrics": {
-            "spearman_rho": round(spearman, 4),
-            "mae": round(mae, 4),
-            "rmse": round(rmse, 4),
-            "n_training": len(valid_smiles),
-        },
-    }
+    optimizer = KernelOptimizer(max_iter=max_iter)
+    kernel = optimizer.optimize(training_pairs)
 
     with open(output, "w") as f:
         json.dump(kernel, f, indent=2)
 
-    _echo_colored(f"\n[bold green]Tuning complete.[/bold green] Results written to [cyan]{output}[/cyan]", style="green")
-    _echo(f"  HOMO offset:  {tom_parameters['homo_offset']:+.4f}")
-    _echo(f"  LUMO offset:  {tom_parameters['lumo_offset']:+.4f}")
-    _echo(f"  GC scale:     {tom_parameters['gc_scale']:.4f}")
-    _echo(f"  Spearman ρ:   {spearman:.4f}")
-    _echo(f"  MAE:          {mae:.4f}")
-    _echo(f"  RMSE:         {rmse:.4f}")
-    _echo(f"  Training pts: {len(valid_smiles)}")
-
-
-def _spearman_rho(x: list[float], y: list[float]) -> float:
-    try:
-        import numpy as np
-    except ImportError:
-        return 0.0
-    n = len(x)
-    if n < 3:
-        return 0.0
-    x_arr, y_arr = np.array(x), np.array(y)
-    x_rank = np.argsort(np.argsort(x_arr)).astype(np.float64)
-    y_rank = np.argsort(np.argsort(y_arr)).astype(np.float64)
-    d = x_rank - y_rank
-    rho = 1.0 - (6.0 * np.sum(d ** 2)) / (n * (n ** 2 - 1.0))
-    return 0.0 if np.isnan(rho) else float(rho)
-
-
-def _nelder_mead(
-    f,
-    x0: list[float],
-    args: tuple = (),
-    bounds: list[tuple[float, float]] | None = None,
-    max_iter: int = 200,
-    tol: float = 1e-6,
-) -> list[float]:
-    import numpy as np
-
-    n = len(x0)
-
-    def clamp(x: np.ndarray) -> np.ndarray:
-        if bounds is None:
-            return x
-        return np.clip(x, [b[0] for b in bounds], [b[1] for b in bounds])
-
-    simplex = [clamp(np.array(x0, dtype=np.float64))]
-    for i in range(n):
-        p = np.array(x0, dtype=np.float64)
-        p[i] = x0[i] + 0.5 if abs(x0[i]) < 0.01 else x0[i] * 1.05
-        simplex.append(clamp(p))
-
-    f_vals = [float(f(simplex[i], *args)) for i in range(n + 1)]
-
-    for _ in range(max_iter):
-        indices = np.argsort(f_vals)
-        simplex = [simplex[i] for i in indices]
-        f_vals = [f_vals[i] for i in indices]
-
-        if np.std(f_vals) < tol:
-            break
-
-        centroid = np.mean(simplex[:n], axis=0)
-        xr = clamp(centroid + 1.0 * (centroid - simplex[-1]))
-        fr = float(f(xr, *args))
-
-        if f_vals[0] <= fr < f_vals[-2]:
-            simplex[-1] = xr
-            f_vals[-1] = fr
-        elif fr < f_vals[0]:
-            xe = clamp(centroid + 2.0 * (xr - centroid))
-            fe = float(f(xe, *args))
-            if fe < fr:
-                simplex[-1] = xe
-                f_vals[-1] = fe
-            else:
-                simplex[-1] = xr
-                f_vals[-1] = fr
-        else:
-            if fr < f_vals[-1]:
-                xc = clamp(centroid + 0.5 * (xr - centroid))
-                fc = float(f(xc, *args))
-                if fc < fr:
-                    simplex[-1] = xc
-                    f_vals[-1] = fc
-                else:
-                    for i in range(1, n + 1):
-                        simplex[i] = clamp(simplex[0] + 0.5 * (simplex[i] - simplex[0]))
-                        f_vals[i] = float(f(simplex[i], *args))
-            else:
-                xc = clamp(centroid + 0.5 * (centroid - simplex[-1]))
-                fc = float(f(xc, *args))
-                if fc < f_vals[-1]:
-                    simplex[-1] = xc
-                    f_vals[-1] = fc
-                else:
-                    for i in range(1, n + 1):
-                        simplex[i] = clamp(simplex[0] + 0.5 * (simplex[i] - simplex[0]))
-                        f_vals[i] = float(f(simplex[i], *args))
-
-    best_idx = int(np.argmin(f_vals))
-    return simplex[best_idx].tolist()
+    _echo_colored(f"[bold green]Tuning complete.[/bold green] Results written to [cyan]{output}[/cyan]", style="green")
+    tom = kernel.get("tom_parameters", {})
+    metrics = kernel.get("validation_metrics", {})
+    _echo(f"  HOMO offset:  {tom.get('homo_offset', 0.0):+.4f}")
+    _echo(f"  LUMO offset:  {tom.get('lumo_offset', 0.0):+.4f}")
+    _echo(f"  GC scale:     {tom.get('gc_scale', 0.0):.4f}")
+    _echo(f"  Spearman ρ:   {metrics.get('spearman_rho', 0.0):.4f}")
+    _echo(f"  MAE:          {metrics.get('mae', 0.0):.4f}")
+    _echo(f"  RMSE:         {metrics.get('rmse', 0.0):.4f}")
+    _echo(f"  Training pts: {metrics.get('n_training', 0)}")
 
 
 @cli.command("verify-kernel")
