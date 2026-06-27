@@ -356,7 +356,7 @@ class MutationEngine:
     ) -> list[str]:
         all_variants: list[str] = []
         for smi in self.seed_pool:
-            variants = self.mutate(smi, batch_size, _diagnostics=diagnostics)
+            variants = self.mutate(smi, batch_size, diagnostics=diagnostics)
             all_variants.extend(variants)
 
         unique = list(dict.fromkeys(all_variants))
@@ -493,7 +493,7 @@ class MutationEngine:
         for strategy in self._strategies:
             results = strategy.mutate(
                 ctx, self._strategy_context, batch_size, force_exploration=False,
-                _diagnostics=diagnostics,
+                diagnostics=diagnostics,
             )
             for smi in results:
                 if smi not in candidates:

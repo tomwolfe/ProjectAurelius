@@ -390,8 +390,9 @@ class LoopState:
                 )
                 # Rebuild _fingerprint_dict from stored fingerprints
                 for entry in data.get("screened_fingerprints", []):
-                    smi, fp, result = entry
-                    self._fingerprint_dict[smi] = (fp, result)
+                    smi, fp_str, result = entry
+                    from rdkit import DataStructs
+                    self._fingerprint_dict[smi] = (DataStructs.CreateFromBitString(fp_str), result)
             except (json.JSONDecodeError, KeyError, TypeError, OSError):
                 pass
 
@@ -408,7 +409,7 @@ class LoopState:
                 "_all_results": self._all_results,
                 "active_learning_queue": self.active_learning_queue,
                 "screened_fingerprints": [
-                    (smi, fp, result)
+                    (smi, fp.ToBitString(), result)
                     for smi, (fp, result) in self._fingerprint_dict.items()
                 ],
             }

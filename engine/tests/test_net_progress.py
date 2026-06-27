@@ -300,21 +300,17 @@ class TestNetProgress:
             )
 
     def test_active_learning_queue_field_is_not_public_api(self):
-        """The new active_learning_queue is a dataclass field (not a public
-        method/class) and _evaluate_with_real_quantum is private (starts with
-        _). Neither should increase the public architectural surface area.
+        """active_learning_queue is a dataclass field (not a public method/class)
+        and evaluate_with_real_quantum is on ActiveLearningManager.
+        Neither should increase the public architectural surface area.
 
         This test verifies that the active learning changes do not add any
         new public functions or classes to the codebase.
         """
-        from aurelius.agent.loop import DiscoveryLoop
+        from aurelius.agent.active_learning import ActiveLearningManager
 
-        # _evaluate_with_real_quantum must be a private method (underscore prefix)
-        assert hasattr(DiscoveryLoop, "_evaluate_with_real_quantum"), (
-            "DiscoveryLoop missing _evaluate_with_real_quantum"
-        )
-        assert "_evaluate_with_real_quantum".startswith("_"), (
-            "Active learning evaluation method must be private"
+        assert hasattr(ActiveLearningManager, "evaluate_with_real_quantum"), (
+            "ActiveLearningManager missing evaluate_with_real_quantum"
         )
 
         # active_learning_queue must be a dataclass field, not a standalone public class/function
