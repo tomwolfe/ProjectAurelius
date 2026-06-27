@@ -28,6 +28,7 @@ from aurelius.agent.mutation.base import (
 )
 from aurelius.agent.mutation.harvester import FragmentHarvester
 from aurelius.agent.mutation.novelty import NoveltyValidator
+from aurelius.screening.structural import is_structurally_viable
 from aurelius.types import MoleculeContext, format_mixture_smiles
 from aurelius.utils.chem_utils import _deserialize_fp
 
@@ -180,6 +181,8 @@ class MutationEngine:
         return smiles_set, scaffold_set
 
     def _get_ctx(self, smiles: str) -> MoleculeContext | None:
+        if not is_structurally_viable(smiles):
+            return None
         return MoleculeContext.from_smiles(smiles)
 
     def _load_known_electrolytes(self) -> None:

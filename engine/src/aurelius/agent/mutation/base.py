@@ -34,6 +34,7 @@ from aurelius.agent.mutation.smarts import (
     ELECTROLYTE_SMARTS,
     is_electrolyte_like,
 )
+from aurelius.screening.structural import is_structurally_viable
 from aurelius.types import MoleculeContext
 
 try:
@@ -140,7 +141,11 @@ class SmartsStrategy(MutationStrategy):
         product_smi = Chem.MolToSmiles(product)
         if not product_smi or product_smi == seed_smi:
             if _diagnostics is not None:
-                _diagnostics.append("SMARTS: failed — identical to seed")
+                _diagnostics.append("SMARTS: identical to seed")
+            return None
+        if not is_structurally_viable(product_smi):
+            if _diagnostics is not None:
+                _diagnostics.append("SMARTS: failed: structural pre-check")
             return None
         if product_smi not in context.ctx_cache:
             product_ctx = MoleculeContext(smiles=product_smi, mol=product)
@@ -314,6 +319,10 @@ class BricsStrategy(MutationStrategy):
         if not s:
             if _diagnostics is not None:
                 _diagnostics.append("BRICS: failed: empty SMILES")
+            return None
+        if not is_structurally_viable(s):
+            if _diagnostics is not None:
+                _diagnostics.append("BRICS: failed: structural pre-check")
             return None
         product_ctx = MoleculeContext(smiles=s, mol=r_mol)
         if not product_ctx.is_valid_electrolyte_mol():

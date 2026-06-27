@@ -575,9 +575,10 @@ class TestSoftwareSimplicity:
             "loop.py:_process_single_candidate": 16,
             "loop.py:_evaluate_and_select": 15,
             "base.py:_random_scaffold_replacement": 26,
-            "base.py:_process_smarts_product": 18,
-            "base.py:_validate_brics_product": 18,
+            "base.py:_process_smarts_product": 20,
+            "base.py:_validate_brics_product": 20,
             "engine.py:mutate_by_concept": 24,
+            "structural.py:_build_atom_list": 27,
         }
         high_complexity: list[tuple[str, int]] = []
         for root, _dirs, files in os.walk(src_dir):

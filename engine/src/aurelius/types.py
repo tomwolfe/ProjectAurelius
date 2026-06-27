@@ -172,6 +172,11 @@ class MoleculeContext:
     @classmethod
     def _from_smiles_impl(cls, smiles: str) -> tuple[MoleculeContext | None, str | None]:
         """Internal: parse SMILES, return (context, error_string)."""
+        # Fast pure-Python pre-check: catch hypervalent species before RDKit.
+        # (Lazy import to avoid circular dependency via screening/tier1/filter.py)
+        from aurelius.screening.structural import is_structurally_viable as _viable
+        if not _viable(smiles):
+            return None, f"Structural pre-check failed for SMILES: '{smiles}'"
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             if smiles.count("(") != smiles.count(")"):

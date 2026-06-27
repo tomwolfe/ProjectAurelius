@@ -32,7 +32,7 @@ from aurelius.agent.reporting import (
     generate_run_summary,
 )
 from aurelius.agent.state import LoopState
-from aurelius.filter import Filter
+from aurelius.filter import Filter, is_structurally_viable
 from aurelius.kernel_loader import JSONKernelLoader, KernelLoader, _load_demo_kernel
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scorer import Objective, _OBJECTIVES, compute_score, format_score
@@ -44,6 +44,7 @@ __all__ = [
     "AureliusPipeline",
     "DiscoveryLoop",
     "Filter",
+    "is_structurally_viable",
     "JSONKernelLoader",
     "KernelLoader",
     "LoopState",
