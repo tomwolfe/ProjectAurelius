@@ -19,7 +19,7 @@ FINGERPRINT_SIZE: int = 2048
 # In production, replace this with the actual Lab's published public key.
 
 KERNEL_PUBLIC_KEY: bytes = bytes.fromhex(
-    "4e176c659b2f3544ee549931dfdedefbd4f95366dbf94ee6a06f05d0c7ef76cf"
+    "5f064d1b5214dd3d90c02df3b0775cd988491b97909c66e23c038a2972cf1061"
 )
 
 # ---------------------------------------------------------------------------

@@ -60,6 +60,7 @@ _console = _get_console()
 
 def _echo(message: str = "", **kwargs: Any) -> None:
     if _console is not None:
+        kwargs.pop("err", None)
         _console.print(message, **kwargs)
     else:
         click.echo(message, **kwargs)
@@ -67,6 +68,7 @@ def _echo(message: str = "", **kwargs: Any) -> None:
 
 def _echo_colored(message: str, style: str = "", **kwargs: Any) -> None:
     if _console is not None:
+        kwargs.pop("err", None)
         _console.print(message, style=style, **kwargs)
     else:
         _ANSI_COLORS = {

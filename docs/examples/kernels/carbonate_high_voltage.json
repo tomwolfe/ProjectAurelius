@@ -20,7 +20,7 @@
     "rmse": 0.7237141244622607,
     "n_training": 7
   },
-  "signature": "e4c84731dd0e1d8ab48ca5747127447dd394bffa3e8db2a68f3ddac917aec55587694ea3a9e1f84cad68658532be3795246f5bdeabc90c6dcf3f9ef9af9f220d",
+  "signature": "e1b60bca28aee77a021ec723fdf69afc6583fe397280dc02715b4e6a8345865e35780bbefe754d64bba1e851f6ea5076a4add63ea1a2ffd2824cb2b2d2f2c10c",
   "audit": {
     "coverage_probability": 0.8571428571428571,
     "confidence_level": 0.95,
