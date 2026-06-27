@@ -161,7 +161,8 @@ def _apply_wet_lab_feedback(
         "coulombic_efficiency": 0.95,
         "transference_number": 0.4,
     }
-    loop.wet_lab_feedback(top_n, empirical_metrics)
+    if loop.wet_lab_feedback is not None:
+        loop.wet_lab_feedback(top_n, empirical_metrics)
 
     oracle_obj = getattr(pipeline, '_oracle', None)
     if oracle_obj is None:
@@ -407,7 +408,12 @@ class DiscoveryLoop:
         parsed = parse_mixture_smiles(mixture_smi)
         if parsed is None:
             return None
-        smi_a, smi_b, frac = parsed
+        if len(parsed) == 3:
+            smi_a, smi_b, frac = parsed
+        elif len(parsed) == 5:
+            smi_a, smi_b, _, _, frac = parsed
+        else:
+            return None
         ctx_a = MoleculeContext.from_smiles(smi_a)
         ctx_b = MoleculeContext.from_smiles(smi_b)
         if ctx_a is None or ctx_b is None:
@@ -574,9 +580,9 @@ class DiscoveryLoop:
         """
         smi = ctx.smiles
 
-        result = self.al_manager.check_and_queue(ctx, result_map)
-        if result is not None:
-            return result
+        score_data = self.al_manager.check_and_queue(ctx, result_map)
+        if score_data is not None:
+            return score_data
 
         cached = self.state.find_nearest_screened(ctx)
         if cached is not None:
@@ -791,7 +797,12 @@ class DiscoveryLoop:
         parsed = parse_mixture_smiles(ctx.smiles)
         if parsed is None:
             return None
-        smi_a, smi_b, frac = parsed
+        if len(parsed) == 3:
+            smi_a, smi_b, frac = parsed
+        elif len(parsed) == 5:
+            smi_a, smi_b, _, _, frac = parsed
+        else:
+            return None
         ctx_a = MoleculeContext.from_smiles(smi_a)
         ctx_b = MoleculeContext.from_smiles(smi_b)
         if ctx_a is None or ctx_b is None:

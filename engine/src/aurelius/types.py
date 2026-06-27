@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, NamedTuple, TypedDict
 
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
@@ -94,21 +94,187 @@ class ScreeningResult:
     uncertainty_score: float | None = None
 
 
+# ---------------------------------------------------------------------------
+# Typed oracle and scoring result structures for compile-time verification
+# ---------------------------------------------------------------------------
+
+
+class QuantumResult(NamedTuple):
+    """Typed internal result from quantum/surrogate evaluation."""
+
+    homo_eV: float
+    lumo_eV: float
+    gap_eV: float
+    method: str
+    confidence: str
+
+
+class GcResult(NamedTuple):
+    """Typed internal result from GC property evaluation."""
+
+    gc_props: dict[str, float]
+    uq_penalty: float
+    diel_std: float
+    visc_std: float
+
+
+class DomainResult(NamedTuple):
+    """Typed result from domain penalty computation."""
+
+    domain_penalty: float
+    domain_reason_str: str
+    domain_applicable: bool
+
+
+class SeiResult(NamedTuple):
+    """Typed result from SEI motif penalty computation.
+
+    Includes both the SEI-specific penalty/reason and the domain applicability
+    flag, ensuring callers can update state atomically.
+    """
+
+    sei_penalty: float
+    sei_reason: str
+    domain_applicable: bool
+
+
+class OodResult(NamedTuple):
+    """Typed result from OOD (out-of-domain) penalty computation."""
+
+    ood_penalty: float
+    ood_reason: str
+
+
+class QuantumEvaluation(NamedTuple):
+    """Fully typed quantum evaluation result.
+
+    Fields match the dict keys returned by ``_evaluate_quantum()``
+    for compile-time verification.
+    """
+
+    homo_eV: float
+    lumo_eV: float
+    gap_eV: float
+    surrogate_penalty: float
+    s_homo: float
+    skip_quantum: bool
+    quantum_method: str
+    quantum_confidence_val: str
+
+
+class GcEvaluation(NamedTuple):
+    """Fully typed GC evaluation result.
+
+    Fields match the dict keys returned by ``_evaluate_gc()``
+    for compile-time verification.
+    """
+
+    gc_props: dict[str, float]
+    uq_penalty: float
+    diel_std: float
+    visc_std: float
+
+
+class EvaluationResult(NamedTuple):
+    """Fully typed oracle evaluation result.
+
+    Fields match the dict keys returned by ``_assemble_result()``
+    for compile-time verification. Convert to dict via ``._asdict()`` for
+    JSON serialization.
+    """
+
+    homo_eV: float
+    lumo_eV: float
+    gap_eV: float
+    domain_applicable: bool
+    domain_drift_risk: bool
+    domain_reason: str
+    domain_penalty: float
+    quantum_method: str
+    quantum_confidence: str
+    uncertainty_flag: bool
+    uncertainty_score: float
+    dielectric_proxy: float
+    viscosity_proxy: float
+    li_solvation_proxy: float
+    ced_proxy: float
+    li_dissociation_proxy: float
+    hydrolysis_risk_proxy: float
+    surrogate_skipped: bool = False
+    sei_fracture_proxy: float = 0.0
+    gas_evolution_proxy: float = 0.0
+
+
+class OracleEvaluation(NamedTuple):
+    """Fully typed oracle evaluation result.
+
+    Fields match the dict keys returned by ``PropertyOracle.evaluate()``
+    for compile-time verification. Convert to dict via ``._asdict()`` for
+    JSON serialization.
+    """
+
+    homo_eV: float
+    lumo_eV: float
+    gap_eV: float
+    domain_applicable: bool
+    domain_drift_risk: bool
+    domain_reason: str
+    domain_penalty: float
+    quantum_method: str
+    quantum_confidence: str
+    uncertainty_flag: bool
+    uncertainty_score: float
+    dielectric_proxy: float
+    viscosity_proxy: float
+    li_solvation_proxy: float
+    ced_proxy: float
+    li_dissociation_proxy: float
+    hydrolysis_risk_proxy: float
+    surrogate_skipped: bool = False
+    sei_fracture_toughness_proxy: float = 0.0
+    gas_evolution_proxy: float = 0.0
+
+
+class ScoreResult(NamedTuple):
+    """Typed score result from multi-objective composite scoring."""
+
+    total_score: float
+    is_viable: bool
+    sub_scores: dict[str, float]
+    sa_score: float
+    rejection_reasons: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Module-level LRU caches for MoleculeContext lazy computations
+# These replace the mutable dataclass fields, preserving lazy evaluation
+# while keeping MoleculeContext fully immutable.
+# ---------------------------------------------------------------------------
+
 _molecule_ctx_cache: LRUCache[MoleculeContext | None] = LRUCache(maxsize=4096)
 """Thread-safe LRU cache for MoleculeContext.from_smiles()."""
+
+_ecfp4_cache: LRUCache[Any] = LRUCache(maxsize=4096)
+"""Thread-safe LRU cache for computed ECFP4 fingerprints."""
+
+_feature_vector_cache: LRUCache[Any] = LRUCache(maxsize=4096)
+"""Thread-safe LRU cache for computed 2053-dim feature vectors."""
+
+_gc_feature_vector_cache: LRUCache[Any] = LRUCache(maxsize=4096)
+"""Thread-safe LRU cache for computed GC fragment feature vectors."""
 
 
 @dataclass(frozen=True)
 class MoleculeContext:
     """Unified molecular context — parsed exactly once per screening step.
 
-    Holds the SMILES string and its pre-parsed RDKit Mol object, along with
-    pre-computed fingerprint and descriptors to avoid redundant computation
-    across the Filter, Oracle, and Featurizer stages.
+    Holds the SMILES string and its pre-parsed RDKit Mol object.
+    All derived properties are lazily computed via ``cached_property``
+    (``mw``, ``logp``, ``tpsa``, ``ring_count``, ``rotatable_bonds``,
+    ``hbd``, ``hba``) or via module-level LRU caches (fingerprints,
+    feature vectors).
 
-    All RDKit parsing and featurization flows through this class.
-    No module should call ``Chem.MolFromSmiles`` or fingerprint generation
-    outside of ``MoleculeContext``.
+    Fully immutable after creation — no ``object.__setattr__`` mutations.
 
     Usage:
         ctx = MoleculeContext.from_smiles("CCO")
@@ -117,9 +283,6 @@ class MoleculeContext:
 
     smiles: str
     mol: Chem.Mol
-    fingerprint_ecfp4: Any | None = None
-    feature_vector: np.ndarray[Any, Any] | None = None
-    gc_feature_vector: np.ndarray[Any, Any] | None = None
 
     @classmethod
     def from_smiles(cls, smiles: str) -> MoleculeContext | None:
@@ -143,6 +306,9 @@ class MoleculeContext:
     def cache_clear(cls) -> None:
         """Clear the global LRU cache for ``from_smiles``."""
         _molecule_ctx_cache.clear()
+        _ecfp4_cache.clear()
+        _feature_vector_cache.clear()
+        _gc_feature_vector_cache.clear()
 
     @classmethod
     def from_smiles_strict(cls, smiles: str) -> MoleculeContext:
@@ -200,11 +366,12 @@ class MoleculeContext:
         return cls(smiles=smiles, mol=mol)
 
     def get_ecfp4(self) -> Any:
-        if self.fingerprint_ecfp4 is None:
-            object.__setattr__(self, "fingerprint_ecfp4", AllChem.GetMorganFingerprintAsBitVect(
-                self.mol, radius=2, nBits=2048
-            ))
-        return self.fingerprint_ecfp4
+        cached = _ecfp4_cache.get(self.smiles)
+        if cached is not None:
+            return cached
+        fp = AllChem.GetMorganFingerprintAsBitVect(self.mol, radius=2, nBits=2048)
+        _ecfp4_cache.put(self.smiles, fp)
+        return fp
 
     @cached_property
     def mw(self) -> float:
@@ -244,20 +411,24 @@ class MoleculeContext:
           - [2050]    TPSA
           - [2051]    Ring count
           - [2052]    NumRotatableBonds
+
+        Results are cached in a module-level LRU cache keyed by SMILES.
         """
-        if self.feature_vector is None:
-            import numpy as np
-            fp = self.get_ecfp4()
-            arr = np.zeros(2053, dtype=np.float32)
-            for idx in fp.GetOnBits():
-                arr[idx] = 1.0
-            arr[2048] = self.mw
-            arr[2049] = self.logp
-            arr[2050] = self.tpsa
-            arr[2051] = self.ring_count
-            arr[2052] = self.rotatable_bonds
-            object.__setattr__(self, "feature_vector", arr)
-        return self.feature_vector
+        cached = _feature_vector_cache.get(self.smiles)
+        if cached is not None:
+            return cached
+        import numpy as np
+        fp = self.get_ecfp4()
+        arr = np.zeros(2053, dtype=np.float32)
+        for idx in fp.GetOnBits():
+            arr[idx] = 1.0
+        arr[2048] = self.mw
+        arr[2049] = self.logp
+        arr[2050] = self.tpsa
+        arr[2051] = self.ring_count
+        arr[2052] = self.rotatable_bonds
+        _feature_vector_cache.put(self.smiles, arr)
+        return arr
 
     def is_valid_electrolyte_mol(self) -> bool:
         if self.mw < 30.0 or self.mw > 1000.0:

@@ -582,14 +582,17 @@ _UQ_N_ENSEMBLE: int = 5
 logger = logging.getLogger(__name__)
 
 
+from aurelius.types import _gc_feature_vector_cache
+
+
 def _get_fragment_feature_vector(ctx: MoleculeContext) -> Any:
     """Build a feature vector from GC fragment counts for a molecule.
 
     Returns a 1D array of length = len(_GC_FRAGMENTS) + 2 (MW, TPSA).
-    The result is cached on the MoleculeContext instance via
-    ``ctx.gc_feature_vector`` — computed only once per molecule.
+    The result is cached in a module-level LRU cache keyed by SMILES,
+    preserving MoleculeContext immutability.
     """
-    cached = getattr(ctx, "gc_feature_vector", None)
+    cached = _gc_feature_vector_cache.get(ctx.smiles)
     if cached is not None:
         return cached
     import numpy as np
@@ -600,7 +603,7 @@ def _get_fragment_feature_vector(ctx: MoleculeContext) -> Any:
         arr[i] = counts.get(name, 0)
     arr[-2] = ctx.mw
     arr[-1] = ctx.tpsa
-    object.__setattr__(ctx, "gc_feature_vector", arr)
+    _gc_feature_vector_cache.put(ctx.smiles, arr)
     return arr
 
 

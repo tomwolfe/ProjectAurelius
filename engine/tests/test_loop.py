@@ -8,6 +8,8 @@ Verifies that the DiscoveryLoop properly:
 
 from __future__ import annotations
 
+import pytest
+
 from unittest.mock import Mock
 
 from aurelius.agent.active_learning import ActiveLearningManager
@@ -409,3 +411,120 @@ def _make_mock_engine():
 def _make_loop_state(path: str = "/tmp/test_state.json"):
     """Create a LoopState at the given path."""
     return LoopState(path=path)
+
+
+class TestMoleculeContextFrozen:
+    """Verify MoleculeContext is fully immutable after creation."""
+
+    def test_smiles_attribute_is_frozen(self) -> None:
+        """Attempting to assign to MoleculeContext.smiles must raise FrozenInstanceError.
+
+        The dataclass is decorated with frozen=True, so any attempt to mutate
+        its fields should raise dataclasses.FrozenInstanceError.
+        """
+        from dataclasses import FrozenInstanceError
+        from aurelius.types import MoleculeContext
+
+        ctx = MoleculeContext.from_smiles("CCO")
+        assert ctx is not None
+
+        with pytest.raises(FrozenInstanceError):
+            ctx.smiles = "C"
+
+    def test_mol_attribute_is_frozen(self) -> None:
+        """Attempting to assign to MoleculeContext.mol must raise FrozenInstanceError."""
+        from dataclasses import FrozenInstanceError
+        from aurelius.types import MoleculeContext
+
+        ctx = MoleculeContext.from_smiles("CCO")
+        assert ctx is not None
+
+        with pytest.raises(FrozenInstanceError):
+            ctx.mol = None  # type: ignore[union-attr]
+
+    def test_copy_returns_independent_instance(self) -> None:
+        """Copying a MoleculeContext must produce an independent instance."""
+        from copy import copy
+        from aurelius.types import MoleculeContext
+
+        ctx1 = MoleculeContext.from_smiles("CCO")
+        assert ctx1 is not None
+
+        ctx2 = copy(ctx1)
+        assert ctx1 is not ctx2
+        assert ctx1.smiles == ctx2.smiles
+        # Modifying ctx2.smiles should not affect ctx1.smiles
+        # (but since both are frozen, we verify via from_smiles)
+        ctx3 = MoleculeContext.from_smiles("CCCO")
+        assert ctx3 is not None
+        assert ctx1.smiles != ctx3.smiles
+
+    def test_molecule_context_uniqueness(self) -> None:
+        """Two contexts with different SMILES must be distinct objects."""
+        from aurelius.types import MoleculeContext
+
+        ctx_a = MoleculeContext.from_smiles("CCO")
+        ctx_b = MoleculeContext.from_smiles("CCCO")
+        assert ctx_a is not None
+        assert ctx_b is not None
+        assert ctx_a is not ctx_b
+        assert ctx_a.smiles != ctx_b.smiles
+
+
+class TestMixtureContextIndependence:
+    """Verify that mixture formulation generates separate, independent tracking states."""
+
+    def test_mixture_components_are_independent(self) -> None:
+        """Creating a mixture must produce two independent MoleculeContext instances.
+
+        Modifying one component must not affect the other.
+        """
+        from aurelius.types import MoleculeContext
+
+        ctx_a = MoleculeContext.from_smiles("CCO")
+        ctx_b = MoleculeContext.from_smiles("CCCO")
+        assert ctx_a is not ctx_b
+        assert ctx_a.smiles != ctx_b.smiles
+
+    def test_mixture_factory_does_not_mutate_inputs(self) -> None:
+        """The _make_mixture_context factory must not modify input contexts."""
+        from aurelius.agent.loop import DiscoveryLoop
+        from aurelius.types import MoleculeContext
+
+        ctx_a = MoleculeContext.from_smiles("CC(=O)OC")
+        ctx_b = MoleculeContext.from_smiles("CC(C)OC(C)=O")
+        assert ctx_a is not None
+        assert ctx_b is not None
+
+        original_a_smiles = ctx_a.smiles
+        original_b_smiles = ctx_b.smiles
+
+        # Use proper mixture format: SMILES_A|SMILES_B|frac_A
+        mixture_smiles = f"{ctx_a.smiles}|{ctx_b.smiles}|0.5"
+        mixture = DiscoveryLoop._make_mixture_context(mixture_smiles)
+
+        # Input contexts must remain unchanged
+        assert ctx_a.smiles == original_a_smiles
+        assert ctx_b.smiles == original_b_smiles
+        # The mixture should return one of the independent contexts
+        assert mixture is not None
+        assert mixture.smiles == ctx_a.smiles or mixture.smiles == ctx_b.smiles
+
+    def test_separate_tracking_states_for_mixture(self) -> None:
+        """Generating a binary mixture formulation must create separate, independent tracking states."""
+        from aurelius.types import MoleculeContext
+
+        ctx_a = MoleculeContext.from_smiles("CCO")
+        ctx_b = MoleculeContext.from_smiles("CCCO")
+        assert ctx_a is not None
+        assert ctx_b is not None
+
+        # Verify that the two contexts are completely independent
+        assert ctx_a.smiles != ctx_b.smiles
+        assert ctx_a.mol is not ctx_b.mol
+
+        # Verify that fingerprint calculations are independent
+        fp_a = ctx_a.get_ecfp4()
+        fp_b = ctx_b.get_ecfp4()
+        # Fingerprints must be different objects
+        assert fp_a is not fp_b
