@@ -191,6 +191,41 @@ class PropertyOracle:
         """
         return self._property_pack.predict_all(ctx)
 
+    def _evaluate_quantum(self, ctx: MoleculeContext) -> dict[str, Any]:
+        """Evaluate quantum properties (HOMO/LUMO/gap) via surrogate or xTB/TOM.
+
+        Bundles the surrogate pre-filter and quantum computation into one call.
+        Returns a dict with quantum results plus surrogate metadata.
+        """
+        surrogate_penalty, s_homo, s_lumo, skip_quantum = self._run_surrogate(ctx)
+        homo, lumo, gap, quantum_method, quantum_confidence_val = self._compute_quantum(
+            ctx, skip_quantum=skip_quantum, s_homo=s_homo, s_lumo=s_lumo,
+        )
+        return {
+            "homo_eV": homo,
+            "lumo_eV": lumo,
+            "gap_eV": gap,
+            "surrogate_penalty": surrogate_penalty,
+            "s_homo": s_homo,
+            "skip_quantum": skip_quantum,
+            "quantum_method": quantum_method,
+            "quantum_confidence_val": quantum_confidence_val,
+        }
+
+    def _evaluate_gc(self, ctx: MoleculeContext) -> dict[str, Any]:
+        """Evaluate GC bulk properties and UQ penalty.
+
+        Bundles GC property prediction and uncertainty quantification.
+        """
+        gc_props = self._compute_gc_properties(ctx)
+        uq_penalty, diel_std, visc_std = self._compute_uq_penalty(ctx)
+        return {
+            "gc_props": gc_props,
+            "uq_penalty": uq_penalty,
+            "diel_std": diel_std,
+            "visc_std": visc_std,
+        }
+
     def _compute_ood_penalty(self, ctx: MoleculeContext) -> tuple[float, str]:
         """Compute centroid-based OOD penalty and reason string.
 
@@ -301,24 +336,19 @@ class PropertyOracle:
         if cached is not None:
             self._cache[key] = cached
             return cached
-        # Fallback for legacy caches (pre-pack-keying)
         if key != smiles:
             cached = self._disk_cache.get(smiles)
             if cached is not None:
                 self._cache[key] = cached
                 return cached
 
-        surrogate_penalty, s_homo, s_lumo, skip_quantum = self._run_surrogate(ctx)
-        homo, lumo, gap, quantum_method, quantum_confidence_val = self._compute_quantum(ctx, skip_quantum=skip_quantum, s_homo=s_homo, s_lumo=s_lumo)
-        uq_penalty, diel_std, visc_std = self._compute_uq_penalty(ctx)
-
-        gc_props = self._compute_gc_properties(ctx)
-
+        q = self._evaluate_quantum(ctx)
+        g = self._evaluate_gc(ctx)
         domain_penalty, domain_reason_str, domain_applicable = self._build_domain(
-            ctx, skip_quantum, surrogate_penalty, s_homo, uq_penalty,
+            ctx, q["skip_quantum"], q["surrogate_penalty"], q["s_homo"], g["uq_penalty"],
         )
         domain_penalty, domain_reason_str, domain_applicable = self._apply_sei_penalty(
-            ctx, lumo, domain_penalty, domain_reason_str,
+            ctx, q["lumo_eV"], domain_penalty, domain_reason_str,
         )
 
         if domain_penalty < 0.85:
@@ -330,13 +360,13 @@ class PropertyOracle:
             )
 
         result = self._assemble_result(
-            smiles, homo, lumo, gap,
-            gc_props,
+            smiles, q["homo_eV"], q["lumo_eV"], q["gap_eV"],
+            g["gc_props"],
             domain_penalty, domain_reason_str, domain_applicable,
-            quantum_method, quantum_confidence_val,
-            skip_quantum,
-            diel_std=diel_std,
-            visc_std=visc_std,
+            q["quantum_method"], q["quantum_confidence_val"],
+            q["skip_quantum"],
+            diel_std=g["diel_std"],
+            visc_std=g["visc_std"],
         )
         self._cache[key] = result
         self._disk_cache[key] = result
