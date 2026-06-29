@@ -115,3 +115,12 @@ UQ weights during scoring.
 - Verify kernel signatures before use with the `KernelSigner.verify()` method.
 - The certification-lab tooling is proprietary; contact the Aurelius team for
   custom certification campaigns.
+
+## Joint Venture Data & IP Protocol
+
+In Joint Venture engagements, the Certification Lab operates under a strict **Data Clean Room** protocol:
+
+1. **Data Ingestion:** Your experimental CSV data is ingested into an isolated, encrypted instance of the Certification Lab.
+2. **Kernel Generation:** A proprietary kernel is tuned specifically to your chemical domain. This kernel is signed but **never leaves your VPC** unless explicitly authorized for verification.
+3. **Candidate Handoff:** Top candidates are delivered as SMILES strings with predicted properties.
+4. **Royalty Tracking:** Each candidate is tagged with a unique `Discovery ID` linked to the JV contract. Commercialization of molecules bearing this ID triggers the agreed-upon royalty (1–3%).

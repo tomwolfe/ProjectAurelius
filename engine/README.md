@@ -191,6 +191,13 @@ src/aurelius/
 - Degen, J. et al. "SMARTS — A Language for Describing Molecular Patterns." *J. Chem. Inf. Model.* 2008.
 - Delphi, L. et al. "BRICS: Decomposition and Reassembly of Molecules." *J. Chem. Inf. Model.* 2008.
 
+## Commercial Use & Joint Ventures
+
+While the Aurelius Discovery Engine is MIT-licensed, molecules discovered using **Proprietary Certified Kernels** generated via our Joint Venture program are subject to separate IP agreements.
+
+- **Standard Use:** You may use the engine freely.
+- **Joint Venture Use:** Molecules identified through our co-development pipeline carry a **1–3% royalty obligation** upon commercialization. This is tracked via cryptographic signatures in the `aurelius_kernel.json` metadata.
+
 ## License
 
 MIT License
