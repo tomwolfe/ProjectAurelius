@@ -1,9 +1,9 @@
-"""Kernel loading and verification for signed Aurelius kernels.
+"""Kernel loading for Aurelius kernels.
 
 Extracted from pipeline.py to improve modularity.  Provides the
-``KernelLoader`` ABC, ``JSONKernelLoader`` with Ed25519 signature
-verification, and the ``_load_demo_kernel`` helper that supports
-dynamic downloading from GitHub Releases.
+``KernelLoader`` ABC, ``JSONKernelLoader`` for loading kernel JSON files from
+the local file system or GitHub Releases, and the ``_load_demo_kernel``
+helper that supports loading example kernels from local file-system paths.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ _DEMO_KERNEL_CANDIDATES: list[str] = []
 class KernelLoader(ABC):
     """Abstract base for kernel parameter loaders.
 
-    Implementations load a signed kernel from any source (local file,
+    Implementations load a kernel from any source (local file,
     database, API) and return a dict of calibrated parameters.
     """
 
@@ -40,83 +40,59 @@ class KernelLoader(ABC):
     def load(self, path: str) -> dict[str, Any] | None:
         """Load a kernel from the given *path*.
 
-        Returns a dict of kernel parameters (without the ``signature``
-        field) on success, or ``None`` if loading/verification fails.
+        Returns a dict of kernel parameters on success, or ``None`` if
+        loading fails.
         """
         ...
 
     @abstractmethod
     def verify(self, kernel: dict[str, Any]) -> bool:
-        """Verify the Ed25519 signature of *kernel*.
+        """Verify the integrity of *kernel*.
 
-        Returns ``True`` if the signature is valid, ``False`` otherwise.
+        Returns ``True`` if the kernel is valid, ``False`` otherwise.
         """
         ...
 
 
 class JSONKernelLoader(KernelLoader):
-    """Load and verify a kernel from a signed JSON file.
+    """Load a kernel from a JSON file.
 
     This is the default kernel loader used by the pipeline. It loads
-    a ``.json`` file, verifies its Ed25519 signature, and returns the
-    kernel parameters.
+    a ``.json`` file and returns the kernel parameters.
     """
 
     def load(self, path: str) -> dict[str, Any] | None:
         try:
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
-            from aurelius.constants import KERNEL_PUBLIC_KEY
-
             with open(path) as f:
                 kernel = json.load(f)
 
-            stored = kernel.get("signature", "")
-            if not stored:
-                logger.warning("Kernel %s: no signature field — using defaults.", path)
-                return None
-
             if not self.verify(kernel):
                 logger.warning(
-                    "Kernel %s: signature verification failed — using defaults.",
+                    "Kernel %s: validation failed — using defaults.",
                     path,
                 )
                 return None
 
-            logger.info("Kernel %s: signature verified successfully.", path)
-            return {k: v for k, v in kernel.items() if k != "signature"}
-        except ImportError:
-            logger.warning(
-                "Kernel %s: cryptography not installed — cannot verify signature. Using defaults.",
-                path,
-            )
+            logger.info("Kernel %s: loaded successfully.", path)
+            return kernel
+        except FileNotFoundError:
+            logger.warning("Kernel %s: file not found — using defaults.", path)
+            return None
+        except json.JSONDecodeError as exc:
+            logger.warning("Kernel %s: invalid JSON (%s) — using defaults.", path, exc)
             return None
         except Exception as exc:
-            logger.warning(
-                "Kernel %s: loading failed (%s) — using defaults.",
-                path, exc,
-            )
+            logger.warning("Kernel %s: loading failed (%s) — using defaults.", path, exc)
             return None
 
     @staticmethod
     def verify(kernel: dict[str, Any]) -> bool:
-        try:
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
-            from aurelius.constants import KERNEL_PUBLIC_KEY
-
-            stored = kernel.get("signature", "")
-            if not stored:
-                return False
-
-            payload = {k: v for k, v in kernel.items() if k != "signature"}
-            canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-
-            pub = Ed25519PublicKey.from_public_bytes(KERNEL_PUBLIC_KEY)
-            pub.verify(bytes.fromhex(stored), canonical.encode("utf-8"))
-            return True
-        except Exception:
+        """Verify that *kernel* contains the required fields."""
+        required = ["version", "domain_boundary", "tom_parameters", "gc_fragments", "uq_weights", "validation_metrics"]
+        if not all(k in kernel for k in required):
+            logger.warning("Kernel missing required fields: %s", [k for k in required if k not in kernel])
             return False
+        return True
 
 
 def _resolve_demo_kernel_paths() -> list[str]:
@@ -186,10 +162,10 @@ def compute_validation_hash(kernel: dict[str, Any]) -> str:
 
 
 def _load_demo_kernel() -> dict[str, Any] | None:
-    """Load the pre-certified carbonate high-voltage demo kernel.
+    """Load the pre-built carbonate high-voltage demo kernel.
 
     Tries local file-system paths first, then attempts to download
-    the latest certified kernel from GitHub Releases.  Falls back to
+    the latest kernel from GitHub Releases.  Falls back to
     ``None`` (use defaults) if all attempts fail.
 
     Returns kernel parameters dict or ``None`` if not found.

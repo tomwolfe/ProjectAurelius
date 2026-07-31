@@ -129,7 +129,7 @@ def check_kernel_health(ctx: MoleculeContext) -> bool:
         if value is not None and not (lo <= value <= hi):
             logger.warning(
                 "Molecule outside default kernel domain: %s=%s (domain [%s, %s]). "
-                "Consider tuning via Certification Lab.",
+                "Consider retuning kernel parameters for better accuracy.",
                 prop, value, lo, hi,
             )
             inside = False
@@ -189,21 +189,19 @@ class AureliusPipeline:
         logger.info("Oracle (PropertyOracle): ENABLED")
 
     def load_kernel(self, kernel_path: str) -> dict[str, Any] | None:
-        """Load a signed kernel via the configured ``KernelLoader``.
+        """Load a kernel via the configured ``KernelLoader``.
 
         Args:
-            kernel_path: Path to a signed kernel file.
+            kernel_path: Path to a kernel JSON file.
 
         Returns:
-            Dict of kernel parameters on successful verification, or ``None``
+            Dict of kernel parameters on successful load, or ``None``
             to indicate the caller should use defaults.
         """
         result = self._kernel_loader.load(kernel_path)
         if result is None:
             logger.warning(
-                "No valid certified kernel loaded. Using default parameters. "
-                "Results may be less accurate. "
-                "Consider tuning with Aurelius Certification Lab."
+                "No valid kernel loaded — using default parameters.",
             )
         return result
 

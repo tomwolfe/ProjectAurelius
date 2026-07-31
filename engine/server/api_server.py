@@ -94,7 +94,7 @@ class BatchRequest(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
-    version: str = "10.2.0"
+    version: str = "11.0.0"
     pipeline_initialized: bool
 
 
@@ -153,7 +153,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="Project Aurelius API",
-    version="10.2.0",
+    version="11.0.0",
     description="REST API for the Aurelius molecule discovery pipeline",
     lifespan=lifespan,
 )

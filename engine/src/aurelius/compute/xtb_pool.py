@@ -100,11 +100,21 @@ def _parse_xtb_output(output: str) -> dict[str, float] | None:
     return None
 
 
-def _run_xtb(xyz_content: str, workdir: str | None = None) -> dict[str, float] | None:
+def _run_xtb(
+    xyz_content: str,
+    workdir: str | None = None,
+    solvent: str | None = "ether",
+) -> dict[str, float] | None:
     """Run xTB single-point calculation and parse HOMO/LUMO from output.
 
     Uses the module-level cached binary path and shared temp workspace
     to avoid per-call binary discovery.
+
+    Args:
+        xyz_content: XYZ-format molecular geometry string.
+        workdir: Optional working directory for the xTB run.
+        solvent: Implicit solvation model (e.g. "ether"). When set,
+            appends ``--alpb <solvent>`` to the xTB command line.
     """
     if _XTB_BIN is None:
         return None
@@ -117,9 +127,13 @@ def _run_xtb(xyz_content: str, workdir: str | None = None) -> dict[str, float] |
     with open(xyz_path, "w") as f:
         f.write(xyz_content)
 
+    cmd = [_XTB_BIN, "--gfn", "2", "--sp", xyz_path]
+    if solvent:
+        cmd.extend(["--alpb", solvent])
+
     try:
         result = subprocess.run(
-            [_XTB_BIN, "--gfn", "2", "--sp", xyz_path],
+            cmd,
             cwd=workdir,
             capture_output=True, text=True, timeout=120,
         )
@@ -129,14 +143,20 @@ def _run_xtb(xyz_content: str, workdir: str | None = None) -> dict[str, float] |
         return None
 
 
-def _run_xtb_from_file(xyz_path: str) -> dict[str, float] | None:
+def _run_xtb_from_file(
+    xyz_path: str,
+    solvent: str | None = "ether",
+) -> dict[str, float] | None:
     """Run xTB on a single XYZ file path (no temp dir creation)."""
     if _XTB_BIN is None:
         return None
     workdir = os.path.dirname(xyz_path)
+    cmd = [_XTB_BIN, "--gfn", "2", "--sp", xyz_path]
+    if solvent:
+        cmd.extend(["--alpb", solvent])
     try:
         result = subprocess.run(
-            [_XTB_BIN, "--gfn", "2", "--sp", xyz_path],
+            cmd,
             cwd=workdir,
             capture_output=True, text=True, timeout=120,
         )
@@ -147,7 +167,9 @@ def _run_xtb_from_file(xyz_path: str) -> dict[str, float] | None:
 
 
 def run_xtb_batch(
-    xyz_list: list[str], max_workers: int = 4
+    xyz_list: list[str],
+    max_workers: int = 4,
+    solvent: str | None = "ether",
 ) -> list[dict[str, float] | None]:
     """Run multiple xTB single-point calculations in parallel.
 
@@ -157,6 +179,8 @@ def run_xtb_batch(
     Args:
         xyz_list: List of XYZ-format molecular geometry strings.
         max_workers: Maximum parallel xTB processes (default 4).
+        solvent: Implicit solvation model (e.g. "ether"). When set,
+            appends ``--alpb <solvent>`` to all xTB command lines.
 
     Returns:
         List of result dicts in the same order as xyz_list. Each entry is
@@ -179,7 +203,7 @@ def run_xtb_batch(
     results: list[dict[str, float] | None] = [None] * len(xyz_list)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {
-            pool.submit(_run_xtb_from_file, xyz_paths[i]): i
+            pool.submit(_run_xtb_from_file, xyz_paths[i], solvent): i
             for i in range(len(xyz_list))
         }
         for future in concurrent.futures.as_completed(future_map):
@@ -221,6 +245,8 @@ class BatchXTBRunner:
         batch_size: Flush when this many jobs accumulate (default 10).
         flush_interval: Maximum seconds to wait before flushing (default 5.0).
         max_workers: Maximum parallel xTB processes per batch (default 4).
+        solvent: Implicit solvation model (e.g. "ether"). When set,
+            appends ``--alpb <solvent>`` to all xTB command lines.
     """
 
     def __init__(
@@ -228,10 +254,12 @@ class BatchXTBRunner:
         batch_size: int = 10,
         flush_interval: float = 5.0,
         max_workers: int = 4,
+        solvent: str | None = "ether",
     ) -> None:
         self._batch_size = batch_size
         self._flush_interval = flush_interval
         self._max_workers = max_workers
+        self._solvent = solvent
         self._lock = threading.RLock()
         self._pending: list[_PendingJob] = []
         self._running = True
@@ -257,7 +285,7 @@ class BatchXTBRunner:
         if not batch:
             return
         xyzs = [j.xyz for j in batch]
-        results = run_xtb_batch(xyzs, max_workers=self._max_workers)
+        results = run_xtb_batch(xyzs, max_workers=self._max_workers, solvent=self._solvent)
         for job, result in zip(batch, results, strict=False):
             if not job.future.set_running_or_notify_cancel():
                 continue
@@ -282,7 +310,7 @@ class BatchXTBRunner:
 
         # Synchronous flush (batch_size reached)
         xyzs = [j.xyz for j in batch]
-        results = run_xtb_batch(xyzs, max_workers=self._max_workers)
+        results = run_xtb_batch(xyzs, max_workers=self._max_workers, solvent=self._solvent)
         for job, result in zip(batch, results, strict=False):
             if not job.future.set_running_or_notify_cancel():
                 continue
@@ -305,7 +333,7 @@ class BatchXTBRunner:
         for job in remaining:
             if not job.future.set_running_or_notify_cancel():
                 continue
-            result = _run_xtb(job.xyz)
+            result = _run_xtb(job.xyz, solvent=self._solvent)
             job.future.set_result(result)
 
     @property

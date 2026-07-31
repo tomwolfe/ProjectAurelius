@@ -72,7 +72,7 @@ def main() -> None:
 
 ## Intended Use
 
-The Aurelius Discovery Engine is an open-core evolutionary algorithm platform
+The Aurelius Discovery Engine is an open-source evolutionary algorithm platform
 for **battery electrolyte discovery**.
 
 {description}

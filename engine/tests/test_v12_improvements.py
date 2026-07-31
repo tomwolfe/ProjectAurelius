@@ -211,9 +211,8 @@ class TestKernelLoader:
             pytest.skip("carbonate_high_voltage.json not found")
         loader = JSONKernelLoader()
         kernel = loader.load(path)
-        # Loading will fail signature verification since the test env
-        # may have different keys → returns None. That's expected.
-        # At minimum, loading should not crash.
+        # Loading should return a dict (kernel params) or None if the file
+        # is missing required fields. It should never crash.
         assert kernel is None or isinstance(kernel, dict)
 
     def test_json_kernel_loader_missing_file(self):
@@ -223,10 +222,10 @@ class TestKernelLoader:
         assert result is None
 
     def test_json_kernel_loader_verify(self):
-        """verify() should return False for unsigned kernels."""
+        """verify() should return False for kernels missing required fields."""
         loader = JSONKernelLoader()
-        unsigned = {"version": "1.0.0", "tom_parameters": {"homo_offset": 0.0, "lumo_offset": 0.0}}
-        assert not loader.verify(unsigned)
+        incomplete = {"version": "1.0.0", "tom_parameters": {"homo_offset": 0.0, "lumo_offset": 0.0}}
+        assert not loader.verify(incomplete)
 
     def test_demo_kernel_loader(self):
         """_load_demo_kernel should return a dict or None without crashing."""
@@ -348,8 +347,8 @@ class TestKernelSchema:
         assert "type" in schema["properties"]["metadata"]
         assert schema["properties"]["metadata"]["type"] == "object"
 
-    def test_metadata_has_author_date_lab_version(self):
-        """metadata should include author, date, and lab_version."""
+    def test_metadata_has_author_and_date(self):
+        """metadata should include author and date fields."""
         schema_path = os.path.join(
             os.path.dirname(__file__), "..", "..", "docs", "kernel_schema.json",
         )
@@ -358,7 +357,6 @@ class TestKernelSchema:
         meta = schema["properties"]["metadata"]["properties"]
         assert "author" in meta
         assert "date" in meta
-        assert "lab_version" in meta
 
     def test_kernel_schema_has_provenance(self):
         """kernel_schema.json should define a 'provenance' property."""

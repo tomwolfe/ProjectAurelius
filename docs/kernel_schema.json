@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aurelius.dev/schemas/kernel-v1.json",
-  "title": "Aurelius Certified Kernel",
-  "description": "Schema for a signed Aurelius Certified Kernel that tunes the open-source Discovery Engine for a specific chemical domain.",
+  "title": "Aurelius Kernel",
+  "description": "Schema for an Aurelius Kernel that tunes the discovery engine for a specific chemical domain.",
   "type": "object",
   "required": [
     "version",
@@ -10,8 +10,7 @@
     "tom_parameters",
     "gc_fragments",
     "uq_weights",
-    "validation_metrics",
-    "signature"
+    "validation_metrics"
   ],
   "properties": {
     "version": {
@@ -24,25 +23,25 @@
       "description": "Optional metadata about the kernel's creation and certification.",
       "type": "object",
       "properties": {
-        "author": {
+         "author": {
           "type": "string",
           "description": "Name or identifier of the individual or organisation that created the kernel.",
-          "examples": ["Certification Lab v1.2", "Thomas Wolfe"]
+          "examples": ["Thomas Wolfe"]
         },
-        "date": {
+         "date": {
           "type": "string",
           "format": "date-time",
-          "description": "ISO 8601 timestamp of kernel creation or last certification.",
+          "description": "ISO 8601 timestamp of kernel creation or last update.",
           "examples": ["2026-06-01T12:00:00Z"]
         },
         "lab_version": {
           "type": "string",
-          "description": "Version of the Certification Lab used to produce this kernel.",
+          "description": "Version of the tool used to produce this kernel.",
           "examples": ["1.2.0"]
         }
       },
       "examples": [{
-        "author": "Certification Lab v1.2",
+        "author": "Thomas Wolfe",
         "date": "2026-06-01T12:00:00Z",
         "lab_version": "1.2.0"
       }]
@@ -69,7 +68,7 @@
       }]
     },
     "domain_boundary": {
-      "description": "Defines the chemical space this kernel is certified for.",
+      "description": "Defines the chemical space this kernel is valid for.",
       "type": "object",
       "properties": {
         "domain": {
@@ -224,9 +223,8 @@
       "required": ["spearman_rho", "mae"]
     },
     "signature": {
-      "description": "HMAC-SHA256 hex digest of canonical JSON serialisation of all preceding fields combined with a secret salt.",
-      "type": "string",
-      "pattern": "^[a-f0-9]{64}$"
+      "description": "Optional integrity/hash field for the kernel.",
+      "type": "string"
     }
   }
 }

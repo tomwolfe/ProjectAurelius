@@ -24,7 +24,7 @@ class TestOracleDecomposition:
         assert ctx is not None
 
         with patch.object(oracle, "_run_surrogate", return_value=(1.0, -99.0, 99.0, False)) as mock_surrogate:
-            with patch.object(oracle, "_compute_quantum", return_value=(-6.5, -0.5, 6.0, "tom", "tom_high")) as mock_quantum:
+            with patch.object(oracle, "_compute_quantum", return_value=(-6.5, -0.5, 6.0, "tom", "tom_high", 0.0, 0.0, 0.0)) as mock_quantum:
                 with patch.object(oracle, "_compute_uq_penalty", return_value=(1.0, 0.0, 0.0)) as mock_uq:
                     with patch.object(oracle, "_compute_gc_properties", return_value={}) as mock_gc:
                         with patch.object(oracle, "_build_domain", return_value=(0.9, "ok", True)) as mock_domain:
@@ -47,7 +47,7 @@ class TestOracleDecomposition:
         assert ctx is not None
 
         with patch.object(oracle, "_run_surrogate", return_value=(1.0, -6.0, -0.5, True)) as mock_surrogate:
-            with patch.object(oracle, "_compute_quantum", return_value=(-6.0, -0.5, 5.5, "surrogate", "surrogate")) as mock_quantum:
+            with patch.object(oracle, "_compute_quantum", return_value=(-6.0, -0.5, 5.5, "surrogate", "surrogate", 0.0, 0.0, 0.0)) as mock_quantum:
                 with patch.object(oracle, "_compute_uq_penalty", return_value=(1.0, 0.0, 0.0)) as mock_uq:
                     with patch.object(oracle, "_compute_gc_properties", return_value={}) as mock_gc:
                         with patch.object(oracle, "_build_domain", return_value=(0.9, "ok", True)) as mock_domain:

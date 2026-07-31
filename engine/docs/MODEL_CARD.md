@@ -6,10 +6,10 @@
 
 ## Intended Use
 
-The Aurelius Discovery Engine is an open-core evolutionary algorithm platform
+The Aurelius Discovery Engine is an open-source evolutionary algorithm platform
 for **battery electrolyte discovery**.
 
-Project Aurelius Discovery Engine - Open-core evolutionary algorithm screening pipeline with hybrid quantum/GC oracle and Gaussian penalty objective.
+Project Aurelius Discovery Engine - Open-source evolutionary algorithm screening pipeline with hybrid quantum/GC oracle and Gaussian penalty objective.
 
 It combines:
 

@@ -107,6 +107,9 @@ class QuantumResult(NamedTuple):
     gap_eV: float
     method: str
     confidence: str
+    li_binding_energy_kcal: float = 0.0
+    cluster_homo_eV: float = 0.0
+    cluster_lumo_eV: float = 0.0
 
 
 class GcResult(NamedTuple):
@@ -160,6 +163,9 @@ class QuantumEvaluation(NamedTuple):
     skip_quantum: bool
     quantum_method: str
     quantum_confidence_val: str
+    li_binding_energy_kcal: float = 0.0
+    cluster_homo_eV: float = 0.0
+    cluster_lumo_eV: float = 0.0
 
 
 class GcEvaluation(NamedTuple):
@@ -203,6 +209,9 @@ class EvaluationResult(NamedTuple):
     surrogate_skipped: bool = False
     sei_fracture_proxy: float = 0.0
     gas_evolution_proxy: float = 0.0
+    li_binding_energy_kcal: float = 0.0
+    cluster_homo_eV: float = 0.0
+    cluster_lumo_eV: float = 0.0
 
 
 class OracleEvaluation(NamedTuple):

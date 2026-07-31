@@ -1,4 +1,4 @@
-"""Project Aurelius v10.0 — Discovery CLI.
+"""Project Aurelius v11.0 — Discovery CLI.
 
 Examples:
     aurelius screen "C1COC(=O)O1"
@@ -219,7 +219,7 @@ def _print_result_card_ascii(
 @click.group()
 @click.version_option(version="10.0.0", prog_name="Aurelius")
 def cli() -> None:
-    """Project Aurelius v10.0 - Evolutionary Algorithm Discovery Release."""
+    """Project Aurelius v11.0 - Physics-Grounded Discovery Engine."""
     pass
 
 
@@ -848,30 +848,17 @@ def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
 @cli.command("verify-kernel")
 @click.argument("kernel_path", type=click.Path(exists=True))
 def verify_kernel_cmd(kernel_path: str) -> None:
-    """Verify a kernel's Ed25519 signature using the public key in constants."""
-    try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        from aurelius.constants import KERNEL_PUBLIC_KEY
+    """Verify a kernel JSON file contains all required fields."""
+    from aurelius.kernel_loader import JSONKernelLoader
 
-        with open(kernel_path) as f:
-            kernel = json.load(f)
+    loader = JSONKernelLoader()
+    with open(kernel_path) as f:
+        kernel = json.load(f)
 
-        stored = kernel.get("signature", "")
-        if not stored:
-            _echo_colored("[red]FAIL:[/red] No signature field found in kernel.", style="bold red", err=True)
-            sys.exit(1)
-
-        payload = {k: v for k, v in kernel.items() if k != "signature"}
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-
-        pub = Ed25519PublicKey.from_public_bytes(KERNEL_PUBLIC_KEY)
-        pub.verify(bytes.fromhex(stored), canonical.encode("utf-8"))
-        _echo_colored("[bold green]OK:[/bold green] Kernel signature verified successfully.", style="green")
-    except json.JSONDecodeError:
-        _echo_colored(f"[red]FAIL:[/red] Could not parse {kernel_path} as JSON.", style="bold red", err=True)
-        sys.exit(1)
-    except Exception as exc:
-        _echo_colored(f"[red]FAIL:[/red] Signature verification failed: {exc}", style="bold red", err=True)
+    if loader.verify(kernel):
+        _echo_colored("[bold green]OK:[/bold green] Kernel validation passed.", style="green")
+    else:
+        _echo_colored("[red]FAIL:[/red] Kernel validation failed — required fields missing.", style="bold red", err=True)
         sys.exit(1)
 
 

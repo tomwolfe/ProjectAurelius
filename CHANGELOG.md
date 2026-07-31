@@ -1,5 +1,32 @@
 # Changelog
 
+## [11.0.0] - 2026-07-31
+
+### Removed
+- **Certification Lab** (`certification-lab/`): Deleted entirely along with
+  report generator, signature verification, and all commercial certification
+  tooling.
+- **SDK package** (`sdk/`): Removed the Python SDK wrapper and its
+  `generate_cert_report.py` script.
+- **Commercial SaaS dependencies:** Removed Stripe, JWT, HTMX, Alembic, and
+  Redis from web extras and codebase. The Discovery Engine now ships as a
+  pure open-source package.
+- **API authentication & rate limiting:** Removed token-based auth and
+  sliding-window rate limiter from the API server (`aurelius-api` no longer
+  requires `X-API-Key`).
+- **Docker Compose Redis service:** No longer spins up a Redis caching
+  container.
+- **Submodule pins:** Removed `submodule_pins.json` and associated
+  verification infrastructure.
+
+### Changed
+- **Engine package** now classified as an open-source physics-grounded engine
+  (no open-core / SaaS split).
+- **pyproject.toml:** Version bumped to 11.0.0. `xgboost` moved to `ml`
+  extra; `pymoo` added as `mo` extra.
+- **README.md:** Rewritten to describe the open-source engine without
+  commercial or SaaS sections.
+
 ## [10.2.1] - 2026-06-26
 
 ### Changed

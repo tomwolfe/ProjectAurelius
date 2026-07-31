@@ -170,115 +170,52 @@ def test_compute_validation_hash_with_nested_metrics() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Ed25519 Signature Verification Tests
+# Kernel Field Validation Tests
 # ---------------------------------------------------------------------------
 
 
-def _generate_key_pair() -> tuple[Any, bytes]:
-    """Generate an Ed25519 key pair for testing.
-
-    Returns (private_key, public_key_bytes).
-    """
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-    private = Ed25519PrivateKey.generate()
-    public_bytes = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
-    return private, public_bytes
-
-
-def _sign_kernel(kernel: dict[str, Any], private_key: Any) -> dict[str, Any]:
-    """Sign a kernel dict with an Ed25519 private key.
-
-    Strips any existing ``signature`` field, produces a canonical JSON
-    representation, signs it, and inserts the hex-encoded signature.
-    """
-    payload = {k: v for k, v in kernel.items() if k != "signature"}
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    sig = private_key.sign(canonical.encode("utf-8"))
-    kernel = dict(kernel)
-    kernel["signature"] = sig.hex()
-    return kernel
-
-
-def test_ed25519_verify_valid_signature() -> None:
-    """JSONKernelLoader.verify() must return True for a valid signature."""
-    private, public_bytes = _generate_key_pair()
-    kernel = _make_kernel({"spearman_rho": 0.85, "mae": 0.12, "rmse": 0.18, "n_training": 50})
-    signed = _sign_kernel(kernel, private)
-
-    # Verify using the generated public key (same logic as JSONKernelLoader)
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-    stored = signed.get("signature", "")
-    payload = {k: v for k, v in signed.items() if k != "signature"}
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    pub = Ed25519PublicKey.from_public_bytes(public_bytes)
-    pub.verify(bytes.fromhex(stored), canonical.encode("utf-8"))
-    # No exception = valid
-
-
-def test_ed25519_verify_tampered_payload() -> None:
-    """JSONKernelLoader.verify() must return False when the payload is tampered."""
-    private, public_bytes = _generate_key_pair()
-    kernel = _make_kernel({"spearman_rho": 0.85, "mae": 0.12, "rmse": 0.18, "n_training": 50})
-    signed = _sign_kernel(kernel, private)
-
-    # Tamper with the payload
-    signed["tom_parameters"]["homo_offset"] = 99.0
-
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-    stored = signed.get("signature", "")
-    payload = {k: v for k, v in signed.items() if k != "signature"}
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    pub = Ed25519PublicKey.from_public_bytes(public_bytes)
-    with pytest.raises(Exception):
-        pub.verify(bytes.fromhex(stored), canonical.encode("utf-8"))
-
-
-def test_ed25519_verify_missing_signature() -> None:
-    """JSONKernelLoader.verify() must return False when signature is missing."""
-    kernel = _make_kernel({"spearman_rho": 0.85, "mae": 0.12, "rmse": 0.18, "n_training": 50})
-    assert "signature" not in kernel
+def test_verify_kernel_valid() -> None:
+    """JSONKernelLoader.verify() must return True for a kernel with all required fields."""
     from aurelius.kernel_loader import JSONKernelLoader
+
+    kernel = _make_kernel({"spearman_rho": 0.85, "mae": 0.12, "rmse": 0.18, "n_training": 50})
+    assert JSONKernelLoader.verify(kernel) is True
+
+
+def test_verify_kernel_missing_required_field() -> None:
+    """JSONKernelLoader.verify() must return False when a required field is absent."""
+    from aurelius.kernel_loader import JSONKernelLoader
+
+    kernel = _make_kernel({"spearman_rho": 0.85, "mae": 0.12, "rmse": 0.18, "n_training": 50})
+    del kernel["tom_parameters"]
     assert JSONKernelLoader.verify(kernel) is False
 
 
-def test_ed25519_verify_empty_signature() -> None:
-    """JSONKernelLoader.verify() must return False for an empty signature."""
-    kernel = _make_kernel({"spearman_rho": 0.85, "mae": 0.12, "rmse": 0.18, "n_training": 50})
-    kernel["signature"] = ""
+def test_verify_kernel_missing_uq_weights() -> None:
+    """JSONKernelLoader.verify() must return False when uq_weights is absent."""
     from aurelius.kernel_loader import JSONKernelLoader
-    assert JSONKernelLoader.verify(kernel) is False
 
-
-def test_ed25519_verify_garbage_signature() -> None:
-    """JSONKernelLoader.verify() must return False for a garbage signature."""
     kernel = _make_kernel({"spearman_rho": 0.85, "mae": 0.12, "rmse": 0.18, "n_training": 50})
-    kernel["signature"] = "deadbeef"
-    from aurelius.kernel_loader import JSONKernelLoader
+    del kernel["uq_weights"]
     assert JSONKernelLoader.verify(kernel) is False
 
 
 def test_verify_kernel_cli_valid() -> None:
-    """The verify-kernel CLI must output 'OK' for a validly-signed kernel file."""
-    from unittest.mock import patch
+    """The verify-kernel CLI must output 'OK' for a valid kernel file."""
     from click.testing import CliRunner
     from aurelius.__main__ import cli
     import tempfile
 
-    private, public_bytes = _generate_key_pair()
     kernel = _make_kernel({"spearman_rho": 0.85, "mae": 0.12, "rmse": 0.18, "n_training": 50})
-    signed = _sign_kernel(kernel, private)
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        json.dump(signed, f)
+        json.dump(kernel, f)
         tmp_path = f.name
 
     try:
-        with patch("aurelius.constants.KERNEL_PUBLIC_KEY", public_bytes):
-            runner = CliRunner()
-            result = runner.invoke(cli, ["verify-kernel", tmp_path])
+        runner = CliRunner()
+        result = runner.invoke(cli, ["verify-kernel", tmp_path])
         assert result.exit_code == 0, f"CLI exited {result.exit_code}: {result.output}"
-        assert "FAIL" not in result.output
         assert "OK" in result.output
     finally:
         import os
@@ -286,39 +223,13 @@ def test_verify_kernel_cli_valid() -> None:
 
 
 def test_verify_kernel_cli_invalid() -> None:
-    """The verify-kernel CLI must output 'FAIL' for a tampered kernel file."""
-    from unittest.mock import patch
-    from click.testing import CliRunner
-    from aurelius.__main__ import cli
-    import tempfile
-
-    private, public_bytes = _generate_key_pair()
-    kernel = _make_kernel({"spearman_rho": 0.85, "mae": 0.12, "rmse": 0.18, "n_training": 50})
-    signed = _sign_kernel(kernel, private)
-    signed["tom_parameters"]["homo_offset"] = 99.0  # tamper
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        json.dump(signed, f)
-        tmp_path = f.name
-
-    try:
-        with patch("aurelius.constants.KERNEL_PUBLIC_KEY", public_bytes):
-            runner = CliRunner()
-            result = runner.invoke(cli, ["verify-kernel", tmp_path])
-        assert result.exit_code != 0
-        assert "FAIL" in result.output
-    finally:
-        import os
-        os.unlink(tmp_path)
-
-
-def test_verify_kernel_cli_no_signature() -> None:
-    """The verify-kernel CLI must output 'FAIL' for a kernel with no signature."""
+    """The verify-kernel CLI must output 'FAIL' for a kernel missing required fields."""
     from click.testing import CliRunner
     from aurelius.__main__ import cli
     import tempfile
 
     kernel = _make_kernel({"spearman_rho": 0.85, "mae": 0.12, "rmse": 0.18, "n_training": 50})
+    del kernel["tom_parameters"]  # remove a required field
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(kernel, f)

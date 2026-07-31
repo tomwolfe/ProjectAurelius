@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """Generate reference aurelius_kernel.json files from public benchmark data.
 
-This script creates three example kernel files (Carbonate, Ether, Sulfone)
-with placeholder signatures and tuned parameters derived from simple linear
-regression on the public external_property_benchmark.json data.
+This script creates kernel files for different chemical domains with tuned
+parameters derived from linear regression on the public benchmark data.
 
-These kernels serve as proof-of-concept that the kernel format works
-without the proprietary Certification Lab. They are NOT certified —
-certification requires the proprietary Aurelius Certification Lab,
-which performs conformer-ensemble xTB validation on proprietary data.
+These kernels serve as proof-of-concept that the kernel format works for
+local domain retuning.
 
 Usage:
     python docs/examples/generate_reference_kernels.py
@@ -16,7 +13,6 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -149,14 +145,8 @@ def _build_kernel(
     gc_scale: float,
     metrics: dict[str, float],
 ) -> dict[str, Any]:
-    """Build a kernel dict for the given domain with placeholder signature."""
+    """Build a kernel dict for the given domain."""
     n = metrics["n"]
-
-    # Placeholder signature derived from domain parameters
-    payload = f"{domain}:v1.0.0:gc_scale={gc_scale:.4f}:n={n}"
-    signature = hashlib.sha256(payload.encode()).hexdigest() + "00" * 16
-    # Truncate to exactly 64 hex characters (32 bytes)
-    signature = signature[:64]
 
     # Include domain-relevant GC fragments with their dielectric contributions
     fragment_smarts_map: dict[str, float] = {
@@ -213,9 +203,7 @@ def _build_kernel(
                 "pass": n >= 5,
             },
         },
-        # NOTE: This is a placeholder signature. Certification requires the
-        #      proprietary Aurelius Certification Lab (Ed25519 signing).
-        "signature": signature,
+        "signature": "placeholder",
     }
 
 

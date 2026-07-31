@@ -1,6 +1,6 @@
-# Sulfone Kernel — Certified Case Study
+# Sulfone Kernel — Case Study
 
-| Metric        | Before (Generic GC) | After (Certified Kernel) | Improvement |
+| Metric        | Before (Generic GC) | After (Tuned Kernel) | Improvement |
 |---------------|--------------------:|-------------------------:|------------:|
 | Spearman ρ    | 0.35                | 0.68                     | +94%        |
 | MAE           | 0.65                | 0.31                     | -52%        |

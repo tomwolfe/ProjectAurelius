@@ -331,38 +331,27 @@ def test_ternary_cli_acceptance() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Kernel Signature Verification
+# Kernel Loading & Validation
 # ---------------------------------------------------------------------------
 
 
-def test_load_kernel_with_valid_signature(tmp_path, monkeypatch) -> None:
-    """A properly signed kernel should load and verify successfully."""
-    try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
-    except ImportError:
-        pytest.skip("cryptography not installed")
-
-    private_key = Ed25519PrivateKey.generate()
-    public_key = private_key.public_key()
-    public_bytes = public_key.public_bytes_raw()
-
-    # Patch KERNEL_PUBLIC_KEY to match the generated key pair
-    monkeypatch.setattr(
-        "aurelius.constants.KERNEL_PUBLIC_KEY",
-        public_bytes,
-    )
-
-    kernel = {
+def _minimal_kernel(**overrides) -> dict:
+    base = {
         "version": "1.0.0",
-        "tom_parameters": {"homo_offset": -0.1, "lumo_offset": 0.2, "gc_scale": 1.0},
+        "domain_boundary": {"domain": "electrolyte"},
+        "tom_parameters": {"homo_offset": 0.0, "lumo_offset": 0.0, "gc_scale": 1.0},
+        "gc_fragments": ["ester"],
+        "uq_weights": {"ensemble_weight": 0.5},
+        "validation_metrics": {"spearman_rho": 0.9, "mae": 0.1, "n_training": 50},
     }
-    canonical = json.dumps(
-        {k: v for k, v in kernel.items()}, sort_keys=True, separators=(",", ":"),
-    )
-    signature = private_key.sign(canonical.encode("utf-8")).hex()
-    kernel["signature"] = signature
+    base.update(overrides)
+    return base
 
-    kernel_path = tmp_path / "signed_kernel.json"
+
+def test_load_kernel_valid(tmp_path) -> None:
+    """A kernel with all required fields should load successfully."""
+    kernel = _minimal_kernel()
+    kernel_path = tmp_path / "valid_kernel.json"
     with open(kernel_path, "w") as f:
         json.dump(kernel, f)
 
@@ -370,34 +359,26 @@ def test_load_kernel_with_valid_signature(tmp_path, monkeypatch) -> None:
     result = pl.load_kernel(str(kernel_path))
 
     assert result is not None
-    assert result["tom_parameters"]["homo_offset"] == -0.1
+    assert result["tom_parameters"]["gc_scale"] == 1.0
 
 
-def test_load_kernel_missing_signature_returns_defaults(tmp_path) -> None:
-    """A kernel without a signature field should return None (use defaults)."""
-    kernel = {"version": "1.0.0", "tom_parameters": {"homo_offset": 0.0}}
-    kernel_path = tmp_path / "unsigned_kernel.json"
+def test_load_kernel_missing_required_field_returns_defaults(tmp_path) -> None:
+    """A kernel missing required fields should return None (use defaults)."""
+    kernel = _minimal_kernel()
+    del kernel["validation_metrics"]
+    kernel_path = tmp_path / "incomplete_kernel.json"
     with open(kernel_path, "w") as f:
         json.dump(kernel, f)
 
     pl = AureliusPipeline()
     result = pl.load_kernel(str(kernel_path))
 
-    assert result is None, "Missing signature should return None (use defaults)"
+    assert result is None, "Missing required fields should return None (use defaults)"
 
 
-def test_load_kernel_tampered_signature_returns_defaults(tmp_path) -> None:
-    """A kernel with an invalid signature should return None (use defaults)."""
-    kernel = {
-        "version": "1.0.0",
-        "tom_parameters": {"homo_offset": 0.1, "lumo_offset": -0.2, "gc_scale": 0.9},
-        "signature": "deadbeef" * 8,
-    }
-    kernel_path = tmp_path / "tampered_kernel.json"
-    with open(kernel_path, "w") as f:
-        json.dump(kernel, f)
-
+def test_load_kernel_missing_file_returns_defaults(tmp_path) -> None:
+    """A non-existent kernel file should return None (use defaults)."""
     pl = AureliusPipeline()
-    result = pl.load_kernel(str(kernel_path))
+    result = pl.load_kernel(str(tmp_path / "nonexistent.json"))
 
-    assert result is None, "Tampered signature should return None (use defaults)"
+    assert result is None

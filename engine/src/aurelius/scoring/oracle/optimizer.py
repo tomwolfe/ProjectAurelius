@@ -277,7 +277,6 @@ class KernelOptimizer:
             "gc_fragments": pack.get_fragment_names(),
             "uq_weights": {"ensemble_weight": 0.5},
             "validation_metrics": metrics,
-            "signature": "",
         }
         return kernel
 

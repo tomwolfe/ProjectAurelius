@@ -2,7 +2,7 @@
 
 ## Overview
 
-Project Aurelius is an open-core evolutionary algorithm for battery electrolyte discovery. The system uses a **hybrid oracle** combining quantum chemistry (xTB / Tight-binding Orbital Model) with a **group-contribution (GC) fragment-additivity model** to predict electrolyte properties.
+Project Aurelius is an evolutionary algorithm for battery electrolyte discovery. The system uses a **hybrid oracle** combining quantum chemistry (xTB / Tight-binding Orbital Model) with a **group-contribution (GC) fragment-additivity model** to predict electrolyte properties.
 
 The architecture follows a **pipeline** pattern:
 
@@ -14,7 +14,7 @@ SMILES → Tier 1 (Physical Filters) → Oracle (Quantum + GC) → Scoring → D
 
 ```
 project-aurelius/
-├── engine/                          # [PUBLIC] MIT-licensed Discovery Engine
+├── engine/                          # MIT-licensed Discovery Engine
 │   ├── src/aurelius/
 │   │   ├── __main__.py              # CLI entry point (click-based)
 │   │   ├── pipeline.py              # AureliusPipeline orchestrator
@@ -43,20 +43,12 @@ project-aurelius/
 │   ├── tests/
 │   └── pyproject.toml
 │
-├── certification-lab/               # [PRIVATE] Proprietary Certification Tools
-│   ├── src/certifier/
-│   │   ├── optimizer.py             # KernelOptimizer (Nelder-Mead)
-│   │   ├── signer.py                # Ed25519 KernelSigner
-│   │   ├── validator.py             # UncertaintyAuditor
-│   │   └── report_generator.py      # PDF/text validation reports
-│   └── tests/
-│
 └── docs/
     ├── quickstart_chemist.md        # Quick-start guide for chemists
     ├── architecture.md              # This file
-    ├── certification_protocol.md    # Certification workflow
+    ├── kernel_validation.md         # Kernel validation workflow
     ├── contributing_fragments.md    # Guide for adding GC fragments
-    └── kernel_schema.json           # Certified Kernel JSON Schema
+    └── kernel_schema.json           # Kernel JSON Schema
 ```
 
 ## Pipeline Flow
@@ -123,14 +115,11 @@ Property packs allow the engine to predict properties for different chemical dom
 |------|--------|---------|
 | `electrolyte` (default) | Battery electrolytes | dielectric, viscosity, li_solvation, CED, conductivity, li_dissociation |
 | `organic_electronics` | OLED/OPV materials | hole_mobility, electron_affinity |
+## Kernel System
 
-## Certified Kernel System
-
-A **Certified Kernel** is a signed JSON artifact that adjusts the engine's TOM/GC parameters for optimal accuracy within a specific chemical domain. The certification workflow:
-
-1. **Data Preparation**: Collect experimental benchmark pairs (SMILES, property values)
-2. **Kernel Optimizer**: Nelder-Mead tuning of TOM offsets + GC scales to minimize MAE
-3. **Uncertainty Auditor**: Validate predictions on hold-out set, check domain coverage
-4. **Kernel Signer**: Ed25519 digital signature for tamper-proof distribution
-
-See `docs/certification_protocol.md` for full details.
+A **Kernel** is a JSON artifact that adjusts the engine's TOM/GC parameters for
+optimal accuracy within a specific chemical domain. The engine includes a local
+`KernelOptimizer` (Nelder-Mead) that tunes TOM offsets and GC scale factors
+against experimental benchmark data — no external services required. The
+`AureliusPipeline.load_kernel()` method loads kernel parameters from a local
+JSON file for local domain retuning.

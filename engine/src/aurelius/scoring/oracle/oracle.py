@@ -149,6 +149,9 @@ def _compute_quantum_result(
         gap_eV=gap,
         method=quantum.method,
         confidence=confidence,
+        li_binding_energy_kcal=qr.get("li_binding_energy_kcal", 0.0),
+        cluster_homo_eV=qr.get("cluster_homo_eV", 0.0),
+        cluster_lumo_eV=qr.get("cluster_lumo_eV", 0.0),
     )
 
 
@@ -288,6 +291,9 @@ def _assemble_result(
     ced: float = 0.0,
     li_dissociation: float = 0.0,
     hydrolysis_risk: float = 0.0,
+    li_binding_energy_kcal: float = 0.0,
+    cluster_homo_eV: float = 0.0,
+    cluster_lumo_eV: float = 0.0,
 ) -> EvaluationResult:
     """Pure result assembly into the final ``EvaluationResult`` NamedTuple.
 
@@ -320,6 +326,9 @@ def _assemble_result(
         li_dissociation_proxy=round(li_dissociation, 4),
         hydrolysis_risk_proxy=round(hydrolysis_risk, 4),
         surrogate_skipped=skip_quantum,
+        li_binding_energy_kcal=round(li_binding_energy_kcal, 4),
+        cluster_homo_eV=round(cluster_homo_eV, 4),
+        cluster_lumo_eV=round(cluster_lumo_eV, 4),
     )
 
 
@@ -331,6 +340,16 @@ class PropertyOracle:
       - Dielectric proxy: GC fragment-additivity + TPSA-based cap
       - Viscosity proxy: GC fragment-additivity + MW + rotatable bonds
       - Li+ Solvation proxy: GC fragment-additivity
+
+    Args:
+        use_xtb: Whether to use xTB for quantum evaluation.
+        use_surrogate: Whether to use the surrogate pre-filter.
+        use_gc_uq: Whether to use GC uncertainty quantification.
+        property_pack: Optional ``BasePropertyModel`` instance.
+        l2_cache: Optional L2 cache backend.
+        redis_url: Optional Redis URL for distributed caching.
+        solvent: Implicit solvation model (e.g. "ether"). When set,
+            appends ``--alpb <solvent>`` to all xTB command lines.
     """
 
     def __init__(
@@ -341,8 +360,9 @@ class PropertyOracle:
         property_pack: BasePropertyModel | None = None,
         l2_cache: CacheBackend | None = None,
         redis_url: str | None = None,
+        solvent: str | None = "ether",
     ) -> None:
-        self._quantum = QuantumOracle(use_xtb=use_xtb)
+        self._quantum = QuantumOracle(use_xtb=use_xtb, solvent=solvent)
         self._use_surrogate = use_surrogate
         self._surrogate: SurrogateQuantumOracle | None = (
             SurrogateQuantumOracle() if use_surrogate else None
@@ -385,6 +405,9 @@ class PropertyOracle:
             gap_eV=r.gap_eV,
             method=r.method,
             confidence=r.confidence,
+            li_binding_energy_kcal=r.li_binding_energy_kcal,
+            cluster_homo_eV=r.cluster_homo_eV,
+            cluster_lumo_eV=r.cluster_lumo_eV,
         )
 
     def _compute_uq_penalty(self, ctx: MoleculeContext) -> tuple[float, float, float]:
@@ -415,7 +438,16 @@ class PropertyOracle:
         Returns a ``QuantumEvaluation`` NamedTuple with quantum results plus surrogate metadata.
         """
         surrogate_penalty, s_homo, s_lumo, skip_quantum = self._run_surrogate(ctx)
-        homo, lumo, gap, quantum_method, quantum_confidence_val = self._compute_quantum(
+        (
+            homo,
+            lumo,
+            gap,
+            quantum_method,
+            quantum_confidence_val,
+            li_binding_energy_kcal,
+            cluster_homo_eV,
+            cluster_lumo_eV,
+        ) = self._compute_quantum(
             ctx, skip_quantum=skip_quantum, s_homo=s_homo, s_lumo=s_lumo,
         )
         return QuantumEvaluation(
@@ -427,6 +459,9 @@ class PropertyOracle:
             skip_quantum=skip_quantum,
             quantum_method=quantum_method,
             quantum_confidence_val=quantum_confidence_val,
+            li_binding_energy_kcal=li_binding_energy_kcal,
+            cluster_homo_eV=cluster_homo_eV,
+            cluster_lumo_eV=cluster_lumo_eV,
         )
 
     def _evaluate_gc(self, ctx: MoleculeContext) -> GcEvaluation:
@@ -493,6 +528,9 @@ class PropertyOracle:
         ced: float = 0.0,
         li_dissociation: float = 0.0,
         hydrolysis_risk: float = 0.0,
+        li_binding_energy_kcal: float = 0.0,
+        cluster_homo_eV: float = 0.0,
+        cluster_lumo_eV: float = 0.0,
     ) -> EvaluationResult:
         """Assemble the final evaluation result NamedTuple. Delegates to pure ``_assemble_result``.
 
@@ -517,6 +555,9 @@ class PropertyOracle:
             ced=ced,
             li_dissociation=li_dissociation,
             hydrolysis_risk=hydrolysis_risk,
+            li_binding_energy_kcal=li_binding_energy_kcal,
+            cluster_homo_eV=cluster_homo_eV,
+            cluster_lumo_eV=cluster_lumo_eV,
         )
         return result
 
@@ -558,7 +599,7 @@ class PropertyOracle:
         if domain_penalty < 0.85:
             logger.warning(
                 "Warning: Molecule is outside the calibrated domain of the current kernel. "
-                "Consider retuning via Aurelius Certification Lab. "
+                "Consider retuning kernel parameters for better accuracy. "
                 "(smiles=%s, domain_penalty=%.4f, reason=%s)",
                 smiles, domain_penalty, domain_reason_str,
             )
@@ -581,6 +622,9 @@ class PropertyOracle:
             ced=g.gc_props.get("ced_proxy", 0.0),
             li_dissociation=g.gc_props.get("li_dissociation_proxy", 0.0),
             hydrolysis_risk=g.gc_props.get("hydrolysis_risk_proxy", 0.0),
+            li_binding_energy_kcal=q.li_binding_energy_kcal,
+            cluster_homo_eV=q.cluster_homo_eV,
+            cluster_lumo_eV=q.cluster_lumo_eV,
         )
         self._cache[key] = result._asdict()
         self._disk_cache[key] = result._asdict()

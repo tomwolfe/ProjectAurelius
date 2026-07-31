@@ -1,10 +1,5 @@
 # Project Aurelius: Physics-Grounded Small Molecule Discovery Engine
 
-> This is the **MIT-licensed** open-source engine of the Aurelius platform.
-> **Certified Kernels** (`aurelius_kernel.json`) are available to tune the
-> engine for specific chemical domains — see [the parent README](../README.md)
-> and [Certification Protocol](../docs/certification_protocol.md).
-
 **Novel molecule discovery for battery electrolytes, organic electronics, and catalysis.**
 
 A physically-grounded Evolutionary Algorithm pipeline with a **hybrid quantum + fragment-additivity oracle** and **lightweight ML surrogate pre-filter**. Frontier orbitals (HOMO/LUMO) are predicted via quantum chemistry (xTB/GFN2-xTB preferred, Topological Orbital Model fallback) — bulk properties (dielectric, viscosity, Li+ solvation) via interpretable group-contribution fragment-additivity with uncertainty quantification.
@@ -83,8 +78,8 @@ pip install git+https://github.com/tomwolfe/ProjectAurelius.git
 
 While the default configuration is optimized for battery electrolytes, the
 oracle can be retuned for other chemical domains (organic electronics,
-catalysis, small-molecule discovery) via the **Certification Lab** —
-see [`docs/certification_protocol.md`](../docs/certification_protocol.md).
+catalysis, small-molecule discovery) by adjusting the TOM/GC parameters
+via the `tune` command.
 
 ```bash
 aurelius init                         # Initialize pipeline
@@ -123,14 +118,14 @@ group-contribution fragment contributions. Example domains:
   adding charge-mobility fragment contributions.
 - **Catalysis**: Adapt screening to ligand design by reweighting
   frontier-orbital descriptors and incorporating metal-coordination
-  fragment terms via the Certification Lab.
+  fragment terms.
 - **Small-Molecule Drugs**: Replace the electrolyte viability filter with
   Lipinski/Ro5 rules and recalibrate the GC fragment library for
   solvation/LogP prediction.
 
-The **Certification Lab** provides the tooling to retune the
-`tom_parameters`, `gc_fragments`, and `validation_metrics` for these
-alternative domains.
+The `tune` command adjusts the `tom_parameters`, `gc_fragments`, and
+`validation_metrics` for these alternative domains using local Nelder-Mead
+optimization (no external services required).
 
 ## Quantum Backend
 
@@ -190,13 +185,6 @@ src/aurelius/
 - Heilbronner, E. & Bock, H. "The HMO Model and its Application." *Wiley-VCH* 1976.
 - Degen, J. et al. "SMARTS — A Language for Describing Molecular Patterns." *J. Chem. Inf. Model.* 2008.
 - Delphi, L. et al. "BRICS: Decomposition and Reassembly of Molecules." *J. Chem. Inf. Model.* 2008.
-
-## Commercial Use & Joint Ventures
-
-While the Aurelius Discovery Engine is MIT-licensed, molecules discovered using **Proprietary Certified Kernels** generated via our Joint Venture program are subject to separate IP agreements.
-
-- **Standard Use:** You may use the engine freely.
-- **Joint Venture Use:** Molecules identified through our co-development pipeline carry a **1–3% royalty obligation** upon commercialization. This is tracked via cryptographic signatures in the `aurelius_kernel.json` metadata.
 
 ## License
 

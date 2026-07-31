@@ -1,6 +1,6 @@
-# Carbonate Kernel — Certified Case Study
+# Carbonate Kernel — Case Study
 
-| Metric        | Before (Generic GC) | After (Certified Kernel) | Improvement |
+| Metric        | Before (Generic GC) | After (Tuned Kernel) | Improvement |
 |---------------|--------------------:|-------------------------:|------------:|
 | Spearman ρ    | 0.45                | 0.72                     | +60%        |
 | MAE           | 0.55                | 0.28                     | -49%        |

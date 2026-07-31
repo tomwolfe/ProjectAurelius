@@ -11,18 +11,6 @@ from rdkit import Chem
 FINGERPRINT_SIZE: int = 2048
 
 # ---------------------------------------------------------------------------
-# Ed25519 Public Key for Kernel Signature Verification
-# ---------------------------------------------------------------------------
-# The Certification Lab signs kernels using Ed25519 with a private key known
-# only to the Lab. The Engine verifies kernels using this public key.
-# This key corresponds to the Aurelius development seed.
-# In production, replace this with the actual Lab's published public key.
-
-KERNEL_PUBLIC_KEY: bytes = bytes.fromhex(
-    "5f064d1b5214dd3d90c02df3b0775cd988491b97909c66e23c038a2972cf1061"
-)
-
-# ---------------------------------------------------------------------------
 # Frontier Orbital (HOMO/LUMO) Thresholds
 # ---------------------------------------------------------------------------
 # Physical basis: HOMO energy measures oxidative stability of the electrolyte.
@@ -109,10 +97,10 @@ SA_SIGMOID_STEEPNESS: float = 2.0
 # and salt dissociation), HOMO and Viscosity are secondary constraints, and
 # SA is a soft filter.
 
-SCORE_WEIGHT_LUMO: float = 0.23
+SCORE_WEIGHT_LUMO: float = 0.20
 """Weight for LUMO SEI-formation reward."""
 
-SCORE_WEIGHT_HOMO: float = 0.17
+SCORE_WEIGHT_HOMO: float = 0.15
 """Weight for HOMO oxidative-stability penalty."""
 
 SCORE_WEIGHT_DIELECTRIC: float = 0.17
@@ -121,9 +109,12 @@ SCORE_WEIGHT_DIELECTRIC: float = 0.17
 SCORE_WEIGHT_VISCOSITY: float = 0.10
 """Weight for viscosity (ion mobility) penalty."""
 
-SCORE_WEIGHT_LI_SOLVATION: float = 0.15
+SCORE_WEIGHT_LI_SOLVATION: float = 0.10
 """Weight for Li+ solvation energy proxy — penalises binding that is too tight
 (poor transference number) or too weak (poor conductivity)."""
+
+SCORE_WEIGHT_LI_BINDING: float = 0.10
+"""Weight for Li+ binding energy — rewards optimal coordination strength."""
 
 SCORE_WEIGHT_CED: float = 0.01
 """Weight for cohesive energy density (CED) proxy — SEI mechanical robustness."""
@@ -225,6 +216,15 @@ LI_SOLVATION_TARGET: float = 3.5
 
 LI_SOLVATION_SIGMA: float = 1.0
 """Gaussian width for Li+ solvation reward. sigma=1.0 rewards proxy in [2.5, 4.5]."""
+
+LI_BINDING_ENERGY_TARGET: float = -3.5
+"""Target Li+ binding energy (kcal/mol). Negative = stable binding."""
+
+LI_BINDING_ENERGY_SIGMA: float = 2.0
+"""Gaussian width for Li+ binding energy reward."""
+
+SCORE_WEIGHT_LI_BINDING: float = 0.10
+"""Weight for Li+ binding energy in the composite score."""
 
 # ---------------------------------------------------------------------------
 # Cohesive Energy Density (CED) Proxy Thresholds

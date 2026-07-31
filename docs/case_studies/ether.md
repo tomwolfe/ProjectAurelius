@@ -1,6 +1,6 @@
-# Ether Kernel — Certified Case Study
+# Ether Kernel — Case Study
 
-| Metric        | Before (Generic GC) | After (Certified Kernel) | Improvement |
+| Metric        | Before (Generic GC) | After (Tuned Kernel) | Improvement |
 |---------------|--------------------:|-------------------------:|------------:|
 | Spearman ρ    | 0.50                | 0.81                     | +62%        |
 | MAE           | 0.45                | 0.19                     | -58%        |

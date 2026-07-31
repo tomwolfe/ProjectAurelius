@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aurelius-engine"
-version = "10.1.0"
+version = "11.0.0"
 description = "Project Aurelius Discovery Engine - Open-core evolutionary algorithm screening pipeline with hybrid quantum/GC oracle and Gaussian penalty objective."
 readme = "README.md"
 license = {text = "MIT"}
@@ -26,6 +26,7 @@ ml = [
     "scikit-learn>=1.4.0",
     "joblib>=1.3.0",
     "scipy>=1.12.0",
+    "xgboost>=2.0.0",
 ]
 web = [
     "fastapi>=0.110.0",
@@ -33,11 +34,12 @@ web = [
     "diskcache>=5.6.0",
     "redis>=5.0.0",
     "jinja2>=3.1.0",
-    "stripe>=7.0.0",
-    "sqlalchemy>=2.0.0",
 ]
 all = [
-    "aurelius-engine[ml,web,dev,cli]",
+    "aurelius-engine[ml,web,dev,cli,mo]",
+]
+mo = [
+    "pymoo>=0.6.0",
 ]
 dev = [
     "aurelius-engine[cli,ml]",
