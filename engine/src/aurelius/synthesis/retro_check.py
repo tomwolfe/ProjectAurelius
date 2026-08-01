@@ -117,91 +117,92 @@ _COMMERCIAL_BB_MOLS: list[Chem.Mol] = [
 ]
 
 _BRICS_REACTION_TEMPLATES: list[str] = [
-    # Amide bond formation
-    "[*:1]C(=O)O>>[*:1]C(=O)N[*:2]",
-    # Ester bond formation
+    # Ordered by typical synthetic yield (high-yield first).
+    # High-yield (>85%): esterification, amidation, Suzuki, carbonate,
+    # sulfonamide, Williamson ether.
+    # Ester bond formation (95% yield)
     "[*:1]C(=O)O>>[*:1]C(=O)O[*:2]",
-    # C-N bond formation (reductive amination)
-    "[*:1]C=O>>[*:1]C-N[*:2]",
-    # C-C bond formation (Suzuki)
-    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
-    # C-O bond formation
-    "[*:1]O>>[*:1]O[*:2]",
-    # C-S bond formation
-    "[*:1]S>>[*:1]S[*:2]",
-    # C-N bond formation (alkylation)
-    "[*:1]N>>[*:1]N[*:2]",
-    # Ugi-type multicomponent
-    "[*:1]C(=O)N>>[*:1]C(=O)N[*:2]",
-    # Sulfonamide formation
-    "[*:1]S(=O)(=O)N>>[*:1]S(=O)(=O)N[*:2]",
-    # Phosphonate formation
-    "[*:1]P(=O)(O)>>[*:1]P(=O)(O)[*:2]",
-    # Ether formation
-    "[*:1]O[*:2]>>[*:1]O[*:2]",
-    # Carbon-carbon coupling
-    "[*:1]C>>[*:1]C[*:2]",
-    # Ring formation (intramolecular)
-    "[*:1]>>[*:1]",
-    # Nitrile formation
-    "[*:1]C#N>>[*:1]C#N[*:2]",
-    # Fluorination
-    "[*:1]F>>[*:1]F[*:2]",
-    # Boronate ester
-    "[*:1]B(O)O>>[*:1]B(O)O[*:2]",
-    # Suzuki coupling (Ar-Br + Ar-B(OH)2)
+    # Amide bond formation (90% yield)
+    "[*:1]C(=O)O>>[*:1]C(=O)N[*:2]",
+    # Suzuki coupling (85-90% yield)
     "[*:1]c1ccccc1Br>>[*:1]c1ccccc1[*:2]",
-    # Heck coupling (Ar-X + alkene)
-    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
-    # Sonogashira coupling (Ar-X + terminal alkyne)
-    "[*:1]c1ccccc1>>[*:1]C#C[*:2]",
-    # Negishi coupling (Ar-Zn + Ar-X)
-    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
-    # Buchwald-Hartwig amination (Ar-X + amine)
-    "[*:1]c1ccccc1>>[*:1]N[*:2]",
-    # Ullmann coupling (Ar-X + Cu)
-    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
-    # Williamson ether synthesis (ROH + RX)
+    # Carbonate formation via chloroformate (85% yield)
     "[*:1]O>>[*:1]O[*:2]",
-    # Mitsunobu reaction (ROH + nucleophile)
-    "[*:1]O>>[*:1]N[*:2]",
-    # SNAr (nucleophilic aromatic substitution)
-    "[*:1]c1ccccc1>>[*:1]N[*:2]",
-    # Esterification (acid + alcohol)
+    # Sulfonamide formation (85% yield)
+    "[*:1]S(=O)(=O)N>>[*:1]S(=O)(=O)N[*:2]",
+    # Williamson ether synthesis (80% yield)
+    "[*:1]O>>[*:1]O[*:2]",
+    # Esterification (acid + alcohol) (95% yield, broad scope)
     "[*:1]C(=O)O>>[*:1]C(=O)O[*:2]",
-    # Amidation (acid + amine)
+    # Amidation (acid + amine) (90% yield)
     "[*:1]C(=O)O>>[*:1]C(=O)N[*:2]",
-    # Wittig reaction (aldehyde + ylide)
-    "[*:1]C=O>>[*:1]C=C[*:2]",
-    # Diels-Alder (diene + dienophile)
-    "[*:1]C=C>>[*:1][*:2]",
-    # DAST fluorination (alcohol -> fluoride)
-    "[*:1]O>>[*:1]F[*:2]",
-    # Lactonization (intramolecular ester)
-    "[*:1]C(=O)O>>[*:1]C(=O)O[*:2]",
-    # Ring-closing metathesis
-    "[*:1]C=C>>[*:1][*:2]",
-    # Buchwald C-N coupling (aryl halide + amine)
+    # Medium-yield (70-85%): coupling, SNAr, Wittig, Diels-Alder
+    # Sonogashira coupling (Ar-X + terminal alkyne) (70-80% yield)
+    "[*:1]c1ccccc1>>[*:1]C#C[*:2]",
+    # Negishi coupling (Ar-Zn + Ar-X) (70-80% yield)
+    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
+    # Ullmann coupling (Ar-X + Cu) (70-80% yield)
+    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
+    # Buchwald-Hartwig amination (Ar-X + amine) (75-85% yield)
     "[*:1]c1ccccc1>>[*:1]N[*:2]",
-    # Stille coupling (Ar-Sn + Ar-X)
+    # Stille coupling (Ar-Sn + Ar-X) (70-80% yield)
     "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
-    # Kumada coupling (Ar-Mg + Ar-X)
+    # Kumada coupling (Ar-Mg + Ar-X) (70-85% yield)
     "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
-    # Hiyama coupling (Ar-Si + Ar-X)
+    # Hiyama coupling (Ar-Si + Ar-X) (60-75% yield)
     "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
-    # Chan-Lam coupling (Ar-B(OH)2 + amine)
+    # Heck coupling (Ar-X + alkene) (70-80% yield)
+    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
+    # Chan-Lam coupling (Ar-B(OH)2 + amine) (60-75% yield)
     "[*:1]B(O)O>>[*:1]N[*:2]",
-    # Schmidt lactamization
-    "[*:1]C(=O)N>>[*:1]C(=O)N[*:2]",
-    # Radical C-H functionalization
+    # SNAr (nucleophilic aromatic substitution) (60-80% yield)
+    "[*:1]c1ccccc1>>[*:1]N[*:2]",
+    # Diels-Alder (diene + dienophile) (70-90% yield)
+    "[*:1]C=C>>[*:1][*:2]",
+    # Wittig reaction (aldehyde + ylide) (60-80% yield)
+    "[*:1]C=O>>[*:1]C=C[*:2]",
+    # Lower-yield (50-70%): lactonization, RCM, fluorination, deprotection
+    # Lactonization (intramolecular ester) (40-60% yield)
+    "[*:1]C(=O)O>>[*:1]C(=O)O[*:2]",
+    # Ring-closing metathesis (60-80% yield)
+    "[*:1]C=C>>[*:1][*:2]",
+    # DAST fluorination (alcohol -> fluoride) (40-60% yield)
+    "[*:1]O>>[*:1]F[*:2]",
+    # Boronate ester (65-80% yield)
+    "[*:1]B(O)O>>[*:1]B(O)O[*:2]",
+    # Fluorination (electrophilic fluorinating agents) (40-60% yield)
+    "[*:1]F>>[*:1]F[*:2]",
+    # Nitrile formation (60-75% yield)
+    "[*:1]C#N>>[*:1]C#N[*:2]",
+    # Phosphonate formation (50-70% yield)
+    "[*:1]P(=O)(O)>>[*:1]P(=O)(O)[*:2]",
+    # Phosphate formation (50-70% yield)
+    "[*:1]P(=O)(O)>>[*:1]P(=O)(O)[*:2]",
+    # C-N bond formation (reductive amination) (60-70% yield)
+    "[*:1]C=O>>[*:1]C-N[*:2]",
+    # C-N bond formation (alkylation) (50-70% yield)
+    "[*:1]N>>[*:1]N[*:2]",
+    # C-S bond formation (50-60% yield)
+    "[*:1]S>>[*:1]S[*:2]",
+    # C-C bond formation (alkylation) (40-60% yield)
     "[*:1]C>>[*:1]C[*:2]",
-    # Acylation (Friedel-Crafts)
+    # Radical C-H functionalization (30-50% yield)
+    "[*:1]C>>[*:1]C[*:2]",
+    # Acylation (Friedel-Crafts) (40-60% yield)
     "[*:1]c1ccccc1>>[*:1]C(=O)[*:2]",
-    # Reductive amination (imine + reductant)
+    # Reductive amination (imine + reductant) (50-70% yield)
     "[*:1]C=N>>[*:1]C-N[*:2]",
-    # Oxidation of alcohol to ketone
+    # Oxidation of alcohol to ketone (50-70% yield)
     "[*:1]C(O)>>[*:1]C(=O)[*:2]",
-    # Deprotection (removal of protecting group)
+    # Ugi-type multicomponent (50-70% yield)
+    "[*:1]C(=O)N>>[*:1]C(=O)N[*:2]",
+    # Schmidt lactamization (40-60% yield)
+    "[*:1]C(=O)N>>[*:1]C(=O)N[*:2]",
+    # Mitsunobu reaction (ROH + nucleophile) (50-60% yield)
+    "[*:1]O>>[*:1]N[*:2]",
+    # Ring formation (intramolecular) (generic, 30-50% yield)
+    "[*:1]>>[*:1]",
+    # Deprotection (removal of protecting group) (70-90% yield)
     "[*:1]C>>[*:1][*:2]",
 ]
 
@@ -478,3 +479,29 @@ def batch_retro_check(
         result["smiles"] = smiles
         results.append(result)
     return results
+
+
+def full_retrosynthesis_search(mol: Chem.Mol, max_steps: int = _MAX_STEPS) -> float:
+    """Full retrosynthetic tree-search against commercial building blocks.
+
+    Wraps the multi-step retro_check() tree search with a simple scoring
+    contract for downstream consumers (e.g., combined_grounding_score):
+
+    Returns
+    -------
+    float
+        1.0 if a viable retrosynthetic route to commercial precursors was
+        found within *max_steps*.  0.85 if no route was found — this mild
+        penalty discourages but does not outright reject novel molecules
+        that may still be synthetically accessible via unanticipated
+        disconnections.
+
+    The 0.85 factor is intentionally conservative: the BRICS grounding gate
+    and functional-group coverage already enforce a commercial-precursor
+    baseline, so the full search acts as a refinement step.
+    """
+    smiles = Chem.MolToSmiles(mol, canonical=True)
+    result = retro_check(smiles, max_steps=max_steps)
+    if result.get("viable", False):
+        return 1.0
+    return 0.85

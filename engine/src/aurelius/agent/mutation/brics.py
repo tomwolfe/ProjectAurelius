@@ -432,7 +432,8 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
       1. Excessive BRICS disconnection depth (>2 steps)
       2. Hard cutoff at >3 synthetic steps
       3. Reaction-type uncommonality (connections requiring exotic chemistry)
-      4. Retrosynthetic reaction rule feasibility
+       4. Retrosynthetic reaction rule feasibility (SMARTS-based)
+       5. Full retrosynthesis tree search (graph-tree search to commercial precursors)
 
     Uses the maximum of the two coverage metrics so that a molecule with a
     novel BRICS scaffold but fully commercial functional groups is not unduly
@@ -454,9 +455,14 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
 
     Additionally, a retrosynthetic reaction rule check is performed. If none of
     the molecule's bond-forming motifs match a known high-yield reaction SMARTS
-    (weight >= 0.8), a mild penalty of 0.1x is applied. This prevents the EA
+    (weight >= 0.8), a mild penalty of 0.9x is applied. This prevents the EA
     from proposing molecules whose fragments are individually commercial but
     cannot be realistically coupled at scale.
+
+    A full retrosynthesis tree search (graph-tree search to commercial building
+    blocks within 3 steps) refines the lightweight SMARTS check. If no viable
+    route is found, a mild 0.85x penalty is applied rather than an outright
+    rejection, to avoid penalising novel molecules with unanticipated disconnections.
 
     Finally, the reaction-type commonality score penalizes molecules where
     the connections between fragments require exotic (non-ester, non-ether,
@@ -484,6 +490,17 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
     rx_score = check_retrosynthetic_feasibility(mol)
     if rx_score < 0.8:
         base *= 0.9
+
+    # Full retrosynthesis tree search — refines the lightweight SMARTS check
+    # above with a graph-tree search against commercial building blocks.
+    # A mild 0.85x penalty is applied when no route is found within
+    # _MAX_STEPS (default 3).  This discourages but does not outright reject
+    # novel molecules whose fragments are individually commercial but whose
+    # connectivity may require unanticipated disconnections.
+    from aurelius.synthesis.retro_check import full_retrosynthesis_search
+    retro_score = full_retrosynthesis_search(mol)
+    if retro_score < 1.0:
+        base *= retro_score
 
     # Reaction-type commonality penalty
     rx_common = _estimate_common_reaction_coverage(mol)

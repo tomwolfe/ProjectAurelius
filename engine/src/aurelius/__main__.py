@@ -27,7 +27,7 @@ from aurelius.types import MoleculeContext
 from aurelius.utils.dependencies import HAS_RDKIT
 
 
-def _make_pipeline(pack: str = "electrolyte", demo: bool = False) -> AureliusPipeline:
+def _make_pipeline(pack: str = "electrolyte", demo: bool = False, solvent: str | None = "ether") -> AureliusPipeline:
     """Create and initialize a pipeline."""
     from aurelius.scoring.oracle.gc import ElectrolytePack
     from aurelius.scoring.oracle.packs import OrganicElectronicsPack
@@ -35,7 +35,7 @@ def _make_pipeline(pack: str = "electrolyte", demo: bool = False) -> AureliusPip
         "electrolyte": ElectrolytePack(),
         "organic_electronics": OrganicElectronicsPack(),
     }
-    pipeline = AureliusPipeline(property_pack=pack_map[pack])
+    pipeline = AureliusPipeline(property_pack=pack_map[pack], solvent=solvent)
     pipeline.initialize()
     if demo:
         kernel = _load_demo_kernel()
@@ -225,9 +225,10 @@ def cli() -> None:
 
 @cli.command()
 @click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte")
-def init(pack: str) -> None:
+@click.option("--solvent", default="ether", help="Implicit solvation model for xTB (e.g. ether, carbonate, acetonitrile)")
+def init(pack: str, solvent: str) -> None:
     """Initialize the Aurelius v10.0 pipeline."""
-    _make_pipeline(pack=pack, demo=False)
+    _make_pipeline(pack=pack, demo=False, solvent=solvent)
     _echo_colored("\n[bold green]Pipeline initialized successfully.[/bold green]", style="green")
 
 
@@ -415,6 +416,7 @@ def _run_screen(
 @click.option("--json", "json_output", is_flag=True, default=False, help="Output raw JSON")
 @click.option("--report", is_flag=True, default=False, help="Generate and open HTML report")
 @click.option("--output", type=click.Path(), help="Save JSON/HTML output to file")
+@click.option("--solvent", default="ether", help="Implicit solvation model for xTB (e.g. ether, carbonate, acetonitrile)")
 def screen(
     smiles: str | None,
     pack: str,
@@ -423,12 +425,13 @@ def screen(
     json_output: bool,
     report: bool,
     output: str | None,
+    solvent: str,
 ) -> None:
     """Screen a molecule or file of molecules through the full Aurelius pipeline.
 
     Provide a single SMILES string or a path to a file (one SMILES per line).
     """
-    pipeline = _make_pipeline(pack=pack, demo=demo)
+    pipeline = _make_pipeline(pack=pack, demo=demo, solvent=solvent)
 
     if smiles is None and output is None:
         _echo_colored("[red]Error:[/red] SMILES argument or file input required.", style="bold red", err=True)
@@ -667,9 +670,10 @@ def _generate_report(pipeline: AureliusPipeline, smiles: str, output: str | None
 @click.argument("file", type=click.Path(exists=True))
 @click.option("--output", type=click.Path())
 @click.option("--pack", type=click.Choice(["electrolyte", "organic_electronics"]), default="electrolyte")
-def batch(file: str, output: str | None, pack: str) -> None:
+@click.option("--solvent", default="ether", help="Implicit solvation model for xTB (e.g. ether, carbonate, acetonitrile)")
+def batch(file: str, output: str | None, pack: str, solvent: str) -> None:
     """Screen multiple molecules from a SMILES file (one per line)."""
-    pipeline = _make_pipeline(pack=pack)
+    pipeline = _make_pipeline(pack=pack, solvent=solvent)
     smiles_list = []
     with open(file) as f:
         for line in f:
@@ -778,9 +782,10 @@ def _report_mixture_result(result: dict, label: str) -> None:
 @click.option("--smiles-c", type=str, default=None)
 @click.option("--frac-a", type=float, default=None)
 @click.option("--frac-b", type=float, default=None)
-def mixture_cmd(smiles_a: str, smiles_b: str, frac: float, smiles_c: str | None, frac_a: float | None, frac_b: float | None) -> None:
+@click.option("--solvent", default="ether", help="Implicit solvation model for xTB (e.g. ether, carbonate, acetonitrile)")
+def mixture_cmd(smiles_a: str, smiles_b: str, frac: float, smiles_c: str | None, frac_a: float | None, frac_b: float | None, solvent: str) -> None:
     """Screen a binary or ternary electrolyte mixture."""
-    pipeline = _make_pipeline()
+    pipeline = _make_pipeline(solvent=solvent)
     ctx_a, ctx_b = _validate_component_smiles(smiles_a, smiles_b)
 
     if smiles_c is not None:

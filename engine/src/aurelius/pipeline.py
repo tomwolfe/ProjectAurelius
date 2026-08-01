@@ -161,12 +161,14 @@ class AureliusPipeline:
         use_real_models: bool = True,
         property_pack: BasePropertyModel | None = None,
         kernel_loader: KernelLoader | None = None,
+        solvent: str | None = "ether",
     ) -> None:
         self._filter: Filter | None = None
         self._use_real_models = use_real_models
         self._oracle: PropertyOracle | None = None
         self._property_pack = property_pack
         self._kernel_loader: KernelLoader = kernel_loader or JSONKernelLoader()
+        self._solvent = solvent
 
     def initialize(self) -> None:
         """Initialise all pipeline components."""
@@ -180,7 +182,7 @@ class AureliusPipeline:
                 logger.warning("Tier 1 (Filter): DISABLED - %s", exc)
                 self._filter = None
 
-        self._oracle = PropertyOracle(property_pack=self._property_pack)
+        self._oracle = PropertyOracle(property_pack=self._property_pack, solvent=self._solvent)
         oracle_cache = "oracle_cache.joblib"
         if not self._oracle.load(oracle_cache):
             logger.info("Oracle (PropertyOracle): no cache found — using GC model directly.")
