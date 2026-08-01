@@ -291,6 +291,7 @@ class AureliusPipeline:
             viscosity_proxy = oracle_result.get("viscosity_proxy", 99.0)
             li_solvation_proxy = oracle_result.get("li_solvation_proxy", 0.0)
             li_dissociation_proxy = oracle_result.get("li_dissociation_proxy", 0.0)
+            li_binding_energy_kcal = oracle_result.get("li_binding_energy_kcal", 0.0)
             ced_proxy = oracle_result.get("ced_proxy", 0.0)
             hydrolysis_risk_proxy = oracle_result.get("hydrolysis_risk_proxy", 0.0)
 
@@ -326,6 +327,7 @@ class AureliusPipeline:
             dielectric_proxy=dielectric_proxy,
             viscosity_proxy=viscosity_proxy,
             li_solvation_proxy=li_solvation_proxy,
+            li_binding_energy_kcal=li_binding_energy_kcal,
             ced_proxy=ced_proxy,
             sei_fracture_toughness_proxy=sei_fracture_toughness_proxy,
             gas_evolution_proxy=gas_evolution_proxy,
@@ -385,6 +387,7 @@ class AureliusPipeline:
         dielectric_proxy: float = 0.0,
         viscosity_proxy: float = 99.0,
         li_solvation_proxy: float = 0.0,
+        li_binding_energy_kcal: float = 0.0,
         ced_proxy: float = 0.0,
         sei_fracture_toughness_proxy: float = 0.0,
         gas_evolution_proxy: float = 0.0,
@@ -397,6 +400,7 @@ class AureliusPipeline:
             dielectric_proxy=dielectric_proxy,
             viscosity_proxy=viscosity_proxy,
             li_solvation_proxy=li_solvation_proxy,
+            li_binding_energy_kcal=li_binding_energy_kcal,
             ced_proxy=ced_proxy,
             sei_fracture_toughness_proxy=sei_fracture_toughness_proxy,
             gas_evolution_proxy=gas_evolution_proxy,
