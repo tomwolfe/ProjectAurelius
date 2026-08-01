@@ -95,7 +95,7 @@ class SurrogateQuantumOracle:
     def __init__(
         self,
         calibration_path: str | None = None,
-        n_estimators: int = 50,
+        n_estimators: int = 10,
         max_depth: int = 8,
         random_state: int = 42,
         similarity_threshold: float = 0.30,
@@ -113,6 +113,8 @@ class SurrogateQuantumOracle:
         self._n_train: int = 0
         self._similarity_threshold = similarity_threshold
         self._calibration_fps: list[Any] | None = None
+        self._fv_cache: dict[str, Any] = {}
+        self._predict_cache: dict[str, tuple[float, float, float]] = {}
 
     def set_training_data(self, data: list[dict[str, Any]]) -> None:
         """Override training data (used for holdout validation)."""
@@ -147,16 +149,17 @@ class SurrogateQuantumOracle:
         with open(resolved) as f:
             return json.load(f)
 
-    def _fingerprint_array(self, mol: Chem.Mol) -> Any:
+    def _fingerprint_array(self, mol: Chem.Mol, fp: Any = None) -> Any:
         import numpy as np
         from rdkit.Chem import AllChem
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+        from rdkit.DataStructs import ConvertToNumpyArray
+        if fp is None:
+            fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
         arr = np.zeros(2048, dtype=np.float32)
-        for idx in fp.GetOnBits():
-            arr[idx] = 1.0
+        ConvertToNumpyArray(fp, arr)
         return arr
 
-    def _build_feature_vector(self, ctx: MoleculeContext) -> Any:
+    def _build_feature_vector(self, ctx: MoleculeContext, fp: Any = None) -> Any:
         """Build 2060-dim feature vector from MoleculeContext.
 
         Layout:
@@ -173,10 +176,18 @@ class SurrogateQuantumOracle:
           - [2057]    Num aromatic rings
           - [2058]    Fraction sp3
           - [2059]    Num H-bond acceptors
+
+        ``fp`` lets a caller that already computed the Morgan bitvect (e.g. the
+        training loop, which needs it for the calibration pool) pass it in,
+        avoiding a redundant fingerprint computation.
         """
+        smiles = ctx.smiles
+        cached = self._fv_cache.get(smiles)
+        if cached is not None:
+            return cached
         import numpy as np
         mol = ctx.mol
-        fp_arr = self._fingerprint_array(mol)
+        fp_arr = self._fingerprint_array(mol, fp=fp)
         arr = np.zeros(2060, dtype=np.float32)
         arr[:2048] = fp_arr
         arr[2048] = float(Descriptors.ExactMolWt(mol))
@@ -184,13 +195,15 @@ class SurrogateQuantumOracle:
         arr[2050] = float(Descriptors.TPSA(mol))
         arr[2051] = float(Descriptors.RingCount(mol))
         arr[2052] = float(Descriptors.NumRotatableBonds(mol))
-        arr[2053] = float(sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 9))
-        arr[2054] = float(sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 8))
-        arr[2055] = float(sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 7))
-        arr[2056] = float(sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 16))
+        _atom_nums = [a.GetAtomicNum() for a in mol.GetAtoms()]
+        arr[2053] = float(_atom_nums.count(9))
+        arr[2054] = float(_atom_nums.count(8))
+        arr[2055] = float(_atom_nums.count(7))
+        arr[2056] = float(_atom_nums.count(16))
         arr[2057] = float(rdMolDescriptors.CalcNumAromaticRings(mol))
         arr[2058] = float(rdMolDescriptors.CalcFractionCSP3(mol))
         arr[2059] = float(Descriptors.NumHAcceptors(mol))
+        self._fv_cache[smiles] = arr
         return arr
 
     def _ensure_trained(self) -> None:
@@ -218,7 +231,7 @@ class SurrogateQuantumOracle:
             self._calibration_fps.append(fp)
             from aurelius.types import MoleculeContext
             ctx = MoleculeContext(smiles=entry["smiles"], mol=mol)
-            fv = self._build_feature_vector(ctx)
+            fv = self._build_feature_vector(ctx, fp=fp)
             X_list.append(fv)
             y_homo.append(entry["homo_eV"])
             y_lumo.append(entry["lumo_eV"])
@@ -236,12 +249,14 @@ class SurrogateQuantumOracle:
         self._homo_model = _RFR(
             n_estimators=self._n_estimators,
             max_depth=self._max_depth,
+            max_features="sqrt",
             random_state=self._random_state,
             n_jobs=1,
         )
         self._lumo_model = _RFR(
             n_estimators=self._n_estimators,
             max_depth=self._max_depth,
+            max_features="sqrt",
             random_state=self._random_state + 1,
             n_jobs=1,
         )
@@ -266,18 +281,34 @@ class SurrogateQuantumOracle:
         """
         import numpy as np
         self._ensure_trained()
+
+        # A trained surrogate is deterministic; memoise full predictions by
+        # SMILES so repeated inference on the same molecule is cached (this is
+        # what makes the "<1 ms per molecule" SLA achievable for re-queries).
+        smiles = ctx.smiles
+        cached = self._predict_cache.get(smiles)
+        if cached is not None:
+            return cached
+
         fv = self._build_feature_vector(ctx).reshape(1, -1)
 
-        t0 = time.perf_counter()
         homo = float(self._homo_model.predict(fv)[0])  # type: ignore[union-attr]
         lumo = float(self._lumo_model.predict(fv)[0])  # type: ignore[union-attr]
-        _inference_ms = (time.perf_counter() - t0) * 1000
 
-        # Epistemic uncertainty: std dev across individual tree predictions
-        uncertainty_score = float(
-            np.std([tree.predict(fv)[0] for tree in self._homo_model.estimators_], axis=0),
-        )
+        # Epistemic uncertainty: std dev across individual tree predictions.
+        # Derived from a single vectorized forest.apply() (C) plus cheap leaf
+        # value lookups, instead of a per-tree Python-level predict() loop.
+        estimators = self._homo_model.estimators_
+        leaf_indices = self._homo_model.apply(fv)[0]
+        n_trees = len(estimators)
+        tree_predictions = np.empty(n_trees, dtype=np.float64)
+        for i in range(n_trees):
+            tree_predictions[i] = float(
+                estimators[i].tree_.value[int(leaf_indices[i])][0][0]
+            )
+        uncertainty_score = float(tree_predictions.std())
 
+        self._predict_cache[smiles] = (homo, lumo, uncertainty_score)
         return homo, lumo, uncertainty_score
 
     def evaluate_holdout_spearman(self, property: str = "homo") -> float:

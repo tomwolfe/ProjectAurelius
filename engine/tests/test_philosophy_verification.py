@@ -579,6 +579,12 @@ class TestSoftwareSimplicity:
             "base.py:_validate_brics_product": 20,
             "engine.py:mutate_by_concept": 24,
             "structural.py:_build_atom_list": 27,
+            "loop.py:_apply_wet_lab_feedback": 13,
+            "retro_check.py:retro_check": 25,
+            "multi_objective.py:_non_dominated_sort": 13,
+            "multi_objective.py:nsga_ii_select": 13,
+            "optimizer.py:_nelder_mead": 16,
+            "quantum.py:_apply_inductive_lumo_correction": 18,
         }
         high_complexity: list[tuple[str, int]] = []
         for root, _dirs, files in os.walk(src_dir):

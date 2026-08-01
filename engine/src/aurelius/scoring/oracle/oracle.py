@@ -51,6 +51,24 @@ from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
 
+# Property-pack proxy keys. ``_assemble_result`` materialises the electrolyte
+# defaults; ``evaluate`` replaces this set with exactly what the active pack
+# returns so pack-specific proxies (e.g. OrganicElectronicsPack) are surfaced
+# and absent electrolyte proxies are not leaked as 0.0 placeholders.
+_GC_PROXY_KEYS: frozenset[str] = frozenset(
+    {
+        "dielectric_proxy",
+        "viscosity_proxy",
+        "li_solvation_proxy",
+        "ced_proxy",
+        "conductivity_proxy",
+        "li_dissociation_proxy",
+        "hydrolysis_risk_proxy",
+        "hole_mobility_proxy",
+        "electron_affinity_proxy",
+    }
+)
+
 
 def _evaluate_sei_motif(ctx: MoleculeContext, lumo: float) -> tuple[float, str]:
     """Check if a molecule has known stable SEI-forming motifs.
@@ -470,10 +488,11 @@ class PropertyOracle:
         Bundles GC property prediction and uncertainty quantification.
         Returns a ``GcEvaluation`` NamedTuple.
         """
-        gc_props = self._compute_gc_properties(ctx)
+        gc = self._compute_gc_properties(ctx)
+        gc_props_dict = gc.gc_props if hasattr(gc, "gc_props") else dict(gc)
         uq_penalty, diel_std, visc_std = self._compute_uq_penalty(ctx)
         return GcEvaluation(
-            gc_props=gc_props.gc_props,
+            gc_props=gc_props_dict,
             uq_penalty=uq_penalty,
             diel_std=diel_std,
             visc_std=visc_std,
@@ -584,17 +603,30 @@ class PropertyOracle:
                 self._cache[key] = cached
                 return cached
 
-        q = self._evaluate_quantum(ctx)
-        g = self._evaluate_gc(ctx)
+        surrogate_penalty, s_homo, s_lumo, skip_quantum = self._run_surrogate(ctx)
+        (
+            homo,
+            lumo,
+            gap,
+            quantum_method,
+            quantum_confidence_val,
+            li_binding_energy_kcal,
+            cluster_homo_eV,
+            cluster_lumo_eV,
+        ) = self._compute_quantum(
+            ctx, skip_quantum=skip_quantum, s_homo=s_homo, s_lumo=s_lumo,
+        )
+        uq_penalty, diel_std, visc_std = self._compute_uq_penalty(ctx)
+        gc = self._compute_gc_properties(ctx)
+        gc_props = gc.gc_props if hasattr(gc, "gc_props") else dict(gc)
         domain_penalty, domain_reason_str, domain_applicable = self._build_domain(
-            ctx, q.skip_quantum, q.surrogate_penalty, q.s_homo, g.uq_penalty,
+            ctx, skip_quantum, surrogate_penalty, s_homo, uq_penalty,
         )
-        sei_result = self._apply_sei_penalty(
-            ctx, q.lumo_eV, domain_penalty, domain_reason_str,
+        sei_penalty, sei_reason, domain_applicable = self._apply_sei_penalty(
+            ctx, lumo, domain_penalty, domain_reason_str,
         )
-        domain_penalty = sei_result.sei_penalty
-        domain_reason_str = sei_result.sei_reason
-        domain_applicable = sei_result.domain_applicable
+        domain_penalty = sei_penalty
+        domain_reason_str = sei_reason
 
         if domain_penalty < 0.85:
             logger.warning(
@@ -605,30 +637,36 @@ class PropertyOracle:
             )
 
         result = self._assemble_result(
-            homo=q.homo_eV,
-            lumo=q.lumo_eV,
-            gap=q.gap_eV,
+            homo=homo,
+            lumo=lumo,
+            gap=gap,
             domain_penalty=domain_penalty,
             domain_reason_str=domain_reason_str,
             domain_applicable=domain_applicable,
-            quantum_method=q.quantum_method,
-            quantum_confidence_val=q.quantum_confidence_val,
-            skip_quantum=q.skip_quantum,
-            diel_std=g.diel_std,
-            visc_std=g.visc_std,
-            dielectric=g.gc_props.get("dielectric_proxy", 0.0),
-            viscosity=g.gc_props.get("viscosity_proxy", 0.0),
-            li_solvation=g.gc_props.get("li_solvation_proxy", 0.0),
-            ced=g.gc_props.get("ced_proxy", 0.0),
-            li_dissociation=g.gc_props.get("li_dissociation_proxy", 0.0),
-            hydrolysis_risk=g.gc_props.get("hydrolysis_risk_proxy", 0.0),
-            li_binding_energy_kcal=q.li_binding_energy_kcal,
-            cluster_homo_eV=q.cluster_homo_eV,
-            cluster_lumo_eV=q.cluster_lumo_eV,
+            quantum_method=quantum_method,
+            quantum_confidence_val=quantum_confidence_val,
+            skip_quantum=skip_quantum,
+            diel_std=diel_std,
+            visc_std=visc_std,
+            dielectric=gc_props.get("dielectric_proxy", 0.0),
+            viscosity=gc_props.get("viscosity_proxy", 0.0),
+            li_solvation=gc_props.get("li_solvation_proxy", 0.0),
+            ced=gc_props.get("ced_proxy", 0.0),
+            li_dissociation=gc_props.get("li_dissociation_proxy", 0.0),
+            hydrolysis_risk=gc_props.get("hydrolysis_risk_proxy", 0.0),
+            li_binding_energy_kcal=li_binding_energy_kcal,
+            cluster_homo_eV=cluster_homo_eV,
+            cluster_lumo_eV=cluster_lumo_eV,
         )
-        self._cache[key] = result._asdict()
-        self._disk_cache[key] = result._asdict()
-        return result._asdict()
+        result_dict = result._asdict() if hasattr(result, "_asdict") else dict(result)
+        for _proxy_key in _GC_PROXY_KEYS:
+            result_dict.pop(_proxy_key, None)
+        result_dict.update(gc_props)
+        if not self._use_surrogate:
+            result_dict.pop("surrogate_skipped", None)
+        self._cache[key] = result_dict
+        self._disk_cache[key] = result_dict
+        return result_dict
 
     def evaluate_smiles(self, smiles: str) -> dict[str, Any]:
         ctx = MoleculeContext.from_smiles(smiles)

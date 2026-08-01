@@ -197,25 +197,29 @@ async def screen(request: ScreenRequest) -> dict[str, Any]:
     dependencies=[Depends(verify_api_key), Depends(RateLimiter(10))],
 )
 async def batch(request: BatchRequest) -> list[dict[str, Any]]:
+    """Screen multiple SMILES strings, one at a time.
+
+    Each molecule is screened via ``screen_smiles`` (single-point
+    ``MoleculeContext`` parsing inside the pipeline). Per-item failures are
+    captured as ``{"is_viable": False, "error": ...}`` entries rather than
+    aborting the whole batch, so a single bad SMILES does not discard valid
+    results for the rest of the batch.
+    """
     pipeline = _get_pipeline()
-    contexts = []
-    for smi in request.smiles:
-        from aurelius.types import MoleculeContext
-        ctx = MoleculeContext.from_smiles(smi)
-        if ctx is None:
-            contexts.append(None)
-        else:
-            contexts.append(ctx)
-
-    results = pipeline.screen_batch(contexts, n_workers=4)
-
     output: list[dict[str, Any]] = []
-    for ctx, result in zip(contexts, results, strict=False):
-        smi = ctx.smiles if ctx is not None else ""
-        if isinstance(result, Exception):
+    for smi in request.smiles:
+        try:
+            result = pipeline.screen_smiles(smi)
+        except (ValueError, TypeError) as exc:
             output.append({
                 "molecule_smiles": smi,
-                "error": str(result),
+                "error": str(exc),
+                "is_viable": False,
+            })
+        except Exception as exc:
+            output.append({
+                "molecule_smiles": smi,
+                "error": str(exc),
                 "is_viable": False,
             })
         else:

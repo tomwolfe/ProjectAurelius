@@ -38,9 +38,37 @@ def oracle() -> PropertyOracle:
 
 
 def _ctx(smiles: str) -> MoleculeContext:
+    """Parse SMILES into a MoleculeContext, asserting validity."""
     ctx = MoleculeContext.from_smiles(smiles)
     assert ctx is not None, f"Failed to parse SMILES: {smiles}"
     return ctx
+
+
+def test_oracle_evaluate_returns_all_orbital_keys(oracle: PropertyOracle):
+    """Regression (Step 2): the KeyError on 'li_binding_energy_kcal' is fixed."""
+    ctx = _ctx("C1COC(=O)O1")
+    assert ctx is not None
+    result = oracle.evaluate(ctx)
+    assert "li_binding_energy_kcal" in result
+    assert isinstance(result["li_binding_energy_kcal"], (int, float))
+    assert "homo_eV" in result
+    assert "lumo_eV" in result
+    assert "dielectric_proxy" in result
+
+
+def test_oracle_evaluate_contains_li_binding_energy_kcal(oracle: PropertyOracle):
+    """Regression (Step 2): oracle.evaluate() must always surface li_binding_energy_kcal.
+
+    Previously the key was absent under the TOM fallback, raising a KeyError
+    downstream in the multi-objective scorer (issue #42). The oracle now
+    guarantees the key is present (0.0 when xTB is unavailable) so callers can
+    use ``result.get("li_binding_energy_kcal", 0.0)`` safely.
+    """
+    ctx = _ctx("C1COC(=O)O1")
+    assert ctx is not None
+    result = oracle.evaluate(ctx)
+    assert "li_binding_energy_kcal" in result
+    assert isinstance(result["li_binding_energy_kcal"], (int, float))
 
 
 def test_oracle_data_source_is_hybrid(oracle: PropertyOracle) -> None:
