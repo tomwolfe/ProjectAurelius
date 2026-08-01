@@ -713,6 +713,159 @@ def _apply_steric_crowding_penalty(mol: Chem.Mol, L: int, homo: float, lumo: flo
     return homo, lumo
 
 
+# Hammett σ* (sigma-star) inductive constants for electron-withdrawing
+# substituents. These quantify the through-bond inductive effect on
+# adjacent π-systems. Negative values indicate electron withdrawal,
+# which stabilises (lowers) orbital energies.
+_INDUCTIVE_SIGMA_STAR: dict[str, float] = {
+    "F": -0.34,
+    "CF3": -0.43,
+    "CN": -0.36,
+    "NO2": -0.49,
+    "SO2R": -0.30,
+}
+
+_SENSITIVITY_FACTOR: float = 0.15  # eV per σ* unit, per bond from conjugated system
+_MAX_INDUCTIVE_BONDS: int = 3
+
+
+def _apply_inductive_lumo_correction(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
+    """Apply through-bond inductive LUMO correction using Hammett σ* constants.
+
+    Physical basis: Electron-withdrawing substituents within 3 bonds of the
+    conjugated system lower the LUMO energy through inductive electron withdrawal.
+    The effect decays with distance: each bond away from the conjugated system
+    reduces the perturbation by a factor of ~0.5.
+
+    Uses Hammett σ* constants for EW substituents:
+      F (-0.34), CF₃ (-0.43), CN (-0.36), NO₂ (-0.49), SO₂R (-0.30).
+
+    The correction is applied to the LUMO only (HOMO is less sensitive to
+    inductive effects from EW groups in typical electrolyte fragments).
+    """
+    if L < 2:
+        return homo, lumo
+
+    # Find the conjugated system atoms
+    conjugated_atoms: set[int] = set()
+    for bond in mol.GetBonds():
+        if bond.GetIsConjugated():
+            conjugated_atoms.add(bond.GetBeginAtomIdx())
+            conjugated_atoms.add(bond.GetEndAtomIdx())
+
+    if not conjugated_atoms:
+        return homo, lumo
+
+    total_shift = 0.0
+    for atom_idx in range(mol.GetNumAtoms()):
+        if atom_idx in conjugated_atoms:
+            continue
+        atom = mol.GetAtomWithIdx(atom_idx)
+        symbol = atom.GetSymbol()
+        if symbol not in _INDUCTIVE_SIGMA_STAR:
+            # Check for CF3 (trifluoromethyl) as a group
+            if atom.GetAtomicNum() == 6 and atom.GetDegree() == 4:
+                n_f = sum(1 for nb in atom.GetNeighbors() if nb.GetAtomicNum() == 9)
+                if n_f == 3:
+                    symbol = "CF3"
+                elif n_f == 2:
+                    symbol = "CF2"
+                elif n_f == 1:
+                    symbol = "CF"
+            else:
+                continue
+
+        if symbol not in _INDUCTIVE_SIGMA_STAR:
+            continue
+
+        # Compute shortest bond distance to conjugated system
+        min_dist = _shortest_bond_distance(mol, atom_idx, conjugated_atoms)
+        if min_dist is None or min_dist > _MAX_INDUCTIVE_BONDS:
+            continue
+
+        # Attenuation factor: effect decays with distance
+        attenuation = 1.0 / (2 ** (min_dist - 1))
+        sigma_star = _INDUCTIVE_SIGMA_STAR[symbol]
+        total_shift += sigma_star * attenuation * _SENSITIVITY_FACTOR
+
+    # EW groups (negative σ*) lower the LUMO
+    lumo += total_shift
+    return homo, lumo
+
+
+def _shortest_bond_distance(
+    mol: Chem.Mol,
+    target: int,
+    sources: set[int],
+) -> int | None:
+    """Compute shortest bond-step distance from target atom to any source atom."""
+    from rdkit.Chem import rdmolops
+
+    dist_matrix = rdmolops.GetDistanceMatrix(mol)
+    min_dist = None
+    for src in sources:
+        d = int(dist_matrix[target][src])
+        if min_dist is None or d < min_dist:
+            min_dist = d
+    return min_dist
+
+
+def _apply_nonplanarity_gap_correction(
+    mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any
+) -> tuple[float, float]:
+    """Apply nonplanarity gap correction for distorted conjugated systems.
+
+    Physical basis: The particle-in-a-box gap (ΔE ∝ 1/L²) assumes a
+    perfectly planar conjugated system. When the conjugated path is twisted
+    out of planarity, the effective orbital overlap decreases, widening the gap.
+
+    Generates a UFF-optimized conformer, measures the maximum dihedral
+    deviation along the conjugated path, and applies:
+        ΔE_gap += 0.02 × (θ_max - 30)²  for θ_max > 30°
+
+    This correction widens the HOMO-LUMO gap (increases LUMO, decreases HOMO)
+    for nonplanar conjugated systems, which is physically correct:
+    torsional disorder reduces conjugation and increases the gap.
+    """
+    if L < 3:
+        return homo, lumo
+
+    from rdkit.Chem import AllChem
+
+    mol_copy = Chem.RWMol(mol)
+    mol_copy.UpdatePropertyCache()
+    try:
+        mol_copy = Chem.AddHs(mol_copy)
+        params = AllChem.ETKDGv3()
+        params.randomSeed = 42
+        result = AllChem.EmbedMolecule(mol_copy, params)
+        if result != 0:
+            return homo, lumo
+        AllChem.UFFOptimizeMolecule(mol_copy, maxIters=500)
+        conf = mol_copy.GetConformer()
+    except Exception:
+        return homo, lumo
+
+    # Find conjugated bonds and measure their dihedral deviations
+    max_deviation = 0.0
+    for bond in mol.GetBonds():
+        if not bond.GetIsConjugated():
+            continue
+        deviation = _conjugated_bond_deviation(mol, conf, bond.GetBeginAtomIdx(), bond.GetEndAtomIdx())
+        if deviation is not None and deviation > max_deviation:
+            max_deviation = deviation
+
+    if max_deviation <= 30.0:
+        return homo, lumo
+
+    # Apply quadratic penalty for nonplanarity
+    penalty = 0.02 * (max_deviation - 30.0) ** 2
+    homo -= penalty * 0.5  # HOMO destabilised slightly less
+    lumo += penalty * 0.5  # LUMO stabilised slightly less (gap widens)
+
+    return homo, lumo
+
+
 def _evaluate_tom_single_conformer(
     mol: Chem.Mol, xyz_content: str | None = None,
     use_geometry_correction: bool = False,

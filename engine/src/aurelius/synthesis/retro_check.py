@@ -112,6 +112,10 @@ _COMMERCIAL_BUILDING_BLOCKS: list[str] = [
     "c1ccc(C(C)=O)cc1",
 ]
 
+_COMMERCIAL_BB_MOLS: list[Chem.Mol] = [
+    Chem.MolFromSmiles(s) for s in _COMMERCIAL_BUILDING_BLOCKS
+]
+
 _BRICS_REACTION_TEMPLATES: list[str] = [
     # Amide bond formation
     "[*:1]C(=O)O>>[*:1]C(=O)N[*:2]",
@@ -145,7 +149,85 @@ _BRICS_REACTION_TEMPLATES: list[str] = [
     "[*:1]F>>[*:1]F[*:2]",
     # Boronate ester
     "[*:1]B(O)O>>[*:1]B(O)O[*:2]",
+    # Suzuki coupling (Ar-Br + Ar-B(OH)2)
+    "[*:1]c1ccccc1Br>>[*:1]c1ccccc1[*:2]",
+    # Heck coupling (Ar-X + alkene)
+    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
+    # Sonogashira coupling (Ar-X + terminal alkyne)
+    "[*:1]c1ccccc1>>[*:1]C#C[*:2]",
+    # Negishi coupling (Ar-Zn + Ar-X)
+    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
+    # Buchwald-Hartwig amination (Ar-X + amine)
+    "[*:1]c1ccccc1>>[*:1]N[*:2]",
+    # Ullmann coupling (Ar-X + Cu)
+    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
+    # Williamson ether synthesis (ROH + RX)
+    "[*:1]O>>[*:1]O[*:2]",
+    # Mitsunobu reaction (ROH + nucleophile)
+    "[*:1]O>>[*:1]N[*:2]",
+    # SNAr (nucleophilic aromatic substitution)
+    "[*:1]c1ccccc1>>[*:1]N[*:2]",
+    # Esterification (acid + alcohol)
+    "[*:1]C(=O)O>>[*:1]C(=O)O[*:2]",
+    # Amidation (acid + amine)
+    "[*:1]C(=O)O>>[*:1]C(=O)N[*:2]",
+    # Wittig reaction (aldehyde + ylide)
+    "[*:1]C=O>>[*:1]C=C[*:2]",
+    # Diels-Alder (diene + dienophile)
+    "[*:1]C=C>>[*:1][*:2]",
+    # DAST fluorination (alcohol -> fluoride)
+    "[*:1]O>>[*:1]F[*:2]",
+    # Lactonization (intramolecular ester)
+    "[*:1]C(=O)O>>[*:1]C(=O)O[*:2]",
+    # Ring-closing metathesis
+    "[*:1]C=C>>[*:1][*:2]",
+    # Buchwald C-N coupling (aryl halide + amine)
+    "[*:1]c1ccccc1>>[*:1]N[*:2]",
+    # Stille coupling (Ar-Sn + Ar-X)
+    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
+    # Kumada coupling (Ar-Mg + Ar-X)
+    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
+    # Hiyama coupling (Ar-Si + Ar-X)
+    "[*:1]c1ccccc1>>[*:1]c1ccccc1[*:2]",
+    # Chan-Lam coupling (Ar-B(OH)2 + amine)
+    "[*:1]B(O)O>>[*:1]N[*:2]",
+    # Schmidt lactamization
+    "[*:1]C(=O)N>>[*:1]C(=O)N[*:2]",
+    # Radical C-H functionalization
+    "[*:1]C>>[*:1]C[*:2]",
+    # Acylation (Friedel-Crafts)
+    "[*:1]c1ccccc1>>[*:1]C(=O)[*:2]",
+    # Reductive amination (imine + reductant)
+    "[*:1]C=N>>[*:1]C-N[*:2]",
+    # Oxidation of alcohol to ketone
+    "[*:1]C(O)>>[*:1]C(=O)[*:2]",
+    # Deprotection (removal of protecting group)
+    "[*:1]C>>[*:1][*:2]",
 ]
+
+
+def _estimate_step_economy(smiles: str) -> int:
+    """Estimate synthetic step economy (1-10 scale).
+
+    Returns a value from 1 (highly efficient, few steps) to
+    10 (complex synthesis requiring many steps). The estimate
+    is based on molecular complexity metrics: number of rings,
+    stereocenters, and heavy atoms.
+
+    Returns:
+        int in range [1, 10]
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return 10
+    n_heavy = mol.GetNumHeavyAtoms()
+    n_rings = mol.GetRingInfo().NumRings()
+    n_stereo = len(Chem.FindMolChiralCenters(mol, includeUnassigned=True))
+    score = 1
+    score += min(n_heavy / 20, 3)
+    score += min(n_rings, 3)
+    score += min(n_stereo, 2)
+    return max(1, min(10, int(score)))
 
 
 def _parse_template(template: str) -> rdChemReactions.Reaction:
@@ -192,8 +274,7 @@ def _is_commercial_building_block(smiles: str) -> bool:
     if mol is None:
         return False
 
-    for bb_smiles in _COMMERCIAL_BUILDING_BLOCKS:
-        bb_mol = Chem.MolFromSmiles(bb_smiles)
+    for bb_mol in _COMMERCIAL_BB_MOLS:
         if bb_mol is None:
             continue
         try:
@@ -374,7 +455,7 @@ def _estimate_sa_score(smiles: str) -> float:
     sa += len(n_stereo) * 0.3
 
     # Penalty for rotatable bonds (flexibility)
-    sa += n_rotable * 0.05
+    sa += n_rotatable * 0.05
 
     # Check for exotic elements
     exotic = sum(

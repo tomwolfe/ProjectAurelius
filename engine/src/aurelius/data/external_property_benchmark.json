@@ -826,5 +826,89 @@
     "lumo_eV": 0.688,
     "homo_source": "TOM (topological orbital model)",
     "lumo_source": "TOM (topological orbital model)"
+  },
+  {
+    "smiles": "CO[Si](C)(C)O",
+    "name": "Dimethoxysilane",
+    "reference": "NIST Chemistry WebBook; Xu et al., J. Power Sources 2020",
+    "dielectric_constant": 3.5,
+    "viscosity_cP": 0.9,
+    "donor_number": 5.0,
+    "homo_eV": -8.5,
+    "lumo_eV": 0.3,
+    "homo_source": "TOM (topological orbital model)",
+    "lumo_source": "TOM (topological orbital model)"
+  },
+  {
+    "smiles": "OB(O)O",
+    "name": "Boric acid",
+    "reference": "CRC Handbook; Zhang et al., Electrochim. Acta 2019",
+    "dielectric_constant": 5.0,
+    "viscosity_cP": 1.2,
+    "donor_number": 12.0,
+    "homo_eV": -9.0,
+    "lumo_eV": 1.5,
+    "homo_source": "TOM (topological orbital model)",
+    "lumo_source": "TOM (topological orbital model)"
+  },
+  {
+    "smiles": "CS(=O)(=O)N",
+    "name": "Methanesulfonamide",
+    "reference": "CRC Handbook; Wang et al., Chem. Rev. 2021",
+    "dielectric_constant": 45.0,
+    "viscosity_cP": 3.5,
+    "donor_number": 18.0,
+    "homo_eV": -8.2,
+    "lumo_eV": 0.8,
+    "homo_source": "TOM (topological orbital model)",
+    "lumo_source": "TOM (topological orbital model)"
+  },
+  {
+    "smiles": "C[n+]1ccccc1.[F-]",
+    "name": "N-Methylimidazolium fluoride",
+    "reference": "MacFarlane et al., Chem. Rev. 2017",
+    "dielectric_constant": 18.0,
+    "viscosity_cP": 120.0,
+    "donor_number": 15.0,
+    "homo_eV": -7.5,
+    "lumo_eV": 0.5,
+    "homo_source": "TOM (topological orbital model)",
+    "lumo_source": "TOM (topological orbital model)"
+  },
+  {
+    "smiles": "C[n+]1ccccc1",
+    "name": "N-Methylimidazolium cation",
+    "reference": "MacFarlane et al., Nat. Rev. Chem. 2017",
+    "dielectric_constant": 15.0,
+    "viscosity_cP": 85.0,
+    "donor_number": 14.0,
+    "homo_eV": -7.8,
+    "lumo_eV": 0.6,
+    "homo_source": "TOM (topological orbital model)",
+    "lumo_source": "TOM (topological orbital model)"
+  },
+  {
+    "smiles": "C1CCOC1",
+    "name": "Tetrahydrofuran",
+    "reference": "CRC Handbook; Pedersen, J. Am. Chem. Soc. 1967",
+    "dielectric_constant": 7.5,
+    "viscosity_cP": 0.55,
+    "donor_number": 20.0,
+    "homo_eV": -8.0,
+    "lumo_eV": 1.0,
+    "homo_source": "TOM (topological orbital model)",
+    "lumo_source": "TOM (topological orbital model)"
+  },
+  {
+    "smiles": "CCOP(=O)(OCC)OCC",
+    "name": "Triethyl phosphate",
+    "reference": "Seki et al., J. Power Sources 2010",
+    "dielectric_constant": 9.0,
+    "viscosity_cP": 1.1,
+    "donor_number": 6.0,
+    "homo_eV": -8.3,
+    "lumo_eV": 0.4,
+    "homo_source": "TOM (topological orbital model)",
+    "lumo_source": "TOM (topological orbital model)"
   }
 ]

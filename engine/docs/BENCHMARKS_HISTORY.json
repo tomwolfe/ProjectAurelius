@@ -1,0 +1,104 @@
+{
+  "runs": [
+    {
+      "timestamp": "2026-08-01T00:02:21.841563+00:00",
+      "properties": {
+        "dielectric_constant": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "viscosity_cP": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "donor_number": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "homo_eV": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "lumo_eV": {
+          "rho": 0.0,
+          "n": 0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-08-01T00:16:22.596887+00:00",
+      "properties": {
+        "dielectric_constant": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "viscosity_cP": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "donor_number": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "homo_eV": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "lumo_eV": {
+          "rho": 0.0,
+          "n": 0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-08-01T00:24:27.790070+00:00",
+      "properties": {
+        "dielectric_constant": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "viscosity_cP": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "donor_number": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "homo_eV": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "lumo_eV": {
+          "rho": 0.0,
+          "n": 0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-08-01T00:25:57.286731+00:00",
+      "properties": {
+        "dielectric_constant": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "viscosity_cP": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "donor_number": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "homo_eV": {
+          "rho": 0.0,
+          "n": 0
+        },
+        "lumo_eV": {
+          "rho": 0.0,
+          "n": 0
+        }
+      }
+    }
+  ]
+}

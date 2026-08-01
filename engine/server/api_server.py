@@ -21,6 +21,7 @@ import time
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -197,15 +198,26 @@ async def screen(request: ScreenRequest) -> dict[str, Any]:
 )
 async def batch(request: BatchRequest) -> list[dict[str, Any]]:
     pipeline = _get_pipeline()
-    results: list[dict[str, Any]] = []
+    contexts = []
     for smi in request.smiles:
-        try:
-            result = pipeline.screen_smiles(smi)
-            results.append(result)
-        except Exception as exc:
-            results.append({
+        from aurelius.types import MoleculeContext
+        ctx = MoleculeContext.from_smiles(smi)
+        if ctx is None:
+            contexts.append(None)
+        else:
+            contexts.append(ctx)
+
+    results = pipeline.screen_batch(contexts, n_workers=4)
+
+    output: list[dict[str, Any]] = []
+    for ctx, result in zip(contexts, results, strict=False):
+        smi = ctx.smiles if ctx is not None else ""
+        if isinstance(result, Exception):
+            output.append({
                 "molecule_smiles": smi,
-                "error": str(exc),
+                "error": str(result),
                 "is_viable": False,
             })
-    return results
+        else:
+            output.append(result)
+    return output

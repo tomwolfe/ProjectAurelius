@@ -1,18 +1,5 @@
 [
-  "COCCOCOC(=O)OCC#N",
-  "COC(=O)OCOCCOC(F)(F)F",
-  "CCCS(=O)(=O)F",
-  "O=S(=O)(F)F",
-  "COCOCCOC(C)C#N",
-  "COCCOCS(=O)(=O)F",
-  "COCOCCOC(F)(F)C#N",
-  "CCC(F)(F)OC(=O)OCOC",
-  "CS(=O)(=O)C(COCC#N)OC(F)(F)F",
-  "CCOC(=O)OCOCCOC(F)(F)F",
-  "COC(=O)OCOCCC(C)(F)F",
-  "COC(=O)OCOCC(F)(F)OC(F)(F)F",
-  "N#CCOC(=O)OCS(=O)(=O)F",
-  "COCC(OCOC(=O)OCC#N)S(=O)(=O)F",
-  "COCCOCCOCOC(=O)OC",
-  "COCOC(=O)OCCCS(=O)(=O)F"
+  "COCOC(=O)OC",
+  "COC(=O)OCOF",
+  "COCOC(=O)OF"
 ]

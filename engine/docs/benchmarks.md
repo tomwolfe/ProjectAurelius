@@ -8,11 +8,11 @@
 
 | Property | Spearman ρ | Threshold | Pass/Fail | Trend |
 |----------|-----------:|:----------|:----------|:------|
-| Dielectric ε | +0.7329 | ρ > 0.5 | ✅ Pass | — |
-| Viscosity η | +0.6202 | ρ > 0.5 | ✅ Pass | — |
-| Donor Number | +0.6892 | ρ > 0.5 | ✅ Pass | — |
-| HOMO | +0.8537 | ρ > 0.5 | ✅ Pass | — |
-| LUMO | +0.5337 | ρ > 0.5 | ✅ Pass | — |
+| Dielectric ε | N/A (n=0) | ρ > 0.5 | ⚠ Insufficient | — |
+| Viscosity η | N/A (n=0) | ρ > 0.5 | ⚠ Insufficient | — |
+| Donor Number | N/A (n=0) | ρ > 0.5 | ⚠ Insufficient | — |
+| HOMO | N/A (n=0) | ρ > 0.5 | ⚠ Insufficient | — |
+| LUMO | N/A (n=0) | ρ > 0.5 | ⚠ Insufficient | — |
 
 
 ### External Property Validation — Raw Output
@@ -24,64 +24,149 @@
   Compares Aurelius oracle predictions against published experimental
   values for common electrolyte solvents.
 
-  Benchmark molecules: 69
+  Benchmark molecules: 76
 
-  Skipped: 7
+  SKIP 1,2-Bis(ethylsulfonyl)ethane: oracle error — 'li_binding_energy_kcal'
+  SKIP 1,2-Butylene carbonate: oracle error — 'li_binding_energy_kcal'
+  SKIP 1,4-Butane sultone: oracle error — 'li_binding_energy_kcal'
+  SKIP 1,4-Dioxane: oracle error — 'li_binding_energy_kcal'
+  SKIP 2,2,2-Trifluoroethyl ethyl ether: oracle error — 'li_binding_energy_kcal'
+  SKIP 2,2,2-Trifluoroethyl methyl sulfone: oracle error — 'li_binding_energy_kcal'
+  SKIP 2,2,3,3,3-Pentafluoropropyl methyl ether: oracle error — 'li_binding_energy_kcal'
+  SKIP 2-Methyltetrahydrofuran (2-MeTHF): oracle error — 'li_binding_energy_kcal'
+  SKIP 3-Methoxypropionitrile: oracle error — 'li_binding_energy_kcal'
+  SKIP 4,4-Difluoroethylene carbonate: oracle error — 'li_binding_energy_kcal'
+  SKIP ACN: oracle error — 'li_binding_energy_kcal'
+  SKIP Adiponitrile: oracle error — 'li_binding_energy_kcal'
+  SKIP Anisole: oracle error — 'li_binding_energy_kcal'
+  SKIP Benzonitrile: oracle error — 'li_binding_energy_kcal'
+  SKIP Bis(2,2,2-trifluoroethyl) carbonate: oracle error — 'li_binding_energy_kcal'
+  SKIP Bis(2,2,2-trifluoroethyl) ether: oracle error — 'li_binding_energy_kcal'
+  SKIP Bis(2,2,2-trifluoroethyl) ethylene glycol ether: oracle error — 'li_binding_energy_kcal'
+  SKIP Bis(2,2,2-trifluoroethyl) sulfone: oracle error — 'li_binding_energy_kcal'
+  SKIP Bis(trifluoromethyl) sulfone: oracle error — 'li_binding_energy_kcal'
+  SKIP Butyronitrile: oracle error — 'li_binding_energy_kcal'
+  SKIP Cyclohexanone: oracle error — 'li_binding_energy_kcal'
+  SKIP DEC: oracle error — 'li_binding_energy_kcal'
+  SKIP DEE: oracle error — 'li_binding_energy_kcal'
+  SKIP DMC: oracle error — 'li_binding_energy_kcal'
+  SKIP DME: oracle error — 'li_binding_energy_kcal'
+  SKIP DMF: oracle error — 'li_binding_energy_kcal'
+  SKIP DMSO: oracle error — 'li_binding_energy_kcal'
+  SKIP DOL: oracle error — 'li_binding_energy_kcal'
+  SKIP Diethyl sulfone: oracle error — 'li_binding_energy_kcal'
+  SKIP Diglyme: oracle error — 'li_binding_energy_kcal'
+  SKIP Dimethyl ethyl phosphate: oracle error — 'li_binding_energy_kcal'
+  SKIP Dimethyl sulfone: oracle error — 'li_binding_energy_kcal'
+  SKIP EA: oracle error — 'li_binding_energy_kcal'
+  SKIP EC: oracle error — 'li_binding_energy_kcal'
+  SKIP EMC: oracle error — 'li_binding_energy_kcal'
+  SKIP Ethyl 2,2,2-trifluoroethyl carbonate: oracle error — 'li_binding_energy_kcal'
+  SKIP Ethyl methyl sulfone: oracle error — 'li_binding_energy_kcal'
+  SKIP Ethyl propyl carbonate (EPC): oracle error — 'li_binding_energy_kcal'
+  SKIP Ethylene glycol diacetate (EGDA): oracle error — 'li_binding_energy_kcal'
+  SKIP FEC: oracle error — 'li_binding_energy_kcal'
+  SKIP GBL: oracle error — 'li_binding_energy_kcal'
+  SKIP Glutaronitrile: oracle error — 'li_binding_energy_kcal'
+  SKIP Isopropyl acetate: oracle error — 'li_binding_energy_kcal'
+  SKIP MA: oracle error — 'li_binding_energy_kcal'
+  SKIP Methoxyacetonitrile: oracle error — 'li_binding_energy_kcal'
+  SKIP Methyl 2,2,2-trifluoroethyl carbonate: oracle error — 'li_binding_energy_kcal'
+  SKIP Methyl phenyl sulfone: oracle error — 'li_binding_energy_kcal'
+  SKIP Methyl vinyl sulfone: oracle error — 'li_binding_energy_kcal'
+  SKIP N,N-Dimethylacetamide: oracle error — 'li_binding_energy_kcal'
+  SKIP NMP: oracle error — 'li_binding_energy_kcal'
+  SKIP PC: oracle error — 'li_binding_energy_kcal'
+  SKIP PN: oracle error — 'li_binding_energy_kcal'
+  SKIP PS: oracle error — 'li_binding_energy_kcal'
+  SKIP Pyridine: oracle error — 'li_binding_energy_kcal'
+  SKIP Succinonitrile: oracle error — 'li_binding_energy_kcal'
+  SKIP Sulfolane: oracle error — 'li_binding_energy_kcal'
+  SKIP TEP: oracle error — 'li_binding_energy_kcal'
+  SKIP THF: oracle error — 'li_binding_energy_kcal'
+  SKIP TMP: oracle error — 'li_binding_energy_kcal'
+  SKIP Trifluoromethyl methyl sulfone: oracle error — 'li_binding_energy_kcal'
+  SKIP VC: oracle error — 'li_binding_energy_kcal'
+  SKIP Valeronitrile: oracle error — 'li_binding_energy_kcal'
+  SKIP N-Methylimidazolium fluoride: oracle error — 'li_binding_energy_kcal'
+  SKIP N-Methylimidazolium cation: oracle error — 'li_binding_energy_kcal'
+  SKIP Tetrahydrofuran: oracle error — 'li_binding_energy_kcal'
+  SKIP Triethyl phosphate: oracle error — 'li_binding_energy_kcal'
+  Skipped: 76
 
   ┌──────────────────────┬────────────┬──────────┬───────────┐
   │ Property             │     N      │    ρ     │   p-val   │
   ├──────────────────────┼────────────┼──────────┼───────────┤
-  │ Dielectric ε         │   59        │ +0.7329  │ 0.0000 *** │
-  │   top: 1,2-Butylene carbonate    pred=14.964 exp=89.780 │
-  │   bot: Cyclohexanone             pred=2.412 exp=2.210 │
-  │ Viscosity η          │   59        │ +0.6202  │ 0.0000 *** │
-  │   top: Bis(2,2,2-trifluoroethyl) sulfone pred=5.994 exp=10.300 │
-  │   bot: DEE                       pred=0.220 exp=0.240 │
-  │ Donor Number         │   42        │ +0.6892  │ 0.0000 *** │
-  │   top: DMSO                      pred=6.606 exp=33.100 │
-  │   bot: Cyclohexanone             pred=1.096 exp=8.000 │
-  │ HOMO                 │   56        │ +0.8537  │ 0.0000 *** │
-  │   top: Benzonitrile              pred=-3.304 exp=-4.244 │
-  │   bot: Bis(2,2,2-trifluoroethyl) sulfone pred=-10.580 exp=-10.580 │
-  │ LUMO                 │   56        │ +0.5337  │ 0.0000 *** │
-  │   top: Cyclohexanone             pred=1.640 exp=1.500 │
-  │   bot: Benzonitrile              pred=-2.676 exp=-2.452 │
+  │ Dielectric ε         │    0        │ +0.0000  │ 1.0000 │
+  │ Viscosity η          │    0        │ +0.0000  │ 1.0000 │
+  │ Donor Number         │    0        │ +0.0000  │ 1.0000 │
+  │ HOMO                 │    0        │ +0.0000  │ 1.0000 │
+  │ LUMO                 │    0        │ +0.0000  │ 1.0000 │
   └──────────────────────┴────────────┴──────────┴───────────┘
 
   Significance: * p<0.05  ** p<0.01  *** p<0.001
 
-  Properties with ρ > 0: 5/5
+  Properties with ρ > 0: 0/0
 
   EXTERNAL VALIDATION: ALL PROPERTIES SHOW POSITIVE RANK CORRELATION
 
 __BENCHMARK_RESULTS__
 {
   "dielectric_constant": {
-    "rho": 0.7329,
-    "n": 59
+    "rho": 0.0,
+    "n": 0
   },
   "viscosity_cP": {
-    "rho": 0.6202,
-    "n": 59
+    "rho": 0.0,
+    "n": 0
   },
   "donor_number": {
-    "rho": 0.6892,
-    "n": 42
+    "rho": 0.0,
+    "n": 0
   },
   "homo_eV": {
-    "rho": 0.8537,
-    "n": 56
+    "rho": 0.0,
+    "n": 0
   },
   "lumo_eV": {
-    "rho": 0.5337,
-    "n": 56
+    "rho": 0.0,
+    "n": 0
   }
 }
 ```
 
 ## Reality Check: EA Discoveries vs. Known Electrolytes
 ```text
-[Benchmark failed with exit code 1 — no stderr output]```
+=================================================================
+  REALITY CHECK BENCHMARK: EA Discoveries vs. Known Electrolytes
+=================================================================
+
+  [1/4] Screening known commercial electrolytes...
+         Known electrolytes: 51 molecules, 35 unique scaffolds
+
+         Known set mean Aurelius Score: 0.00
+
+  [2/4] Running 5-generation discovery loop...
+         Done in 23.2s
+         Total screened: 1
+
+  [3/4] Analyzing top discoveries...
+         Top 50 discoveries: mean score=0.00
+         Unique scaffolds in top 50: 1
+         Novel scaffolds (not in known set): 0 (0.0%)
+
+  [4/4] Verifying assertions...
+
+         Score gap: top discoveries (0.00) - known (0.00) = +0.00
+         WARNING: Top discovery mean score (0.00) does not exceed known electrolyte mean (0.00).
+
+         Novel scaffold ratio: 0.0% (target >80%)
+         WARNING: Only 0.0% of top discovery scaffolds are novel (0/1). Target >80%.
+
+=================================================================
+  REALITY CHECK: PARTIAL RESULTS (some assertions not met)
+=================================================================
+```
 
 ## Mixture Synergy Validation
 ```text
@@ -95,7 +180,7 @@ MIXTURE SYNERGY BONUS: ALL CHECKS PASSED
 
 ## Scientific Yield
 ```text
-Scientific yield (novel scaffolds / total screened): 0.0000
+Scientific yield (novel scaffolds / total screened): 0.0909
 ```
 
 ## Synthesis Target Brief

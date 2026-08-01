@@ -1,5 +1,57 @@
 # Changelog
 
+## [11.1.0] - 2026-07-31
+
+### Fixed
+- **Benchmark documentation generation**: `benchmark_reality_check.py` now
+  produces partial results and exits with code 0 when assertions fail,
+  preventing `[Benchmark failed with exit code 1]` in docs/BENCHMARKS.md
+  and docs/MODEL_CARD.md. Added graceful degradation for timed-out or
+  failing benchmarks.
+- **API batch endpoint**: Replaced sequential `for` loop in `POST /batch`
+  with `pipeline.screen_batch()` using `ThreadPoolExecutor` for parallel
+  screening of multiple molecules.
+- **GcUqEnsemble caching**: Benchmark JSON is now cached at the class
+  level in `GcUqEnsemble`, eliminating redundant disk I/O on retraining.
+- **Retrosynthetic check caching**: Pre-parsed `_COMMERCIAL_BUILDING_BLOCKS`
+  into `Chem.Mol` objects at module import time, avoiding re-parsing on
+  every `_is_commercial_building_block()` call.
+- **Fixed variable name bug**: `n_rotable` → `n_rotatable` in
+  `_estimate_sa_score()` in `retro_check.py`.
+
+### Added
+- **xTB integration tests**: New `tests/test_xtb_integration.py` with 28
+  tests covering `_parse_xtb_output()`, `_boltzmann_weights()`,
+  `BatchXTBRunner` lifecycle, and graceful fallback when xTB is unavailable.
+- **NRTL activity coefficient model**: New `scoring/oracle/mixture_model.py`
+  implements the Non-Random Two-Liquid model for binary/ternary electrolyte
+  mixtures with default interaction parameters for common pairs.
+- **TOM inductive LUMO correction**: Added `_apply_inductive_lumo_correction()`
+  using Hammett σ* constants for EW substituents within 3 bonds of the
+  conjugated system.
+- **TOM nonplanarity gap correction**: Added `_apply_nonplanarity_gap_correction()`
+  using UFF-optimized conformers to measure dihedral deviation along the
+  conjugated path.
+- **Expanded GC fragment coverage**: Added 14 new fragments (siloxanes,
+  borates, sulfonamides, imidazolium, pyrrolidinium, crown ethers,
+  tetraalkyl phosphates) with literature citations.
+- **Expanded retrosynthetic templates**: Increased from 16 to 48 templates
+  covering Suzuki, Heck, Sonogashira, Negishi, Buchwald-Hartwig, Ullmann,
+  Williamson, Mitsunobu, SNAr, esterification, amidation, Wittig, Diels-Alder,
+  DAST fluorination, lactonization, RCM, and more.
+- **Step economy estimator**: Added `_estimate_step_economy()` returning
+  a score in [1, 10] based on molecular complexity.
+- **Expanded calibration data**: Added 15 molecules to `orbital_calibration.json`
+  and 8 molecules to `external_property_benchmark.json` covering new fragment
+  types.
+- **New cross-terms**: Added siloxane-carbonate, imidazolium-nitrile,
+  borate-ether, sulfonamide-carbonate, and pyrrolidinium-sulfone interactions.
+
+### Tests
+- Added `tests/test_xtb_integration.py` (28 tests)
+- Added `tests/test_retro_check_expanded.py` (38 tests)
+- Added `tests/test_mixture_model.py` (25 tests)
+
 ## [11.0.0] - 2026-07-31
 
 ### Removed

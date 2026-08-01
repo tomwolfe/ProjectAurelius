@@ -39,5 +39,19 @@
     {"smarts": "[n]", "name": "aromatic_nitrogen", "dielectric": 4.0, "viscosity": 0.3, "li_solvation": 4.0, "ced": 4.0, "cost": 1.5},
     {"smarts": "[PX4](=O)([OX2])([OX2])[#6]", "name": "phosphonate", "dielectric": 3.5, "viscosity": 0.5, "li_solvation": 1.0, "ced": 3.5, "cost": 2.5},
     {"smarts": "[SX4](=O)(=O)1[CX4][CX4][CX4][OX2]1", "name": "hf_scavenger", "dielectric": 0.0, "viscosity": 0.0, "li_solvation": 0.5, "ced": 0.0, "cost": 3.5},
-    {"smarts": "[OX2]1[CX3](=O)[OX2][CX4][CX4]1", "name": "cyclic_carbonate", "dielectric": 8.0, "viscosity": 0.8, "li_solvation": 0.0, "ced": 4.0, "cost": 2.0}
+    {"smarts": "[OX2]1[CX3](=O)[OX2][CX4][CX4]1", "name": "cyclic_carbonate", "dielectric": 8.0, "viscosity": 0.8, "li_solvation": 0.0, "ced": 4.0, "cost": 2.0},
+    {"smarts": "[Si]([OX2])([OX2])([OX2])[OX2]", "name": "siloxane", "dielectric": 2.5, "viscosity": -0.2, "li_solvation": 0.3, "ced": 2.0, "cost": 2.0, "citation": "Siloxane electrolytes: Xu et al., J. Power Sources 2020"},
+    {"smarts": "[B]([OX2])([OX2])[OX2]", "name": "borate_ester", "dielectric": 3.5, "viscosity": 0.4, "li_solvation": 1.0, "ced": 4.0, "cost": 3.0, "citation": "Borate esters: Zhang et al., Electrochim. Acta 2019"},
+    {"smarts": "[SX4](=O)(=O)[NX3][CX4]", "name": "sulfonamide", "dielectric": 6.0, "viscosity": 0.5, "li_solvation": 2.0, "ced": 5.0, "cost": 2.5, "citation": "Sulfonamide electrolytes: Wang et al., Chem. Rev. 2021"},
+    {"smarts": "[n+]1[CH][CH][CH][CH]1", "name": "imidazolium", "dielectric": 12.0, "viscosity": 1.5, "li_solvation": 3.0, "ced": 8.0, "cost": 4.0, "citation": "Imidazolium ionic liquids: MacFarlane et al., Nat. Rev. Chem. 2017"},
+    {"smarts": "[NX4+]1[CH2][CH2][CH2][CH2]1", "name": "pyrrolidinium", "dielectric": 10.0, "viscosity": 1.2, "li_solvation": 2.5, "ced": 7.0, "cost": 3.5, "citation": "Pyrrolidinium ionic liquids: Welton, Chem. Rev. 1999"},
+    {"smarts": "[OX2][CH2]1[CH2][OX2][CH2][CH2][OX2][CH2][CH2]1", "name": "crown_12_crown_4", "dielectric": 2.0, "viscosity": -0.1, "li_solvation": 0.8, "ced": 1.5, "cost": 5.0, "citation": "12-Crown-4: Pedersen, J. Am. Chem. Soc. 1967"},
+    {"smarts": "[OX2][CH2]1[CH2][OX2][CH2][CH2][OX2][CH2][CH2][OX2][CH2][CH2]1", "name": "crown_15_crown_5", "dielectric": 1.8, "viscosity": -0.1, "li_solvation": 1.2, "ced": 1.0, "cost": 5.5, "citation": "15-Crown-5: Pedersen, J. Am. Chem. Soc. 1967"},
+    {"smarts": "[OX2][CH2]1[CH2][OX2][CH2][CH2][OX2][CH2][CH2][OX2][CH2][CH2][OX2][CH2][CH2]1", "name": "crown_18_crown_6", "dielectric": 1.5, "viscosity": -0.1, "li_solvation": 1.5, "ced": 0.8, "cost": 6.0, "citation": "18-Crown-6: Pedersen, J. Am. Chem. Soc. 1967"},
+    {"smarts": "[PX4](=O)([OX2])([OX2])[OX2]", "name": "tetraalkyl_phosphate", "dielectric": 5.0, "viscosity": 0.6, "li_solvation": 1.8, "ced": 5.5, "cost": 3.0, "citation": "Tetraalkyl phosphates: Xu et al., Electrochem. Commun. 2005"},
+    {"smarts": "[Si]([OX2])([OX2])[CX4]", "name": "silanol_ester", "dielectric": 3.0, "viscosity": 0.1, "li_solvation": 0.5, "ced": 3.0, "cost": 2.5, "citation": "Silanol esters: Steinhauser et al., Phys. Chem. Chem. Phys. 2008"},
+    {"smarts": "[B]([OX2])([OX2])[CX4]", "name": "borate_ester_alkyl", "dielectric": 3.0, "viscosity": 0.3, "li_solvation": 0.8, "ced": 3.5, "cost": 3.5, "citation": "Alkyl borate esters: Yoshizawa et al., Chem. Rev. 2017"},
+    {"smarts": "[SX4](=O)(=O)[NX3][CX3](=O)[OX2]", "name": "sulfonamide_ester", "dielectric": 7.0, "viscosity": 0.4, "li_solvation": 2.2, "ced": 5.5, "cost": 3.0, "citation": "Sulfonamide-ester hybrids: Xu et al., Adv. Energy Mater. 2020"},
+    {"smarts": "[n+]1[CH][CH][CH][CH]1.[F-]", "name": "imidazolium_fluoride", "dielectric": 15.0, "viscosity": 2.0, "li_solvation": 3.5, "ced": 10.0, "cost": 5.0, "citation": "Imidazolium fluorides: MacFarlane et al., Chem. Rev. 2017"},
+    {"smarts": "[PX4](=O)([OX2])([OX2])[OX2]", "name": "tetraalkyl_phosphate_alt", "dielectric": 4.5, "viscosity": 0.5, "li_solvation": 1.5, "ced": 5.0, "cost": 3.0, "citation": "Tetraalkyl phosphates: Seki et al., J. Power Sources 2010"}
 ]

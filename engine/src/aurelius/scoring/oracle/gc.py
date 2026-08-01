@@ -430,21 +430,66 @@ def predict_li_dissociation_proxy(
 # (Grunberg-Nissan) mixing for viscosity.
 
 
-def predict_mixture_dielectric(d1: float, d2: float, frac1: float = 0.5) -> float:
-    """Ideal volume-fraction weighted dielectric for a binary mixture."""
+def predict_mixture_dielectric(d1: float, d2: float, frac1: float = 0.5, model: str = "ideal", comp1: str | None = None, comp2: str | None = None) -> float:
+    """Predict dielectric constant of a binary mixture.
+
+    Args:
+        d1: Dielectric constant of pure component 1.
+        d2: Dielectric constant of pure component 2.
+        frac1: Mole fraction of component 1 (default 0.5).
+        model: Mixing model — "ideal" (default) or "nrtl".
+        comp1: NRTL component name for component 1 (required if model="nrtl").
+        comp2: NRTL component name for component 2 (required if model="nrtl").
+
+    Returns:
+        Predicted dielectric constant of the mixture.
+    """
+    if model == "nrtl":
+        from aurelius.scoring.oracle.mixture_model import predict_mixture_dielectric as _nrtl_dielectric
+        return _nrtl_dielectric(d1, d2, frac1=frac1, model="nrtl", comp1=comp1, comp2=comp2)
     return frac1 * d1 + (1.0 - frac1) * d2
 
 
-def predict_mixture_viscosity(v1: float, v2: float, frac1: float = 0.5) -> float:
-    """Ideal log-linear (Grunberg-Nissan) viscosity for a binary mixture."""
+def predict_mixture_viscosity(v1: float, v2: float, frac1: float = 0.5, model: str = "ideal", comp1: str | None = None, comp2: str | None = None) -> float:
+    """Predict viscosity of a binary mixture.
+
+    Args:
+        v1: Viscosity of pure component 1 (cP).
+        v2: Viscosity of pure component 2 (cP).
+        frac1: Mole fraction of component 1 (default 0.5).
+        model: Mixing model — "ideal" (default) or "nrtl".
+        comp1: NRTL component name for component 1 (required if model="nrtl").
+        comp2: NRTL component name for component 2 (required if model="nrtl").
+
+    Returns:
+        Predicted viscosity of the mixture (cP).
+    """
+    if model == "nrtl":
+        from aurelius.scoring.oracle.mixture_model import predict_mixture_viscosity as _nrtl_visc
+        return _nrtl_visc(v1, v2, frac1=frac1, model="nrtl", comp1=comp1, comp2=comp2)
     v1_s = max(v1, 0.001)
     v2_s = max(v2, 0.001)
     ln_mix = frac1 * math.log(v1_s) + (1.0 - frac1) * math.log(v2_s)
     return math.exp(ln_mix)
 
 
-def predict_mixture_li_solvation(ls1: float, ls2: float, frac1: float = 0.5) -> float:
-    """Additive Li+ solvation for a binary mixture."""
+def predict_mixture_li_solvation(ls1: float, ls2: float, frac1: float = 0.5, model: str = "ideal", comp1: str | None = None, comp2: str | None = None) -> float:
+    """Predict Li+ solvation energy of a binary mixture.
+
+    Args:
+        ls1: Li+ solvation energy of pure component 1.
+        ls2: Li+ solvation energy of pure component 2.
+        frac1: Mole fraction of component 1 (default 0.5).
+        model: Mixing model — "ideal" (default) or "nrtl".
+        comp1: NRTL component name for component 1 (required if model="nrtl").
+        comp2: NRTL component name for component 2 (required if model="nrtl").
+
+    Returns:
+        Predicted Li+ solvation energy of the mixture.
+    """
+    if model == "nrtl":
+        from aurelius.scoring.oracle.mixture_model import predict_mixture_li_solvation as _nrtl_ls
+        return _nrtl_ls(ls1, ls2, frac1=frac1, model="nrtl", comp1=comp1, comp2=comp2)
     return frac1 * ls1 + (1.0 - frac1) * ls2
 
 
@@ -622,6 +667,9 @@ class GcUqEnsemble:
     Training is lazy (first inference triggers training).
     """
 
+    _benchmark_cache: list[dict] | None = None
+    _benchmark_path_cache: str | None = None
+
     def __init__(
         self,
         benchmark_path: str | None = None,
@@ -699,8 +747,14 @@ class GcUqEnsemble:
         y_visc: list[float] = []
 
         path = self._resolve_path()
-        with open(path) as f:
-            data = json.load(f)
+
+        if GcUqEnsemble._benchmark_cache is not None and GcUqEnsemble._benchmark_path_cache == path:
+            data = GcUqEnsemble._benchmark_cache
+        else:
+            with open(path) as f:
+                data = json.load(f)
+            GcUqEnsemble._benchmark_cache = data
+            GcUqEnsemble._benchmark_path_cache = path
 
         for entry in data:
             pair = self._parse_entry(entry, "smiles")
