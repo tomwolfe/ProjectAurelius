@@ -57,7 +57,7 @@ DIELECTRIC_SIGMOID_STEEPNESS: float = 1.5
 # Physical basis: Polar surface area limits the maximum achievable
 # dielectric constant. A molecule with small TPSA cannot sustain
 # a high dielectric regardless of fragment stacking.
-MAX_DIELECTRIC_PER_TPSA: float = 0.60
+MAX_DIELECTRIC_PER_TPSA: float = 1.00
 """Upper bound on dielectric contribution per unit TPSA (Å²).
 Dielectric_proxy_max = base + TPSA * MAX_DIELECTRIC_PER_TPSA."""
 

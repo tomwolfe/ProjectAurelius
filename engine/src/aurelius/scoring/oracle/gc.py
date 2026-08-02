@@ -1125,7 +1125,7 @@ class ElectrolytePack(BasePropertyModel):
                 value += self.saturate_contrib(n, dd * 2.0)
         value += self._compute_dielectric_cross_terms(counts)
         tpsa = ctx.tpsa
-        value += tpsa * 0.030
+        value += tpsa * 0.050
         max_diel = self.base_values["dielectric"] + tpsa * MAX_DIELECTRIC_PER_TPSA
         value = min(value, max_diel)
         return max(1.0, value)
