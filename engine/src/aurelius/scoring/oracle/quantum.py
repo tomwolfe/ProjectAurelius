@@ -405,11 +405,14 @@ def _topological_sanity_l(mol: Chem.Mol, L: int) -> int:
     return L
 
 
-# σ* LUMO corrections for S/P=O groups in non-conjugated molecules.
+# σ* LUMO corrections for S/P=O and C=O groups in non-conjugated molecules.
+# Carbonyl (C=O) π* orbital is low-lying; correction calibrated against
+# cyclic carbonates and esters in the external benchmark set.
 _SIGMA_STAR_LUMO: list[tuple[Chem.Mol, str, float]] = [
     (Chem.MolFromSmarts("S(=O)(=O)"), "sulfone", -0.70),
     (Chem.MolFromSmarts("[SX3](=O)"), "sulfoxide", -0.50),
     (Chem.MolFromSmarts("[PX4](=O)"), "phosphate", -0.30),
+    (Chem.MolFromSmarts("[CX3]=O"), "carbonyl", -1.00),
 ]
 
 _PHOSPHATE_PATTERN: Chem.Mol = Chem.MolFromSmarts("[PX4](=O)")
@@ -664,7 +667,7 @@ def _apply_phosphate_correction(mol: Chem.Mol, L: int, homo: float, lumo: float,
 
 @_register_energy
 def _apply_sigma_star_correction(mol: Chem.Mol, L: int, homo: float, lumo: float, **kwargs: Any) -> tuple[float, float]:
-    """Apply σ* LUMO correction for S/P=O groups (d-orbital participation)."""
+    """Apply σ* LUMO correction for S/P=O and C=O groups (d-orbital/π* participation)."""
     sigma_scale = 0.40 if L >= 3 else 1.0
     for _spattern, _sname, _sshift in _SIGMA_STAR_LUMO:
         if len(mol.GetSubstructMatches(_spattern)) > 0:

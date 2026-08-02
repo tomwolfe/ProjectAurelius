@@ -173,6 +173,16 @@ jobs:
           python scripts/update_benchmark_docs.py
           git diff --exit-code docs/benchmarks.md || (echo "ERROR: docs/benchmarks.md is out of date. Run 'python scripts/update_benchmark_docs.py' and commit the changes." && exit 1)
 
+      - name: Verify Benchmark Integrity
+        working-directory: engine
+        run: |
+          SKIP_COUNT=$(python -m benchmarks.benchmark_external_validation 2>&1 | grep -c "SKIP" || true)
+          if [ "$SKIP_COUNT" -gt 20 ]; then
+            echo "ERROR: $SKIP_COUNT benchmark molecules skipped (threshold: 20)"
+            exit 1
+          fi
+          echo "OK: $SKIP_COUNT benchmark molecules skipped (threshold: 20)"
+
   test-philosophy:
     name: Philosophy Gates (Net Progress & External Validation)
     runs-on: macos-latest

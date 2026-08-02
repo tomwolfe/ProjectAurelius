@@ -47,7 +47,6 @@ from aurelius.types import (
     QuantumResult,
     SeiResult,
 )
-from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +67,13 @@ _GC_PROXY_KEYS: frozenset[str] = frozenset(
         "electron_affinity_proxy",
     }
 )
+
+# Mapping from ML model property names to GC proxy keys for blending.
+_ML_TO_GC_KEY: dict[str, str] = {
+    "dielectric_constant": "dielectric_proxy",
+    "viscosity_cP": "viscosity_proxy",
+    "donor_number": "li_solvation_proxy",
+}
 
 
 def _evaluate_sei_motif(ctx: MoleculeContext, lumo: float) -> tuple[float, str]:
@@ -368,6 +374,9 @@ class PropertyOracle:
         redis_url: Optional Redis URL for distributed caching.
         solvent: Implicit solvation model (e.g. "ether"). When set,
             appends ``--alpb <solvent>`` to all xTB command lines.
+        use_bulk_model: Whether to blend GC fragment-additivity predictions
+            with the XGBoost bulk property model (requires xgboost + sklearn).
+            Predictions are blended 70% GC / 30% ML for bulk properties only.
     """
 
     def __init__(
@@ -379,6 +388,7 @@ class PropertyOracle:
         l2_cache: CacheBackend | None = None,
         redis_url: str | None = None,
         solvent: str | None = "ether",
+        use_bulk_model: bool = True,
     ) -> None:
         self._quantum = QuantumOracle(use_xtb=use_xtb, solvent=solvent)
         self._use_surrogate = use_surrogate
@@ -388,6 +398,9 @@ class PropertyOracle:
         self._use_gc_uq = use_gc_uq
         self._gc_uq: GcUqEnsemble | None = GcUqEnsemble() if use_gc_uq else None
         self._property_pack: BasePropertyModel = property_pack or ElectrolytePack()
+        self._use_bulk_model = use_bulk_model
+        self._bulk_model: Any = None
+        self._bulk_model_trained = False
         self._cache: dict[str, dict[str, Any]] = {}
         if redis_url is not None and l2_cache is None:
             from aurelius.cache.redis_cache import RedisCache
@@ -437,17 +450,70 @@ class PropertyOracle:
         return result
 
     def _compute_gc_properties(self, ctx: MoleculeContext) -> GcResult:
-        """Compute all GC-based bulk property proxies. Delegates to pure ``_compute_gc_properties``.
+        """Compute all GC-based bulk property proxies, optionally blended with ML.
+
+        Delgeates to the pure ``_compute_gc_properties`` function, then applies
+        the XGBoost bulk property model (70% GC / 30% ML) for bulk properties
+        when the model is available.
 
         Returns a ``GcResult`` NamedTuple.
         """
         result = _compute_gc_properties(ctx, self._property_pack)
+        gc_props = dict(result.gc_props)
+
+        if self._use_bulk_model:
+            ml_preds = self._predict_with_bulk_model(ctx)
+            if ml_preds:
+                for ml_key, gc_key in _ML_TO_GC_KEY.items():
+                    if ml_key in ml_preds and gc_key in gc_props:
+                        ml_val = ml_preds[ml_key]
+                        gc_val = gc_props[gc_key]
+                        gc_props[gc_key] = 0.7 * gc_val + 0.3 * ml_val
+
         return GcResult(
-            gc_props=result.gc_props,
+            gc_props=gc_props,
             uq_penalty=result.uq_penalty,
             diel_std=result.diel_std,
             visc_std=result.visc_std,
         )
+
+    def _predict_with_bulk_model(self, ctx: MoleculeContext) -> dict[str, float] | None:
+        """Lazily initialise and run the bulk property model for a molecule.
+
+        Returns a dict of ML predictions or ``None`` if the model is
+        unavailable or untrained.
+        """
+        if not self._use_bulk_model:
+            return None
+        if self._bulk_model is None:
+            try:
+                from aurelius.scoring.oracle.bulk_property_model import BulkPropertyModel
+                self._bulk_model = BulkPropertyModel()
+            except Exception as exc:
+                logger.debug("BulkPropertyModel unavailable: %s", exc)
+                self._bulk_model = None
+                return None
+            self._try_train_bulk_model()
+            if self._bulk_model is None or not self._bulk_model._trained:  # noqa: SLF001
+                return None
+        try:
+            return self._bulk_model.predict_all(ctx)  # type: ignore[union-attr]
+        except Exception as exc:
+            logger.debug("BulkPropertyModel prediction failed: %s", exc)
+            return None
+
+    def _try_train_bulk_model(self) -> None:
+        """Attempt lazy training of the bulk property model."""
+        if self._bulk_model is None or self._bulk_model_trained:
+            return
+        try:
+            self._bulk_model.train()  # type: ignore[union-attr]
+            self._bulk_model_trained = True
+            logger.info("BulkPropertyModel: trained successfully.")
+        except FileNotFoundError:
+            logger.info("BulkPropertyModel: training data not found — using GC model only.")
+        except Exception as exc:
+            logger.warning("BulkPropertyModel: training failed — %s", exc)
 
     def _evaluate_quantum(self, ctx: MoleculeContext) -> QuantumEvaluation:
         """Evaluate quantum properties (HOMO/LUMO/gap) via surrogate or xTB/TOM.
@@ -706,3 +772,17 @@ class PropertyOracle:
         self._cache.clear()
         self._disk_cache.clear()
         self._quantum.clear_cache()
+
+    def append_empirical_data(self, new_data: list[dict[str, Any]]) -> None:
+        """Feed empirical wet-lab data into the GC UQ ensemble for retraining.
+
+        Delegates to ``GcUqEnsemble.append_empirical_data()``, which adds
+        the data and sets a dirty flag for lazy retraining on the next
+        prediction call.
+
+        Args:
+            new_data: List of dicts with ``smiles`` and optionally
+                ``dielectric_constant`` / ``viscosity_cP`` keys.
+        """
+        if self._gc_uq is not None:
+            self._gc_uq.append_empirical_data(new_data)

@@ -292,7 +292,6 @@ class AureliusPipeline:
             dielectric_proxy = oracle_result.get("dielectric_proxy", 0.0)
             viscosity_proxy = oracle_result.get("viscosity_proxy", 99.0)
             li_solvation_proxy = oracle_result.get("li_solvation_proxy", 0.0)
-            li_dissociation_proxy = oracle_result.get("li_dissociation_proxy", 0.0)
             li_binding_energy_kcal = oracle_result.get("li_binding_energy_kcal", 0.0)
             ced_proxy = oracle_result.get("ced_proxy", 0.0)
             hydrolysis_risk_proxy = oracle_result.get("hydrolysis_risk_proxy", 0.0)
@@ -302,21 +301,17 @@ class AureliusPipeline:
             sei_fracture_toughness_proxy = _compute_sei_fracture_toughness_proxy(ctx)
             gas_evolution_proxy = predict_gas_evolution_proxy(ctx)
 
-            t2_result = {
-                "homo_eV": homo_eV,
-                "lumo_eV": lumo_eV,
-                "gap_eV": oracle_result.get("gap_eV", 0.0),
-                "sei_fracture_toughness_proxy": sei_fracture_toughness_proxy,
-                "gas_evolution_proxy": gas_evolution_proxy,
-                "domain_applicable": oracle_result.get("domain_applicable", True),
-                "domain_reason": oracle_result.get("domain_reason", ""),
-                "domain_penalty": domain_penalty,
-                "quantum_confidence": oracle_result.get("quantum_confidence", "unknown"),
-            }
-            t2_result.update(
-                (k, v) for k, v in oracle_result.items()
-                if k.endswith("_proxy") and k not in t2_result
-            )
+            t2_result = dict(oracle_result)
+            t2_result["homo_eV"] = homo_eV
+            t2_result["lumo_eV"] = lumo_eV
+            t2_result["gap_eV"] = oracle_result.get("gap_eV", 0.0)
+            t2_result["sei_fracture_toughness_proxy"] = sei_fracture_toughness_proxy
+            t2_result["gas_evolution_proxy"] = gas_evolution_proxy
+            t2_result.setdefault("domain_applicable", True)
+            t2_result.setdefault("domain_reason", "")
+            t2_result["domain_penalty"] = domain_penalty
+            t2_result.setdefault("quantum_confidence", "unknown")
+            t2_result.setdefault("li_binding_energy_kcal", li_binding_energy_kcal)
             results["tier2"] = t2_result
             logger.info(
                 "Oracle Result: %s -> HOMO=%.3f LUMO=%.3f Dielectric=%.3f Viscosity=%.3f LiSolv=%.3f",

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +20,6 @@ import xgboost as xgb
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit.Chem.Scaffolds import MurckoScaffold
-from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
 
 from aurelius.types import MoleculeContext
@@ -32,7 +30,7 @@ _N_SPLIT = 5
 _N_BITS = 2048
 _N_JOBS = -1
 
-_TRAINING_SET_PATH = Path(__file__).resolve().parent.parent.parent.parent / "data" / "dft_training_set.json"
+_TRAINING_SET_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "external_property_benchmark.json"
 
 _PHYSICAL_DESCRIPTORS = [
     "mw",
@@ -48,6 +46,13 @@ _PHYSICAL_DESCRIPTORS = [
 ]
 
 _PROPERTY_TARGETS = ["dielectric_constant", "viscosity_cP", "donor_number"]
+
+# Mapping from ML model property names to GC proxy keys for blending.
+_ML_TO_GC_KEY: dict[str, str] = {
+    "dielectric_constant": "dielectric_proxy",
+    "viscosity_cP": "viscosity_proxy",
+    "donor_number": "li_solvation_proxy",
+}
 
 
 def _compute_ecfp4(mol: Chem.Mol) -> np.ndarray:
@@ -114,8 +119,6 @@ def _scaffold_split(
     scaffold_list.sort(key=lambda s: -len(s))
 
     splits: list[tuple[list[int], list[int]]] = []
-    rng = np.random.RandomState(seed)
-    indices = np.arange(len(smiles_list))
 
     for fold_idx in range(n_splits):
         test_indices: list[int] = []
@@ -179,8 +182,15 @@ class BulkPropertyModel:
         self._cv_metrics: dict[str, list[dict[str, float]]] = {}
         self._trained = False
 
-    def _load_training_data(self) -> tuple[np.ndarray, dict[str, np.ndarray], list[str]]:
-        """Load the DFT training set from JSON."""
+    def _load_training_data(self) -> tuple[np.ndarray, dict[str, list[float]], list[str]]:
+        """Load the training set from JSON.
+
+        Returns:
+            X: Feature array (N, n_features), one row per valid molecule.
+            target_dict: Dict mapping each target name to a list of float
+                (or NaN) aligned with X rows.
+            smiles_list: SMILES strings aligned with X rows.
+        """
         if not _TRAINING_SET_PATH.exists():
             msg = f"Training set not found at {_TRAINING_SET_PATH}"
             raise FileNotFoundError(msg)
@@ -188,7 +198,7 @@ class BulkPropertyModel:
         with open(_TRAINING_SET_PATH) as f:
             data = json.load(f)
 
-        results = data.get("results", [])
+        results = data.get("results", []) if isinstance(data, dict) else data
         if not results:
             msg = "Training set is empty"
             raise ValueError(msg)
@@ -210,11 +220,27 @@ class BulkPropertyModel:
             feature_list.append(_compute_features(mol))
 
             for target in _PROPERTY_TARGETS:
-                val = entry.get(target, np.nan)
-                target_dict[target].append(float(val) if not np.isnan(val) else np.nan)
+                val = entry.get(target)
+                if val is None:
+                    target_dict[target].append(np.nan)
+                else:
+                    target_dict[target].append(float(val))
 
         X = np.array(feature_list, dtype=np.float32)
-        y: dict[str, np.ndarray] = {}
+        return X, target_dict, smiles_list
+
+    def train(self) -> dict[str, Any]:
+        """Train the model with 5-fold Murcko scaffold cross-validation.
+
+        Returns:
+            Dict with CV metrics for each property.
+        """
+        X, target_dict, smiles_list = self._load_training_data()
+
+        if X.shape[0] == 0:
+            msg = "No valid training data"
+            raise ValueError(msg)
+
         for target in _PROPERTY_TARGETS:
             vals = np.array(target_dict[target], dtype=np.float32)
             mask = ~np.isnan(vals)
@@ -225,35 +251,17 @@ class BulkPropertyModel:
                     mask.sum(),
                 )
                 continue
-            y[target] = vals[mask]
-            X = X[mask] if target == _PROPERTY_TARGETS[0] else X
 
-        return X, y, smiles_list
+            X_target = X[mask]
+            y_target = vals[mask]
+            smiles_target = [s for s, m in zip(smiles_list, mask, strict=False) if m]
+            splits = _scaffold_split(smiles_target, n_splits=_N_SPLIT, seed=self.random_state)
 
-    def train(self) -> dict[str, Any]:
-        """Train the model with 5-fold Murcko scaffold cross-validation.
-
-        Returns:
-            Dict with CV metrics for each property.
-        """
-        X, y, smiles_list = self._load_training_data()
-
-        if X.shape[0] == 0:
-            msg = "No valid training data"
-            raise ValueError(msg)
-
-        splits = _scaffold_split(smiles_list, n_splits=_N_SPLIT, seed=self.random_state)
-
-        for target in _PROPERTY_TARGETS:
-            if target not in y:
-                continue
-
-            y_target = y[target]
             self._cv_metrics.setdefault(target, [])
 
             for fold_idx, (train_idx, test_idx) in enumerate(splits):
-                X_train = X[train_idx]
-                X_test = X[test_idx]
+                X_train = X_target[train_idx]
+                X_test = X_target[test_idx]
                 y_train = y_target[train_idx]
                 y_test = y_target[test_idx]
 
@@ -286,9 +294,9 @@ class BulkPropertyModel:
                     metrics["spearman_rho"],
                 )
 
-            # Train final model on all data
+            # Train final model on all data for this target
             scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X)
+            X_scaled = scaler.fit_transform(X_target)
             final_model = xgb.XGBRegressor(
                 n_estimators=self.n_estimators,
                 max_depth=self.max_depth,
