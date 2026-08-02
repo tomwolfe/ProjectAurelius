@@ -87,6 +87,7 @@ def main() -> None:
         "donor_number": "li_solvation_proxy",
         "homo_eV": "homo_eV",
         "lumo_eV": "lumo_eV",
+        "li_binding_energy_kcal": "li_binding_energy_kcal",
     }
 
     skipped = 0
@@ -116,8 +117,6 @@ def main() -> None:
             if exp_val is None:
                 continue
             pred_val = t2.get(pred_key)
-            if pred_key == "li_solvation_proxy":
-                pred_val = t2.get("li_solvation_proxy")
             if pred_val is None:
                 continue
             results[exp_key]["predicted"].append(pred_val)

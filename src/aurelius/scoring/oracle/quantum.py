@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import math
 import os
 import re
 import subprocess
@@ -466,12 +467,38 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
 # These are closed-form heuristics — no ML involved.
 
 
+def _conjugation_penalty_sigmoid(L: float) -> float:
+    """Continuous conjugation-axis DoA penalty (sigmoid in conjugation length).
+
+    Physical justification: The particle-in-a-box gap (ΔE ∝ 1/L²) degrades
+    smoothly as the conjugation path L grows, not as a step function. The
+    sigmoid 0.70 + 0.30/(1 + exp(2(L−12))) interpolates between fully-in-domain
+    (→1.0 for L ≪ 12) and the hard floor of 0.70 for L ≫ 12, eliminating the
+    discontinuity at L=12. The midpoint sits at L=12 with penalty 0.85.
+    """
+    return 0.70 + 0.30 / (1.0 + math.exp(2.0 * (L - 12.0)))
+
+
+def _pi_electron_penalty_sigmoid(n_pi: float) -> float:
+    """Continuous pi-electron-count DoA penalty (sigmoid).
+
+    Physical justification: Excessive pi-electron counts violate the
+    single-particle Hueckel approximation. The sigmoid
+    0.80 + 0.20/(1 + exp(0.5(n_pi − 24))) rises toward the 0.80 floor only as
+    n_pi exceeds 24, staying ≈1.0 within the calibration domain.
+    """
+    return 0.80 + 0.20 / (1.0 + math.exp(0.5 * (n_pi - 24.0)))
+
+
 def compute_quantum_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
     """Compute domain-of-applicability penalty for TOM predictions.
 
     Penalises molecules with topological features that fall outside the
-    TOM calibration domain (conjugation > 12 without sp3 support, excessive
-    pi-electrons).
+    TOM calibration domain. The conjugation and pi-electron axes use
+    continuous sigmoids (replacing the former step function); the sp3
+    structural-support condition remains a binary hard gate because it is
+    physically discrete — a molecule either has the planarity-stabilising
+    sp3 framework or it does not.
 
     Returns:
         (penalty_multiplier, reason_string)
@@ -482,6 +509,7 @@ def compute_quantum_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
     penalty = 1.0
 
     L = _longest_conjugation_path(mol)
+    penalty = _conjugation_penalty_sigmoid(L)
     if L > 12:
         n_c = sum(a.GetAtomicNum() == 6 for a in mol.GetAtoms())
         n_sp3 = sum(
@@ -490,17 +518,17 @@ def compute_quantum_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
         )
         sp3_frac = n_sp3 / max(n_c, 1)
         if sp3_frac < 0.15:
-            penalty *= 0.70
             reasons.append(
                 f"long conjugation (L={L}) without sp3 support (sp3_frac={sp3_frac:.2f})"
             )
 
     _, _, n_pi = _count_heteroatom_perturbations(mol)
+    penalty *= _pi_electron_penalty_sigmoid(n_pi)
     if n_pi > 24:
-        penalty *= 0.80
         reasons.append(f"excessive pi-system (n_pi={n_pi}) outside TOM calibration")
 
-    return penalty, "; ".join(reasons) if reasons else "within domain"
+    penalty = min(1.0, penalty)
+    return round(penalty, 4), "; ".join(reasons) if reasons else "within domain"
 
 
 # ---------------------------------------------------------------------------
@@ -518,11 +546,12 @@ class QuantumOracle:
     Results are cached by SMILES to avoid redundant computation.
     """
 
-    def __init__(self, use_xtb: bool = True) -> None:
+    def __init__(self, use_xtb: bool = True, use_delta_correction: bool = True) -> None:
         self._use_xtb = use_xtb and _HAS_XTB
         self._cache: dict[str, dict[str, float]] = {}
         self._n_xtb_calls = 0
         self._n_tom_calls = 0
+        self._use_delta_correction = use_delta_correction
 
         if use_xtb and not _HAS_XTB:
             logger.info("QuantumOracle: xTB binary not found — using TOM fallback.")
@@ -555,11 +584,25 @@ class QuantumOracle:
 
         if result is None:
             homo, lumo = predict_tom_orbitals(mol)
-            result = {
-                "homo_eV": homo,
-                "lumo_eV": lumo,
-                "dipole_D": 0.0,
-            }
+            if self._use_delta_correction:
+                try:
+                    from aurelius.scoring.oracle.delta_correction import get_delta_correction
+
+                    homo, lumo = get_delta_correction().predict_corrected(mol, base=(homo, lumo))
+                    result = {
+                        "homo_eV": homo,
+                        "lumo_eV": lumo,
+                        "dipole_D": 0.0,
+                        "correction_applied": True,  # type: ignore[dict-item]
+                    }
+                except Exception as exc:
+                    logger.warning("Delta correction failed (%s) — using raw TOM.", exc)
+            if result is None:
+                result = {
+                    "homo_eV": homo,
+                    "lumo_eV": lumo,
+                    "dipole_D": 0.0,
+                }
             self._n_tom_calls += 1
 
         if used_xtb:

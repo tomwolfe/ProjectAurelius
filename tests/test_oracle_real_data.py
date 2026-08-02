@@ -195,7 +195,10 @@ def test_quantum_oracle_tom_conjugation_sensitivity() -> None:
     """TOM should give different (non-additive) results for conjugated systems."""
     from rdkit import Chem
 
-    qc = QuantumOracle(use_xtb=False)
+    # Raw TOM physics (particle-in-a-box gap scaling). The Δ-learning layer
+    # (use_delta_correction) is a separate accuracy correction tested in
+    # test_delta_correction.py and is bypassed here to isolate TOM behavior.
+    qc = QuantumOracle(use_xtb=False, use_delta_correction=False)
 
     # Simple alkane
     ethane = qc.evaluate(Chem.MolFromSmiles("CC"))

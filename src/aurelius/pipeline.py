@@ -240,18 +240,19 @@ class AureliusPipeline:
 
             domain_penalty = oracle_result.get("domain_penalty", 1.0)
 
-            t2_result = {
-                "homo_eV": homo_eV,
-                "lumo_eV": lumo_eV,
-                "gap_eV": oracle_result.get("gap_eV", 0.0),
-                "dielectric_proxy": dielectric_proxy,
-                "viscosity_proxy": viscosity_proxy,
-                "li_solvation_proxy": li_solvation_proxy,
-                "domain_applicable": oracle_result.get("domain_applicable", True),
-                "domain_reason": oracle_result.get("domain_reason", ""),
-                "domain_penalty": domain_penalty,
-                "quantum_confidence": oracle_result.get("quantum_confidence", "unknown"),
-            }
+            # Copy ALL oracle result keys, then set defaults for required fields
+            t2_result = dict(oracle_result)
+            t2_result.setdefault("homo_eV", -99.0)
+            t2_result.setdefault("lumo_eV", -99.0)
+            t2_result.setdefault("gap_eV", 0.0)
+            t2_result.setdefault("dielectric_proxy", 0.0)
+            t2_result.setdefault("viscosity_proxy", 99.0)
+            t2_result.setdefault("li_solvation_proxy", 0.0)
+            t2_result.setdefault("domain_applicable", True)
+            t2_result.setdefault("domain_reason", "")
+            t2_result.setdefault("domain_penalty", 1.0)
+            t2_result.setdefault("quantum_confidence", "unknown")
+            t2_result.setdefault("li_binding_energy_kcal", 0.0)
             results["tier2"] = t2_result
             logger.info(
                 "Oracle Result: %s -> HOMO=%.3f LUMO=%.3f Dielectric=%.3f Viscosity=%.3f LiSolv=%.3f",

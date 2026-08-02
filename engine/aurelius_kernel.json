@@ -1,0 +1,65 @@
+{
+  "version": "1.0.0",
+  "domain_boundary": {
+    "domain": "electrolyte"
+  },
+  "tom_parameters": {
+    "homo_offset": -2.486712784802707,
+    "lumo_offset": 5.0,
+    "gc_scale": 0.5484567441718299,
+    "uq_scale": 1.1230826635306244
+  },
+  "gc_fragments": [
+    "ester",
+    "carboxylic_acid",
+    "amide",
+    "ketone",
+    "aldehyde",
+    "carbonate",
+    "ether",
+    "alcohol",
+    "primary_amine",
+    "secondary_amine",
+    "tertiary_amine",
+    "nitrile",
+    "alkene",
+    "alkyne",
+    "aromatic_carbon",
+    "fluorine",
+    "chlorine",
+    "bromine",
+    "sulfone",
+    "sulfonate",
+    "sulfonyl_fluoride",
+    "cyclic_sulfone_5",
+    "cyclic_sulfone_6",
+    "sultone_5",
+    "sultone_6",
+    "phosphate",
+    "trifluoromethyl",
+    "difluoromethylene",
+    "boronate",
+    "borate",
+    "thioether",
+    "fluorinated_ether",
+    "phosphazene",
+    "glyme_chelating",
+    "sulfonimide",
+    "fluorinated_carbonate",
+    "sulfoxide",
+    "aromatic_nitrogen",
+    "phosphonate",
+    "hf_scavenger",
+    "cyclic_carbonate"
+  ],
+  "uq_weights": {
+    "ensemble_weight": 0.5
+  },
+  "validation_metrics": {
+    "spearman_rho": 0.9,
+    "mae": 0.16665744303945912,
+    "rmse": 0.22300971864352237,
+    "n_training": 5
+  },
+  "signature": "placeholder"
+}
