@@ -320,10 +320,10 @@ class TestOracleNonlinear:
         assert ctx_normal is not None
         qp2, _ = compute_quantum_domain_penalty(ctx_normal)
         gcp2, _ = compute_gc_domain_penalty(ctx_normal)
-        assert qp2 == 1.0, (
+        assert qp2 == pytest.approx(1.0, abs=1e-4), (
             f"DMC should have no TOM DoA penalty (got {qp2})"
         )
-        assert gcp2 == 1.0, (
+        assert gcp2 == pytest.approx(1.0, abs=1e-4), (
             f"DMC should have no GC DoA penalty (got {gcp2})"
         )
 

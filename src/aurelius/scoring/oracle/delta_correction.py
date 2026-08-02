@@ -70,8 +70,12 @@ class DeltaCorrection:
     to its raw TOM prediction to produce the corrected orbital energy.
     """
 
-    def __init__(self, calib: list[dict[str, float]] | None = None) -> None:
+    def __init__(self, calib: list[dict[str, float]] | None = None, calib_smiles: list[str] | None = None) -> None:
         self._calib = calib if calib is not None else _load_calibration()
+        self._calib_smiles = calib_smiles if calib_smiles is not None else [
+            Chem.MolToSmiles(Chem.MolFromSmiles(entry["smiles"])) for entry in self._calib
+            if Chem.MolFromSmiles(entry["smiles"]) is not None
+        ]
         self._X = np.zeros((len(self._calib), 2048), dtype=np.float32)
         self._y_homo = np.zeros(len(self._calib), dtype=np.float64)
         self._y_lumo = np.zeros(len(self._calib), dtype=np.float64)

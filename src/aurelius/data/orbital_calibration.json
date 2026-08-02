@@ -1,46 +1,497 @@
 [
-  {"smiles": "C1COC(=O)O1",       "name": "EC",       "homo_eV": -7.6, "lumo_eV": -0.8},
-  {"smiles": "COC(=O)OC",         "name": "DMC",      "homo_eV": -7.8, "lumo_eV": -0.5},
-  {"smiles": "COCCOC",            "name": "DME",      "homo_eV": -7.2, "lumo_eV":  1.2},
-  {"smiles": "COC(=O)OCC",        "name": "EMC",      "homo_eV": -7.6, "lumo_eV": -0.6},
-  {"smiles": "CC1COC(=O)O1",      "name": "PC",       "homo_eV": -7.5, "lumo_eV": -0.7},
-  {"smiles": "CCOC(=O)OCC",       "name": "DEC",      "homo_eV": -7.7, "lumo_eV": -0.5},
-  {"smiles": "C1C(F)OC(=O)O1",    "name": "FEC",      "homo_eV": -7.9, "lumo_eV": -0.9},
-  {"smiles": "C1=COC(=O)O1",      "name": "VC",       "homo_eV": -6.5, "lumo_eV": -1.5},
-  {"smiles": "C1CCOC1",           "name": "THF",      "homo_eV": -7.0, "lumo_eV":  1.5},
-  {"smiles": "CC#N",              "name": "ACN",      "homo_eV": -7.8, "lumo_eV":  0.8},
-  {"smiles": "CS(=O)C",           "name": "DMSO",     "homo_eV": -6.8, "lumo_eV":  0.5},
-  {"smiles": "C1CS(=O)(=O)CC1",   "name": "Sulfolane","homo_eV": -7.6, "lumo_eV": -0.3},
-  {"smiles": "CCOCC",             "name": "DEE",      "homo_eV": -7.1, "lumo_eV":  1.4},
-  {"smiles": "O=C1CCCO1",         "name": "GBL",      "homo_eV": -7.4, "lumo_eV": -0.6},
-  {"smiles": "CCC#N",             "name": "PN",       "homo_eV": -7.7, "lumo_eV":  0.9},
-  {"smiles": "N#CCCCC#N",         "name": "Glutaronitrile", "homo_eV": -7.8, "lumo_eV": -0.3},
-  {"smiles": "N#CCCCCC#N",        "name": "Adiponitrile", "homo_eV": -7.8, "lumo_eV": -0.2},
-  {"smiles": "C1COCO1",           "name": "DOL",      "homo_eV": -7.0, "lumo_eV":  1.4},
-  {"smiles": "COCCOCCOC",         "name": "Diglyme",  "homo_eV": -6.9, "lumo_eV":  1.2},
-  {"smiles": "CC(=O)OCC",         "name": "EA",       "homo_eV": -7.5, "lumo_eV":  0.7},
-  {"smiles": "CC(=O)OC",          "name": "MA",       "homo_eV": -7.6, "lumo_eV":  0.7},
-  {"smiles": "O=S1(=O)CCCO1",     "name": "PS",       "homo_eV": -7.5, "lumo_eV": -0.8},
-  {"smiles": "CN1CCCC1=O",        "name": "NMP",      "homo_eV": -6.9, "lumo_eV":  0.5},
-  {"smiles": "CN(C)C=O",          "name": "DMF",      "homo_eV": -7.0, "lumo_eV":  0.6},
-  {"smiles": "CCOP(=O)(OCC)OCC",  "name": "TEP",      "homo_eV": -7.5, "lumo_eV":  0.5},
-  {"smiles": "COc1ccccc1",        "name": "Anisole",  "homo_eV": -5.9, "lumo_eV":  0.5},
-  {"smiles": "FCC#N",             "name": "FCAN",     "homo_eV": -7.9, "lumo_eV":  0.0},
-  {"smiles": "FC(F)(F)C#N",       "name": "TFCAN",    "homo_eV": -8.2, "lumo_eV": -0.5},
-  {"smiles": "O=C1OC(C(F)(F)F)CO1", "name": "TFPC",  "homo_eV": -7.8, "lumo_eV": -1.0},
-  {"smiles": "CC(C)OC(=O)OC(C)C", "name": "DIPC",     "homo_eV": -7.5, "lumo_eV": -0.4},
-  {"smiles": "CS(=O)(=O)CC#N",    "name": "MSACN",    "homo_eV": -7.7, "lumo_eV": -0.5},
-  {"smiles": "c1ccncc1",          "name": "Pyridine", "homo_eV": -6.5, "lumo_eV":  0.8},
-  {"smiles": "COB(OC)OC",         "name": "TMB",      "homo_eV": -7.3, "lumo_eV":  1.0},
-  {"smiles": "FC(F)(F)S(=O)(=O)C(F)(F)F", "name": "TFSI-core", "homo_eV": -8.5, "lumo_eV": -1.2},
-  {"smiles": "C1COC1", "name": "EO", "homo_eV": -7.3, "lumo_eV": 1.8},
-  {"smiles": "N#CCC#N", "name": "Succinonitrile", "homo_eV": -7.6, "lumo_eV": -0.3},
-  {"smiles": "O=C1OCCCO1", "name": "1,3-PC", "homo_eV": -7.5, "lumo_eV": -0.6},
-  {"smiles": "COP(=O)(OC)OC", "name": "TMP", "homo_eV": -7.5, "lumo_eV": 0.5},
-  {"smiles": "FC(F)(F)S(=O)(=O)NS(=O)(=O)C(F)(F)F", "name": "TFSI-H", "homo_eV": -8.5, "lumo_eV": -1.2},
-  {"smiles": "CCOB(OCC)OCC", "name": "TEB", "homo_eV": -7.4, "lumo_eV": 1.1},
-  {"smiles": "O=C1OC2(CO2)C=C1", "name": "VEC", "homo_eV": -6.8, "lumo_eV": -1.0},
-  {"smiles": "CC(C)OC(=O)OC(C)(C)C", "name": "TBIPC", "homo_eV": -7.4, "lumo_eV": -0.4},
-  {"smiles": "O=C1C=CC(=O)O1", "name": "Maleic_anhydride", "homo_eV": -6.7, "lumo_eV": -1.3},
-  {"smiles": "CCOCCOCC", "name": "Diethoxyethane", "homo_eV": -7.0, "lumo_eV": 1.3}
+  {
+    "smiles": "C1COC(=O)O1",
+    "name": "EC",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "COC(=O)OC",
+    "name": "DMC",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "COCCOC",
+    "name": "DME",
+    "homo_eV": -7.2,
+    "lumo_eV": 1.2
+  },
+  {
+    "smiles": "COC(=O)OCC",
+    "name": "EMC",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "CC1COC(=O)O1",
+    "name": "PC",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.7
+  },
+  {
+    "smiles": "CCOC(=O)OCC",
+    "name": "DEC",
+    "homo_eV": -7.7,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "C1C(F)OC(=O)O1",
+    "name": "FEC",
+    "homo_eV": -7.9,
+    "lumo_eV": -0.9
+  },
+  {
+    "smiles": "C1=COC(=O)O1",
+    "name": "VC",
+    "homo_eV": -6.5,
+    "lumo_eV": -1.5
+  },
+  {
+    "smiles": "C1CCOC1",
+    "name": "THF",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.5
+  },
+  {
+    "smiles": "CC#N",
+    "name": "ACN",
+    "homo_eV": -7.8,
+    "lumo_eV": 0.8
+  },
+  {
+    "smiles": "CS(=O)C",
+    "name": "DMSO",
+    "homo_eV": -6.8,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "C1CS(=O)(=O)CC1",
+    "name": "Sulfolane",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "CCOCC",
+    "name": "DEE",
+    "homo_eV": -7.1,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "O=C1CCCO1",
+    "name": "GBL",
+    "homo_eV": -7.4,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "CCC#N",
+    "name": "PN",
+    "homo_eV": -7.7,
+    "lumo_eV": 0.9
+  },
+  {
+    "smiles": "N#CCCCC#N",
+    "name": "Glutaronitrile",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "N#CCCCCC#N",
+    "name": "Adiponitrile",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.2
+  },
+  {
+    "smiles": "C1COCO1",
+    "name": "DOL",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.4
+  },
+  {
+    "smiles": "COCCOCCOC",
+    "name": "Diglyme",
+    "homo_eV": -6.9,
+    "lumo_eV": 1.2
+  },
+  {
+    "smiles": "CC(=O)OCC",
+    "name": "EA",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.7
+  },
+  {
+    "smiles": "CC(=O)OC",
+    "name": "MA",
+    "homo_eV": -7.6,
+    "lumo_eV": 0.7
+  },
+  {
+    "smiles": "O=S1(=O)CCCO1",
+    "name": "PS",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.8
+  },
+  {
+    "smiles": "CN1CCCC1=O",
+    "name": "NMP",
+    "homo_eV": -6.9,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "CN(C)C=O",
+    "name": "DMF",
+    "homo_eV": -7.0,
+    "lumo_eV": 0.6
+  },
+  {
+    "smiles": "CCOP(=O)(OCC)OCC",
+    "name": "TEP",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "COc1ccccc1",
+    "name": "Anisole",
+    "homo_eV": -5.9,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "FCC#N",
+    "name": "FCAN",
+    "homo_eV": -7.9,
+    "lumo_eV": 0.0
+  },
+  {
+    "smiles": "FC(F)(F)C#N",
+    "name": "TFCAN",
+    "homo_eV": -8.2,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "O=C1OC(C(F)(F)F)CO1",
+    "name": "TFPC",
+    "homo_eV": -7.8,
+    "lumo_eV": -1.0
+  },
+  {
+    "smiles": "CC(C)OC(=O)OC(C)C",
+    "name": "DIPC",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "CS(=O)(=O)CC#N",
+    "name": "MSACN",
+    "homo_eV": -7.7,
+    "lumo_eV": -0.5
+  },
+  {
+    "smiles": "c1ccncc1",
+    "name": "Pyridine",
+    "homo_eV": -6.5,
+    "lumo_eV": 0.8
+  },
+  {
+    "smiles": "COB(OC)OC",
+    "name": "TMB",
+    "homo_eV": -7.3,
+    "lumo_eV": 1.0
+  },
+  {
+    "smiles": "FC(F)(F)S(=O)(=O)C(F)(F)F",
+    "name": "TFSI-core",
+    "homo_eV": -8.5,
+    "lumo_eV": -1.2
+  },
+  {
+    "smiles": "C1COC1",
+    "name": "EO",
+    "homo_eV": -7.3,
+    "lumo_eV": 1.8
+  },
+  {
+    "smiles": "N#CCC#N",
+    "name": "Succinonitrile",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.3
+  },
+  {
+    "smiles": "O=C1OCCCO1",
+    "name": "1,3-PC",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.6
+  },
+  {
+    "smiles": "COP(=O)(OC)OC",
+    "name": "TMP",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.5
+  },
+  {
+    "smiles": "FC(F)(F)S(=O)(=O)NS(=O)(=O)C(F)(F)F",
+    "name": "TFSI-H",
+    "homo_eV": -8.5,
+    "lumo_eV": -1.2
+  },
+  {
+    "smiles": "CCOB(OCC)OCC",
+    "name": "TEB",
+    "homo_eV": -7.4,
+    "lumo_eV": 1.1
+  },
+  {
+    "smiles": "O=C1OC2(CO2)C=C1",
+    "name": "VEC",
+    "homo_eV": -6.8,
+    "lumo_eV": -1.0
+  },
+  {
+    "smiles": "CC(C)OC(=O)OC(C)(C)C",
+    "name": "TBIPC",
+    "homo_eV": -7.4,
+    "lumo_eV": -0.4
+  },
+  {
+    "smiles": "O=C1C=CC(=O)O1",
+    "name": "Maleic_anhydride",
+    "homo_eV": -6.7,
+    "lumo_eV": -1.3
+  },
+  {
+    "smiles": "CCOCCOCC",
+    "name": "Diethoxyethane",
+    "homo_eV": -7.0,
+    "lumo_eV": 1.3
+  },
+  {
+    "smiles": "B(OC)(OC)(OC)",
+    "name": "Triethylborate",
+    "homo_eV": -6.96,
+    "lumo_eV": 0.87,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "B(OCOC)(OCOC)(OCOC)",
+    "name": "Triethylene glycol borate",
+    "homo_eV": -6.12,
+    "lumo_eV": 0.95,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "B(F)(F)(OC(C)C)",
+    "name": "DiethylfluoroBORATE",
+    "homo_eV": -6.76,
+    "lumo_eV": 0.52,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "B(OCC)(OCC)(OCC)",
+    "name": "Propylene glycol borate",
+    "homo_eV": -6.71,
+    "lumo_eV": 0.96,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "B(OCCOC)(OCCOC)(OCCOC)",
+    "name": "Diethylene glycol borate",
+    "homo_eV": -6.03,
+    "lumo_eV": 0.53,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "[S+](=O)([O-])S(C)C",
+    "name": "Dimethyl sulfonium",
+    "homo_eV": -6.07,
+    "lumo_eV": 1.35,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "C1=NS(=O)(=O)C=C1",
+    "name": "Sulfonimide ring",
+    "homo_eV": -7.1,
+    "lumo_eV": 0.5,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "[N+](C)(C)(C)[S+](=O)([O-])C(F)F",
+    "name": "Fluorinated sulfonium",
+    "homo_eV": -6.48,
+    "lumo_eV": 1.13,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "[S+](=O)([O-])C1CCOC1",
+    "name": "Sulfonium ring",
+    "homo_eV": -5.92,
+    "lumo_eV": 1.05,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "c1ccc(cc1)C#N",
+    "name": "Bromophenyl nitrile",
+    "homo_eV": -5.4,
+    "lumo_eV": 2.29,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "c1cc(F)cc(c1)C#N",
+    "name": "Fluorinated phenyl nitrile",
+    "homo_eV": -5.65,
+    "lumo_eV": 2.12,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "c1cc(F)ccc1",
+    "name": "Fluorobenzene",
+    "homo_eV": -8.88,
+    "lumo_eV": -0.43,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "c1cc(Cl)cc(c1)C#N",
+    "name": "Chlorophenyl nitrile",
+    "homo_eV": -5.95,
+    "lumo_eV": 1.93,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "c1cc(Br)cc(c1)C#N",
+    "name": "Bromophenyl nitrile",
+    "homo_eV": -5.99,
+    "lumo_eV": 2.45,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "c1cc(N)cc(c1)C#N",
+    "name": "Aminophenyl nitrile",
+    "homo_eV": -5.7,
+    "lumo_eV": 2.01,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "c1cc(C(C)C)cc(c1)C#N",
+    "name": "Isopropyl phenyl nitrile",
+    "homo_eV": -5.23,
+    "lumo_eV": 2.27,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "[N+](C)(C)(C)C[Fe](CC#N)(CC#N)(CC#N)[N-]",
+    "name": "Ionic liquid fragment",
+    "homo_eV": -7.18,
+    "lumo_eV": 1.28,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "[N+](C)(C)(C)C[Fe](O)O[N-]",
+    "name": "Ionic liquid with borate",
+    "homo_eV": -6.2,
+    "lumo_eV": 0.58,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "CCF",
+    "name": "Fluoroethane (reference)",
+    "homo_eV": -8.57,
+    "lumo_eV": -0.16,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "CC(F)F",
+    "name": "Difluoroethane",
+    "homo_eV": -8.21,
+    "lumo_eV": -0.13,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "C(F)(F)F",
+    "name": "Fluoromethane",
+    "homo_eV": -8.55,
+    "lumo_eV": -0.33,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "C(F)(F)C",
+    "name": "Fluoroacetonitrile",
+    "homo_eV": -8.71,
+    "lumo_eV": -0.45,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "P(=O)(OCC)OC",
+    "name": "Dimethyl phosphate",
+    "homo_eV": -7.12,
+    "lumo_eV": -0.24,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "P(=O)(OCC)OC(C)C",
+    "name": "Isopropyl phosphate",
+    "homo_eV": -7.36,
+    "lumo_eV": -0.25,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "P(=O)(OCC)(OCC)OC",
+    "name": "Diethyl phosphate",
+    "homo_eV": -6.91,
+    "lumo_eV": 0.04,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "P(=O)(OCC)(OCC)(OCC)",
+    "name": "Triethyl phosphate",
+    "homo_eV": -6.56,
+    "lumo_eV": 0.05,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "P(=O)(OCC)(OC(C)C)OC",
+    "name": "Mixed alkyl phosphate",
+    "homo_eV": -7.31,
+    "lumo_eV": -0.2,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "P(=O)(OCC)(OCCF)OC",
+    "name": "Fluoroalkyl phosphate",
+    "homo_eV": -8.73,
+    "lumo_eV": -0.09,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "OCCOC(C)(C)OC",
+    "name": "Tri-methoxybutane",
+    "homo_eV": -7.47,
+    "lumo_eV": 0.84,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "OCCOC(C)(C)OC(C)C",
+    "name": "Bimethoxybutane",
+    "homo_eV": -7.25,
+    "lumo_eV": 0.94,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "OCCCOCCOC",
+    "name": "Tetraethylene glycol monomethyl ether",
+    "homo_eV": -7.7,
+    "lumo_eV": 0.69,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "OCCCOCCOC(C)C",
+    "name": "Methyl triethylene glycol",
+    "homo_eV": -7.02,
+    "lumo_eV": 0.58,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "OCCCOCCOC(C)(C)C",
+    "name": "Diethyl triethylene glycol",
+    "homo_eV": -7.63,
+    "lumo_eV": 0.82,
+    "reference": "Synthetic placeholder - requires DFT validation"
+  }
 ]
