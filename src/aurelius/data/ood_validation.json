@@ -1,0 +1,149 @@
+[
+  {
+    "smiles": "CCOP(=O)(OCC)OCC",
+    "name": "TEP",
+    "class": "phosphoric ester",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "COc1ccccc1",
+    "name": "Anisole",
+    "class": "aryl ether",
+    "expected_dielectric_rank": "medium",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "C(C)(C)(C)O",
+    "name": "tert-butanol",
+    "class": "sterically hindered alcohol",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "CCN(C)C=O",
+    "name": "N,N-dimethylacetamide",
+    "class": "N,N-dimethyl amide",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "S(=O)(=O)(O)",
+    "name": "methylsulfonyl",
+    "class": "sulfonyl group",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "O=C1CCCCC1",
+    "name": "cyclopentanone",
+    "class": "cyclic ketone",
+    "expected_dielectric_rank": "medium",
+    "expected_viscosity_rank": "low"
+  },
+  {
+    "smiles": "C1C(C)(C)OC(=O)O1",
+    "name": "methyl acetate cyclic",
+    "class": "cyclic ester",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "CCOC(=O)OC(C)C",
+    "name": "isopropyl acetate",
+    "class": "branched ester",
+    "expected_dielectric_rank": "medium",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "CC(C)OC(=O)OC(C)C",
+    "name": "dipropylene glycol methyl ether",
+    "class": "ether ester",
+    "expected_dielectric_rank": "medium",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "CC(C)(C)OCCOCC",
+    "name": "branched triol",
+    "class": "polyol",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "CC(C)C(C)OC",
+    "name": "neopentyl glycol ether",
+    "class": "sterically hindered ether",
+    "expected_dielectric_rank": "medium",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "C(C)(C)C(=O)O",
+    "name": "pivalic acid",
+    "class": "tert-butyl carboxylic acid",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "CC(=O)COC(=O)CC",
+    "name": "succinic anhydride precursor",
+    "class": "diester linkage",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "O=C1CCCCC1C(=O)O",
+    "name": "cis-4-carboxycyclohexanone",
+    "class": "cyclic keto-acid",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "CC(C)C(F)(F)C(F)(F)F",
+    "name": "perfluoro-tert-butyl",
+    "class": "extreme fluorination",
+    "expected_dielectric_rank": "low",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "CC#N",
+    "name": "acetonitrile",
+    "class": "nitrile solvent",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "medium"
+  },
+  {
+    "smiles": "O=C1CCCC1=O",
+    "name": "cyclopentanone cyclic",
+    "class": "cyclic ketone",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "medium"
+  },
+  {
+    "smiles": "CC(C)OC(=O)OCCOCC",
+    "name": "branched ester triol",
+    "class": "branched ester alcohol",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "CC(C)(C)OC(=O)O",
+    "name": "tert-butyl acetate",
+    "class": "branched ester",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "CCOCCOCCOCC",
+    "name": "branched ether glycol",
+    "class": "polyether",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high"
+  },
+  {
+    "smiles": "CC(C)OC(=O)OC(C)C",
+    "name": "isopropyl diphenyl ether",
+    "class": "aryl ether",
+    "expected_dielectric_rank": "medium",
+    "expected_viscosity_rank": "high"
+  }
+]

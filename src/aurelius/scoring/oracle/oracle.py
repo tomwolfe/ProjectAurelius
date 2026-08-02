@@ -83,12 +83,50 @@ class PropertyOracle:
         domain_applicable = domain_penalty >= 0.85
         domain_reason_str = "; ".join(domain_reasons) if domain_reasons else _DATA_SOURCE
 
+        # Apply physical sanity bounds to ensure realistic predictions
+        sanity_warning: list[str] = []
+        clamped_values = {
+            "dielectric_proxy": dielectric,
+            "viscosity_proxy": viscosity,
+            "homo_eV": homo,
+            "lumo_eV": lumo,
+        }
+
+        # Apply bounds per property
+        if dielectric < 1.0:
+            clamped_values["dielectric_proxy"] = 1.0
+            sanity_warning.append("dielectric_proxy below physical minimum (clamped to 1.0)")
+        elif dielectric > 100.0:
+            clamped_values["dielectric_proxy"] = 100.0
+            sanity_warning.append("dielectric_proxy above physical maximum (clamped to 100.0)")
+
+        if viscosity < 0.1:
+            clamped_values["viscosity_proxy"] = 0.1
+            sanity_warning.append("viscosity_proxy below physical minimum (clamped to 0.1)")
+        elif viscosity > 50.0:
+            clamped_values["viscosity_proxy"] = 50.0
+            sanity_warning.append("viscosity_proxy above physical maximum (clamped to 50.0)")
+
+        if homo < -12.0:
+            clamped_values["homo_eV"] = -12.0
+            sanity_warning.append("homo_eV below physical minimum (clamped to -12.0)")
+        elif homo > -3.0:
+            clamped_values["homo_eV"] = -3.0
+            sanity_warning.append("homo_eV above physical maximum (clamped to -3.0)")
+
+        if lumo < -5.0:
+            clamped_values["lumo_eV"] = -5.0
+            sanity_warning.append("lumo_eV below physical minimum (clamped to -5.0)")
+        elif lumo > 5.0:
+            clamped_values["lumo_eV"] = 5.0
+            sanity_warning.append("lumo_eV above physical maximum (clamped to 5.0)")
+
         result: dict[str, Any] = {
-            "homo_eV": round(homo, 4),
-            "lumo_eV": round(lumo, 4),
-            "gap_eV": round(gap, 4),
-            "dielectric_proxy": round(dielectric, 4),
-            "viscosity_proxy": round(viscosity, 4),
+            "homo_eV": round(clamped_values["homo_eV"], 4),
+            "lumo_eV": round(clamped_values["lumo_eV"], 4),
+            "gap_eV": round(clamped_values["lumo_eV"] - clamped_values["homo_eV"], 4),
+            "dielectric_proxy": round(clamped_values["dielectric_proxy"], 4),
+            "viscosity_proxy": round(clamped_values["viscosity_proxy"], 4),
             "li_solvation_proxy": round(li_solvation, 4),
             "conductivity_proxy": round(conductivity, 4),
             "domain_applicable": domain_applicable,
@@ -96,6 +134,7 @@ class PropertyOracle:
             "domain_penalty": round(domain_penalty, 4),
             "quantum_method": self._quantum.method,
             "quantum_confidence": quantum_result.get("quantum_confidence", "unknown"),
+            "sanity_warning": sanity_warning,
         }
 
         self._cache[smiles] = result

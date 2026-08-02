@@ -1,0 +1,947 @@
+[
+  {
+    "smiles": "O",
+    "name": "C1 alcohol",
+    "category": "alcohols"
+  },
+  {
+    "smiles": "CCO",
+    "name": "C2 alcohol",
+    "category": "alcohols"
+  },
+  {
+    "smiles": "CCCO",
+    "name": "C3 alcohol",
+    "category": "alcohols"
+  },
+  {
+    "smiles": "CCCCO",
+    "name": "C4 alcohol",
+    "category": "alcohols"
+  },
+  {
+    "smiles": "CCCCCO",
+    "name": "C5 alcohol",
+    "category": "alcohols"
+  },
+  {
+    "smiles": "CCCCCCO",
+    "name": "C6 alcohol",
+    "category": "alcohols"
+  },
+  {
+    "smiles": "CCCCCCCO",
+    "name": "C7 alcohol",
+    "category": "alcohols"
+  },
+  {
+    "smiles": "CCCCCCCCO",
+    "name": "C8 alcohol",
+    "category": "alcohols"
+  },
+  {
+    "smiles": "CCCCCCCCCO",
+    "name": "C9 alcohol",
+    "category": "alcohols"
+  },
+  {
+    "smiles": "CCCCCCCCCCO",
+    "name": "C10 alcohol",
+    "category": "alcohols"
+  },
+  {
+    "smiles": "OC",
+    "name": "C1 ether",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CCOCCCOC",
+    "name": "C2 ether",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CCCOCCCCOC",
+    "name": "C3 ether",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CCCCOCCCCCOC",
+    "name": "C4 ether",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CCCCCOCCCCCCOC",
+    "name": "C5 ether",
+    "category": "ethers"
+  },
+  {
+    "smiles": "C",
+    "name": "C1 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CC",
+    "name": "C2 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCC",
+    "name": "C3 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCC",
+    "name": "C4 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCC",
+    "name": "C5 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCC",
+    "name": "C6 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCC",
+    "name": "C7 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCC",
+    "name": "C8 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCC",
+    "name": "C9 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCC",
+    "name": "C10 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CC#N",
+    "name": "Acetonitrile",
+    "category": "nitriles"
+  },
+  {
+    "smiles": "CCC#N",
+    "name": "Propionitrile",
+    "category": "nitriles"
+  },
+  {
+    "smiles": "CC(C)C#N",
+    "name": "Isobutyronitrile",
+    "category": "nitriles"
+  },
+  {
+    "smiles": "CCC(C)C#N",
+    "name": "Isovaleronitrile",
+    "category": "nitriles"
+  },
+  {
+    "smiles": "CCCC#N",
+    "name": "Butyronitrile",
+    "category": "nitriles"
+  },
+  {
+    "smiles": "CS(=O)(=O)C",
+    "name": "Dimethyl sulfone",
+    "category": "sulfones"
+  },
+  {
+    "smiles": "C1CS(=O)(=O)CC1",
+    "name": "Sulfolane",
+    "category": "sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=O)CC#N",
+    "name": "Methylsulfonylacetonitrile",
+    "category": "sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=O)CCOC",
+    "name": "Methylsulfonyl ethyl ether",
+    "category": "sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=O)CCC",
+    "name": "Propyl sulfone",
+    "category": "sulfones"
+  },
+  {
+    "smiles": "COC(=O)OC",
+    "name": "Dimethyl carbonate",
+    "category": "carbonates"
+  },
+  {
+    "smiles": "CCOC(=O)OCC",
+    "name": "Diethyl carbonate",
+    "category": "carbonates"
+  },
+  {
+    "smiles": "C1COC(=O)O1",
+    "name": "Ethylene carbonate",
+    "category": "carbonates"
+  },
+  {
+    "smiles": "c1ccccc1",
+    "name": "Benzene",
+    "category": "aromatic"
+  },
+  {
+    "smiles": "C1CCCCC1",
+    "name": "Cyclohexane",
+    "category": "cycloalkanes"
+  },
+  {
+    "smiles": "C1CCCCC1C",
+    "name": "Toluene",
+    "category": "aromatic"
+  },
+  {
+    "smiles": "c1ccccc1N",
+    "name": "Aniline",
+    "category": "aromatic amines"
+  },
+  {
+    "smiles": "c1ccccc1O",
+    "name": "Phenol",
+    "category": "phenols"
+  },
+  {
+    "smiles": "CN",
+    "name": "Methylamine",
+    "category": "amines"
+  },
+  {
+    "smiles": "CCN",
+    "name": "Ethylamine",
+    "category": "amines"
+  },
+  {
+    "smiles": "CCCNC",
+    "name": "Triethylamine",
+    "category": "amines"
+  },
+  {
+    "smiles": "CC(C)NC",
+    "name": "Isopropylamine",
+    "category": "amines"
+  },
+  {
+    "smiles": "CCC(C)NC",
+    "name": "Isopropylamine",
+    "category": "amines"
+  },
+  {
+    "smiles": "CC=O",
+    "name": "Propanal",
+    "category": "aldehydes"
+  },
+  {
+    "smiles": "CCC=O",
+    "name": "Butanal",
+    "category": "aldehydes"
+  },
+  {
+    "smiles": "CCCC=O",
+    "name": "Pentanal",
+    "category": "aldehydes"
+  },
+  {
+    "smiles": "C(=O)OC",
+    "name": "Methyl formate",
+    "category": "esters"
+  },
+  {
+    "smiles": "CC(=O)OCC",
+    "name": "Ethyl acetate",
+    "category": "esters"
+  },
+  {
+    "smiles": "CCC(=O)OCCC",
+    "name": "Propyl propionate",
+    "category": "esters"
+  },
+  {
+    "smiles": "CC(=O)CC",
+    "name": "2-butanone",
+    "category": "ketones"
+  },
+  {
+    "smiles": "CCC(=O)CCC",
+    "name": "2-pentanone",
+    "category": "ketones"
+  },
+  {
+    "smiles": "CCCC(=O)CCCC",
+    "name": "2-hexanone",
+    "category": "ketones"
+  },
+  {
+    "smiles": "CC(=O)O",
+    "name": "Propionic acid",
+    "category": "carboxylic acids"
+  },
+  {
+    "smiles": "CCC(=O)O",
+    "name": "Butyric acid",
+    "category": "carboxylic acids"
+  },
+  {
+    "smiles": "CCCC(=O)O",
+    "name": "Valeric acid",
+    "category": "carboxylic acids"
+  },
+  {
+    "smiles": "CC(F)F",
+    "name": "1,1-Difluoroethane",
+    "category": "fluorinated hydrocarbons"
+  },
+  {
+    "smiles": "CC(F)(F)C(F)F",
+    "name": "1,1,1-Trifluoropropane",
+    "category": "fluorinated hydrocarbons"
+  },
+  {
+    "smiles": "CC(F)C(F)C(F)F",
+    "name": "1,1,1,2-Tetrafluoropropane",
+    "category": "fluorinated hydrocarbons"
+  },
+  {
+    "smiles": "C(F)C(F)C(F)C(F)F",
+    "name": "1,1,1,2,2,3-Hexafluoropropane",
+    "category": "fluorinated hydrocarbons"
+  },
+  {
+    "smiles": "CCC(F)(F)F",
+    "name": "1,1,1-Trifluoropropane",
+    "category": "fluorinated hydrocarbons"
+  },
+  {
+    "smiles": "CCCCCCCCCCC",
+    "name": "C11 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCC",
+    "name": "C12 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCC",
+    "name": "C13 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCC",
+    "name": "C14 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCC",
+    "name": "C15 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCC",
+    "name": "C16 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCC",
+    "name": "C17 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCC",
+    "name": "C18 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCC",
+    "name": "C19 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCC",
+    "name": "C20 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCC",
+    "name": "C21 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C22 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C23 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C24 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C25 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "C(C)CCC",
+    "name": "C4 branched",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "C(C)CCCC",
+    "name": "C5 branched",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "C(C)CCCCC",
+    "name": "C6 branched",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "C(C)CCCCCC",
+    "name": "C7 branched",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "C(C)CCCCCCC",
+    "name": "C8 branched",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "C(C)CCCCCCCC",
+    "name": "C9 branched",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "C(C)CCCCCCCCC",
+    "name": "C10 branched",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "C(C)CCCCCCCCCC",
+    "name": "C11 branched",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "C(C)CCCCCCCCCCC",
+    "name": "C12 branched",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "C(C)CCCCCCCCCCCC",
+    "name": "C13 branched",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "C(C)CCCCCCCCCCCCC",
+    "name": "C14 branched",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCOCCCCCCCOC",
+    "name": "C6 ether",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CCCCCCCOCCCCCCCCOC",
+    "name": "C7 ether",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CCCCCCCCOCCCCCCCCCOC",
+    "name": "C8 ether",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CCCCCCCCCOCCCCCCCCCCOC",
+    "name": "C9 ether",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CCCCCCCCCCOCCCCCCCCCCCOC",
+    "name": "C10 ether",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CCCCCCCCCCCOCCCCCCCCCCCCOC",
+    "name": "C11 ether",
+    "category": "ethers"
+  },
+  {
+    "smiles": "FCS(=O)(=O)F",
+    "name": "Fluoromethylsulfonyl fluoride",
+    "category": "sulfonyl fluorides"
+  },
+  {
+    "smiles": "CC(F)(F)CS(=O)(=O)F",
+    "name": "Trifluoromethyl methyl sulfone",
+    "category": "sulfonyl fluorides"
+  },
+  {
+    "smiles": "FC(F)C(F)C(F)F",
+    "name": "1,1,1,2,2,3,4-Heptafluorobutane",
+    "category": "fluorinated hydrocarbons"
+  },
+  {
+    "smiles": "C1COCCOCCO1",
+    "name": "Methyl tetraglyme",
+    "category": "ethers"
+  },
+  {
+    "smiles": "COCCOCCOC",
+    "name": "Methyl triethylene glycol",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CCOCCOCCOC",
+    "name": "Triethylene glycol",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CCOCCOCCOCC",
+    "name": "Tetraethylene glycol",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CS(=O)C",
+    "name": "Methanesulfoxide",
+    "category": "sulfoxides"
+  },
+  {
+    "smiles": "C(=S)O",
+    "name": "Formyl thioester",
+    "category": "thiosulfides"
+  },
+  {
+    "smiles": "C(S)C",
+    "name": "Dithiomethane",
+    "category": "thiols"
+  },
+  {
+    "smiles": "O",
+    "name": "Water",
+    "category": "oxygenates"
+  },
+  {
+    "smiles": "CCOCCO",
+    "name": "Triethylene glycol",
+    "category": "ethers"
+  },
+  {
+    "smiles": "CCOCCOCCO",
+    "name": "Tetraethylene glycol",
+    "category": "ethers"
+  },
+  {
+    "smiles": "COCCO",
+    "name": "Diethylene glycol",
+    "category": "ethers"
+  },
+  {
+    "smiles": "COC",
+    "name": "Dimethyl ether",
+    "category": "ethers"
+  },
+  {
+    "smiles": "C#N",
+    "name": "Nitrile",
+    "category": "nitriles"
+  },
+  {
+    "smiles": "C(C)#N",
+    "name": "Isobutyronitrile",
+    "category": "nitriles"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C26 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C27 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C28 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C29 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C30 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C31 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C32 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C33 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C34 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C35 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C36 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C37 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C38 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C39 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C40 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C41 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C42 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C43 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C44 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C45 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C46 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C47 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C48 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C49 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C50 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C51 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C52 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C53 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C54 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C55 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C56 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C57 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C58 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C59 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C60 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C61 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C62 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C63 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C64 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C65 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C66 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C67 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C68 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C69 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C70 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C71 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C72 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C73 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C74 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C75 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C76 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C77 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C78 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C79 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C80 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C81 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C82 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C83 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C84 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C85 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C86 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C87 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C88 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C89 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C90 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C91 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C92 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C93 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C94 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C95 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C96 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C97 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C98 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C99 alkane",
+    "category": "alkanes"
+  },
+  {
+    "smiles": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "name": "C100 alkane",
+    "category": "alkanes"
+  }
+]
