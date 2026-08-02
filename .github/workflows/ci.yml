@@ -19,14 +19,17 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
+        working-directory: engine
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
       - name: Run ruff
+        working-directory: engine
         run: ruff check .
 
       - name: Run mypy
+        working-directory: engine
         run: mypy src/aurelius
 
   test:
@@ -45,15 +48,18 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
+        working-directory: engine
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           pip install huggingface-hub
 
       - name: Run heuristic stability test
+        working-directory: engine
         run: pytest tests/test_heuristic_stability.py -v --no-header
 
       - name: Run pytest
+        working-directory: engine
         run: pytest tests/ -v
 
   test-tier1-3:
@@ -68,12 +74,14 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
+        working-directory: engine
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           pip install rdkit
 
       - name: Run tier0 tests
+        working-directory: engine
         run: pytest tests/ -v -k "tier1 or tier2 or tier3" --tb=short
 
   test-memory:
@@ -88,11 +96,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
+        working-directory: engine
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
       - name: Run memory profiler tests
+        working-directory: engine
         run: pytest tests/ -v -k "memory or profiler" --tb=short
 
   wheel:
@@ -107,11 +117,13 @@ jobs:
           python-version: "3.11"
 
       - name: Build wheel
+        working-directory: engine
         run: |
           pip install build
           python -m build --wheel
 
       - name: Verify wheel contents
+        working-directory: engine
         run: |
           ls -la dist/
           python -m zipfile -l dist/*.whl | head -20
@@ -128,11 +140,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies at lower bounds
+        working-directory: engine
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
       - name: Run pytest
+        working-directory: engine
         run: pytest tests/ -v --tb=short
 
   benchmark-validation:
@@ -148,11 +162,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
+        working-directory: engine
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
       - name: Update and Verify Benchmark Documentation
+        working-directory: engine
         run: |
           python scripts/update_benchmark_docs.py
           git diff --exit-code docs/benchmarks.md || (echo "ERROR: docs/benchmarks.md is out of date. Run 'python scripts/update_benchmark_docs.py' and commit the changes." && exit 1)
@@ -169,11 +185,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
+        working-directory: engine
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
       - name: Run philosophy gates
+        working-directory: engine
         run: pytest tests/test_net_progress.py tests/test_external_validation.py -v
 
   fallback-only:
@@ -188,13 +206,16 @@ jobs:
           python-version: "3.11"
 
       - name: Install base dependencies only
+        working-directory: engine
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           pip install huggingface-hub
 
       - name: Run aurelius doctor
+        working-directory: engine
         run: python -m aurelius doctor --verbose
 
       - name: Run fallback-safe tests
+        working-directory: engine
         run: pytest tests/ -v -k "not (tier1 or tier2 or tier3 or profiler or memory)" --tb=short
