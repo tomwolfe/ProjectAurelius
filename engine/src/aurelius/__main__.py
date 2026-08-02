@@ -850,6 +850,80 @@ def tune_cmd(csv_path: str, output: str, max_iter: int) -> None:
     _echo(f"  Training pts: {metrics.get('n_training', 0)}")
 
 
+@cli.command("learn")
+@click.option("--max-suggestions", type=int, default=10, help="Number of top discoveries to suggest")
+@click.option("--feedback-csv", type=click.Path(exists=True), help="Path to CSV with experimental feedback")
+@click.option("--feedback-sdf", type=click.Path(exists=True), help="Path to SDF with experimental feedback")
+@click.option("--output", type=click.Path(), help="Output path for suggestions file")
+@click.option("--verbose", "-v", is_flag=True, default=False)
+def learn_cmd(max_suggestions: int, feedback_csv: str | None, feedback_sdf: str | None, output: str | None, verbose: bool) -> None:
+    """Run the active-learning suggest → validate → retrain cycle.
+
+    If --feedback-csv or --feedback-sdf is provided, the pipeline will
+    retrain the GC UQ ensemble with the experimental data.  Otherwise,
+    the command generates top-N synthesis suggestions from the current
+    discovery set.
+    """
+    from aurelius.agent.learning_loop import SuggestAndValidatePipeline, AutoRetrainPipeline, ExperimentResultParser
+
+    if feedback_csv is not None:
+        try:
+            feedback_data = ExperimentResultParser.parse_csv(feedback_csv)
+        except (FileNotFoundError, ValueError) as e:
+            _echo_colored(f"[red]Error parsing CSV:[/red] {e}", style="bold red", err=True)
+            sys.exit(1)
+
+        auto_retrain = AutoRetrainPipeline()
+        auto_retrain._feedback_data = feedback_data
+
+        _echo(f"Loaded {len(feedback_data)} feedback entries")
+        summary = auto_retrain.summary()
+        _echo(f"  Mean dielectric: {summary.get('mean_dielectric', 0.0):.4f}")
+        _echo(f"  Mean viscosity:  {summary.get('mean_viscosity', 0.0):.4f}")
+
+        if verbose:
+            for entry in feedback_data:
+                _echo(f"  SMILES: {entry.get('smiles', '')}")
+                _echo(f"    dielectric: {entry.get('dielectric_constant', 0.0):.4f}")
+                _echo(f"    viscosity:  {entry.get('viscosity_cP', 0.0):.4f}")
+                _echo(f"    cycle_life: {entry.get('cycle_life', 0.0):.4f}")
+
+        _echo_colored("[bold green]Feedback pipeline ready.[/bold green]")
+
+    elif feedback_sdf is not None:
+        try:
+            feedback_data = ExperimentResultParser.parse_sdf(feedback_sdf)
+        except (FileNotFoundError, ValueError) as e:
+            _echo_colored(f"[red]Error parsing SDF:[/red] {e}", style="bold red", err=True)
+            sys.exit(1)
+
+        auto_retrain = AutoRetrainPipeline()
+        auto_retrain._feedback_data = feedback_data
+
+        _echo(f"Loaded {len(feedback_data)} feedback entries")
+        summary = auto_retrain.summary()
+        _echo(f"  Mean dielectric: {summary.get('mean_dielectric', 0.0):.4f}")
+        _echo(f"  Mean viscosity:  {summary.get('mean_viscosity', 0.0):.4f}")
+
+        _echo_colored("[bold green]Feedback pipeline ready.[/bold green]")
+
+    else:
+        try:
+            from aurelius.agent.state import LoopState
+            state = LoopState()
+        except Exception as e:
+            _echo_colored(f"[red]Error loading loop state:[/red] {e}", style="bold red", err=True)
+            sys.exit(1)
+
+        discoveries = state.discoveries[:max_suggestions] if state.discoveries else []
+        suggestions = SuggestAndValidatePipeline(discoveries)
+
+        output_path = output or "suggestions.sdf"
+        suggestions.export(output_path)
+
+        _echo_colored(f"[bold green]Generated {len(discoveries)} synthesis suggestions → {output_path}[/bold green]")
+
+
 @cli.command("verify-kernel")
 @click.argument("kernel_path", type=click.Path(exists=True))
 def verify_kernel_cmd(kernel_path: str) -> None:
@@ -864,6 +938,46 @@ def verify_kernel_cmd(kernel_path: str) -> None:
         _echo_colored("[bold green]OK:[/bold green] Kernel validation passed.", style="green")
     else:
         _echo_colored("[red]FAIL:[/red] Kernel validation failed — required fields missing.", style="bold red", err=True)
+        sys.exit(1)
+
+
+@cli.command("dashboard")
+@click.option("--port", type=int, default=8501, help="Port for Streamlit server")
+def dashboard_cmd(port: int) -> None:
+    """Launch the Aurelius Discovery Dashboard (Streamlit app).
+
+    Opens an interactive web-based visualization of:
+    - Discovery trajectories
+    - Chemical space (UMAP embeddings)
+    - Pareto front (3D interactive plot)
+    - Molecule viewer with property annotations
+    """
+    try:
+        import streamlit as st
+    except ImportError:
+        _echo_colored("[red]Error:[/red] 'streamlit' is required for dashboard. Install with: pip install streamlit", style="bold red", err=True)
+        sys.exit(1)
+
+    _echo_colored("[bold green]Starting Aurelius Dashboard...[/bold green]")
+    _echo(f"Dashboard will be available at http://localhost:{port}")
+
+    import subprocess
+    import sys
+    import os
+
+    # Get the directory of this file to find the dashboard module
+    dashboard_dir = Path(__file__).parent / "dashboard"
+    env = os.environ.copy()
+    env["STREAMLIT_GLOBALLY_QUIT"] = "0"
+
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "streamlit", "run", str(dashboard_dir / "app.py"), "--server.port", str(port)],
+            env=env,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        _echo_colored(f"[red]Error launching dashboard:[/red] {e}", style="bold red", err=True)
         sys.exit(1)
 
 
