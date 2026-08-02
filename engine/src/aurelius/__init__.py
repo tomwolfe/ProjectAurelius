@@ -35,7 +35,7 @@ from aurelius.agent.state import LoopState
 from aurelius.filter import Filter, is_structurally_viable
 from aurelius.kernel_loader import JSONKernelLoader, KernelLoader, _load_demo_kernel
 from aurelius.pipeline import AureliusPipeline
-from aurelius.scorer import Objective, _OBJECTIVES, compute_score, format_score
+from aurelius.scorer import _OBJECTIVES, Objective, compute_score, format_score
 from aurelius.scoring.oracle import PropertyOracle
 from aurelius.types import MoleculeContext, ScreeningResult
 

@@ -23,13 +23,13 @@ Anti-failure rationale (UQ penalty):
 from __future__ import annotations
 
 from aurelius.scoring.oracle.gc import (
-    GcUqEnsemble as GcUqEnsemble,
-)
-from aurelius.scoring.oracle.gc import (
     _UQ_PENALTY as _UQ_PENALTY,
 )
 from aurelius.scoring.oracle.gc import (
     _UQ_THRESHOLD_FRACTION as _UQ_THRESHOLD_FRACTION,
+)
+from aurelius.scoring.oracle.gc import (
+    GcUqEnsemble as GcUqEnsemble,
 )
 
 __all__ = [

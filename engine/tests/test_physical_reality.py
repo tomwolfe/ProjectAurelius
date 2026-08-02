@@ -19,12 +19,11 @@ from aurelius.agent.mutation.brics import (
 )
 from aurelius.agent.mutation.smarts import (
     _has_cross_conjugation,
+    cross_conjugation_check,
     is_electrolyte_like,
     steric_hindrance_check,
-    cross_conjugation_check,
 )
 from aurelius.types import MoleculeContext
-
 
 # ---------------------------------------------------------------------------
 # Steric Hindrance Gate Tests
@@ -212,8 +211,8 @@ class TestScaffoldHoppingInjection:
 
     def test_random_scaffold_replacement_returns_list(self):
         """_random_scaffold_replacement must return a list (possibly empty)."""
+        from aurelius.agent.mutation.base import BricsStrategy
         from aurelius.agent.mutation.engine import MutationEngine
-        from aurelius.agent.mutation.base import BricsStrategy, StrategyContext
         engine = MutationEngine(seed_smiles=["COC(=O)OC", "C1COCCO1"])
         ctx = MoleculeContext.from_smiles("COC(=O)OC")
         assert ctx is not None

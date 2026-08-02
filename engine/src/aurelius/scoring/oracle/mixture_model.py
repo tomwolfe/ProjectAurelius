@@ -20,8 +20,6 @@ Reference: Renon & Prausnitz (1968), AIChE J. 14(1):135-144.
 from __future__ import annotations
 
 import math
-from typing import Optional
-
 
 # NRTL binary interaction parameters (a_ij) for common electrolyte pairs.
 # Units: dimensionless (a_ij = A_ij / (R * T) with T in K).
@@ -63,14 +61,14 @@ _R_GAS: float = 1.987  # cal/(mol*K)
 _DEFAULT_TEMPERATURE: float = 298.15  # K
 
 
-def _get_nrtl_component(fragment_name: str) -> Optional[str]:
+def _get_nrtl_component(fragment_name: str) -> str | None:
     """Map a GC fragment name to an NRTL component key."""
     return _FRAGMENT_TO_NRTL_COMPONENT.get(fragment_name)
 
 
 def _get_nrtl_params(
     comp1: str, comp2: str
-) -> Optional[dict[str, float]]:
+) -> dict[str, float] | None:
     """Look up NRTL binary parameters for a pair of components.
 
     Tries both orderings (comp1, comp2) and (comp2, comp1).
@@ -138,8 +136,8 @@ def predict_mixture_dielectric(
     d2: float,
     frac1: float = 0.5,
     model: str = "ideal",
-    comp1: Optional[str] = None,
-    comp2: Optional[str] = None,
+    comp1: str | None = None,
+    comp2: str | None = None,
 ) -> float:
     """Predict dielectric constant of a binary mixture.
 
@@ -180,8 +178,8 @@ def predict_mixture_viscosity(
     v2: float,
     frac1: float = 0.5,
     model: str = "ideal",
-    comp1: Optional[str] = None,
-    comp2: Optional[str] = None,
+    comp1: str | None = None,
+    comp2: str | None = None,
 ) -> float:
     """Predict viscosity of a binary mixture.
 
@@ -228,8 +226,8 @@ def predict_mixture_li_solvation(
     ls2: float,
     frac1: float = 0.5,
     model: str = "ideal",
-    comp1: Optional[str] = None,
-    comp2: Optional[str] = None,
+    comp1: str | None = None,
+    comp2: str | None = None,
 ) -> float:
     """Predict Li+ solvation energy of a binary mixture.
 

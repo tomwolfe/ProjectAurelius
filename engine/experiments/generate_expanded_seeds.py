@@ -12,15 +12,16 @@ All candidates are validated for MW < 350 Da and RDKit sanitization.
 """
 
 import os
+
 from rdkit import Chem
-from rdkit.Chem import AllChem, Descriptors
+from rdkit.Chem import Descriptors
 
 
 def load_existing_candidates(path: str) -> set[str]:
     """Load existing SMILES from discovery_candidates.smi, ignoring comments."""
     existing: set[str] = set()
     if os.path.exists(path):
-        with open(path, "r") as f:
+        with open(path) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):

@@ -4,7 +4,7 @@ Usage:
     from aurelius.filter import Filter, is_structurally_viable
 """
 
-from aurelius.screening.tier1.filter import Filter
 from aurelius.screening.structural import is_structurally_viable
+from aurelius.screening.tier1.filter import Filter
 
 __all__ = ["Filter", "is_structurally_viable"]

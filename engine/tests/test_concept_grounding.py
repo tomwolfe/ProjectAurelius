@@ -11,10 +11,10 @@ from rdkit import Chem
 
 from aurelius.agent.mutation.engine import MutationEngine
 from aurelius.data.concept_library import (
-    concept_grounding_score,
+    Concept,
     ConceptLibrary,
+    concept_grounding_score,
 )
-from aurelius.types import MoleculeContext
 
 
 class TestConceptLibrary:

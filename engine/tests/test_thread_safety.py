@@ -12,12 +12,8 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any
-
-import pytest
 
 from aurelius.agent.state import LoopState
-from aurelius.types import MoleculeContext
 
 
 def test_active_learning_queue_atomic_append(tmp_path):

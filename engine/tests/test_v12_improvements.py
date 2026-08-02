@@ -4,22 +4,19 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
-from unittest.mock import patch
 
 import pytest
 from rdkit import Chem
 
 from aurelius.pipeline import JSONKernelLoader, KernelLoader, _load_demo_kernel
 from aurelius.scoring.oracle.quantum import (
-    TOMBackend,
-    XTBBackend,
     QuantumBackend,
     QuantumOracle,
-    load_calibration_fingerprints,
+    TOMBackend,
+    XTBBackend,
     _resolve_backend,
     has_xtb,
-    predict_tom_orbitals,
+    load_calibration_fingerprints,
 )
 from aurelius.types import MoleculeContext
 
@@ -252,8 +249,8 @@ class TestPipelineDemoMode:
 
     def test_screen_with_demo(self):
         """Screening with demo flag should work without the demo kernel."""
-        from aurelius.scoring.oracle.gc import ElectrolytePack
         from aurelius.pipeline import AureliusPipeline
+        from aurelius.scoring.oracle.gc import ElectrolytePack
         pipeline = AureliusPipeline(
             use_real_models=False,
             property_pack=ElectrolytePack(),
@@ -274,9 +271,10 @@ class TestCLIView:
 
     def test_view_html_generation(self):
         """Generate an HTML report via the Click command logic."""
-        from rdkit.Chem import Draw
         import base64
         from io import BytesIO
+
+        from rdkit.Chem import Draw
 
         ctx = MoleculeContext.from_smiles("CCO")
         assert ctx is not None

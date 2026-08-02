@@ -21,16 +21,12 @@ references; historical tuning is documented in CHANGELOG.md.
 
 from __future__ import annotations
 
-import concurrent.futures
 import contextlib
 import json
 import logging
 import math
 import os
 import random
-import re
-import shutil
-import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
@@ -79,10 +75,7 @@ logger = logging.getLogger(__name__)
 
 
 # Temp workspace for xTB — managed by aurelius.compute.xtb_pool
-_XTB_BASE_TEMP: str | None = getattr(
-    __import__("aurelius.compute.xtb_pool", fromlist=["_xtb_base_temp"]),
-    "_xtb_base_temp",
-)
+_XTB_BASE_TEMP: str | None = __import__("aurelius.compute.xtb_pool", fromlist=["_xtb_base_temp"])._xtb_base_temp
 
 _N_CONFORMERS: int = 5
 _N_TOP_CONFORMERS: int = 3
@@ -160,7 +153,7 @@ def _generate_multi_xyz(
         try:
             ff = AllChem.MMFFGetMoleculeForceField(mol_copy, mmffVariant="MMFF94s")
             if ff is not None:
-                converged = ff.Minimize(maxIts=500)
+                ff.Minimize(maxIts=500)
                 energy = ff.CalcEnergy()
             else:
                 raise RuntimeError("MMFF94s force field creation failed")
@@ -168,7 +161,7 @@ def _generate_multi_xyz(
             try:
                 ff = AllChem.UFFGetMoleculeForceField(mol_copy)
                 if ff is not None:
-                    converged = ff.Minimize(maxIts=500)
+                    ff.Minimize(maxIts=500)
                     energy = ff.CalcEnergy()
             except Exception:
                 continue
@@ -939,8 +932,8 @@ def predict_tom_orbitals(
         homo_vals.append(h)
         lumo_vals.append(l)
 
-    homo_w = sum(w * h for w, h in zip(weights, homo_vals))
-    lumo_w = sum(w * l for w, l in zip(weights, lumo_vals))
+    homo_w = sum(w * h for w, h in zip(weights, homo_vals, strict=False))
+    lumo_w = sum(w * l for w, l in zip(weights, lumo_vals, strict=False))
 
     # Sanity check: LUMO must be above HOMO for a physical gap.
     # If TOM returns an inverted gap (LUMO <= HOMO), swap and log a warning,
@@ -1310,7 +1303,7 @@ class XTBBackend(QuantumBackend):
         solvent: str | None = "ether",
     ) -> None:
         if not _HAS_XTB:
-            raise EnvironmentError(
+            raise OSError(
                 "XTBBackend requires the xtb binary on PATH. "
                 "Install via: brew install xtb or https://github.com/grimme-lab/xtb/releases. "
                 "In Docker, xtb is installed as part of the build image."
@@ -1390,7 +1383,7 @@ class XTBBackend(QuantumBackend):
                 result["confidence_score"] = 1.0
                 return result
             msg = "xTB evaluation failed — no conformers could be generated or evaluated."
-            raise EnvironmentError(msg)
+            raise OSError(msg)
 
         xtb_results, energies = self._run_xtb_flat(conformers, self._n_top_conformers)
 
@@ -1403,7 +1396,7 @@ class XTBBackend(QuantumBackend):
                 result["confidence_score"] = 1.0
                 return result
             msg = "xTB evaluation failed — all conformer calculations returned no result."
-            raise EnvironmentError(msg)
+            raise OSError(msg)
 
         self._n_calls += len(xtb_results)
 
@@ -1427,7 +1420,7 @@ class XTBBackend(QuantumBackend):
             return dict(result)
 
         msg = "xTB evaluation returned no result."
-        raise EnvironmentError(msg)
+        raise OSError(msg)
 
 
 class TOMBackend(QuantumBackend):

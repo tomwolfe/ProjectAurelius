@@ -21,7 +21,6 @@ import time
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request

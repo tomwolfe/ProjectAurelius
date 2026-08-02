@@ -86,7 +86,7 @@ class TestAntiGaming:
 
     def test_rejects_perhalogenated_spam(self):
         """Molecule with >90% halogen atoms (no solvation sites) should be rejected."""
-        engine = MutationEngine(seed_smiles=["CC"])
+        MutationEngine(seed_smiles=["CC"])
         # CF4-like molecule: 1 C, 4 F -> 4/5 = 80% F -> passes F check but
         # fails other checks (O+F ratio < 0.25)
         ctx = MoleculeContext.from_smiles("C(F)(F)(F)F")
@@ -95,7 +95,7 @@ class TestAntiGaming:
 
     def test_rejects_heavy_halogen_spam(self):
         """Molecule with >50% Cl/Br should be rejected."""
-        engine = MutationEngine(seed_smiles=["CC"])
+        MutationEngine(seed_smiles=["CC"])
         # CCl4: 1 C, 4 Cl -> 4/5 = 80% heavy halogen
         ctx = MoleculeContext.from_smiles("C(Cl)(Cl)(Cl)Cl")
         if ctx is not None:
@@ -107,7 +107,7 @@ class TestAntiGaming:
         Many modern electrolytes (fluorinated carbonates, fluorinated ethers,
         sulfonimides) are heavily fluorinated and must be allowed.
         """
-        engine = MutationEngine(seed_smiles=["CC"])
+        MutationEngine(seed_smiles=["CC"])
 
         # FEC (fluoroethylene carbonate): 14% F, has O for solvation
         ctx = MoleculeContext.from_smiles("O=C1OC(F)CO1")
@@ -131,7 +131,7 @@ class TestAntiGaming:
 
     def test_rejects_excess_conjugation(self):
         """Infinitely conjugated 'Frankenstein' should be rejected."""
-        engine = MutationEngine(seed_smiles=["CC"])
+        MutationEngine(seed_smiles=["CC"])
         # Polyaromatic with long conjugation
         ctx = MoleculeContext.from_smiles("c1ccc2cc3cc4cc5cc6cc7cc8cc9c%10c%11c%12c%13c%14c%15c%16c%17c%18c%19c%20c%21c%22c%23c%24c%25c%26c%27c%28c%29c%30c%31c%32c%33c%34c%35c%36c%37c1c2c3c4c5c6c7c8c9c%10c%11c%12c%13c%14c%15c%16c%17c%18c%19c%20c%21c%22c%23c%24c%25c%26c%27c%28c%29c%30c%31c%32c%33c%34c%35c%36c%37")
         if ctx is not None:
@@ -150,7 +150,7 @@ class TestAntiGaming:
 
     def test_rejects_low_polarity_ratio(self):
         """Molecule with long non-polar chain should be rejected by TPSA/MW check."""
-        engine = MutationEngine(seed_smiles=["CC"])
+        MutationEngine(seed_smiles=["CC"])
         ctx = MoleculeContext.from_smiles("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC(=O)OC")
         if ctx is not None:
             mw = ctx.mw
@@ -159,21 +159,21 @@ class TestAntiGaming:
 
     def test_rejects_hydrolytically_unstable(self):
         """Molecule with anhydride motif should be rejected by mutation engine."""
-        engine = MutationEngine(seed_smiles=["CC"])
+        MutationEngine(seed_smiles=["CC"])
         ctx = MoleculeContext.from_smiles("CC(=O)OC(=O)CC")  # Anhydride
         assert ctx is not None
         assert is_electrolyte_like(ctx) is False
 
     def test_rejects_electrochemically_unstable(self):
         """Molecule with peroxide motif should be rejected by mutation engine."""
-        engine = MutationEngine(seed_smiles=["CC"])
+        MutationEngine(seed_smiles=["CC"])
         ctx = MoleculeContext.from_smiles("CCOOC")  # Peroxide
         assert ctx is not None
         assert is_electrolyte_like(ctx) is False
 
     def test_rejects_reductive_cleavage_sec(self):
         """Molecule with secondary O-alkyl carbonate/ester should be rejected."""
-        engine = MutationEngine(seed_smiles=["CC"])
+        MutationEngine(seed_smiles=["CC"])
         # Isopropyl methyl carbonate — branched secondary O-alkyl prone to CO₂ loss
         ctx = MoleculeContext.from_smiles("COC(=O)OC(C)C")
         assert ctx is not None
@@ -181,7 +181,7 @@ class TestAntiGaming:
 
     def test_rejects_reductive_cleavage_tert(self):
         """Molecule with tertiary O-alkyl carbonate/ester should be rejected."""
-        engine = MutationEngine(seed_smiles=["CC"])
+        MutationEngine(seed_smiles=["CC"])
         # tert-Butyl methyl carbonate — highly branched, prone to reductive cleavage
         ctx = MoleculeContext.from_smiles("COC(=O)OC(C)(C)C")
         assert ctx is not None
@@ -189,7 +189,7 @@ class TestAntiGaming:
 
     def test_allows_fluorinated_branched_carbonate(self):
         """Fluorinated branched carbonate should pass despite branching."""
-        engine = MutationEngine(seed_smiles=["CC"])
+        MutationEngine(seed_smiles=["CC"])
         # Hexafluoroisopropyl methyl carbonate — fluorination stabilises the C-O bond
         ctx = MoleculeContext.from_smiles("COC(=O)OC(C(F)(F)F)C(F)(F)F")
         assert ctx is not None

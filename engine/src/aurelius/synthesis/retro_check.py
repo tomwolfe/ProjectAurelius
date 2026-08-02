@@ -12,7 +12,7 @@ import logging
 from typing import Any
 
 from rdkit import Chem
-from rdkit.Chem import AllChem, rdChemReactions
+from rdkit.Chem import rdChemReactions
 
 logger = logging.getLogger(__name__)
 

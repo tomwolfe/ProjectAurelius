@@ -26,9 +26,8 @@ def _mock_pipeline() -> None:
 
 @pytest.fixture
 def client() -> pytest.FixtureRequest:
-    from fastapi.testclient import TestClient
-
     import api_server
+    from fastapi.testclient import TestClient
 
     with TestClient(api_server.app) as c:
         yield c

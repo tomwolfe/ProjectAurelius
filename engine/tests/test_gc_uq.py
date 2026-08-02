@@ -111,9 +111,9 @@ class TestGradedUqPenalty:
         """When both dielectric and viscosity exceed UQ threshold,
         penalty should be _UQ_PENALTY^2 (stricter than single flag)."""
         from unittest.mock import patch
+
         import aurelius.scoring.oracle.oracle as oracle_mod
 
-        original_fn = oracle_mod.PropertyOracle._compute_uq_penalty
 
         def mocked_uq(self, ctx):
             return 0.81, 0.0, 0.0  # (penalty, diel_std, visc_std)
@@ -297,7 +297,7 @@ class TestGcUqActiveLearning:
         active_learning_queue and that the queue size decreases after
         selection.
         """
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         # Mock the pipeline and its _oracle and _gc_uq
         mock_gc_uq = MagicMock()

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -25,84 +24,31 @@ except ImportError:
         "RDKit not found. Install via: conda install -c conda-forge rdkit"
     ) from None
 
-from aurelius.constants import (
-    AL_CORROSION_LUMO_THRESHOLD,
-    AL_CORROSION_MIN_FLUORINE,
-    AL_CORROSION_PENALTY_FACTOR,
-    CED_SIGMOID_STEEPNESS,
-    CED_TARGET,
-    DIELECTRIC_TARGET,
-    DISCOVERY_THRESHOLD,
-    HOMO_THRESHOLD,
-    HYDROLYSIS_RISK_THRESHOLD,
-    LI_SOLVATION_TARGET,
-    LUMO_TARGET,
-    SA_THRESHOLD,
-    SCORE_WEIGHT_CED,
-    SCORE_WEIGHT_DIELECTRIC,
-    SCORE_WEIGHT_GAS_EVOLUTION,
-    SCORE_WEIGHT_HOMO,
-    SCORE_WEIGHT_HYDROLYSIS,
-    SCORE_WEIGHT_LI_SOLVATION,
-    SCORE_WEIGHT_LUMO,
-    SCORE_WEIGHT_SA,
-    SCORE_WEIGHT_SEI_FRACTURE,
-    SCORE_WEIGHT_VISCOSITY,
-    SEI_FRACTURE_SIGMOID_STEEPNESS,
-    SEI_FRACTURE_TARGET,
-    VIABILITY_THRESHOLD,
-    VISCOSITY_THRESHOLD,
-)
-from aurelius.constants import (
-    CARBONYL_F_PATTERN as _CARBONYL_F_PATTERN,
-)
-from aurelius.constants import (
-    CF3_PATTERN as _CF3_PATTERN,
-)
-from aurelius.constants import (
-    HYDROLYTICALLY_UNSTABLE_PATTERNS as _HYDRO_PATTERNS,
-)
-from aurelius.constants import (
-    HYPOFLUORITE_PATTERN as _HYPOFLUORITE_PATTERN,
-)
-from aurelius.constants import (
-    HYPOFLUORITE_PENALTY_FACTOR as _HYPOFLUORITE_PENALTY,
-)
-from aurelius.constants import (
-    SULFONYL_F_PATTERN as _SULFONYL_F_PATTERN,
-)
 from aurelius.filter import Filter
 from aurelius.kernel_loader import JSONKernelLoader, KernelLoader, _load_demo_kernel
 from aurelius.mixer import screen_mixture as _screen_mixture
 from aurelius.scorer import (
+    _OBJECTIVES,
+    Objective,
     _apply_domain_penalty,
     _check_al_corrosion_risk,
     _check_building_block_grounding,
     _check_hydrolytic_instability,
     _check_hypofluorite_instability,
-    _gaussian,
-    _OBJECTIVES,
-    _sigmoid,
+)
+from aurelius.scorer import (
     compute_score as _compute_score,
+)
+from aurelius.scorer import (
     format_score as _format_score,
-    Objective,
 )
 from aurelius.scoring.oracle import (
-    _GC_FRAGMENTS,
     PropertyOracle,
     _compute_sei_fracture_toughness_proxy,
-    _count_fragments,
-    _saturate_contrib,
-    mixture_synergy_bonus,
-    mixture_synergy_bonus_ternary,
     predict_gas_evolution_proxy,
-    predict_mixture_dielectric,
-    predict_mixture_li_solvation,
-    predict_mixture_viscosity,
 )
 from aurelius.scoring.oracle.gc import BasePropertyModel
 from aurelius.types import MoleculeContext
-from aurelius.utils.chem_utils import electrolyte_synthetic_accessibility
 
 logger = logging.getLogger(__name__)
 

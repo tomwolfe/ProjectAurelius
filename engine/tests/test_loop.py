@@ -8,11 +8,10 @@ Verifies that the DiscoveryLoop properly:
 
 from __future__ import annotations
 
-import pytest
-
 from unittest.mock import Mock
 
-from aurelius.agent.active_learning import ActiveLearningManager
+import pytest
+
 from aurelius.agent.loop import DiscoveryLoop, ScreeningResult
 from aurelius.agent.state import LoopState
 from aurelius.types import MoleculeContext
@@ -216,7 +215,7 @@ class TestDiscoveryLoop:
             exploration_mode=False,
         )
         exploit_scores = [scores[contexts.index(ctx)] for ctx in selected_exploit]
-        mean_exploit = np.mean(exploit_scores)
+        np.mean(exploit_scores)
 
         # With exploration (UCB): should favor high-uncertainty candidates
         selected_explore = tournament_select(
@@ -226,7 +225,7 @@ class TestDiscoveryLoop:
             exploration_beta=5.0,
         )
         explore_scores = [scores[contexts.index(ctx)] for ctx in selected_explore]
-        mean_explore = np.mean(explore_scores)
+        np.mean(explore_scores)
 
         # Exploration should select lower-scoring but high-uncertainty molecules
         # (Note: this test verifies the mechanism exists, not that exploration
@@ -423,6 +422,7 @@ class TestMoleculeContextFrozen:
         its fields should raise dataclasses.FrozenInstanceError.
         """
         from dataclasses import FrozenInstanceError
+
         from aurelius.types import MoleculeContext
 
         ctx = MoleculeContext.from_smiles("CCO")
@@ -434,6 +434,7 @@ class TestMoleculeContextFrozen:
     def test_mol_attribute_is_frozen(self) -> None:
         """Attempting to assign to MoleculeContext.mol must raise FrozenInstanceError."""
         from dataclasses import FrozenInstanceError
+
         from aurelius.types import MoleculeContext
 
         ctx = MoleculeContext.from_smiles("CCO")
@@ -445,6 +446,7 @@ class TestMoleculeContextFrozen:
     def test_copy_returns_independent_instance(self) -> None:
         """Copying a MoleculeContext must produce an independent instance."""
         from copy import copy
+
         from aurelius.types import MoleculeContext
 
         ctx1 = MoleculeContext.from_smiles("CCO")

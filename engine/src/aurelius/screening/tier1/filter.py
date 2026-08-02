@@ -35,7 +35,6 @@ from typing import Any
 
 from rdkit import Chem
 
-from aurelius.screening.structural import is_structurally_viable
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)

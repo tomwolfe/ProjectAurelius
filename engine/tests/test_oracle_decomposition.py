@@ -1,7 +1,7 @@
 """Tests for oracle decomposition — verifying that private methods are called correctly."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -30,7 +30,7 @@ class TestOracleDecomposition:
                         with patch.object(oracle, "_build_domain", return_value=(0.9, "ok", True)) as mock_domain:
                             with patch.object(oracle, "_apply_sei_penalty", return_value=(0.9, "ok", True)) as mock_sei:
                                 with patch.object(oracle, "_assemble_result", return_value={"homo_eV": -6.5, "lumo_eV": -0.5}) as mock_assemble:
-                                    result = oracle.evaluate(ctx)
+                                    oracle.evaluate(ctx)
 
         # Verify all private methods were called
         mock_surrogate.assert_called_once_with(ctx)
@@ -46,14 +46,14 @@ class TestOracleDecomposition:
         ctx = MoleculeContext.from_smiles("CCO")
         assert ctx is not None
 
-        with patch.object(oracle, "_run_surrogate", return_value=(1.0, -6.0, -0.5, True)) as mock_surrogate:
+        with patch.object(oracle, "_run_surrogate", return_value=(1.0, -6.0, -0.5, True)):
             with patch.object(oracle, "_compute_quantum", return_value=(-6.0, -0.5, 5.5, "surrogate", "surrogate", 0.0, 0.0, 0.0)) as mock_quantum:
-                with patch.object(oracle, "_compute_uq_penalty", return_value=(1.0, 0.0, 0.0)) as mock_uq:
-                    with patch.object(oracle, "_compute_gc_properties", return_value={}) as mock_gc:
-                        with patch.object(oracle, "_build_domain", return_value=(0.9, "ok", True)) as mock_domain:
-                            with patch.object(oracle, "_apply_sei_penalty", return_value=(0.9, "ok", True)) as mock_sei:
-                                with patch.object(oracle, "_assemble_result", return_value={"homo_eV": -6.0, "lumo_eV": -0.5}) as mock_assemble:
-                                    result = oracle.evaluate(ctx)
+                with patch.object(oracle, "_compute_uq_penalty", return_value=(1.0, 0.0, 0.0)):
+                    with patch.object(oracle, "_compute_gc_properties", return_value={}):
+                        with patch.object(oracle, "_build_domain", return_value=(0.9, "ok", True)):
+                            with patch.object(oracle, "_apply_sei_penalty", return_value=(0.9, "ok", True)):
+                                with patch.object(oracle, "_assemble_result", return_value={"homo_eV": -6.0, "lumo_eV": -0.5}):
+                                    oracle.evaluate(ctx)
 
         # Verify skip_quantum was passed to _compute_quantum
         call_args = mock_quantum.call_args

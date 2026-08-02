@@ -4,8 +4,9 @@ import logging
 from typing import Any
 
 import numpy as np
-from aurelius.scoring.oracle import PropertyOracle
+
 from aurelius.scoring.oracle.gc import BasePropertyModel, ElectrolytePack
+from aurelius.scoring.oracle.oracle import PropertyOracle
 
 logger = logging.getLogger(__name__)
 

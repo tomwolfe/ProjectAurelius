@@ -6,8 +6,6 @@ and ensures backward compatibility with ideal mixing rules.
 
 from __future__ import annotations
 
-import pytest
-
 from aurelius.scoring.oracle.mixture_model import (
     _nrtl_activity_coefficient,
     predict_mixture_dielectric,

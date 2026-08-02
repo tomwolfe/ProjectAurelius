@@ -20,6 +20,7 @@ from aurelius.scoring.oracle.gc import (
     _GC_SATURATION_K,
     _UQ_PENALTY,
     _UQ_THRESHOLD_FRACTION,
+    ElectrolytePack,
     GcUqEnsemble,
     _compute_dielectric_cross_terms,
     _compute_sei_fracture_toughness_proxy,
@@ -43,7 +44,9 @@ from aurelius.scoring.oracle.gc import (
     predict_mixture_viscosity,
     predict_viscosity_proxy,
 )
-from aurelius.scoring.oracle.gc import ElectrolytePack
+from aurelius.scoring.oracle.optimizer import (
+    KernelOptimizer,
+)
 from aurelius.scoring.oracle.oracle import PropertyOracle
 from aurelius.scoring.oracle.packs import OrganicElectronicsPack
 from aurelius.scoring.oracle.quantum import (
@@ -70,9 +73,6 @@ from aurelius.scoring.oracle.quantum import (
     has_xtb,
     predict_tom_orbitals,
     run_xtb_batch,
-)
-from aurelius.scoring.oracle.optimizer import (
-    KernelOptimizer,
 )
 from aurelius.scoring.oracle.surrogate import (
     _SURROGATE_HOMO_THRESHOLD,

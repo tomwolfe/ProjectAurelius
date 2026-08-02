@@ -34,7 +34,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
-from aurelius.analysis.mixture_postprocess import analyze_top_mixtures
 from aurelius.agent.active_learning import ActiveLearningManager
 from aurelius.agent.mutation import MutationEngine
 from aurelius.agent.reporting import generate_discoveries_sdf, generate_run_summary
@@ -44,6 +43,7 @@ from aurelius.agent.selection import (
     tournament_select,
 )
 from aurelius.agent.state import LoopState
+from aurelius.analysis.mixture_postprocess import analyze_top_mixtures
 from aurelius.constants import DISCOVERY_THRESHOLD
 from aurelius.pipeline import AureliusPipeline
 from aurelius.types import (

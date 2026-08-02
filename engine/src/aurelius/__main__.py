@@ -16,7 +16,10 @@ Examples:
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 import click
@@ -130,9 +133,9 @@ def _print_result_card_rich(
     rejection_reasons: list[str] | None = None,
 ) -> None:
     """Rich-formatted result card."""
-    from rich.table import Table
     from rich import box
     from rich.panel import Panel
+    from rich.table import Table
 
     score_color = "green" if is_viable else "red"
 
@@ -187,7 +190,7 @@ def _print_result_card_ascii(
     _echo(f"{'=' * 60}")
 
     if properties:
-        _echo(f"\n  Predicted Properties:")
+        _echo("\n  Predicted Properties:")
         for key, val in properties.items():
             if isinstance(val, float):
                 _echo(f"    {key:<30} {val:.4f}")
@@ -196,7 +199,7 @@ def _print_result_card_ascii(
         _echo(f"{'-' * 60}")
 
     if sub_scores:
-        _echo(f"\n  Sub-Scores:")
+        _echo("\n  Sub-Scores:")
         for name, val in sorted(sub_scores.items(), key=lambda x: x[1], reverse=True):
             filled = int(val * bar_len)
             bar = "█" * filled + "░" * (bar_len - filled)
@@ -204,7 +207,7 @@ def _print_result_card_ascii(
         _echo(f"{'-' * 60}")
 
     if rejection_reasons:
-        _echo(f"\n  Rejection Reasons:")
+        _echo("\n  Rejection Reasons:")
         for r in rejection_reasons:
             _echo(f"    ✗ {r}")
 
@@ -237,6 +240,7 @@ def init(pack: str, solvent: str) -> None:
 def doctor(verbose: bool) -> None:
     """Validate dependencies, hardware, and configuration."""
     import platform
+
     from aurelius.scoring.oracle import has_xtb
 
     _echo_colored("[bold]Frameworks[/bold]")
@@ -536,9 +540,9 @@ def _generate_report(pipeline: AureliusPipeline, smiles: str, output: str | None
     except ImportError:
         _echo_colored("[red]Error:[/red] RDKit Draw module required for HTML report generation.", style="bold red", err=True)
         sys.exit(1)
+    import base64
     import tempfile
     import webbrowser
-    import base64
     from io import BytesIO
 
     try:
@@ -864,7 +868,7 @@ def learn_cmd(max_suggestions: int, feedback_csv: str | None, feedback_sdf: str 
     the command generates top-N synthesis suggestions from the current
     discovery set.
     """
-    from aurelius.agent.learning_loop import SuggestAndValidatePipeline, AutoRetrainPipeline, ExperimentResultParser
+    from aurelius.agent.learning_loop import AutoRetrainPipeline, ExperimentResultParser, SuggestAndValidatePipeline
 
     if feedback_csv is not None:
         try:
@@ -953,17 +957,15 @@ def dashboard_cmd(port: int) -> None:
     - Molecule viewer with property annotations
     """
     try:
-        import streamlit as st
+        import importlib.util
+        if importlib.util.find_spec("streamlit") is None:
+            raise ImportError
     except ImportError:
         _echo_colored("[red]Error:[/red] 'streamlit' is required for dashboard. Install with: pip install streamlit", style="bold red", err=True)
         sys.exit(1)
 
     _echo_colored("[bold green]Starting Aurelius Dashboard...[/bold green]")
     _echo(f"Dashboard will be available at http://localhost:{port}")
-
-    import subprocess
-    import sys
-    import os
 
     # Get the directory of this file to find the dashboard module
     dashboard_dir = Path(__file__).parent / "dashboard"

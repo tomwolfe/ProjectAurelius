@@ -35,7 +35,7 @@ def _dominates(
     """
     better_or_equal = True
     strictly_better = False
-    for i, (a, b) in enumerate(zip(obj_a, obj_b)):
+    for i, (a, b) in enumerate(zip(obj_a, obj_b, strict=False)):
         if maximize[i]:
             if a < b:
                 better_or_equal = False
@@ -64,7 +64,7 @@ def _non_dominated_sort(
     if n == 0:
         return []
 
-    n_objectives = objectives.shape[1]
+    objectives.shape[1]
     domination_count = np.zeros(n, dtype=int)
     dominated_set: list[list[int]] = [[] for _ in range(n)]
     fronts: list[list[int]] = [[]]
@@ -237,7 +237,7 @@ def _better_by_nsga(
 ) -> bool:
     """Compare two solutions by NSGA-II criteria."""
     # Find front ranks
-    rank_i = n = rank_j = 0
+    rank_i = rank_j = 0
     for f_idx, front in enumerate(fronts):
         if i in front:
             rank_i = f_idx
@@ -307,7 +307,7 @@ def compute_pareto_metrics(
         "pareto_fraction": n_pareto / max(len(results), 1),
     }
 
-    for j, key in enumerate(objective_keys):
+    for _j, key in enumerate(objective_keys):
         vals = [r.get(key, 0.0) for r in results]
         pareto_vals = [r.get(key, 0.0) for r in pareto]
         metrics[f"{key}_mean"] = float(np.mean(vals)) if vals else 0.0

@@ -225,7 +225,6 @@ class TestOracleCalibration:
             _apply_torsional_strain_penalty,
             _apply_wiener_compactness,
             _compute_tom_base_energies,
-            _count_heteroatom_perturbations,
             _longest_conjugation_path,
             _topological_sanity_l,
         )

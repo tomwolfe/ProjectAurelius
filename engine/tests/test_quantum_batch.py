@@ -7,11 +7,6 @@ is covered by ``test_oracle_real_data.py``.
 
 from __future__ import annotations
 
-import time
-from threading import Event
-
-import pytest
-
 from aurelius.scoring.oracle.quantum import BatchXTBRunner
 
 
@@ -20,7 +15,7 @@ class TestBatchXTBRunner:
         """Submitting a single job should eventually resolve."""
         runner = BatchXTBRunner(batch_size=3, flush_interval=0.5)
         future = runner.submit("3\n\ntest xyz")
-        result = future.result(timeout=5)
+        future.result(timeout=5)
         runner.shutdown()
 
     def test_batch_size_triggers_flush(self) -> None:
@@ -29,14 +24,14 @@ class TestBatchXTBRunner:
         futures = [runner.submit(f"3\n\nmol {i}") for i in range(3)]
         # All futures should resolve without waiting for the timeout
         for f in futures:
-            result = f.result(timeout=5)
+            f.result(timeout=5)
         runner.shutdown()
 
     def test_flush_interval_triggers_flush(self) -> None:
         """When flush_interval passes, pending jobs should flush."""
         runner = BatchXTBRunner(batch_size=10, flush_interval=0.5)
         future = runner.submit("3\n\ntest xyz")
-        result = future.result(timeout=5)
+        future.result(timeout=5)
         runner.shutdown()
 
     def test_explicit_flush(self) -> None:
@@ -44,7 +39,7 @@ class TestBatchXTBRunner:
         runner = BatchXTBRunner(batch_size=10, flush_interval=60.0)
         future = runner.submit("3\n\ntest xyz")
         runner.flush()
-        result = future.result(timeout=5)
+        future.result(timeout=5)
         runner.shutdown()
 
     def test_initial_pending_count_zero(self) -> None:
@@ -75,7 +70,7 @@ class TestBatchXTBRunner:
         runner = BatchXTBRunner(batch_size=10, flush_interval=60.0)
         future = runner.submit("3\n\ntest xyz")
         runner.shutdown()
-        result = future.result(timeout=5)
+        future.result(timeout=5)
 
     def test_multiple_batches(self) -> None:
         """Multiple consecutive batches should each resolve."""
@@ -92,6 +87,6 @@ class TestBatchXTBRunner:
         f1 = runner.submit("3\n\nfirst")
         f2 = runner.submit("3\n\nsecond")
         # Both should resolve (xTB may fail, but future should not error)
-        r1 = f1.result(timeout=5)
-        r2 = f2.result(timeout=5)
+        f1.result(timeout=5)
+        f2.result(timeout=5)
         runner.shutdown()

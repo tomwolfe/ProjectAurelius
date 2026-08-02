@@ -8,8 +8,6 @@ common OLED/OPV building blocks).
 
 from __future__ import annotations
 
-import math
-
 from rdkit import Chem
 
 from aurelius.scoring.oracle.gc import BasePropertyModel

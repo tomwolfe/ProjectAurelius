@@ -5,9 +5,7 @@ from __future__ import annotations
 from rdkit import Chem
 
 from aurelius.scoring.oracle.gc import (
-    BasePropertyModel,
     ElectrolytePack,
-    _count_fragments,
     predict_dielectric_proxy,
     predict_viscosity_proxy,
 )

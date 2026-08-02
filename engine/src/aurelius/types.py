@@ -31,7 +31,7 @@ from aurelius.cache.lru import LRUCache
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    import numpy as np
+    pass
 
 # Return type for parsed mixtures: binary -> (a, b, frac_a) or ternary -> (a, b, c, frac_a, frac_b)
 ParsedMixture = tuple[str, str, float] | tuple[str, str, str, float, float]

@@ -30,10 +30,10 @@ import numpy as np
 from rdkit import Chem
 
 from aurelius.scoring.oracle.quantum import (
-    predict_tom_orbitals,
-    has_xtb,
-    _run_xtb,
     _generate_multi_xyz,
+    _run_xtb,
+    has_xtb,
+    predict_tom_orbitals,
 )
 from aurelius.types import MoleculeContext
 

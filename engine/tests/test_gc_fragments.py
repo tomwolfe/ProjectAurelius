@@ -6,8 +6,6 @@ compiled into valid RDKit Mol objects, and match expected properties.
 
 from __future__ import annotations
 
-import json
-
 from rdkit import Chem
 
 from aurelius.scoring.oracle.gc import (
@@ -85,7 +83,7 @@ def test_cyclic_carbonate_fragment() -> None:
                 f"cyclic_carbonate should match EC once, got {len(matches)} matches"
             )
             return
-    assert False, "cyclic_carbonate fragment not found in _GC_FRAGMENTS"
+    raise AssertionError("cyclic_carbonate fragment not found in _GC_FRAGMENTS")
 
 
 def test_fragments_data_immutable_types() -> None:

@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from aurelius.agent.state import LoopState
 from aurelius.types import MoleculeContext
 

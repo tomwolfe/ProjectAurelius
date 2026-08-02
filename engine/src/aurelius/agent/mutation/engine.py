@@ -15,7 +15,8 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-from typing import Any, Generator
+from collections.abc import Generator
+from typing import Any
 
 import numpy as np
 from rdkit import Chem, rdBase

@@ -174,7 +174,7 @@ def tournament_select(
             pool_max_sims = _batch_max_tanimoto(pool_arr, selected_arr)
             # Build full-size max_sims array (default 0 for unselected indices)
             max_sims = np.zeros(n, dtype=np.float64)
-            for pi, psi in zip(pool, pool_max_sims):
+            for pi, psi in zip(pool, pool_max_sims, strict=False):
                 max_sims[pi] = psi
         else:
             max_sims = np.zeros(n, dtype=np.float64)

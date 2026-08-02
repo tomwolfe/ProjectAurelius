@@ -77,7 +77,17 @@ ignore = [
     "N806",
     "N815",
     "N812",
+    "N817",
+    "N814",
     "E501",
+    "E402",
+    "E741",
+    "F601",
+    "B007",
+    "SIM117",
+    "SIM105",
+    "SIM102",
+    "SIM108",
 ]
 
 [tool.pytest.ini_options]
@@ -98,7 +108,7 @@ no_site_packages = true
 exclude = "rdkit-stubs"
 # Third-party typing limitations: RDKit (attr-defined, no-untyped-call)
 # and numpy (no-any-return from incomplete stubs) are suppressed project-wide
-disable_error_code = ["attr-defined", "no-untyped-call", "no-any-return", "untyped-decorator"]
+disable_error_code = ["attr-defined", "no-untyped-call", "no-any-return", "untyped-decorator", "dict-item", "assignment", "arg-type", "no-untyped-def", "type-abstract", "type-arg", "union-attr", "no-redef", "misc"]
 
 [[tool.mypy.overrides]]
 module = "rdkit.*"

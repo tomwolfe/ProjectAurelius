@@ -7,8 +7,6 @@ to run in CI on every commit.
 
 from __future__ import annotations
 
-import pytest
-
 from aurelius.pipeline import AureliusPipeline
 
 

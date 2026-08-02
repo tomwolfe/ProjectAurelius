@@ -42,7 +42,7 @@ from aurelius.constants import (
     SULTONE_CROSSLINK_PATTERN,
     VINYL_CROSSLINK_PATTERN,
 )
-from aurelius.types import MoleculeContext
+from aurelius.types import MoleculeContext, _gc_feature_vector_cache
 
 _DATA_SOURCE: str = "hybrid (GC bulk + Quantum orbital)"
 
@@ -627,9 +627,6 @@ _UQ_N_ENSEMBLE: int = 5
 logger = logging.getLogger(__name__)
 
 
-from aurelius.types import _gc_feature_vector_cache
-
-
 def _get_fragment_feature_vector(ctx: MoleculeContext) -> Any:
     """Build a feature vector from GC fragment counts for a molecule.
 
@@ -930,10 +927,7 @@ class GcUqEnsemble:
             dot = float(np.dot(arr, centroid_binary))
             norm_a = float(np.sum(arr))
             denom = norm_a + norm_c - dot
-            if denom > 1e-10:
-                dist = 1.0 - dot / denom
-            else:
-                dist = 0.0
+            dist = 1.0 - dot / denom if denom > 1e-10 else 0.0
             distances.append(dist)
 
         self._centroid_mean_dist = float(np.mean(distances))
@@ -980,10 +974,7 @@ class GcUqEnsemble:
         dot = float(np.dot(arr, centroid_binary))
         norm_a = float(np.sum(arr))
         denom = norm_a + norm_c - dot
-        if denom > 1e-10:
-            distance = 1.0 - dot / denom
-        else:
-            distance = 0.0
+        distance = 1.0 - dot / denom if denom > 1e-10 else 0.0
 
         threshold = self._centroid_mean_dist + 2.0 * self._centroid_std_dist
         is_ood = distance > threshold
@@ -1250,10 +1241,7 @@ class ElectrolytePack(BasePropertyModel):
         if acceptor_score > donor_score * 2.0:
             base *= 0.5
         total = donor_score + acceptor_score
-        if total > 0.0:
-            balance = 1.0 - abs(donor_score - acceptor_score) / total
-        else:
-            balance = 0.0
+        balance = 1.0 - abs(donor_score - acceptor_score) / total if total > 0.0 else 0.0
         base *= 0.5 + 0.5 * balance
         return max(0.0, min(6.0, base))
 

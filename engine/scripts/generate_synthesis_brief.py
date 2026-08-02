@@ -18,6 +18,8 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+import contextlib
+
 from rdkit import Chem
 from rdkit.Chem import BRICS
 
@@ -63,7 +65,7 @@ def _find_best_precursor(frag_smi: str) -> str | None:
     # For fragments with >= 3 heavy atoms, try substructure matching
     if n_heavy >= 3:
         best: tuple[int, str | None] = (0, None)
-        for bb_smi, bb_mol in zip(COMMERCIAL_BUILDING_BLOCK_SMILES, _BB_MOLS):
+        for bb_smi, bb_mol in zip(COMMERCIAL_BUILDING_BLOCK_SMILES, _BB_MOLS, strict=False):
             if core_mol.HasSubstructMatch(bb_mol):
                 bb_heavy = bb_mol.GetNumHeavyAtoms()
                 if bb_heavy > best[0]:
@@ -138,17 +140,14 @@ def main() -> None:
 
         coverage = brics_building_block_coverage(mol)
         frags: list[str] = []
-        try:
+        with contextlib.suppress(Exception):
             frags = list(BRICS.BRICSDecompose(mol))
-        except Exception:
-            pass
 
         precursors: list[str] = []
         for fs in frags:
             match = _find_best_precursor(fs)
-            if match is not None and not _is_trivial_precursor(match):
-                if match not in precursors:
-                    precursors.append(match)
+            if match is not None and not _is_trivial_precursor(match) and match not in precursors:
+                precursors.append(match)
 
         linkers = _infer_linkers(mol)
 

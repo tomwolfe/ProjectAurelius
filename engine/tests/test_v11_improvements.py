@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import numpy as np
-from rdkit import Chem
 from rdkit.DataStructs import BulkTanimotoSimilarity
 
 from aurelius.agent.selection import _batch_max_tanimoto, _fp_to_array
-from aurelius.pipeline import DEFAULT_DOMAIN_BOUNDARIES, check_kernel_health
+from aurelius.pipeline import check_kernel_health
 from aurelius.types import MoleculeContext
 
 
@@ -117,7 +116,7 @@ class TestMoleculeContextLruCache:
     def test_cache_hits_after_miss(self):
         """Identical SMILES after an intermediate miss should still hit."""
         c1 = MoleculeContext.from_smiles("CCO")
-        c2 = MoleculeContext.from_smiles("CCO")
+        MoleculeContext.from_smiles("CCO")
         _ = MoleculeContext.from_smiles("CCC")
         c3 = MoleculeContext.from_smiles("CCO")
         assert c1 is c3

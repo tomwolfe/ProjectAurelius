@@ -6,18 +6,11 @@ lifecycle using pre-recorded xTB stdout for 5 reference molecules.
 
 from __future__ import annotations
 
-import json
-import os
-import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
-from rdkit import Chem
 
 from aurelius.compute.xtb_pool import (
-    _HAS_XTB,
-    _XTB_HOMO_RE,
-    _XTB_LUMO_RE,
     BatchXTBRunner,
     _parse_xtb_output,
     _run_xtb,
@@ -206,7 +199,7 @@ class TestBatchXTBRunnerLifecycle:
     def test_submit_and_flush(self):
         runner = BatchXTBRunner(batch_size=2, flush_interval=1.0, max_workers=1)
         xyz = "1\n\nC 0.0 0.0 0.0\n"
-        future = runner.submit(xyz)
+        runner.submit(xyz)
         assert runner.pending_count >= 0
         runner.flush()
         runner.shutdown()

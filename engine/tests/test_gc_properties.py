@@ -12,11 +12,10 @@ from hypothesis.strategies import from_regex
 
 from aurelius.scoring.oracle.gc import (
     predict_dielectric_proxy,
-    predict_viscosity_proxy,
     predict_li_solvation_proxy,
+    predict_viscosity_proxy,
 )
 from aurelius.types import MoleculeContext
-
 
 # SMILES-like pattern: alphanumeric chars plus bracket-enclosed atoms
 _SMILES_PATTERN = r"[A-Za-z0-9@+\-\[\]\(\)=#%\.\\\/]+"

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from rdkit import Chem
-from rdkit.Chem import BRICS
 
 from aurelius.agent.mutation.brics import (
     _BRICS_DEPTH_PENALTY_PER_STEP,

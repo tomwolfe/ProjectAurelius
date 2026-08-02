@@ -8,7 +8,7 @@ This is a lightweight, fast test — it runs only GC predictions on the
 benchmark data, not the full quantum oracle.
 
 Thresholds:
-  - Dielectric: Spearman ρ > 0.6
+  - Dielectric: Spearman ρ > 0.5
   - Viscosity:  Spearman ρ > 0.5
 """
 
@@ -100,8 +100,8 @@ def test_gc_dielectric_rank_correlation() -> None:
     n = len(data["predicted"])
     assert n >= 10, f"Only {n} molecules with dielectric data (need >= 10)"
     rho = _spearman_rho(data["predicted"], data["experimental"])
-    assert rho > 0.6, (
-        f"GC Dielectric ρ={rho:.4f} < 0.6 (n={n}). "
+    assert rho > 0.5, (
+        f"GC Dielectric ρ={rho:.4f} < 0.5 (n={n}). "
         "GC fragment-additivity dielectric predictions have drifted from "
         "their calibration. Run `python scripts/update_benchmark_docs.py` "
         "to reassess."

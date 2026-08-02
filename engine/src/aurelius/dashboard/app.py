@@ -12,9 +12,11 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
-import streamlit as st
 import numpy as np
+import pandas as pd
+import streamlit as st
 
 logger = logging.getLogger(__name__)
 
@@ -147,8 +149,8 @@ def _render_discovery_trajectory(discoveries: list[dict]) -> None:
         st.info("No discovery data loaded. Run the agent first to generate discoveries.")
         return
 
-    import plotly.express as px
     import pandas as pd
+    import plotly.express as px
 
     df = pd.DataFrame(discoveries)
     if "total_score" in df.columns:
@@ -170,7 +172,6 @@ def _render_chemical_space(discoveries: list[dict], benchmark: list[dict]) -> No
 
     try:
         import umap
-        import numpy as np
 
         # Extract fingerprints or features
         features = []
@@ -215,8 +216,8 @@ def _render_pareto_front(pareto: list[dict]) -> None:
         return
 
     try:
-        import plotly.express as px
         import pandas as pd
+        import plotly.express as px
 
         df = pd.DataFrame(pareto)
         if "lumo_eV" in df.columns and "dielectric_proxy" in df.columns and "viscosity_proxy" in df.columns:
@@ -250,8 +251,7 @@ def _render_molecule_viewer(discoveries: list[dict], calibration: list[dict]) ->
     if selected_smiles:
         try:
             from rdkit import Chem
-            from rdkit.Chem import Draw
-            from rdkit.Chem import AllChem
+            from rdkit.Chem import AllChem, Draw
 
             mol = Chem.MolFromSmiles(selected_smiles)
             if mol is None:

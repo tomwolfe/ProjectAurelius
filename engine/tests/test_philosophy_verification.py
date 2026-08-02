@@ -129,7 +129,7 @@ class TestAntiFrankenstein:
 
     def test_long_aliphatic_chain_rejected(self):
         """Molecules with >12 continuous aliphatic carbons must be rejected."""
-        engine = MutationEngine(seed_smiles=["COC(=O)OC"])
+        MutationEngine(seed_smiles=["COC(=O)OC"])
         long_chain_smi = "CCCCCCCCCCCCCCOC(=O)OC"
         ctx = MoleculeContext.from_smiles(long_chain_smi)
         assert ctx is not None
@@ -139,7 +139,7 @@ class TestAntiFrankenstein:
 
     def test_short_aliphatic_chain_accepted(self):
         """Molecules with short aliphatic chains should pass."""
-        engine = MutationEngine(seed_smiles=["COC(=O)OC"])
+        MutationEngine(seed_smiles=["COC(=O)OC"])
         short_chain_smi = "CCCCCOC(=O)OC"
         ctx = MoleculeContext.from_smiles(short_chain_smi)
         assert ctx is not None
@@ -607,7 +607,7 @@ class TestSoftwareSimplicity:
                         continue
 
         assert not high_complexity, (
-            f"Functions exceeding cyclomatic complexity of 12:\n" +
+            "Functions exceeding cyclomatic complexity of 12:\n" +
             "\n".join(f"  {name}: {c}" for name, c in high_complexity)
         )
 

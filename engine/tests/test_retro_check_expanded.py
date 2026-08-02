@@ -6,7 +6,6 @@ the _estimate_step_economy function.
 
 from __future__ import annotations
 
-import pytest
 from rdkit import Chem
 
 from aurelius.synthesis.retro_check import (

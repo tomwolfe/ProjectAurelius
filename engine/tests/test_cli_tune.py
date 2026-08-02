@@ -14,7 +14,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import pytest
 from click.testing import CliRunner
 
 from aurelius.__main__ import cli

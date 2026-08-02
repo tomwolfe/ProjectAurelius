@@ -9,7 +9,6 @@ Verifies that:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import threading
 from typing import Any
@@ -202,9 +201,11 @@ def test_verify_kernel_missing_uq_weights() -> None:
 
 def test_verify_kernel_cli_valid() -> None:
     """The verify-kernel CLI must output 'OK' for a valid kernel file."""
-    from click.testing import CliRunner
-    from aurelius.__main__ import cli
     import tempfile
+
+    from click.testing import CliRunner
+
+    from aurelius.__main__ import cli
 
     kernel = _make_kernel({"spearman_rho": 0.85, "mae": 0.12, "rmse": 0.18, "n_training": 50})
 
@@ -224,9 +225,11 @@ def test_verify_kernel_cli_valid() -> None:
 
 def test_verify_kernel_cli_invalid() -> None:
     """The verify-kernel CLI must output 'FAIL' for a kernel missing required fields."""
-    from click.testing import CliRunner
-    from aurelius.__main__ import cli
     import tempfile
+
+    from click.testing import CliRunner
+
+    from aurelius.__main__ import cli
 
     kernel = _make_kernel({"spearman_rho": 0.85, "mae": 0.12, "rmse": 0.18, "n_training": 50})
     del kernel["tom_parameters"]  # remove a required field

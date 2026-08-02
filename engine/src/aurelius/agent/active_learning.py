@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from aurelius.types import MoleculeContext, ScreeningResult, is_mixture_smiles, parse_mixture_smiles
+from aurelius.types import MoleculeContext, ScreeningResult
 
 log = logging.getLogger(__name__)
 

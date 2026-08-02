@@ -16,16 +16,13 @@ Together they form a fully-automated "suggest → validate → retrain" cycle.
 from __future__ import annotations
 
 import csv
-import json
 import logging
-import os
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 import numpy as np
 
-from aurelius.agent.state import LoopState
-from aurelius.types import MoleculeContext, ScreeningResult
+from aurelius.types import ScreeningResult
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +81,6 @@ class SuggestAndValidatePipeline:
             path: Output SDF file path.
         """
         from rdkit import Chem
-        from rdkit.Chem import AllChem
 
         path = _resolve_output_path(path)
         writer = Chem.SDWriter(str(path))
@@ -231,7 +227,7 @@ class AutoRetrainPipeline:
     def __init__(self) -> None:
         self._feedback_data: list[dict[str, Any]] = []
 
-    def from_pipeline(self, suggestions: SuggestAndValidatePipeline) -> "AutoRetrainPipeline":
+    def from_pipeline(self, suggestions: SuggestAndValidatePipeline) -> AutoRetrainPipeline:
         """Load feedback data from a SuggestAndValidatePipeline instance."""
         self._feedback_data = suggestions.suggestions
         self._feedback_data = [
@@ -244,7 +240,7 @@ class AutoRetrainPipeline:
         ]
         return self
 
-    def from_results(self, results: list[ScreeningResult]) -> "AutoRetrainPipeline":
+    def from_results(self, results: list[ScreeningResult]) -> AutoRetrainPipeline:
         """Load feedback data from a list of ScreeningResult objects."""
         self._feedback_data = [
             {

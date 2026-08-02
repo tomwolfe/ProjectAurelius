@@ -215,7 +215,7 @@ class TestHardTopologicalConstraints:
 
     def test_rejects_long_conjugation(self):
         """Conjugation path > 16 atoms must be rejected."""
-        from aurelius.agent.mutation.smarts import is_electrolyte_like, find_max_conjugated_path
+        from aurelius.agent.mutation.smarts import find_max_conjugated_path, is_electrolyte_like
         # beta-carotene-like polyene chain
         smi = "CC1=C(C=CC=C(C=CC=C(C=C)C)C)C=CC=C1"
         ctx = MoleculeContext.from_smiles(smi)
