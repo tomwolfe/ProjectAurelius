@@ -113,13 +113,13 @@ SCORE_WEIGHT_LI_SOLVATION: float = 0.20
 """Weight for Li+ solvation energy proxy — penalises binding that is too tight
 (poor transference number) or too weak (poor conductivity)."""
 
-SCORE_WEIGHT_SA: float = 0.09
+SCORE_WEIGHT_SA: float = 0.01
 """Weight for synthetic accessibility penalty.
 
 Note: Al corrosion penalty is applied as a strict multiplicative factor
 at the end of scoring (like hydrolytic instability), not as an additive
 weight. This avoids the double-dipping bug where corrosion risk was
-accidentally rewarded by the additive term."""
+accidentually rewarded by the additive term."""
 
 # ---------------------------------------------------------------------------
 # Viability Threshold

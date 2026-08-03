@@ -119,6 +119,9 @@ _OBJECTIVES: list[Objective] = [
     Objective("sa_penalty", "sa_score", SCORE_WEIGHT_SA,
               lambda v: _sigmoid(v, SA_THRESHOLD, 2.0, False),
               failure_reason_template="SA score={value:.2f} (hard to synthesize)"),
+    Objective("synthesizability_reward", "sa_score", 0.08,
+              lambda v: 1.0 - (v / 10.0),
+              failure_reason_template="SA score={value:.2f} (hard to synthesize)"),
 ]
 
 
@@ -558,7 +561,6 @@ class AureliusPipeline:
         if lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
             al_corrosion_penalty = AureliusPipeline._check_al_corrosion_risk(ctx.mol)
         total_score *= al_corrosion_penalty
-        total_score *= AureliusPipeline._check_building_block_grounding(ctx.mol)
         return total_score
 
     @staticmethod

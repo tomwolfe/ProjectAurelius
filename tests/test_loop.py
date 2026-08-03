@@ -12,6 +12,31 @@ from aurelius.agent.loop import DiscoveryLoop, ScreeningResult
 from aurelius.agent.state import LoopState
 
 
+class _MockPipeline:
+    """Picklable mock pipeline for testing the discovery loop."""
+
+    def screen_molecule(self, ctx):
+        return {
+            "score": {
+                "total_score": 85.0,
+                "is_viable": True,
+                "rejection_reasons": [],
+            }
+        }
+
+    def screen_mixture(self, ctx1, ctx2, frac):
+        return {
+            "score": {
+                "total_score": 85.0,
+                "is_viable": True,
+                "rejection_reasons": [],
+            },
+            "mixture_properties": {
+                "synergy_bonus": 0.0,
+            },
+        }
+
+
 class TestDiscoveryLoop:
     """Tests for the DiscoveryLoop active-learning cycle."""
 
@@ -98,17 +123,7 @@ class TestDiscoveryLoop:
 
 def _make_mock_pipeline():
     """Create a mock pipeline that returns valid screening results."""
-    from unittest.mock import Mock
-
-    mock = Mock()
-    mock.screen_molecule.return_value = {
-        "score": {
-            "total_score": 85.0,
-            "is_viable": True,
-            "rejection_reasons": [],
-        }
-    }
-    return mock
+    return _MockPipeline()
 
 
 def _make_mock_engine():

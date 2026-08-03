@@ -158,6 +158,14 @@ class PropertyOracle:
         self._cache[smiles] = result
         return result
 
+    def __getstate__(self) -> dict[str, Any]:
+        state = self.__dict__.copy()
+        state["_cache"] = {}
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.__dict__.update(state)
+
     def evaluate_smiles(self, smiles: str) -> dict[str, Any]:
         ctx = MoleculeContext.from_smiles(smiles)
         if ctx is None:

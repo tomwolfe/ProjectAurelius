@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,6 +34,7 @@ from aurelius.agent.selection import compute_pairwise_diversity, tournament_sele
 from aurelius.agent.state import LoopState
 from aurelius.constants import DISCOVERY_THRESHOLD
 from aurelius.pipeline import AureliusPipeline
+from aurelius.screening.tier0.prefilter import Tier0Prefilter
 from aurelius.types import (
     MoleculeContext,
     ScreeningResult,
@@ -46,6 +48,26 @@ except ImportError:
     MurckoScaffold = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
+
+
+def _evaluate_single_molecule(
+    pipeline: Any,
+    ctx: MoleculeContext,
+) -> tuple[str, dict[str, Any] | None]:
+    """Evaluate a single molecule through the pipeline.
+
+    Module-level helper for ProcessPoolExecutor. Must be a top-level
+    function to be picklable.
+
+    Returns:
+        Tuple of (smiles, result_dict or None)
+    """
+    try:
+        result = pipeline.screen_molecule(ctx)
+        return ctx.smiles, result
+    except Exception as exc:
+        log.debug("Pipeline error for %s: %s", ctx.smiles, exc)
+        return ctx.smiles, None
 
 
 @dataclass(frozen=True)
@@ -447,41 +469,61 @@ class DiscoveryLoop:
         result_contexts: list[MoleculeContext] = []
         result_map: dict[str, Any] = {}
 
-        for ctx in valid_contexts:
-            result = self._screen_molecule(ctx)
-            if result is None:
-                continue
+        # Initialize Tier-0 prefilter
+        self.tier0_prefilter = Tier0Prefilter()
 
-            score_data = result.get("score")
-            if score_data is None:
-                continue
+        # Apply Tier-0 filtering
+        filtered_contexts, filter_stats = self.tier0_prefilter.filter(valid_contexts)
+        if not filtered_contexts:
+            return [], []
 
-            smi = ctx.smiles
-            self.screened_smiles.add(smi)
-            self.engine.add_to_db(smi)
+        # Parallel evaluation using ProcessPoolExecutor
+        with ProcessPoolExecutor(max_workers=4) as executor:
+            future_to_ctx = {
+                executor.submit(_evaluate_single_molecule, self.pipeline, ctx): ctx
+                for ctx in filtered_contexts
+            }
 
-            total_score = score_data.get("total_score", 0.0)
-            self.engine.record_reaction_success(smi, total_score)
-            all_scores.append(total_score)
-            
-            # Extract conformal confidence for uncertainty-aware selection
-            conformal_conf = result.get("conformal_confidence", 1.0)
-            all_confidences.append(conformal_conf)
-            
-            result_contexts.append(ctx)
+            for future in as_completed(future_to_ctx):
+                ctx = future_to_ctx[future]
+                try:
+                    smi, result = future.result()
+                except Exception as exc:
+                    log.debug("Evaluation failed for %s: %s", ctx.smiles, exc)
+                    continue
 
-            t2 = result.get("tier2", {}) or {}
-            result_map[smi] = t2
-            novelty = self._compute_novelty(ctx)
-            sub_scores = score_data.get("sub_scores", {})
+                if result is None:
+                    continue
 
-            sr = self._build_screening_result(smi, total_score, score_data, t2, novelty, ctx, sub_scores)
-            if self._is_discovery(total_score, score_data):
-                self.discoveries.append(sr)
-                self.state.add_discovery(sr)
-                log.info("  ** DISCOVERY ** %s (score=%.1f, confidence=%.4f)", smi, total_score, conformal_conf)
+                score_data = result.get("score")
+                if score_data is None:
+                    continue
 
-            self.all_results.append(sr)
+                self.screened_smiles.add(smi)
+                self.engine.add_to_db(smi)
+
+                total_score = score_data.get("total_score", 0.0)
+                self.engine.record_reaction_success(smi, total_score)
+                all_scores.append(total_score)
+
+                # Extract conformal confidence for uncertainty-aware selection
+                conformal_conf = result.get("conformal_confidence", 1.0)
+                all_confidences.append(conformal_conf)
+
+                result_contexts.append(ctx)
+
+                t2 = result.get("tier2", {}) or {}
+                result_map[smi] = t2
+                novelty = self._compute_novelty(ctx)
+                sub_scores = score_data.get("sub_scores", {})
+
+                sr = self._build_screening_result(smi, total_score, score_data, t2, novelty, ctx, sub_scores)
+                if self._is_discovery(total_score, score_data):
+                    self.discoveries.append(sr)
+                    self.state.add_discovery(sr)
+                    log.info("  ** DISCOVERY ** %s (score=%.1f, confidence=%.4f)", smi, total_score, conformal_conf)
+
+                self.all_results.append(sr)
 
         mix_contexts, mix_scores = self._evaluate_mixture_pairs(valid_contexts, result_map)
         result_contexts.extend(mix_contexts)
