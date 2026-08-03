@@ -1,0 +1,72 @@
+{
+  "cross_terms": [
+    {
+      "frag_a": "carbonate",
+      "frag_b": "ether",
+      "coefficient": 0.8,
+      "description": "carbonate-ether synergy (glyme-carbonate hybrids)",
+      "source": "default"
+    },
+    {
+      "frag_a": "nitrile",
+      "frag_b": "ether",
+      "coefficient": 0.3,
+      "description": "nitrile-ether synergy",
+      "source": "default"
+    },
+    {
+      "frag_a": "carbonate",
+      "frag_b": "fluorine",
+      "coefficient": -2.0,
+      "description": "fluorinated carbonate suppression",
+      "source": "default"
+    },
+    {
+      "frag_a": "sulfone",
+      "frag_b": "ether",
+      "coefficient": 0.4,
+      "description": "sulfone-ether synergy",
+      "source": "default"
+    },
+    {
+      "frag_a": "carbonate",
+      "frag_b": "nitrile",
+      "coefficient": -0.3,
+      "description": "carbonate-nitrile antagonism",
+      "source": "default"
+    },
+    {
+      "frag_a": "alcohol",
+      "frag_b": "carbonate",
+      "coefficient": -0.4,
+      "description": "alcohol-carbonate H-bond competition",
+      "source": "default"
+    },
+    {
+      "frag_a": "sulfone",
+      "frag_b": "carbonate",
+      "coefficient": -0.3,
+      "description": "sulfone-carbonate polarity competition",
+      "source": "default"
+    },
+    {
+      "frag_a": "nitrile",
+      "frag_b": "fluorine",
+      "coefficient": 0.3,
+      "description": "fluorinated nitrile dipole enhancement",
+      "source": "default"
+    },
+    {
+      "frag_a": "sulfone",
+      "frag_b": "nitrile",
+      "coefficient": 0.5,
+      "description": "sulfone-nitrile high-voltage synergy",
+      "source": "default"
+    }
+  ],
+  "ridge_alpha": 1.0,
+  "n_training_molecules": 56,
+  "n_bootstrap": 50,
+  "fitted_from": "/Users/tom/Documents/apps/ProjectAurelius/scripts/../src/aurelius/data/external_property_benchmark.json",
+  "method": "ridge regression on dielectric residuals with bootstrap CI; non-significant terms fall back to original hand-tuned values"
+}

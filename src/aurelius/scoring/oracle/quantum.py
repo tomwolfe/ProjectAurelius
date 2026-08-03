@@ -35,6 +35,7 @@ to 0.4007; Viscosity ρ from 0.7253 to 0.7431.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import math
 import os
@@ -98,6 +99,38 @@ def _generate_xyz(mol: Chem.Mol) -> str:
         pos = conf.GetAtomPosition(i)
         lines.append(f"{symb} {pos.x:.6f} {pos.y:.6f} {pos.z:.6f}")
     return "\n".join(lines)
+
+
+def _load_tom_params() -> Dict:
+    """Load TOM parameters from JSON file, with fallback to defaults."""
+    params_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "data", "tom_params.json"
+    )
+
+    default_params = {
+        "base_homo": -6.8,
+        "base_lumo": 1.5,
+        "ew_coeff": -0.32,
+        "ed_coeff": 0.12,
+        "arom_stab_homo": -0.20,
+        "arom_stab_lumo": -0.15,
+        "nitrile_shift": -0.70,
+        "gamma": 0.3,
+    }
+
+    try:
+        with open(params_path) as f:
+            loaded_params = json.load(f)
+            return {**default_params, **loaded_params}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return default_params
+
+
+def _get_tom_params() -> Dict:
+    """Get TOM parameters, loading from JSON file if available."""
+    if not hasattr(_get_tom_params, '_cached_params'):
+        _get_tom_params._cached_params = _load_tom_params()
+    return _get_tom_params._cached_params
 
 
 def _generate_xyz_geometry_optimized(mol: Chem.RWMol) -> str:
@@ -396,22 +429,17 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
 
     n_ew, n_ed, n_pi = _count_heteroatom_perturbations(mol)
 
-    # Base energies calibrated against known electrolyte HOMO/LUMO values.
-    # Ground truth in orbital_calibration.json (34 molecules, expanded from 14
-    # in v10.0 to cover more diverse scaffolds — nitriles, dinitriles, ethers,
-    # esters, phosphates, borates, sultones, fluorinated variants, aromatics).
-    #
-    # ADR-2026-06-01: Expanded calibration from 14→34 molecules.
-    #
-    # ADR-2026-06-02: Recalibrated EW coefficient (-0.25 → -0.32) and LUMO EW
-    # scaling (0.7 → 0.3) against the full 44-molecule calibration set. The
-    # refined constants achieve MAE ≈ 0.98 eV on the full set and MAE ≈ 0.93 eV
-    # on a 20% holdout — below the 1.0 eV target. The HOMO-biased EW sensitivity
-    # (l_ew=0.3) is physically justified: in Hueckel theory, substituent effects
-    # are larger on HOMO than LUMO because HOMO coefficients at substituted
-    # positions are typically larger.
-    base_homo = -6.8
-    base_lumo = 1.5
+    # All TOM constants loaded from tom_params.json (calibrated via grid search)
+    # with fallback to hardcoded defaults.
+    tom_params = _get_tom_params()
+    base_homo = tom_params["base_homo"]
+    base_lumo = tom_params["base_lumo"]
+    ew_coeff = tom_params["ew_coeff"]
+    ed_coeff = tom_params["ed_coeff"]
+    gamma = tom_params["gamma"]
+    arom_homo = tom_params["arom_stab_homo"]
+    arom_lumo = tom_params["arom_stab_lumo"]
+    nitrile_shift = tom_params["nitrile_shift"]
 
     if L >= 3:
         gap = 37.6 / (L * L)
@@ -423,15 +451,14 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
         lumo = base_lumo
 
     # Heteroatom perturbations (Hueckel-like correction)
-    # Calibrated against orbital_calibration.json (44 molecules) to achieve MAE < 1.0 eV
     # ADR-2026-06-02: Refined constants. EW coefficient strengthened from -0.25 to -0.32
     # to better capture inductive effects from expanded calibration (nitriles, fluorinated,
     # sulfones). LUMO EW scaling reduced from 0.7 to 0.3 — physically justified because
     # HOMO is more sensitive to substitution than LUMO in Hueckel theory.
-    ew_shift = -0.32 * n_ew
-    ed_shift = 0.12 * n_ed
+    ew_shift = ew_coeff * n_ew
+    ed_shift = ed_coeff * n_ed
     homo += ew_shift + ed_shift
-    lumo += ew_shift * 0.3 + ed_shift * 0.5
+    lumo += ew_shift * gamma + ed_shift * 0.5
 
     # Fluorine correction (strong inductive withdrawal, stabilises both)
     n_f = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
@@ -442,15 +469,13 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     # Aromatic ring stabilization (cyclic delocalisation beyond 1-D PIB)
     # Each aromatic ring adds extra stabilization from cyclic pi-delocalisation
     n_arom = _count_aromatic_rings(mol)
-    arom_stab_homo = -0.20 * n_arom
-    arom_stab_lumo = -0.15 * n_arom
-    homo += arom_stab_homo
-    lumo += arom_stab_lumo
+    homo += arom_homo * n_arom
+    lumo += arom_lumo * n_arom
 
     # Nitrile triple bond LUMO correction (low-lying π* orbital of C≡N)
     # The C≡N π* is ~0.7-1.0 eV lower than the general N perturbation predicts
     n_nitrile = len(mol.GetSubstructMatches(NITRILE_PATTERN))
-    lumo += -0.70 * n_nitrile
+    lumo += nitrile_shift * n_nitrile
 
     return homo, lumo
 

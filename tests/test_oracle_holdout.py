@@ -123,7 +123,6 @@ class TestGCHoldout:
         for smi, name in low_diel:
             ctx = MoleculeContext.from_smiles(smi)
             assert ctx is not None, f"Invalid SMILES: {smi} ({name})"
-            low_values.append(predict_viscosity_proxy(ctx))
             low_values.append(predict_dielectric_proxy(ctx))
 
         mean_high = np.mean(high_values)

@@ -181,9 +181,9 @@ def test_external_validation_donor_number(pipeline):
     )
 
 
-def test_benchmark_has_minimum_molecules():
+def test_benchmark_has_minimum_60_molecules():
     benchmark = _load_benchmark()
-    assert len(benchmark) >= 15, (
-        f"External benchmark has only {len(benchmark)} entries; need >= 15 "
+    assert len(benchmark) >= 60, (
+        f"External benchmark has only {len(benchmark)} entries; need >= 60 "
         f"for statistically meaningful validation."
     )

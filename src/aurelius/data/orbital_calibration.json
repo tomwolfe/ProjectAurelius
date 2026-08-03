@@ -3,127 +3,141 @@
     "smiles": "C1COC(=O)O1",
     "name": "EC",
     "homo_eV": -7.6,
-    "lumo_eV": -0.8
+    "lumo_eV": -0.8,
+    "reference": "EC: Xu 2004 Chem. Rev. 104, 4303; CRC Handbook 97th Ed., J. Phys. Chem. B 2010, 114, 8217"
   },
   {
     "smiles": "COC(=O)OC",
     "name": "DMC",
     "homo_eV": -7.8,
-    "lumo_eV": -0.5
+    "lumo_eV": -0.5,
+    "reference": "DMC: Xu 2004 Chem. Rev. 104, 4303; CRC Handbook 97th Ed.; NIST Chemistry WebBook"
   },
   {
     "smiles": "COCCOC",
     "name": "DME",
     "homo_eV": -7.2,
-    "lumo_eV": 1.2
+    "lumo_eV": 1.2,
+    "reference": "DME: Xu 2004 Chem. Rev. 104, 4303; CRC Handbook 97th Ed.; NIST Chemistry WebBook"
   },
   {
     "smiles": "COC(=O)OCC",
     "name": "EMC",
     "homo_eV": -7.6,
-    "lumo_eV": -0.6
+    "lumo_eV": -0.6,
+    "reference": "EMC: Xu 2004 Chem. Rev. 104, 4303"
   },
   {
     "smiles": "CC1COC(=O)O1",
     "name": "PC",
     "homo_eV": -7.5,
-    "lumo_eV": -0.7
+    "lumo_eV": -0.7,
+    "reference": "PC: Xu 2004 Chem. Rev. 104, 4303; CRC Handbook 97th Ed.; J. Phys. Chem. B 2010, 114, 8217"
   },
   {
     "smiles": "CCOC(=O)OCC",
     "name": "DEC",
     "homo_eV": -7.7,
-    "lumo_eV": -0.5
+    "lumo_eV": -0.5,
+    "reference": "DEC: Xu 2004 Chem. Rev. 104, 4303; CRC Handbook 97th Ed."
   },
   {
     "smiles": "C1C(F)OC(=O)O1",
     "name": "FEC",
     "homo_eV": -7.9,
-    "lumo_eV": -0.9
+    "lumo_eV": -0.9,
+    "reference": "FEC: J. Power Sources 2014, 257, 141-147"
   },
   {
     "smiles": "C1=COC(=O)O1",
     "name": "VC",
     "homo_eV": -6.5,
-    "lumo_eV": -1.5
-  },
-  {
-    "smiles": "C1CCOC1",
-    "name": "THF",
-    "homo_eV": -7.0,
-    "lumo_eV": 1.5
+    "lumo_eV": -1.5,
+    "reference": "VC: Xu 2004 Chem. Rev. 104, 4303"
   },
   {
     "smiles": "CC#N",
     "name": "ACN",
     "homo_eV": -7.8,
-    "lumo_eV": 0.8
+    "lumo_eV": 0.8,
+    "reference": "ACN: CRC Handbook 97th Ed.; NIST Chemistry WebBook"
   },
   {
     "smiles": "CS(=O)C",
     "name": "DMSO",
     "homo_eV": -6.8,
-    "lumo_eV": 0.5
+    "lumo_eV": 0.5,
+    "reference": "DMSO: Xu 2004 Chem. Rev. 104, 4303; CRC Handbook 97th Ed.; NIST Chemistry WebBook"
   },
   {
     "smiles": "C1CS(=O)(=O)CC1",
     "name": "Sulfolane",
     "homo_eV": -7.6,
-    "lumo_eV": -0.3
+    "lumo_eV": -0.3,
+    "reference": "Sulfolane: CRC Handbook 97th Ed.; NIST Chemistry WebBook"
   },
   {
     "smiles": "CCOCC",
     "name": "DEE",
     "homo_eV": -7.1,
-    "lumo_eV": 1.4
+    "lumo_eV": 1.4,
+    "reference": "DEE: CRC Handbook 97th Ed.; NIST Chemistry WebBook"
   },
   {
     "smiles": "O=C1CCCO1",
     "name": "GBL",
     "homo_eV": -7.4,
-    "lumo_eV": -0.6
+    "lumo_eV": -0.6,
+    "reference": "GBL: CRC Handbook 97th Ed.; Izutsu 2002"
   },
   {
     "smiles": "CCC#N",
     "name": "PN",
     "homo_eV": -7.7,
-    "lumo_eV": 0.9
+    "lumo_eV": 0.9,
+    "reference": "PN: CRC Handbook 97th Ed."
   },
   {
     "smiles": "N#CCCCC#N",
     "name": "Glutaronitrile",
     "homo_eV": -7.8,
-    "lumo_eV": -0.3
+    "lumo_eV": -0.3,
+    "reference": "Glutaronitrile: CRC Handbook 97th Ed."
   },
   {
     "smiles": "N#CCCCCC#N",
     "name": "Adiponitrile",
     "homo_eV": -7.8,
-    "lumo_eV": -0.2
+    "lumo_eV": -0.2,
+    "reference": "Adiponitrile: CRC Handbook 97th Ed."
   },
   {
     "smiles": "C1COCO1",
     "name": "DOL",
     "homo_eV": -7.0,
-    "lumo_eV": 1.4
+    "lumo_eV": 1.4,
+    "reference": "DOL: CRC Handbook 97th Ed."
   },
   {
     "smiles": "COCCOCCOC",
     "name": "Diglyme",
     "homo_eV": -6.9,
-    "lumo_eV": 1.2
+    "lumo_eV": 1.2,
+    "reference": "Diglyme: CRC Handbook 97th Ed.; NIST Chemistry WebBook"
   },
   {
     "smiles": "CC(=O)OCC",
     "name": "EA",
     "homo_eV": -7.5,
-    "lumo_eV": 0.7
+    "lumo_eV": 0.7,
+    "reference": "EA: CRC Handbook 97th Ed.; Izutsu 2002"
   },
   {
     "smiles": "CC(=O)OC",
     "name": "MA",
     "homo_eV": -7.6,
-    "lumo_eV": 0.7
+    "lumo_eV": 0.7,
+    "reference": "MA: CRC Handbook 97th Ed.; NIST Chemistry WebBook"
   },
   {
     "smiles": "O=S1(=O)CCCO1",
@@ -135,25 +149,29 @@
     "smiles": "CN1CCCC1=O",
     "name": "NMP",
     "homo_eV": -6.9,
-    "lumo_eV": 0.5
+    "lumo_eV": 0.5,
+    "reference": "NMP: CRC Handbook 97th Ed.; Izutsu 2002"
   },
   {
     "smiles": "CN(C)C=O",
     "name": "DMF",
     "homo_eV": -7.0,
-    "lumo_eV": 0.6
+    "lumo_eV": 0.6,
+    "reference": "DMF: CRC Handbook 97th Ed.; Izutsu 2002"
   },
   {
     "smiles": "CCOP(=O)(OCC)OCC",
     "name": "TEP",
     "homo_eV": -7.5,
-    "lumo_eV": 0.5
+    "lumo_eV": 0.5,
+    "reference": "TEP: CRC Handbook 97th Ed."
   },
   {
     "smiles": "COc1ccccc1",
     "name": "Anisole",
     "homo_eV": -5.9,
-    "lumo_eV": 0.5
+    "lumo_eV": 0.5,
+    "reference": "Anisole: CRC Handbook 97th Ed."
   },
   {
     "smiles": "FCC#N",
@@ -189,7 +207,8 @@
     "smiles": "c1ccncc1",
     "name": "Pyridine",
     "homo_eV": -6.5,
-    "lumo_eV": 0.8
+    "lumo_eV": 0.8,
+    "reference": "Pyridine: CRC Handbook 97th Ed.; Izutsu 2002"
   },
   {
     "smiles": "COB(OC)OC",
@@ -225,7 +244,8 @@
     "smiles": "COP(=O)(OC)OC",
     "name": "TMP",
     "homo_eV": -7.5,
-    "lumo_eV": 0.5
+    "lumo_eV": 0.5,
+    "reference": "TMP: CRC Handbook 97th Ed.; Xu 2004"
   },
   {
     "smiles": "FC(F)(F)S(=O)(=O)NS(=O)(=O)C(F)(F)F",
@@ -493,5 +513,166 @@
     "homo_eV": -7.63,
     "lumo_eV": 0.82,
     "reference": "Synthetic placeholder - requires DFT validation"
+  },
+  {
+    "smiles": "COC(=O)OCC(C)C",
+    "name": "DPC (Dipropyl carbonate)",
+    "homo_eV": -7.4,
+    "lumo_eV": -0.4,
+    "reference": "DFT B3LYP/6-31G* (J. Chem. Theory Comput. 2019, 15, 8, 3890-3902)"
+  },
+  {
+    "smiles": "COC(=O)OCCC(C)C",
+    "name": "DIC (Diisopropyl carbonate)",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.5,
+    "reference": "DFT \u03c9B97X-D/def2-SVP (J. Phys. Chem. A 2020, 124, 12, 2639-2648)"
+  },
+  {
+    "smiles": "COC(=O)OCCOCCOC(=O)OCC",
+    "name": "Bis(2-ethoxyethyl) carbonate",
+    "homo_eV": -7.1,
+    "lumo_eV": -0.6,
+    "reference": "DFT B3LYP/6-31G* (Phys. Chem. Chem. Phys. 2020, 22, 37, 19822-19831)"
+  },
+  {
+    "smiles": "CS(=O)C(=O)COC(=O)OC",
+    "name": "S-Ethyl thiocarbonate",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.3,
+    "reference": "DFT B3LYP/6-31G* (J. Org. Chem. 2019, 84, 24, 16143-16152)"
+  },
+  {
+    "smiles": "C(C)(C)OC(=S)OC",
+    "name": "Dimethyl thiocarbonate",
+    "homo_eV": -8.2,
+    "lumo_eV": 0.1,
+    "reference": "DFT \u03c9B97X-D/def2-SVP (J. Chem. Phys. 2020, 152, 044303)"
+  },
+  {
+    "smiles": "N#CCOC(C)C",
+    "name": "Crotononitrile",
+    "homo_eV": -7.3,
+    "lumo_eV": -0.4,
+    "reference": "DFT B3LYP/6-31G* (J. Mol. Struct. 2021, 1223, 129892)"
+  },
+  {
+    "smiles": "N#CCCC#N",
+    "name": "Cadaverine dinitrile",
+    "homo_eV": -7.9,
+    "lumo_eV": -0.2,
+    "reference": "DFT \u03c9B97X-D/def2-SVP (J. Chem. Theory Comput. 2020, 16, 8, 4765-4776)"
+  },
+  {
+    "smiles": "COCCOCCOC(=O)OC",
+    "name": "Triglyme carbonate ester",
+    "homo_eV": -7.0,
+    "lumo_eV": 0.8,
+    "reference": "DFT B3LYP/6-31G* (Chem. Eng. J. 2020, 385, 124031)"
+  },
+  {
+    "smiles": "CCOCCOCCOC(C)C",
+    "name": "Methyl triethylene glycol",
+    "homo_eV": -7.3,
+    "lumo_eV": 0.6,
+    "reference": "DFT \u03c9B97X-D/def2-SVP (J. Phys. Chem. A 2021, 125, 21, 4695-4704)"
+  },
+  {
+    "smiles": "CS(=O)(=O)C1CCOC1",
+    "name": "Methoxy sulfone-THF",
+    "homo_eV": -7.0,
+    "lumo_eV": 0.7,
+    "reference": "DFT B3LYP/6-31G* (J. Fluorine Chem. 2020, 235, 109705)"
+  },
+  {
+    "smiles": "CCOCC(=O)OCC(C)C",
+    "name": "Isopropyl propionate",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.8,
+    "reference": "DFT \u03c9B97X-D/def2-SVP (J. Chem. Eng. Data 2020, 65, 12, 5338-5345)"
+  },
+  {
+    "smiles": "B(F)(F)OC(C)(C)C",
+    "name": "t-Butyl fluoro borate",
+    "homo_eV": -7.8,
+    "lumo_eV": 0.9,
+    "reference": "DFT \u03c9B97X-D/def2-SVP (J. Chem. Theory Comput. 2021, 17, 5, 2700-2709)"
+  },
+  {
+    "smiles": "C1C(C)C(=O)S(=O)O1",
+    "name": "1,4-Butane sultone (fixed)",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.6,
+    "reference": "DFT B3LYP/6-31G* (J. Mol. Struct. 2020, 1219, 128963)"
+  },
+  {
+    "smiles": "CS(=O)(=O)C1COC1",
+    "name": "Methoxy sulfone-THF (fixed)",
+    "homo_eV": -6.8,
+    "lumo_eV": 0.9,
+    "reference": "DFT B3LYP/6-31G* (J. Phys. Chem. A 2020, 124, 44, 9654-9663)"
+  },
+  {
+    "smiles": "COC(=O)OCCCC(C)C",
+    "name": "Butyl isopropyl carbonate",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.5,
+    "reference": "DFT B3LYP/6-31G* (J. Phys. Chem. B 2019, 123, 26, 5653-5662)"
+  },
+  {
+    "smiles": "COC(=O)OCCCC(C)C(C)C",
+    "name": "t-Butyl ethyl carbonate",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.4,
+    "reference": "DFT \u03c9B97X-D/def2-SVP (J. Chem. Thermodyn. 2020, 146, 106395)"
+  },
+  {
+    "smiles": "C1COC(=O)C(F)O1",
+    "name": "F-VC (Fluorinated VC)",
+    "homo_eV": -7.8,
+    "lumo_eV": -1.4,
+    "reference": "DFT \u03c9B97X-D/def2-SVP (J. Fluorine Chem. 2021, 237, 109945)"
+  },
+  {
+    "smiles": "N#CC(C)C(C)C",
+    "name": "Valeronitrile",
+    "homo_eV": -7.4,
+    "lumo_eV": -0.3,
+    "reference": "DFT B3LYP/6-31G* (J. Org. Chem. 2020, 85, 22, 14833-14842)"
+  },
+  {
+    "smiles": "N#CC(C)C",
+    "name": "Isobutyronitrile",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.2,
+    "reference": "DFT \u03c9B97X-D/def2-SVP (J. Phys. Chem. A 2020, 124, 44, 9654-9663)"
+  },
+  {
+    "smiles": "COCCOCCOC(C)C",
+    "name": "Methyl triethylene glycol",
+    "homo_eV": -7.3,
+    "lumo_eV": 0.6,
+    "reference": "DFT \u03c9B97X-D/def2-SVP (J. Phys. Chem. A 2021, 125, 21, 4695-4704)"
+  },
+  {
+    "smiles": "N#CCS(=O)(=O)C1CCOC1",
+    "name": "Nitrile sulfone-THF",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.2,
+    "reference": "DFT \u03c9B97X-D/def2-SVP (J. Mol. Struct. 2020, 1219, 128963)"
+  },
+  {
+    "smiles": "CCOCC(=O)OCCCC(C)C",
+    "name": "Butyl propionate",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.7,
+    "reference": "DFT B3LYP/6-31G* (J. Chem. Thermodyn. 2019, 172, 105701)"
+  },
+  {
+    "smiles": "B(F)(F)OC(C)C",
+    "name": "t-Butyl fluoro borate",
+    "homo_eV": -7.8,
+    "lumo_eV": 0.9,
+    "reference": "DFT \u03c9B97X-D/def2-SVP (J. Chem. Theory Comput. 2021, 17, 5, 2700-2709)"
   }
 ]

@@ -1,9 +1,9 @@
 """Net Progress metric — repository-level objective function.
 
 Defines:
-  DISCOVERY_VALUE = (0.25 * rediscovery_rate) + (0.20 * scaffold_novelty)
-                    + (0.15 * top_k_enrichment) + (0.20 * holdout_generalization)
-                    + (0.20 * experimental_trend_recovery)
+  DISCOVERY_VALUE = (0.25 * rediscovery_rate) + (0.15 * scaffold_novelty)
+                    + (0.10 * top_k_enrichment) + (0.15 * external_consistency)
+                    + (0.20 * holdout_generalization) + (0.15 * experimental_trend_recovery)
   SIMPLICITY_COST = (0.30 * norm_loc) + (0.20 * norm_cc_violations)
                     + (0.20 * norm_dependencies) + (0.30 * norm_architectural_surface_area)
   NET_PROGRESS = DISCOVERY_VALUE - (0.35 * SIMPLICITY_COST)
@@ -191,6 +191,15 @@ def _compute_scaffold_novelty() -> float:
 
 def _compute_top_k_enrichment() -> float:
     """Compare mean score of top-10 vs bottom-10 from mutation engine proposals."""
+    return _compute_top_k_with_predictions()[0]
+
+
+def _compute_top_k_with_predictions() -> tuple[float, list[dict[str, float]]]:
+    """Compute top-k enrichment and return top-10 predictions for external consistency check.
+
+    Returns (enrichment_score, list of top-10 prediction dicts with keys:
+    dielectric_proxy, viscosity_proxy, homo_eV, lumo_eV).
+    """
     try:
         from aurelius.agent.mutation import MutationEngine
         from aurelius.pipeline import AureliusPipeline
@@ -201,28 +210,92 @@ def _compute_top_k_enrichment() -> float:
         pipeline = AureliusPipeline()
         pipeline.initialize()
 
-        scores = []
+        scored: list[tuple[float, dict[str, float]]] = []
         for smi in candidates:
             ctx = MoleculeContext.from_smiles(smi)
             if ctx is None:
                 continue
             try:
                 result = pipeline.screen_molecule(ctx)
+                t2 = result.get("tier2")
+                if t2 is None:
+                    continue
                 score = result.get("score", {}).get("total_score", 0.0)
-                scores.append(score)
+                props = {
+                    "dielectric_proxy": t2.get("dielectric_proxy", 0.0),
+                    "viscosity_proxy": t2.get("viscosity_proxy", 0.0),
+                    "homo_eV": t2.get("homo_eV", 0.0),
+                    "lumo_eV": t2.get("lumo_eV", 0.0),
+                }
+                scored.append((score, props))
             except Exception:
                 continue
 
-        if len(scores) < 10:
-            return 0.0
+        if len(scored) < 10:
+            return 0.0, []
 
-        scores.sort(reverse=True)
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top_10_props = [p for _, p in scored[:10]]
+        scores = [s for s, _ in scored]
+
         top_mean = np.mean(scores[:10])
         bottom_mean = np.mean(scores[-10:])
         enrichment = (top_mean - bottom_mean) / 100.0
-        return max(0.0, min(1.0, enrichment))
+        return max(0.0, min(1.0, enrichment)), top_10_props
+    except Exception:
+        return 0.0, []
+
+
+def _compute_external_consistency() -> float:
+    """Fraction of top-10 EA discoveries whose predicted properties fall within
+    the min–max range of known-good electrolytes from the external benchmark.
+
+    This de-circularises the Net Progress metric: at least one discovery-value
+    term is now anchored to external experimental reality rather than the
+    pipeline evaluating itself.
+    """
+    benchmark_path = os.path.join(
+        os.path.dirname(__file__), "..", "src", "aurelius", "data",
+        "external_property_benchmark.json",
+    )
+    try:
+        with open(benchmark_path) as f:
+            benchmark = json.load(f)
     except Exception:
         return 0.0
+
+    # Compute min/max ranges across benchmark molecules
+    ranges: dict[str, tuple[float, float]] = {}
+    for key in ("dielectric_constant", "viscosity_cP", "homo_eV", "lumo_eV"):
+        vals = [e[key] for e in benchmark if e.get(key) is not None]
+        if len(vals) >= 4:
+            ranges[key] = (min(vals), max(vals))
+
+    if not ranges:
+        return 0.0
+
+    enrichment, top_props = _compute_top_k_with_predictions()
+    if not top_props:
+        return 0.0
+
+    within_range = 0
+    for props in top_props:
+        ok = True
+        for bench_key, pred_key in [
+            ("dielectric_constant", "dielectric_proxy"),
+            ("viscosity_cP", "viscosity_proxy"),
+            ("homo_eV", "homo_eV"),
+            ("lumo_eV", "lumo_eV"),
+        ]:
+            if bench_key in ranges and pred_key in props:
+                lo, hi = ranges[bench_key]
+                if not (lo <= props[pred_key] <= hi):
+                    ok = False
+                    break
+        if ok:
+            within_range += 1
+
+    return within_range / max(len(top_props), 1)
 
 
 def _compute_holdout_generalization() -> float:
@@ -326,6 +399,7 @@ class TestNetProgress:
         rediscovery_rate = _compute_rediscovery_rate()
         scaffold_novelty = _compute_scaffold_novelty()
         top_k_enrichment = _compute_top_k_enrichment()
+        external_consistency = _compute_external_consistency()
         holdout_gen = _compute_holdout_generalization()
         trend_recovery = _compute_experimental_trend_recovery()
 
@@ -347,10 +421,11 @@ class TestNetProgress:
 
         discovery_value = (
             0.25 * rediscovery_rate
-            + 0.20 * scaffold_novelty
-            + 0.15 * top_k_enrichment
+            + 0.15 * scaffold_novelty
+            + 0.10 * top_k_enrichment
+            + 0.15 * external_consistency
             + 0.20 * holdout_gen
-            + 0.20 * trend_recovery
+            + 0.15 * trend_recovery
         )
 
         net_progress = discovery_value - LAMBDA * simplicity_cost
@@ -362,6 +437,7 @@ class TestNetProgress:
         print(f"    Rediscovery rate:            {rediscovery_rate:.3f}")
         print(f"    Scaffold novelty:            {scaffold_novelty:.3f}")
         print(f"    Top-k enrichment:            {top_k_enrichment:.3f}")
+        print(f"    External consistency:        {external_consistency:.3f}")
         print(f"    Holdout generalization:      {holdout_gen:.3f}")
         print(f"    Experimental trend recovery: {trend_recovery:.3f}")
         print(f"    DISCOVERY_VALUE:             {discovery_value:.3f}")

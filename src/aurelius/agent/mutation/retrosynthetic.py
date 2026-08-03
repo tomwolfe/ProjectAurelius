@@ -84,6 +84,56 @@ def _strip_brics_dummies(frag_smi: str) -> str | None:
     return Chem.MolToSmiles(rw)
 
 
+def _decompose_fragments(frag_smiles: list[str]) -> list[str]:
+    """Decompose each BRICS fragment SMILES into sub-fragment SMILES.
+
+    Fragments that fail to parse or decompose fall back to their original SMILES.
+    """
+    next_fragments: list[str] = []
+    for frag_smi in frag_smiles:
+        try:
+            frag_mol = Chem.MolFromSmiles(frag_smi)
+            if frag_mol is None:
+                next_fragments.append(frag_smi)
+                continue
+            decomposed = BRICS.BRICSDecompose(frag_mol)
+            if decomposed is not None:
+                for subfrag in decomposed:
+                    subfrag_smi = Chem.MolToSmiles(subfrag) if subfrag else None
+                    if subfrag_smi:
+                        next_fragments.append(subfrag_smi)
+                    else:
+                        next_fragments.append(frag_smi)
+            else:
+                next_fragments.append(frag_smi)
+        except Exception:
+            next_fragments.append(frag_smi)
+    return next_fragments
+
+
+def _count_precursor_matches(frag_smiles: list[str]) -> int:
+    """Count how many fragment cores match a known commercial precursor."""
+    matched = 0
+    for frag_smi in frag_smiles:
+        core_smi = _strip_brics_dummies(frag_smi)
+        if core_smi is None:
+            continue
+        core_mol = Chem.MolFromSmiles(core_smi)
+        if core_mol is None:
+            continue
+        if _is_known_precursor(core_mol):
+            matched += 1
+    return matched
+
+
+def _is_known_precursor(mol: Chem.Mol) -> bool:
+    """Check whether *mol* matches any commercial building-block precursor."""
+    for precursor in _BB_MOLS:
+        if mol.HasSubstructMatch(precursor) or precursor.HasSubstructMatch(mol):
+            return True
+    return False
+
+
 @lru_cache(maxsize=2048)
 def _cached_retrosynthetic_depth(smiles: str) -> int:
     """Cached retrosynthetic depth calculation by SMILES.
@@ -117,54 +167,10 @@ def _cached_retrosynthetic_depth(smiles: str) -> int:
     
     while current_depth < max_iterations:
         current_depth += 1
-        next_fragments = []
-        
-        # Decompose all current fragments
-        for frag_smi in current_fragments:
-            try:
-                # frag_smi is already a SMILES string with dummy atoms
-                # We need to decompose it to get sub-fragments
-                frag_mol = Chem.MolFromSmiles(frag_smi)
-                if frag_mol is not None:
-                    decomposed = BRICS.BRICSDecompose(frag_mol)
-                    if decomposed is not None:
-                        # Convert back to SMILES strings
-                        for subfrag in decomposed:
-                            if subfrag is not None:
-                                subfrag_smi = Chem.MolToSmiles(subfrag)
-                                if subfrag_smi:
-                                    next_fragments.append(subfrag_smi)
-                            else:
-                                next_fragments.append(frag_smi)
-                    else:
-                        next_fragments.append(frag_smi)
-                else:
-                    next_fragments.append(frag_smi)
-            except Exception:
-                next_fragments.append(frag_smi)
-        
-        # Check what fraction of fragments match known precursors
-        matched = 0
-        for frag_smi in next_fragments:
-            core_smi = _strip_brics_dummies(frag_smi)
-            if core_smi is None:
-                continue
-            
-            core_mol = Chem.MolFromSmiles(core_smi)
-            if core_mol is None:
-                continue
-            
-            # Check if this fragment matches any known precursor
-            is_precursor = False
-            for precursor in _BB_MOLS:
-                if core_mol.HasSubstructMatch(precursor) or precursor.HasSubstructMatch(core_mol):
-                    is_precursor = True
-                    break
-            
-            if is_precursor:
-                matched += 1
+        next_fragments = _decompose_fragments(current_fragments)
         
         # If >80% of fragments match precursors, we're at acceptable depth
+        matched = _count_precursor_matches(next_fragments)
         if len(next_fragments) > 0 and (matched / len(next_fragments)) >= 0.8:
             return current_depth
         

@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from aurelius.scoring.oracle.conformal import get_conformal_predictor
 from aurelius.scoring.oracle.gc import (
     _DATA_SOURCE,
     compute_gc_domain_penalty,
@@ -30,6 +31,36 @@ from aurelius.scoring.oracle.quantum import (
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
+
+_PHYSICAL_BOUNDS: dict[str, tuple[float, float]] = {
+    "dielectric_proxy": (1.0, 100.0),
+    "viscosity_proxy": (0.1, 50.0),
+    "homo_eV": (-12.0, -3.0),
+    "lumo_eV": (-5.0, 5.0),
+}
+
+
+def _apply_physical_bounds(
+    raw: dict[str, float],
+) -> tuple[dict[str, float], list[str]]:
+    """Clamp each property to its physical bounds, collecting warnings.
+
+    Returns the clamped dict and a list of warning messages for any value
+    that fell outside its bounds.
+    """
+    clamped: dict[str, float] = {}
+    warnings_list: list[str] = []
+    for key, value in raw.items():
+        lo, hi = _PHYSICAL_BOUNDS.get(key, (float("-inf"), float("inf")))
+        if value < lo:
+            clamped[key] = lo
+            warnings_list.append(f"{key} below physical minimum (clamped to {lo})")
+        elif value > hi:
+            clamped[key] = hi
+            warnings_list.append(f"{key} above physical maximum (clamped to {hi})")
+        else:
+            clamped[key] = value
+    return clamped, warnings_list
 
 
 class PropertyOracle:
@@ -83,43 +114,25 @@ class PropertyOracle:
         domain_applicable = domain_penalty >= 0.85
         domain_reason_str = "; ".join(domain_reasons) if domain_reasons else _DATA_SOURCE
 
-        # Apply physical sanity bounds to ensure realistic predictions
-        sanity_warning: list[str] = []
-        clamped_values = {
+        clamped_values, sanity_warning = _apply_physical_bounds({
             "dielectric_proxy": dielectric,
             "viscosity_proxy": viscosity,
             "homo_eV": homo,
             "lumo_eV": lumo,
+        })
+
+        cp = get_conformal_predictor()
+        intervals = {
+            "homo": cp.predict_interval("homo", clamped_values["homo_eV"]),
+            "lumo": cp.predict_interval("lumo", clamped_values["lumo_eV"]),
+            "dielectric": cp.predict_interval(
+                "dielectric", clamped_values["dielectric_proxy"]
+            ),
+            "viscosity": cp.predict_interval(
+                "viscosity", clamped_values["viscosity_proxy"]
+            ),
         }
-
-        # Apply bounds per property
-        if dielectric < 1.0:
-            clamped_values["dielectric_proxy"] = 1.0
-            sanity_warning.append("dielectric_proxy below physical minimum (clamped to 1.0)")
-        elif dielectric > 100.0:
-            clamped_values["dielectric_proxy"] = 100.0
-            sanity_warning.append("dielectric_proxy above physical maximum (clamped to 100.0)")
-
-        if viscosity < 0.1:
-            clamped_values["viscosity_proxy"] = 0.1
-            sanity_warning.append("viscosity_proxy below physical minimum (clamped to 0.1)")
-        elif viscosity > 50.0:
-            clamped_values["viscosity_proxy"] = 50.0
-            sanity_warning.append("viscosity_proxy above physical maximum (clamped to 50.0)")
-
-        if homo < -12.0:
-            clamped_values["homo_eV"] = -12.0
-            sanity_warning.append("homo_eV below physical minimum (clamped to -12.0)")
-        elif homo > -3.0:
-            clamped_values["homo_eV"] = -3.0
-            sanity_warning.append("homo_eV above physical maximum (clamped to -3.0)")
-
-        if lumo < -5.0:
-            clamped_values["lumo_eV"] = -5.0
-            sanity_warning.append("lumo_eV below physical minimum (clamped to -5.0)")
-        elif lumo > 5.0:
-            clamped_values["lumo_eV"] = 5.0
-            sanity_warning.append("lumo_eV above physical maximum (clamped to 5.0)")
+        conformal_confidence = cp.confidence_discount(intervals)
 
         result: dict[str, Any] = {
             "homo_eV": round(clamped_values["homo_eV"], 4),
@@ -135,6 +148,11 @@ class PropertyOracle:
             "quantum_method": self._quantum.method,
             "quantum_confidence": quantum_result.get("quantum_confidence", "unknown"),
             "sanity_warning": sanity_warning,
+            "conformal_intervals": {
+                prop: [round(lo, 4), round(hi, 4)]
+                for prop, (lo, hi) in intervals.items()
+            },
+            "conformal_confidence": round(conformal_confidence, 4),
         }
 
         self._cache[smiles] = result
