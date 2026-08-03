@@ -53,8 +53,10 @@ class TestOracleCalibration:
             assert lumo > -15.0, f"{entry['name']}: LUMO ({lumo}) suspiciously low"
 
     def test_calibration_set_has_minimum_molecules(self, calibration_data):
+        # After purging synthetic placeholder data, we have real literature/DFT entries
+        # Quality > quantity - require a minimum of 10 real, verifiable entries
         assert len(calibration_data) >= 10, (
-            f"Calibration set has only {len(calibration_data)} entries; need >= 10"
+            f"Calibration set has only {len(calibration_data)} entries; need >= 10 real entries"
         )
 
     def test_tom_conjugation_nonlinear(self):

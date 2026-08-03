@@ -44,6 +44,7 @@ import subprocess
 import tempfile
 
 from rdkit import Chem
+from rdkit.Chem import BondType
 
 from aurelius.constants import NITRILE_PATTERN
 from aurelius.types import MoleculeContext
@@ -476,6 +477,31 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     # The C≡N π* is ~0.7-1.0 eV lower than the general N perturbation predicts
     n_nitrile = len(mol.GetSubstructMatches(NITRILE_PATTERN))
     lumo += nitrile_shift * n_nitrile
+
+    # Phosphorus and sulfur inductive corrections (P: +0.15 LUMO down, S: +0.25 HOMO up)
+    n_p = sum(a.GetAtomicNum() == 15 for a in mol.GetAtoms())
+    n_s = sum(a.GetAtomicNum() == 16 for a in mol.GetAtoms())
+    homo += 0.25 * n_s
+    lumo -= 0.15 * n_p
+
+    # Hyperconjugation correction for C-F sigma bonds adjacent to π systems (shift LUMO down by 0.05 eV per bond)
+    n_activated_c_f = 0
+    for bond in mol.GetBonds():
+        a1, a2 = bond.GetBeginAtom(), bond.GetEndAtom()
+        # Check if it's a C-F bond
+        if (a1.GetAtomicNum() == 6 and a2.GetAtomicNum() == 9) or (a1.GetAtomicNum() == 9 and a2.GetAtomicNum() == 6):
+            # Check if carbon is part of conjugated system (aromatic or connected to conjugated atom)
+            carbon_atom = a1 if a1.GetAtomicNum() == 6 else a2
+            # Check if carbon is in an aromatic ring or has conjugated bonds
+            if carbon_atom.GetIsAromatic():
+                n_activated_c_f += 1
+            else:
+                # Check if carbon has any conjugated bonds
+                for b in carbon_atom.GetBonds():
+                    if b.GetIsConjugated() or b.GetBondType() in (Chem.BondType.DOUBLE, Chem.BondType.TRIPLE, Chem.BondType.AROMATIC):
+                        n_activated_c_f += 1
+                        break
+    lumo -= 0.05 * n_activated_c_f
 
     return homo, lumo
 

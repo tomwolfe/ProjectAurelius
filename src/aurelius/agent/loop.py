@@ -443,6 +443,7 @@ class DiscoveryLoop:
     ) -> tuple[list[MoleculeContext], list[float]]:
         """Evaluate all valid candidates through the Oracle and select the top batch."""
         all_scores: list[float] = []
+        all_confidences: list[float] = []
         result_contexts: list[MoleculeContext] = []
         result_map: dict[str, Any] = {}
 
@@ -462,6 +463,11 @@ class DiscoveryLoop:
             total_score = score_data.get("total_score", 0.0)
             self.engine.record_reaction_success(smi, total_score)
             all_scores.append(total_score)
+            
+            # Extract conformal confidence for uncertainty-aware selection
+            conformal_conf = result.get("conformal_confidence", 1.0)
+            all_confidences.append(conformal_conf)
+            
             result_contexts.append(ctx)
 
             t2 = result.get("tier2", {}) or {}
@@ -473,7 +479,7 @@ class DiscoveryLoop:
             if self._is_discovery(total_score, score_data):
                 self.discoveries.append(sr)
                 self.state.add_discovery(sr)
-                log.info("  ** DISCOVERY ** %s (score=%.1f)", smi, total_score)
+                log.info("  ** DISCOVERY ** %s (score=%.1f, confidence=%.4f)", smi, total_score, conformal_conf)
 
             self.all_results.append(sr)
 
@@ -487,7 +493,13 @@ class DiscoveryLoop:
         if len(result_contexts) <= self.batch_size:
             return result_contexts, all_scores
 
-        selected = tournament_select(result_contexts, all_scores, batch_size=self.batch_size)
+        # Use conformal confidence in tournament selection
+        selected = tournament_select(
+            result_contexts, 
+            all_scores, 
+            batch_size=self.batch_size,
+            confidences=all_confidences
+        )
         selected_scores = [all_scores[result_contexts.index(ctx)] for ctx in selected]
         return selected, selected_scores
 

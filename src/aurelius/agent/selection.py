@@ -39,17 +39,19 @@ def _best_in_tournament(
     fps_list: list[Any],
     selected_fps: list[Any],
     diversity_lambda: float,
+    confidences: list[float] | None = None,
 ) -> tuple[int, float]:
-    """Find the best candidate in a tournament, adjusted for diversity."""
-    best_idx = max(tournament, key=lambda i: scores[i])
-    best_adj = _adjusted_score(best_idx, scores, fps_list, selected_fps, diversity_lambda)
+    """Find the best candidate in a tournament, adjusted for diversity and optionally confidence."""
+    # Compute adjusted scores with confidence if provided
+    adjusted_scores = []
+    for i, (score, fp) in enumerate(zip(scores, fps_list)):
+        conf = confidences[i] if confidences and i < len(confidences) else 1.0
+        max_sim = max(TanimotoSimilarity(fp, sfp) for sfp in selected_fps) if selected_fps else 0.0
+        adj = score * conf * (1.0 - diversity_lambda * max_sim)
+        adjusted_scores.append(adj)
 
-    for i in tournament:
-        adj = _adjusted_score(i, scores, fps_list, selected_fps, diversity_lambda)
-        if adj > best_adj:
-            best_adj = adj
-            best_idx = i
-    return best_idx, best_adj
+    best_idx = max(tournament, key=lambda i: adjusted_scores[i])
+    return best_idx, adjusted_scores[best_idx]
 
 
 def tournament_select(
@@ -59,12 +61,16 @@ def tournament_select(
     tournament_size: int = 3,
     diversity_lambda: float = 0.3,
     rng_seed: int = 42,
+    confidences: list[float] | None = None,
 ) -> list[MoleculeContext]:
     """Select a diverse batch of candidates using tournament selection.
 
     Each round picks ``tournament_size`` random candidates and selects the
     best-scoring one, then applies a Tanimoto diversity penalty to avoid
     selecting near-identical molecules.
+
+    If ``confidences`` is provided, scores are adjusted by confidence:
+    ``adjusted_score = score × confidence × (1.0 - diversity_lambda * max_sim)``
     """
     n = len(contexts)
     if n == 0:
@@ -84,7 +90,7 @@ def tournament_select(
             break
 
         tournament = rng.sample(pool, min(tournament_size, len(pool)))
-        best_idx, _ = _best_in_tournament(tournament, scores, fps_list, selected_fps, diversity_lambda)
+        best_idx, _ = _best_in_tournament(tournament, scores, fps_list, selected_fps, diversity_lambda, confidences)
 
         used_indices.add(best_idx)
         selected.append(contexts[best_idx])
