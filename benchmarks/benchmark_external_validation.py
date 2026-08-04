@@ -71,21 +71,26 @@ def _load_oracle_predictions() -> dict:
         name = entry["name"]
         
         from aurelius.types import MoleculeContext
-        from aurelius.scoring.oracle import QuantumOracle
-        
+        from aurelius.scoring.oracle import (
+            QuantumOracle,
+            predict_dielectric_proxy,
+            predict_li_solvation_proxy,
+            predict_viscosity_proxy,
+        )
+
         ctx = MoleculeContext.from_smiles(smiles)
         if ctx is None:
             continue
-        
+
         qc = QuantumOracle(use_xtb=False, use_delta_correction=True)
         result = qc.evaluate(ctx.mol)
-        
+
         predictions[name] = {
             "homo_eV": result.get("homo_eV"),
             "lumo_eV": result.get("lumo_eV"),
-            "dielectric_proxy": result.get("dielectric_proxy", 0.0),
-            "viscosity_proxy": result.get("viscosity_proxy", 0.0),
-            "li_solvation_proxy": result.get("li_solvation_proxy", 0.0)
+            "dielectric_proxy": predict_dielectric_proxy(ctx),
+            "viscosity_proxy": predict_viscosity_proxy(ctx),
+            "li_solvation_proxy": predict_li_solvation_proxy(ctx),
         }
     
     return predictions
@@ -176,16 +181,22 @@ def main():
             elif prop_name == "Li Solvation":
                 oracle_values.append(oracle_preds.get(name, {}).get("li_solvation_proxy"))
         
-        # Filter out None values
-        valid_pairs = [(o, e) for o, e in zip(oracle_values, y_true) if o is not None]
+        # Filter out None values (missing oracle prediction or missing
+        # experimental value), keeping molecules aligned with predictions.
+        valid_pairs = [
+            (o, e, mol)
+            for o, e, mol in zip(oracle_values, y_true, molecules)
+            if o is not None and e is not None
+        ]
         if len(valid_pairs) < len(molecules) * 0.8:
             print(f"\nSkipping {prop_name}: insufficient oracle predictions")
             continue
-        
-        oracle_vals, exp_vals = zip(*valid_pairs)
-        
-        # Generate ECFP4 descriptors for all molecules
-        X = np.array([_ecfp4_descriptors(mol) for mol in molecules])
+
+        oracle_vals, exp_vals, valid_mols = zip(*valid_pairs)
+
+        # Generate ECFP4 descriptors for the valid molecules only so the
+        # 5-fold split indices align with the prediction/experiment arrays.
+        X = np.array([_ecfp4_descriptors(mol) for mol in valid_mols])
         
         # 5-fold cross-validation with RandomForest
         kf = KFold(n_splits=5, shuffle=True, random_state=42)

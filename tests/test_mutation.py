@@ -5,7 +5,7 @@ from aurelius.agent.mutation import (
     ELECTROLYTE_FRAGMENT_POOL,
     MutationEngine,
 )
-from aurelius.types import MoleculeContext
+from aurelius.types import MoleculeContext, parse_mixture_smiles_n
 
 # ---------------------------------------------------------------------------
 # Novelty check tests
@@ -168,3 +168,52 @@ class TestStagnationPivot:
         for smi in results:
             ctx = MoleculeContext.from_smiles(smi)
             assert ctx is not None, f"Invalid SMILES in exploration results: {smi}"
+
+
+# ---------------------------------------------------------------------------
+# Ternary mixture mutation operators
+# ---------------------------------------------------------------------------
+
+
+class TestTernaryMixtureMutation:
+    """The mutation engine must generate ternary mixture candidates where
+    each of the three components is individually valid and diversified."""
+
+    def test_ternary_mixture_variants_are_valid(self):
+        engine = MutationEngine(seed_smiles=["C1COC(=O)O1", "COCCOC", "CS(=O)(=O)C"])
+        candidates = engine.propose_ternary_mixture_candidates(
+            ["C1COC(=O)O1", "COCCOC", "CS(=O)(=O)C", "CC#N"],
+            n_mixtures=20,
+            batch_size=5,
+        )
+        assert len(candidates) > 0
+        for smi in candidates:
+            parsed = parse_mixture_smiles_n(smi)
+            assert parsed is not None, f"Unparseable ternary mixture: {smi}"
+            comps, fracs = parsed
+            assert len(comps) == 3, f"Expected ternary, got {len(comps)} components"
+            assert len(fracs) == 3 and abs(sum(fracs) - 1.0) < 1e-6
+            for comp in comps:
+                ctx = MoleculeContext.from_smiles(comp)
+                assert ctx is not None, f"Invalid component SMILES: {comp}"
+
+    def test_ternary_mutation_preserves_format(self):
+        engine = MutationEngine(seed_smiles=["C1COC(=O)O1", "COCCOC"])
+        variants = engine._mutate_ternary_mixture(
+            "C1COC(=O)O1", "COCCOC", "CS(=O)(=O)C", 0.4, 0.3
+        )
+        for smi in variants:
+            comps, _fracs = parse_mixture_smiles_n(smi)
+            assert comps is not None
+            assert len(comps) == 3
+
+    def test_ternary_binary_backward_compatibility(self):
+        """The binary mixture format must still parse after ternary support."""
+        engine = MutationEngine(seed_smiles=["C1COC(=O)O1", "COCCOC"])
+        binary = engine.propose_mixture_candidates(
+            ["C1COC(=O)O1", "COCCOC"], n_mixtures=5, batch_size=3
+        )
+        for smi in binary:
+            comps, fracs = parse_mixture_smiles_n(smi)
+            assert comps is not None and len(comps) == 2
+            assert abs(sum(fracs) - 1.0) < 1e-6

@@ -126,6 +126,38 @@ minimisation internally; ``"max"`` objectives are negated before comparison.
 """
 
 
+def _compute_dominance(adjusted: np.ndarray) -> tuple[list[set[int]], np.ndarray]:
+    """Compute the domination relationship for all pairs of solutions.
+
+    Returns (dominates, dominated_count) where ``dominates[i]`` lists the
+    solutions that *i* dominates and ``dominated_count[j]`` is the number of
+    solutions that dominate *j*.
+    """
+    n_pop = adjusted.shape[0]
+    dominated_count = np.zeros(n_pop, dtype=int)
+    dominated_set: list[set[int]] = [set() for _ in range(n_pop)]
+    dominates: list[set[int]] = [set() for _ in range(n_pop)]
+
+    for i in range(n_pop):
+        for j in range(i + 1, n_pop):
+            diff = adjusted[i] - adjusted[j]
+            i_better = np.all(diff <= 0)  # i is no worse on any objective
+            i_strictly = np.any(diff < 0)  # i is strictly better on at least one
+            j_better = np.all(-diff <= 0)
+            j_strictly = np.any(-diff < 0)
+
+            if i_better and i_strictly:
+                dominates[i].add(j)
+                dominated_count[j] += 1
+                dominated_set[j].add(i)
+            elif j_better and j_strictly:
+                dominates[j].add(i)
+                dominated_count[i] += 1
+                dominated_set[i].add(j)
+
+    return dominates, dominated_count
+
+
 def _non_dominated_sort(
     objectives: np.ndarray,
     maximise: np.ndarray,
@@ -154,30 +186,7 @@ def _non_dominated_sort(
         if maximise[j]:
             adjusted[:, j] = -adjusted[:, j]
 
-    # --- Compute dominance matrix ---
-    # ``dominates[i, j]`` is True when solution *i* dominates solution *j*.
-    # We only need upper triangle because of symmetry.
-    dominated_count = np.zeros(n_pop, dtype=int)
-    dominated_set: list[set[int]] = [set() for _ in range(n_pop)]
-    dominates: list[set[int]] = [set() for _ in range(n_pop)]
-
-    for i in range(n_pop):
-        for j in range(i + 1, n_pop):
-            # Compare i and j
-            diff = adjusted[i] - adjusted[j]
-            i_better = np.all(diff <= 0)  # i is no worse on any objective
-            i_strictly = np.any(diff < 0)  # i is strictly better on at least one
-            j_better = np.all(-diff <= 0)
-            j_strictly = np.any(-diff < 0)
-
-            if i_better and i_strictly:
-                dominates[i].add(j)
-                dominated_count[j] += 1
-                dominated_set[j].add(i)
-            elif j_better and j_strictly:
-                dominates[j].add(i)
-                dominated_count[i] += 1
-                dominated_set[i].add(j)
+    dominates, dominated_count = _compute_dominance(adjusted)
 
     # --- Build fronts via the standard NSGA-II front extraction ---
     fronts: list[list[int]] = []

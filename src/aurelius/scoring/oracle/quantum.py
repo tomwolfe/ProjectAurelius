@@ -529,7 +529,7 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
 
     if R_g_linear > 0:
         compactness_3d = max(0.0, 1.0 - R_g / R_g_linear)
-        L = int(L * (1.0 - 0.2 * compactness_3d))
+        L = int(round(L * (1.0 - 0.2 * compactness_3d)))
         L = max(L, 2)
 
     # Calculate gap and mid-point from base offsets

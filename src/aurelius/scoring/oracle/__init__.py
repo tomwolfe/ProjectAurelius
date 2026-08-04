@@ -29,6 +29,10 @@ from aurelius.scoring.oracle.gc import (
     predict_mixture_dielectric,
     predict_mixture_li_solvation,
     predict_mixture_viscosity,
+    predict_mixture_dielectric_n,
+    predict_mixture_li_solvation_n,
+    predict_mixture_viscosity_n,
+    mixture_synergy_bonus_n,
     predict_viscosity_proxy,
 )
 from aurelius.scoring.oracle.oracle import PropertyOracle
@@ -69,6 +73,10 @@ __all__ = [
     "predict_mixture_viscosity",
     "predict_mixture_li_solvation",
     "mixture_synergy_bonus",
+    "predict_mixture_dielectric_n",
+    "predict_mixture_viscosity_n",
+    "predict_mixture_li_solvation_n",
+    "mixture_synergy_bonus_n",
     "_GC_FRAGMENTS",
     "_count_fragments",
     "_count_branch_points",

@@ -1,4 +1,4 @@
-"""Project Aurelius v10.0 - Evolutionary Algorithm Discovery CLI.
+"""Project Aurelius v11.0 - Evolutionary Algorithm Discovery CLI.
 
 Usage:
     aurelius init                    Initialize pipeline
@@ -6,6 +6,7 @@ Usage:
     aurelius doctor-xtb              Check xTB quantum backend availability
     aurelius screen <smiles>         Screen a single molecule
     aurelius batch <file>            Screen molecules from SMILES file
+    aurelius predict <smiles>        Standalone oracle API property prediction
     aurelius score <smiles>          Compute Aurelius score only
     aurelius evaluate <smiles>       Run full pipeline evaluation
     aurelius agent                   Run the autonomous screening agent
@@ -31,9 +32,9 @@ def _make_pipeline() -> AureliusPipeline:
 
 
 @click.group()
-@click.version_option(version="10.0.0", prog_name="Aurelius")
+@click.version_option(version="11.0.0", prog_name="Aurelius")
 def cli() -> None:
-    """Project Aurelius v10.0 - Evolutionary Algorithm Discovery Release.
+    """Project Aurelius v11.0 - Evolutionary Algorithm Discovery Release.
 
     Computational chemistry screening pipeline for battery electrolyte discovery.
     Hybrid quantum + fragment-additivity oracle for physically valid screening.
@@ -146,6 +147,20 @@ def score(
     score = results.get("score", {})
     if score:
         click.echo(f"\nAurelius Score v10.0: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
+
+
+@cli.command("predict")
+@click.argument("smiles")
+def predict_cmd(smiles: str) -> None:
+    """Predict properties for a molecule via the standalone oracle API."""
+    from aurelius.oracle_api import predict_properties
+
+    try:
+        props = predict_properties(smiles)
+        click.echo(json.dumps(props, indent=2, default=float))
+    except ValueError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
 
 
 @cli.command("doctor-xtb")

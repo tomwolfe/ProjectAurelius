@@ -7,8 +7,11 @@ MoleculeContext is the absolute single source of truth for molecular
 parsing. No module should call ``Chem.MolFromSmiles`` outside of this
 class or the mutation engine's fragment pool.
 
-Binary mixtures are represented as compound SMILES: ``SMILES_A|SMILES_B|frac_A``
-where ``frac_A`` is the volume fraction of the first component in [0.1, 0.9].
+Mixtures are represented as compound SMILES with N-1 trailing fractions:
+    binary:  ``SMILES_A|SMILES_B|frac_A``
+    ternary: ``SMILES_A|SMILES_B|SMILES_C|frac_A|frac_B``
+where the last fraction is implied (1 - sum of the others). Each
+fraction is a volume fraction in [0, 1].
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ class ScreeningResult:
     lumo_eV: float | None = None
     dielectric_proxy: float | None = None
     viscosity_proxy: float | None = None
-    lip_solvation_proxy: float | None = None
+    li_solvation_proxy: float | None = None
     sa_score: float | None = None
     synthesis_depth: int | None = None
     sub_scores: dict[str, float] | None = None
@@ -158,38 +161,78 @@ class MoleculeContext:
 
 
 # ---------------------------------------------------------------------------
-# Binary Mixture Support
+# Mixture Support (binary and ternary)
 # ---------------------------------------------------------------------------
 
 _MIXTURE_SEP: str = "|"
 
 
 def is_mixture_smiles(smiles: str) -> bool:
-    """Check if a SMILES string represents a binary mixture (contains '|')."""
+    """Check if a SMILES string represents a mixture (contains '|')."""
     return _MIXTURE_SEP in smiles
 
 
+def parse_mixture_smiles_n(smiles: str) -> tuple[list[str], list[float]] | None:
+    """Parse an N-component mixture SMILES.
+
+    Format: ``SMI_1|...|SMI_N|frac_1|...|frac_{N-1}`` where the final
+    component fraction is implied. A binary mixture is ``A|B|frac_A`` and
+    a ternary mixture is ``A|B|C|frac_A|frac_B``.
+
+    Returns:
+        (list_of_smiles, list_of_fractions) with fractions summing to 1.0,
+        or None if the string cannot be parsed.
+    """
+    parts = smiles.split(_MIXTURE_SEP)
+    n_fields = len(parts)
+    if n_fields < 3 or n_fields % 2 == 0:
+        return None
+    n_components = (n_fields + 1) // 2
+    smi_list = parts[:n_components]
+    frac_list: list[float] = []
+    for frac_str in parts[n_components:]:
+        try:
+            frac = float(frac_str)
+        except ValueError:
+            return None
+        if not (0.0 <= frac <= 1.0):
+            return None
+        frac_list.append(frac)
+    last = 1.0 - sum(frac_list)
+    if not (0.0 <= last <= 1.0):
+        return None
+    frac_list.append(last)
+    return smi_list, frac_list
+
+
 def parse_mixture_smiles(smiles: str) -> tuple[str, str, float] | None:
-    """Parse a mixture SMILES ``SMILES_A|SMILES_B|frac_A``.
+    """Parse a binary mixture SMILES ``SMILES_A|SMILES_B|frac_A``.
 
     Returns (smiles_a, smiles_b, frac_a) or None if parsing fails.
     """
-    try:
-        parts = smiles.split(_MIXTURE_SEP)
-        if len(parts) != 3:
-            return None
-        smi_a, smi_b, frac_str = parts
-        frac = float(frac_str)
-        if not (0.0 <= frac <= 1.0):
-            return None
-        return smi_a, smi_b, frac
-    except (ValueError, TypeError):
+    parsed = parse_mixture_smiles_n(smiles)
+    if parsed is None:
         return None
+    smi_list, fracs = parsed
+    if len(smi_list) != 2:
+        return None
+    return smi_list[0], smi_list[1], fracs[0]
 
 
 def format_mixture_smiles(smi_a: str, smi_b: str, frac_a: float) -> str:
-    """Format a mixture SMILES string."""
+    """Format a binary mixture SMILES string."""
     return f"{smi_a}{_MIXTURE_SEP}{smi_b}{_MIXTURE_SEP}{frac_a:.4f}"
+
+
+def format_mixture_smiles_n(smi_list: list[str], fractions: list[float]) -> str:
+    """Format an N-component mixture SMILES string.
+
+    ``fractions`` must be the full N-fraction list summing to 1.0; the
+    first N-1 values are written and the last is implied as the remainder.
+    """
+    parts: list[str] = list(smi_list)
+    parts.extend(f"{f:.4f}" for f in fractions[:-1])
+    return _MIXTURE_SEP.join(parts)
 
 
 __all__ = [
@@ -197,5 +240,7 @@ __all__ = [
     "ScreeningResult",
     "is_mixture_smiles",
     "parse_mixture_smiles",
+    "parse_mixture_smiles_n",
     "format_mixture_smiles",
+    "format_mixture_smiles_n",
 ]

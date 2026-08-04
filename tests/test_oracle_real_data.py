@@ -13,6 +13,8 @@ Verifies that:
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from aurelius.scoring.oracle import (
@@ -288,3 +290,99 @@ def test_tom_fluorine_correction() -> None:
     # CF3 is strongly EW - should lower both HOMO and LUMO
     assert cf3_h < ethane_h, f"CF3 HOMO {cf3_h} should be lower than ethane {ethane_h}"
     assert cf3_l < ethane_l, f"CF3 LUMO {cf3_l} should be lower than ethane {ethane_l}"
+
+
+# ---------------------------------------------------------------------------
+# Ternary (N-Component) Mixture Tests
+# ---------------------------------------------------------------------------
+
+
+def test_ternary_dielectric_matches_weighted_average() -> None:
+    """Ternary dielectric must equal the volume-fraction weighted mean."""
+    from aurelius.scoring.oracle.gc import predict_mixture_dielectric_n
+
+    ds = [8.0, 2.0, 4.0]
+    fracs = [0.4, 0.35, 0.25]
+    expected = sum(d * f for d, f in zip(ds, fracs))
+    assert predict_mixture_dielectric_n(ds, fracs) == pytest.approx(expected, abs=1e-9)
+
+
+def test_ternary_viscosity_log_linear() -> None:
+    """Ternary viscosity must follow Grunberg-Nissan log-linear mixing."""
+    from aurelius.scoring.oracle.gc import predict_mixture_viscosity_n
+
+    vs = [3.0, 0.5, 1.0]
+    fracs = [0.3, 0.4, 0.3]
+    expected = math.exp(
+        0.3 * math.log(3.0) + 0.4 * math.log(0.5) + 0.3 * math.log(1.0)
+    )
+    assert predict_mixture_viscosity_n(vs, fracs) == pytest.approx(expected, abs=1e-9)
+
+
+def test_ternary_li_solvation_additive() -> None:
+    """Ternary Li+ solvation must be additive in fractions."""
+    from aurelius.scoring.oracle.gc import predict_mixture_li_solvation_n
+
+    ls = [2.0, 3.0, 4.0]
+    fracs = [0.5, 0.25, 0.25]
+    expected = 2.0 * 0.5 + 3.0 * 0.25 + 4.0 * 0.25
+    assert predict_mixture_li_solvation_n(ls, fracs) == pytest.approx(expected, abs=1e-9)
+
+
+def test_ternary_synergy_recovers_binary() -> None:
+    """The N-component synergy must exactly reproduce the binary value for N=2."""
+    from aurelius.scoring.oracle.gc import (
+        mixture_synergy_bonus,
+        mixture_synergy_bonus_n,
+    )
+
+    d1, v1, d2, v2, frac1 = 8.0, 2.5, 2.0, 0.5, 0.5
+    binary = mixture_synergy_bonus(d1, d2, v1, v2, frac1)
+    ternary = mixture_synergy_bonus_n([d1, d2], [v1, v2], [frac1, 1.0 - frac1])
+    assert ternary == pytest.approx(binary, abs=1e-9)
+
+
+def test_ternary_synergy_complementary_pair() -> None:
+    """A ternary mixture with a complementary pair must get a synergy bonus,
+    while one without any complementary pair must get zero."""
+    from aurelius.scoring.oracle.gc import mixture_synergy_bonus_n
+
+    complementary = mixture_synergy_bonus_n(
+        [8.0, 2.0, 3.0], [2.5, 0.5, 2.0], [0.4, 0.3, 0.3]
+    )
+    frankenstein = mixture_synergy_bonus_n(
+        [8.0, 7.0, 6.0], [2.5, 2.3, 2.1], [0.4, 0.3, 0.3]
+    )
+    assert complementary > 0.5
+    assert frankenstein == 0.0
+
+
+def test_ternary_mixture_format_round_trip() -> None:
+    """Ternary SMILES format must round-trip through parse/format."""
+    from aurelius.types import (
+        format_mixture_smiles_n,
+        parse_mixture_smiles_n,
+    )
+
+    smi_list = ["C1COC(=O)O1", "COCCOC", "CS(=O)(=O)C"]
+    fracs = [0.4, 0.3, 0.3]
+    encoded = format_mixture_smiles_n(smi_list, fracs)
+    assert encoded.count("|") == 4  # 3 SMILES + 2 written fractions
+    parsed_smis, parsed_fracs = parse_mixture_smiles_n(encoded)
+    assert parsed_smis == smi_list
+    assert parsed_fracs == pytest.approx(fracs, abs=1e-3)
+    assert sum(parsed_fracs) == pytest.approx(1.0, abs=1e-6)
+
+
+def test_ternary_oracle_prediction_via_api() -> None:
+    """End-to-end ternary prediction through the standalone API."""
+    from aurelius.oracle_api import predict_mixture
+
+    mix = predict_mixture(
+        ["C1COC(=O)O1", "COCCOC", "CS(=O)(=O)C"],
+        [0.5, 0.3, 0.2],
+    )
+    assert mix["mixture_properties"]["dielectric_proxy"] > 0.0
+    assert mix["mixture_properties"]["viscosity_proxy"] > 0.0
+    assert len(mix["component_results"]) == 3
+    assert "total_score" in mix["score"]

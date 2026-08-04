@@ -408,6 +408,70 @@ def predict_mixture_li_solvation(ls1: float, ls2: float, frac1: float = 0.5) -> 
     return frac1 * ls1 + (1.0 - frac1) * ls2
 
 
+# ---------------------------------------------------------------------------
+# N-Component Mixture Rules — Multi-component Formulation Support
+# ---------------------------------------------------------------------------
+# Generalize the ideal mixing rules to N components so ternary and higher
+# formulations are handled by the same physical model as binaries:
+#   - dielectric & Li+ solvation: extensive properties → volume-fraction mean
+#   - viscosity: log-linear Grunberg-Nissan mixing (exponential of the
+#     fraction-weighted log-viscosity)
+# Binary behaviour is recovered exactly when N=2 (see existing functions),
+# keeping backward compatibility with the two-component API.
+
+
+def predict_mixture_dielectric_n(ds: list[float], fracs: list[float]) -> float:
+    """Ideal volume-fraction weighted dielectric for an N-component mixture."""
+    return sum(d * f for d, f in zip(ds, fracs))
+
+
+def predict_mixture_viscosity_n(vs: list[float], fracs: list[float]) -> float:
+    """Ideal log-linear (Grunberg-Nissan) viscosity for an N-component mixture."""
+    ln_mix = sum(f * math.log(max(v, 0.001)) for v, f in zip(vs, fracs))
+    return math.exp(ln_mix)
+
+
+def predict_mixture_li_solvation_n(ls: list[float], fracs: list[float]) -> float:
+    """Additive Li+ solvation for an N-component mixture."""
+    return sum(l * f for l, f in zip(ls, fracs))
+
+
+def mixture_synergy_bonus_n(
+    ds: list[float], vs: list[float], fracs: list[float]
+) -> float:
+    """Non-linear synergy bonus for an N-component complementary mixture.
+
+    Generalises the binary ``mixture_synergy_bonus`` by summing a
+    Margules-inspired excess term A_ij·x_i·x_j over every component pair.
+    The interaction parameter A_ij ∝ |d_i−d_j|·|v_i−v_j| is saturated at 3.0
+    to prevent gaming by stacking extreme components. A mixture receives a
+    bonus only if at least one pair is complementary (max dielectric > 4.0
+    AND min viscosity < 1.5). Recovers the binary value exactly for N=2.
+    """
+    n = len(ds)
+    has_complementary_pair = False
+    non_ideal = 0.0
+    for i in range(n):
+        for j in range(i + 1, n):
+            if max(ds[i], ds[j]) > 4.0 and min(vs[i], vs[j]) < 1.5:
+                has_complementary_pair = True
+                interaction = abs(ds[i] - ds[j]) * abs(vs[i] - vs[j]) / 8.0
+                interaction = min(interaction, 3.0)
+                non_ideal += interaction * fracs[i] * fracs[j]
+
+    if not has_complementary_pair:
+        return 0.0
+
+    d_mix = sum(max(d, 0.0) * f for d, f in zip(ds, fracs))
+    v_mix = math.exp(
+        sum(f * math.log(max(v, 0.001)) for v, f in zip(vs, fracs))
+    )
+
+    score = d_mix / 4.0 + 1.5 / max(v_mix, 0.01)
+    score += non_ideal
+    return min(max(0.0, score), 6.0)
+
+
 def mixture_synergy_bonus(
     d1: float, d2: float, v1: float, v2: float, frac1: float = 0.5
 ) -> float:

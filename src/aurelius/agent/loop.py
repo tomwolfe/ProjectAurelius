@@ -569,7 +569,7 @@ class DiscoveryLoop:
         result_map: dict[str, Any] = {}
 
         # Apply Tier-0 filtering
-        filtered_contexts = self._filter_candidates(valid_contexts)
+        filtered_contexts = self._apply_tier0_filter(valid_contexts)
         if not filtered_contexts:
             return [], []
 
@@ -651,8 +651,8 @@ class DiscoveryLoop:
             result_contexts, all_scores, all_confidences, obj_scores
         )
 
-    def _filter_candidates(self, valid_contexts: list[MoleculeContext]) -> list[MoleculeContext]:
-        """Apply Tier-0 prefiltering to candidate contexts."""
+    def _apply_tier0_filter(self, valid_contexts: list[MoleculeContext]) -> list[MoleculeContext]:
+        """Apply Tier-0 prefiltering to already-built candidate contexts."""
         self.tier0_prefilter = Tier0Prefilter()
         filtered_contexts, _ = self.tier0_prefilter.filter(valid_contexts)
         return filtered_contexts

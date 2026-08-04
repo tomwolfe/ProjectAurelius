@@ -1,4 +1,4 @@
-# Project Aurelius v10.0
+# Project Aurelius v11.0
 
 **Novel molecule discovery for battery electrolytes.**
 
@@ -74,6 +74,9 @@ aurelius doctor-xtb                   # Check xTB quantum backend
 aurelius screen "CC(=O)OC1=CC=CC=C1" # Screen a molecule
 aurelius batch examples/molecules.smi --output results.json  # Batch screen
 aurelius agent --max-generations 50   # Run autonomous discovery loop
+aurelius predict "CC(=O)OC1=CC=CC=C1" # Standalone oracle API prediction
+aurelius predict "A|B|0.5"            # Mixture prediction (binary)
+aurelius predict "A|B|C|0.5|0.3"      # Mixture prediction (ternary)
 ```
 
 ## CLI Reference
@@ -88,7 +91,51 @@ aurelius score <smiles>          Compute Aurelius score only
 aurelius evaluate <smiles>       Run ML oracle evaluation
 aurelius validate <smiles>       Run full pipeline with detailed scorecard
 aurelius agent                   Run the autonomous screening agent
+aurelius predict <smiles>         Standalone oracle API prediction (single molecule or N-comp mixture)
 ```
+
+## V11.0 Highlights
+
+### Standalone Oracle API
+An untethered library surface (`src/aurelius/oracle_api.py`) plus the
+`aurelius predict` CLI exposes the full hybrid oracle without the evolutionary
+loop:
+
+```python
+from aurelius.oracle_api import predict_properties, predict_mixture, get_domain_applicability
+
+predict_properties("C1COC(=O)O1")["total_score"]
+predict_mixture(["C1COC(=O)O1", "CCOCCO", "CS(=O)(=O)C"], [0.5, 0.3, 0.2])
+get_domain_applicability("C1COC(=O)O1")
+```
+
+Full documentation in `docs/api_reference.md`.
+
+### Ternary Mixture Support
+The mixing engine is generalized from binary to **N-component** mixtures
+(binary format `A|B|frac` remains fully backward-compatible). Ternary format is
+`SMILES_A|SMILES_B|SMILES_C|frac_A|frac_B` — the final fraction is implied as
+`1 − frac_A − frac_B`. Rules: dielectric = mole-weighted mean; viscosity =
+log-linear (Grunberg-Nissan); Li+ solvation = additive; frontier orbitals are
+never mixed (non-additive quantum properties). A Margules-inspired synergy bonus
+rewards maximally differentiated complementary components. Every component is
+validated individually through the anti-gaming gates — a mixture cannot mask an
+invalid component.
+
+### DFT Re-Ranking Gate
+A final ORCA `wB97X-D3/def2-SVP` single-point validation (`DFTValidator` in
+`src/aurelius/scoring/oracle/dft_validator.py`) re-ranks prospective discoveries
+and cross-checks the hybrid oracle's frontier-orbital rankings via Spearman ρ.
+Results are cached by canonical SMILES. If no ORCA binary is present the gate
+degrades gracefully and reports a skip rather than failing.
+
+## Changelog
+
+- **v11.0** — Standalone Oracle API, ternary (N-component) mixture support, DFT
+  (ORCA) re-ranking gate, generalized GC mixing functions, complexity
+  refactors (`_non_dominated_sort`, `predict_mixture`).
+- **v10.0** — Reaction-aware synthesizability, active-learning escalation,
+  targeted delta-learning, prospective selection, run reproducibility.
 
 ## Quantum Backend
 
@@ -121,6 +168,7 @@ The mutation engine includes topological safeguards:
 ```
 src/aurelius/
 ├── __main__.py             # CLI entry point
+├── oracle_api.py           # Standalone oracle API (predict_properties, predict_mixture)
 ├── agent/
 │   ├── loop.py             # DiscoveryLoop (Evolutionary Algorithm)
 │   ├── mutation/
@@ -138,7 +186,8 @@ src/aurelius/
 ├── pipeline.py             # Pipeline orchestrator
 ├── scoring/
 │   └── oracle/
-│       ├── gc.py           # Group-contribution fragment-additivity
+│       ├── gc.py           # Group-contribution fragment-additivity (+ N-comp mixing)
+│       ├── dft_validator.py # ORCA wB97X-D3 DFT re-ranking gate
 │       ├── oracle.py       # PropertyOracle (composite scorer)
 │       └── quantum.py      # xTB / Topological Orbital Model (TOM)
 ├── screening/

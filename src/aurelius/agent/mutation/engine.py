@@ -35,7 +35,11 @@ from aurelius.agent.mutation.smarts import (
     ELECTROLYTE_SMARTS,
     is_electrolyte_like,
 )
-from aurelius.types import MoleculeContext, format_mixture_smiles
+from aurelius.types import (
+    MoleculeContext,
+    format_mixture_smiles,
+    format_mixture_smiles_n,
+)
 from aurelius.utils.chem_utils import _deserialize_fp
 
 try:
@@ -457,10 +461,62 @@ class MutationEngine:
         from rdkit.DataStructs import TanimotoSimilarity
         return TanimotoSimilarity(ctx_a.get_ecfp4(), ctx_b.get_ecfp4())
 
+    def _perturb_fractions(
+        self, components: list[str], fracs: list[float]
+    ) -> str:
+        """Return a mixture SMILES with one fraction perturbed and the
+        remaining fractions renormalised to keep the sum at 1.0."""
+        fracs_new = list(fracs)
+        n = len(fracs_new)
+        idx = int(self._rng.integers(0, n))
+        delta = (self._rng.random() - 0.5) * 0.20
+        fracs_new[idx] = max(0.1, min(0.9, fracs_new[idx] + delta))
+        others = [k for k in range(n) if k != idx]
+        others_total = sum(fracs_new[k] for k in others)
+        if others_total > 0.0:
+            scale = (1.0 - fracs_new[idx]) / others_total
+            for k in others:
+                fracs_new[k] = max(0.0, min(1.0, fracs_new[k] * scale))
+        return format_mixture_smiles_n(components, fracs_new)
+
+    def _mutate_one_component(
+        self, components: list[str], fracs: list[float], batch_size: int
+    ) -> list[str]:
+        """Mutate a single component of an N-component mixture in place."""
+        variants: list[str] = []
+        n = len(components)
+        idx = int(self._rng.integers(0, n))
+        mutated = self.mutate(components[idx], batch_size=batch_size)
+        for new_smi in mutated[:3]:
+            tan = max(
+                self._component_tanimoto(new_smi, components[k])
+                for k in range(n) if k != idx
+            )
+            if tan <= 0.80:
+                new_components = list(components)
+                new_components[idx] = new_smi
+                variants.append(format_mixture_smiles_n(new_components, fracs))
+        return variants
+
+    def _mutate_mixture_n(
+        self, components: list[str], fracs: list[float], batch_size: int = 10
+    ) -> list[str]:
+        """Generate mixture variants for an N-component mixture.
+
+        Mutation types (randomly chosen):
+          - 60%: mutate one component in place via SMARTS/BRICS
+          - 40%: perturb a volume fraction and renormalise the rest
+        """
+        if self._rng.random() < 0.60:
+            variants = self._mutate_one_component(components, fracs, batch_size)
+        else:
+            variants = [self._perturb_fractions(components, fracs)]
+        return list(set(variants))
+
     def _mutate_mixture(
         self, smi_a: str, smi_b: str, frac: float, batch_size: int = 10
     ) -> list[str]:
-        """Generate mixture variants by mutating components or perturbing fraction.
+        """Generate binary mixture variants by mutating components or perturbing fraction.
 
         Mutation types (randomly chosen):
           - 40%: mutate component A via SMARTS/BRICS
@@ -489,6 +545,25 @@ class MutationEngine:
 
         return list(set(variants))
 
+    def _mutate_ternary_mixture(
+        self,
+        smi_a: str,
+        smi_b: str,
+        smi_c: str,
+        frac_a: float,
+        frac_b: float,
+        batch_size: int = 10,
+    ) -> list[str]:
+        """Mutate a ternary mixture by replacing one of its three components.
+
+        Delegates to the general N-component operator with the ternary
+        components/fractions so a single mutation path covers all
+        formulations (binary and ternary).
+        """
+        components = [smi_a, smi_b, smi_c]
+        fracs = [frac_a, frac_b, 1.0 - frac_a - frac_b]
+        return self._mutate_mixture_n(components, fracs, batch_size=batch_size)
+
     def propose_mixture_candidates(
         self,
         seed_smiles: list[str],
@@ -516,6 +591,54 @@ class MutationEngine:
                 candidates.append(format_mixture_smiles(smi_a, smi_b, frac))
                 mix_variants = self._mutate_mixture(smi_a, smi_b, frac, batch_size=batch_size)
                 candidates.extend(mix_variants)
+        unique = list(dict.fromkeys(candidates))
+        if len(unique) > n_mixtures:
+            idx = self._rng.choice(len(unique), size=n_mixtures, replace=False)
+            unique = [unique[i] for i in idx]
+        return unique
+
+    def propose_ternary_mixture_candidates(
+        self,
+        seed_smiles: list[str],
+        n_mixtures: int = 10,
+        batch_size: int = 10,
+    ) -> list[str]:
+        """Generate ternary mixture candidates from a list of seed SMILES.
+
+        Forms diversified triples (component Tanimoto <= 0.80 for every pair)
+        and creates ternary mixture variants via ``_mutate_ternary_mixture``.
+
+        Ternary format: ``SMI_A|SMI_B|SMI_C|frac_A|frac_B``.
+        """
+        if len(seed_smiles) < 3:
+            return []
+        unique_seeds = list(dict.fromkeys(seed_smiles))
+        candidates: list[str] = []
+        n_triples = min(len(unique_seeds), 6)
+        for i in range(n_triples):
+            for j in range(i + 1, n_triples):
+                for k in range(j + 1, n_triples):
+                    a, b, c = unique_seeds[i], unique_seeds[j], unique_seeds[k]
+                    tan = max(
+                        self._component_tanimoto(a, b),
+                        self._component_tanimoto(a, c),
+                        self._component_tanimoto(b, c),
+                    )
+                    if tan > 0.80:
+                        continue
+                    frac_a = round(self._rng.uniform(0.2, 0.6), 2)
+                    frac_b = round(
+                        self._rng.uniform(0.1, 1.0 - frac_a - 0.1), 2
+                    )
+                    candidates.append(
+                        format_mixture_smiles_n(
+                            [a, b, c], [frac_a, frac_b, 1.0 - frac_a - frac_b]
+                        )
+                    )
+                    mix_variants = self._mutate_ternary_mixture(
+                        a, b, c, frac_a, frac_b, batch_size=batch_size
+                    )
+                    candidates.extend(mix_variants)
         unique = list(dict.fromkeys(candidates))
         if len(unique) > n_mixtures:
             idx = self._rng.choice(len(unique), size=n_mixtures, replace=False)

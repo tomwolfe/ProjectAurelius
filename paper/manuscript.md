@@ -2,7 +2,7 @@
 
 ## Abstract
 
-We present Project Aurelius, an autonomous evolutionary algorithm (EA) pipeline for the discovery of novel battery electrolyte molecules. Aurelius combines a BRICS-based mutation engine with a hybrid oracle that predicts frontier orbital energies via quantum chemistry (xTB/GFN2-xTB or Topological Orbital Model) and bulk electrolyte properties (dielectric constant, viscosity, Li+ solvation, ionic conductivity) via interpretable group-contribution (GC) fragment-additivity. The pipeline is distinguished by three features: (i) a self-verifying repository-level objective function that penalizes software complexity while rewarding discovery value, (ii) physics-based anti-gaming gates that reject synthetically inaccessible "Frankenstein" molecules, and (iii) a domain-of-applicability (DoA) penalty that prevents the oracle from operating outside its calibrated chemical space. External validation against published experimental data yields Spearman rank correlations of $\rho_{\text{LUMO}} = 0.50$, $\rho_{\text{HOMO}} = 0.51$, $\rho_{\text{Dielectric}} = 0.85$, $\rho_{\text{Viscosity}} = 0.80$, and $\rho_{\text{Donor}} = 0.70$ with $\rho > 0$ for all five benchmarked properties.
+We present Project Aurelius, an autonomous evolutionary algorithm (EA) pipeline for the discovery of novel battery electrolyte molecules. Aurelius combines a BRICS-based mutation engine with a hybrid oracle that predicts frontier orbital energies via quantum chemistry (xTB/GFN2-xTB or Topological Orbital Model) and bulk electrolyte properties (dielectric constant, viscosity, Li+ solvation, ionic conductivity) via interpretable group-contribution (GC) fragment-additivity. The pipeline is distinguished by three features: (i) a self-verifying repository-level objective function that penalizes software complexity while rewarding discovery value, (ii) physics-based anti-gaming gates that reject synthetically inaccessible "Frankenstein" molecules, and (iii) a domain-of-applicability (DoA) penalty that prevents the oracle from operating outside its calibrated chemical space. Version 11.0 extends the pipeline with an N-component (ternary) mixture engine, a standalone oracle API, and an ORCA (wB97X-D3/def2-SVP) DFT re-ranking gate that cross-validates the cheap orbital models before prospective ranking. External validation against published experimental data yields Spearman rank correlations of $\rho_{\text{LUMO}} = 0.50$, $\rho_{\text{HOMO}} = 0.51$, $\rho_{\text{Dielectric}} = 0.85$, $\rho_{\text{Viscosity}} = 0.80$, and $\rho_{\text{Donor}} = 0.70$ with $\rho > 0$ for all five benchmarked properties.
 
 ## 1. Introduction
 
@@ -91,15 +91,19 @@ The composite score applies the product of both penalties to the weighted object
 
 #### 2.3.4 Mixture Property Prediction
 
-For solvent mixtures, bulk properties are estimated via ideal thermodynamic mixing rules:
+For solvent mixtures, bulk properties are estimated via ideal thermodynamic mixing rules generalized to $N$ components (binary and ternary mixtures supported):
 
-$$P_{\text{mix}} = \frac{x_1 P_1 + x_2 P_2}{x_1 + x_2}$$
+$$P_{\text{mix}} = \sum_{i=1}^{N} x_i P_i$$
 
-where $x_i$ and $P_i$ are the mole fraction and GC-predicted property of component $i$. A **mixture synergy bonus** rewards complementary pairs—one high-dielectric, one low-viscosity—that together satisfy both targets better than either alone:
+where $x_i$ and $P_i$ are the mole fraction and GC-predicted property of component $i$. Viscosity uses the log-linear Grunberg-Nissan rule ($\ln \eta_{\text{mix}} = \sum x_i \ln \eta_i$). A **mixture synergy bonus** rewards complementary pairs—one high-dielectric, one low-viscosity—that together satisfy both targets better than either alone:
 
-$$S_{\text{syn}} = \frac{D_{\text{mix}}}{4.0} + \frac{1.5}{\max(\eta_{\text{mix}}, 0.01)} + A \cdot x_1 x_2$$
+$$S_{\text{syn}} = \frac{D_{\text{mix}}}{4.0} + \frac{1.5}{\max(\eta_{\text{mix}}, 0.01)} + A \sum_{i<j} x_i x_j$$
 
-where the Margules-inspired non-ideal term $A \propto |D_1-D_2| \cdot |\eta_1-\eta_2|$ (capped at 3.0) captures the physical intuition that maximally differentiated pairs produce the strongest synergy at balanced compositions. The total synergy is clamped to $[0, 6.0]$.
+where the Margules-inspired non-ideal term $A \propto |D_i-D_j| \cdot |\eta_i-\eta_j|$ (capped at 3.0) captures the physical intuition that maximally differentiated pairs produce the strongest synergy at balanced compositions. The total synergy is clamped to $[0, 6.0]$. Frontier orbitals are **never mixed**: they are non-additive quantum properties, so HOMO/LUMO are reported per component. Every component of a mixture is validated individually through the anti-gaming gate, so a mixture cannot mask an invalid component.
+
+#### 2.3.5 DFT Re-Ranking Gate
+
+As a final "wet-lab ready" gate, prospective discoveries are re-ranked by a DFT single-point validation. For each candidate, an ORCA input is generated from the xTB-optimized geometry and evaluated at the wB97X-D3/def2-SVP level of theory; the resulting frontier-orbital energies replace the TOM/xTB estimates for the final ranking. The gate also computes the Spearman rank correlation $\rho$ between the hybrid oracle's orbital predictions and the DFT results across the prospective batch — a cross-validation that detects systematic misranking by the cheaper models. Results are cached by canonical SMILES. If the ORCA binary is unavailable, the gate degrades gracefully and reports a skip rather than failing the run.
 
 ### 2.4 Net Progress Objective
 

@@ -294,6 +294,74 @@ def cross_validate_with_eht(candidates: list[dict]) -> None:
         print(f"  WARNING: ρ ≤ 0.30 — EHT model does not validate Aurelius ranking")
 
 
+def run_dft_validation(candidates: list[dict]) -> dict[str, float] | None:
+    """Validate top-k candidate rankings with ORCA DFT single points.
+
+    Runs the wB97X-D3/def2-SVP single-point calculator on each candidate
+    (cached in dft_cache.json), then computes Spearman ρ between the
+    Aurelius scores and the DFT HOMO/LUMO virtual potential. Logs a
+    warning when ρ < 0.4, signalling that the surrogate ranking is not
+    corroborated by higher-level theory.
+
+    Returns the validation metrics dict (or None if no candidate could be
+    validated, e.g. ORCA not installed).
+    """
+    from aurelius.scoring.oracle.dft_validator import DFTValidator, has_orca
+
+    if len(candidates) < 3:
+        print("Not enough candidates for DFT validation")
+        return None
+
+    print("\nDFT Validation (ORCA wB97X-D3/def2-SVP):")
+    if not has_orca():
+        print("  [INFO] ORCA binary not found — DFT validation skipped.")
+        return None
+
+    validator = DFTValidator(cache_path="dft_cache.json")
+    scores = [c.get("adjusted_score", c.get("total_score", 0.0)) for c in candidates]
+    mols = []
+    for cand in candidates:
+        ctx = MoleculeContext.from_smiles(cand["smiles"])
+        if ctx is None:
+            mols.append(None)  # type: ignore[arg-type]
+        else:
+            mols.append(ctx.mol)
+
+    validated = 0
+    for cand, mol, score in zip(candidates, mols, scores):
+        if mol is None:
+            continue
+        dft = validator.compute(mol)
+        if dft is not None:
+            cand["dft_homo_eV"] = round(dft["homo_eV"], 4)
+            cand["dft_lumo_eV"] = round(dft["lumo_eV"], 4)
+            cand["dft_composite"] = round(-(dft["homo_eV"] + dft["lumo_eV"]) / 2.0, 4)
+            validated += 1
+        else:
+            cand["dft_homo_eV"] = None
+            cand["dft_lumo_eV"] = None
+            cand["dft_composite"] = None
+
+    valid_mols = [m for m in mols if m is not None]
+    valid_scores = [s for m, s in zip(mols, scores) if m is not None]
+    metrics = validator.validate_ranking(valid_scores, valid_mols)
+    metrics["n_validated"] = validated
+
+    rho = metrics["rho_composite"]
+    print(f"  Validated candidates: {metrics['n_validated']}")
+    print(f"  Spearman ρ (Aurelius vs DFT composite) = {rho:.4f} "
+          f"(p = {metrics['p_composite']:.4f})")
+    print(f"  Spearman ρ (Aurelius vs DFT HOMO)      = {metrics['rho_homo']:.4f}")
+    print(f"  Spearman ρ (Aurelius vs DFT LUMO)      = {metrics['rho_lumo']:.4f}")
+    if rho < 0.40:
+        print(f"  WARNING: ρ = {rho:.4f} < 0.40 — DFT does not validate the "
+              f"surrogate ranking for these candidates.")
+    else:
+        print(f"  PASS: ρ = {rho:.4f} ≥ 0.40 — DFT corroborates the Aurelius ranking.")
+    return metrics
+
+
 if __name__ == "__main__":
     output = run_prospective_selection()
     cross_validate_with_eht(output)
+    run_dft_validation(output)
