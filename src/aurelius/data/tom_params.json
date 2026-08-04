@@ -1,10 +1,10 @@
 {
-  "base_homo": -6.8,
-  "base_lumo": 1.1,
+  "base_homo": -6.3,
+  "base_lumo": 1.2000000000000002,
   "ew_coeff": -0.4,
   "ed_coeff": 0.05,
-  "arom_stab_homo": -0.22499999999999998,
-  "arom_stab_lumo": -0.09999999999999998,
-  "nitrile_shift": -1.0,
-  "gamma": 0.1
+  "arom_stab_homo": -0.2875,
+  "arom_stab_lumo": -0.15,
+  "nitrile_shift": -0.88,
+  "gamma": 0.2
 }

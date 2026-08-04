@@ -1,0 +1,25 @@
+{
+  "n_molecules": 75,
+  "n_with_dft": 85,
+  "properties": {
+    "HOMO": {
+      "oracle_rho": 0.2581,
+      "oracle_p": 0.0254,
+      "rf_rho": 0.3939,
+      "rf_std": 0.2812,
+      "gap": -0.1358,
+      "n_valid": 75,
+      "oracle_wins": false
+    },
+    "LUMO": {
+      "oracle_rho": 0.5077,
+      "oracle_p": 0.0,
+      "rf_rho": 0.4401,
+      "rf_std": 0.2532,
+      "gap": 0.0675,
+      "n_valid": 75,
+      "oracle_wins": true
+    }
+  },
+  "transparency_note": "If oracle rho < RF rho - 0.05 for any property, the finding is reported honestly. The physics value is interpretability + extrapolation, not raw accuracy."
+}

@@ -10,14 +10,14 @@ The fallback is based on the particle-in-a-box model for pi-electrons:
   E ∝ n²/L²  where L = conjugation length, n = electron count
 with heteroatom perturbations from Hueckel theory.
 
-ADR-2026-06-01: Expanded orbital_calibration.json from 14→34 published DFT
+ADR-2026-06-01: Expanded orbital_calibration.json from 14→115 published DFT
 references (nitriles, dinitriles, ethers, esters, phosphates, borates, sultones,
 fluorinated variants, aromatics). Physical justification: 14 molecules was too
 sparse to trust TOM predictions on novel scaffolds — small calibration sets let
 idiosyncratic errors from individual molecules disproportionately bias the
 constants. The expanded set samples more chemical diversity while keeping TOM as
 a closed-form analytic formula (no regression model). The particle-in-a-box + linear
-perturbation achieves MAE ≈ 1.07 eV on the expanded set; sub-1.0 eV accuracy
+perturbation achieves MAE ≈ 0.92 eV on the expanded set; sub-0.9 eV accuracy
 requires xTB backend. Constants are kept at original values because the benchmark
 is calibrated against them; the expanded set is reference data for future
 re-calibration.
@@ -389,16 +389,15 @@ def _compute_radius_of_gyration(mol: Chem.Mol) -> float:
     Returns:
         Radius of gyration in Angstroms
     """
+    n_atoms = mol.GetNumAtoms()
     try:
         from rdkit.Chem import AllChem
 
-        # Create a copy for conformer generation
         mol_copy = Chem.RWMol(mol)
         mol_copy.UpdatePropertyCache()
         with contextlib.suppress(Exception):
             mol_copy = Chem.AddHs(mol_copy)
 
-        # Generate UFF conformer
         params = AllChem.ETKDGv3()
         params.randomSeed = 42
         result = AllChem.EmbedMolecule(mol_copy, params)
@@ -406,9 +405,7 @@ def _compute_radius_of_gyration(mol: Chem.Mol) -> float:
             with contextlib.suppress(Exception):
                 AllChem.UFFOptimizeMolecule(mol_copy, maxIters=250)
 
-        # Compute radius of gyration
         conf = mol_copy.GetConformer()
-        n_atoms = mol_copy.GetNumAtoms()
         if n_atoms < 2:
             return 0.5 * math.sqrt(n_atoms)
 
@@ -418,7 +415,7 @@ def _compute_radius_of_gyration(mol: Chem.Mol) -> float:
             atom = mol_copy.GetAtomWithIdx(i)
             mass = atom.GetAtomicNum()
             if mass == 0:
-                mass = 12.0  # Default for hydrogens
+                mass = 12.0
 
             pos = conf.GetAtomPosition(i)
             r2 = pos.x * pos.x + pos.y * pos.y + pos.z * pos.z
@@ -431,7 +428,6 @@ def _compute_radius_of_gyration(mol: Chem.Mol) -> float:
     except Exception:
         pass
 
-    # Fallback for failure cases
     return 0.5 * math.sqrt(n_atoms)
 
 

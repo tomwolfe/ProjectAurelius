@@ -121,11 +121,11 @@ def compute_gc_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
     fragments were not validated against such extreme compositions. High-MW
     molecules accumulate group contributions linearly but real dielectric
     and viscosity saturate, which the Michaelis-Menten model only partially
-    captures. These are closed-form topological heuristics — no ML.
+    captures. These are continuous sigmoidal penalties — no ML involved.
 
     Returns:
         (penalty_multiplier, reason_string)
-        Multiplier in [0.70, 1.0]; 1.0 = fully within domain.
+        Multiplier in [0.75, 1.0]; 1.0 = fully within domain.
     """
     mol = ctx.mol
     reasons: list[str] = []
@@ -134,18 +134,23 @@ def compute_gc_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
     n_f = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
     n_polar = sum(a.GetAtomicNum() in (7, 8, 15, 16) for a in mol.GetAtoms())
     if n_f >= 6 and n_polar < 2:
-        penalty *= 0.75
+        f_penalty = 0.75 + 0.25 / (1.0 + math.exp(0.5 * (n_f - 6.0)))
+        penalty *= f_penalty
         reasons.append(f"extreme fluorination (F={n_f}) without polar solvation sites")
 
     if ctx.mw > 500:
-        penalty *= 0.85
+        mw_penalty = 0.85 + 0.15 / (1.0 + math.exp(0.3 * (ctx.mw - 500.0)))
+        penalty *= mw_penalty
         reasons.append(f"high MW ({ctx.mw:.0f}) outside GC calibration domain")
 
     if ctx.rotatable_bonds > 20:
-        penalty *= 0.85
+        rb_penalty = 0.85 + 0.15 / (1.0 + math.exp(0.3 * (ctx.rotatable_bonds - 20.0)))
+        penalty *= rb_penalty
         reasons.append(f"excessive flexibility ({ctx.rotatable_bonds} rotatable bonds)")
 
-    return penalty, "; ".join(reasons) if reasons else "within domain"
+    penalty = min(1.0, penalty)
+    penalty = max(0.75, penalty)
+    return round(penalty, 4), "; ".join(reasons) if reasons else "within domain"
 
 
 def get_data_source() -> str:

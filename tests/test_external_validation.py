@@ -187,3 +187,52 @@ def test_benchmark_has_minimum_60_molecules():
         f"External benchmark has only {len(benchmark)} entries; need >= 60 "
         f"for statistically meaningful validation."
     )
+
+
+def test_ml_baseline_oracle_comparison():
+    """Load ML baseline comparison results and print WARNING if oracle
+    underperforms RF baseline by >0.05 rho on any property.
+
+    This is a transparency check, not a gate. If the oracle loses,
+    the finding is reported honestly — the physics value is
+    interpretability + extrapolation, not raw accuracy.
+    """
+    results_path = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "benchmarks",
+        "results",
+        "ml_baseline_comparison.json",
+    )
+    if not os.path.exists(results_path):
+        pytest.skip(
+            "ML baseline comparison results not found. "
+            "Run: python -m benchmarks.benchmark_ml_baseline"
+        )
+
+    with open(results_path) as f:
+        results = json.load(f)
+
+    warnings_issued = []
+    for prop_name, res in results.get("properties", {}).items():
+        if "error" in res:
+            continue
+        oracle_rho = res["oracle_rho"]
+        rf_rho = res["rf_rho"]
+        if oracle_rho < rf_rho - 0.05:
+            msg = (
+                f"WARNING: Oracle rho ({oracle_rho:.4f}) < RF baseline rho "
+                f"({rf_rho:.4f}) - 0.05 for {prop_name}. The physics-grounded "
+                f"oracle underperforms a simple fingerprint regressor on this "
+                f"property. The physics value is interpretability + "
+                f"extrapolation, not raw accuracy."
+            )
+            warnings_issued.append(msg)
+            print(f"\n  ⚠️  {msg}")
+
+    if warnings_issued:
+        print(
+            f"\n  {len(warnings_issued)} transparency warning(s) issued. "
+            f"This is expected for frontier orbitals where TOM is a coarse "
+            f"approximation."
+        )

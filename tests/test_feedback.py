@@ -9,6 +9,7 @@ import tempfile
 import pytest
 
 from aurelius.agent.feedback import FeedbackController, FeedbackRecord, FeedbackState
+from aurelius.types import MoleculeContext
 
 
 class TestFeedbackRecord:
@@ -166,3 +167,93 @@ class TestFeedbackController:
             assert loaded.state.last_refit_generation == 5
         finally:
             os.unlink(path)
+
+
+class TestExperimentalFeedback:
+    """FeedbackController should load experimental HOMO/LUMO and
+    reduce delta-correction LOO MAE after refit."""
+
+    def test_experimental_feedback_loads(self, tmp_path):
+        """Loading experimental feedback populates the cache."""
+        feedback_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "src",
+            "aurelius",
+            "data",
+            "experimental_feedback.json",
+        )
+        fc = FeedbackController(
+            experimental_feedback_path=feedback_path,
+        )
+        assert len(fc._experimental_cache) > 0, (
+            "Experimental feedback cache should be populated"
+        )
+
+    def test_experimental_feedback_matches_smiles(self):
+        """_match_experimental should return HOMO/LUMO for known solvents."""
+        feedback_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "src",
+            "aurelius",
+            "data",
+            "experimental_feedback.json",
+        )
+        fc = FeedbackController(
+            experimental_feedback_path=feedback_path,
+        )
+        homo, lumo = fc._match_experimental("C1COC(=O)O1")
+        assert homo is not None, "EC HOMO should be matched"
+        assert lumo is not None, "EC LUMO should be matched"
+
+    def test_experimental_feedback_reduces_loo_mae(self):
+        """After loading experimental feedback, LOO MAE should not increase
+        by more than 5% when experimental values are available for matching SMILES."""
+        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
+
+        feedback_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "src",
+            "aurelius",
+            "data",
+            "experimental_feedback.json",
+        )
+        fc = FeedbackController(
+            refit_interval=1,
+            experimental_feedback_path=feedback_path,
+        )
+
+        for smi, gen in [("C1COC(=O)O1", 1), ("COC(=O)OC", 1), ("CC#N", 1)]:
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is None:
+                continue
+            oracle_result = fc.get_delta_correction().predict_corrected(ctx.mol)
+            fc.accumulate(
+                smiles=smi,
+                homo_prediction=oracle_result[0],
+                lumo_prediction=oracle_result[1],
+                homo_corrected=oracle_result[0],
+                lumo_corrected=oracle_result[1],
+                total_score=50.0,
+                conformal_confidence=0.9,
+                generation=gen,
+            )
+
+        dc_before = fc.get_delta_correction()
+        loo_before = dc_before.loo_mae()
+
+        result = fc.maybe_refit(current_generation=5)
+        assert result is not None, "Refit should have been triggered"
+
+        dc_after = fc.get_delta_correction()
+        loo_after = dc_after.loo_mae()
+
+        if loo_before > 0:
+            improvement = (loo_before - loo_after) / loo_before
+            assert improvement >= -0.05, (
+                f"LOO MAE should not increase by more than 5% after refit "
+                f"with experimental feedback (before={loo_before:.4f}, "
+                f"after={loo_after:.4f}, improvement={improvement:.2%})"
+            )

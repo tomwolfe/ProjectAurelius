@@ -38,6 +38,8 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from rdkit import Chem
+
 from aurelius.scoring.oracle.delta_correction import DeltaCorrection
 
 logger = logging.getLogger(__name__)
@@ -119,6 +121,11 @@ class FeedbackController:
     delta_correction
         The :class:`DeltaCorrection` instance to refit.  If ``None``, the
         process-wide singleton is fetched.
+    experimental_feedback_path
+        Path to a JSON file mapping SMILES to experimental HOMO/LUMO
+        values.  When provided, ``maybe_refit`` will match accumulated
+        records against this file and populate ``experimental_homo`` /
+        ``experimental_lumo`` for matching SMILES before refitting.
     """
 
     def __init__(
@@ -126,11 +133,48 @@ class FeedbackController:
         refit_interval: int = _DEFAULT_REFIT_INTERVAL,
         max_accumulated: int = _MAX_ACCUMULATED,
         delta_correction: DeltaCorrection | None = None,
+        experimental_feedback_path: str | None = None,
     ) -> None:
         self._refit_interval = refit_interval
         self._max_accumulated = max_accumulated
         self._state = FeedbackState()
         self._delta_correction = delta_correction
+        self._experimental_feedback_path = experimental_feedback_path
+        self._experimental_cache: dict[str, dict[str, float]] = {}
+        if experimental_feedback_path is not None:
+            self._load_experimental_feedback()
+
+    def _load_experimental_feedback(self) -> None:
+        """Load experimental HOMO/LUMO feedback from JSON file."""
+        if self._experimental_feedback_path is None:
+            return
+        try:
+            with open(self._experimental_feedback_path) as f:
+                data = json.load(f)
+            for entry in data.get("solvents", []):
+                smi = entry.get("smiles", "")
+                homo = entry.get("experimental_homo_eV")
+                lumo = entry.get("experimental_lumo_eV")
+                if smi and homo is not None and lumo is not None:
+                    self._experimental_cache[smi] = {
+                        "homo": homo,
+                        "lumo": lumo,
+                    }
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            logger.debug(
+                "Experimental feedback file not loaded: %s", exc
+            )
+
+    def _match_experimental(self, smiles: str) -> tuple[float | None, float | None]:
+        """Match a SMILES against experimental feedback cache."""
+        canon = Chem.MolToSmiles(Chem.MolFromSmiles(smiles)) if Chem.MolFromSmiles(smiles) else smiles
+        if canon in self._experimental_cache:
+            entry = self._experimental_cache[canon]
+            return entry["homo"], entry["lumo"]
+        if smiles in self._experimental_cache:
+            entry = self._experimental_cache[smiles]
+            return entry["homo"], entry["lumo"]
+        return None, None
 
     def accumulate(
         self,
@@ -171,11 +215,24 @@ class FeedbackController:
     def maybe_refit(self, current_generation: int) -> dict[str, Any] | None:
         """Trigger incremental refit if enough generations have elapsed.
 
+        Before refitting, matches accumulated records against the
+        experimental feedback file (if provided) and populates
+        ``experimental_homo`` / ``experimental_lumo`` for matching SMILES.
+
         Returns a dict with refit diagnostics, or ``None`` if no refit
         was performed.
         """
         if current_generation - self._state.last_refit_generation < self._refit_interval:
             return None
+
+        if self._experimental_cache:
+            for rec in self._state.records:
+                if rec.experimental_homo is None or rec.experimental_lumo is None:
+                    homo, lumo = self._match_experimental(rec.smiles)
+                    if homo is not None:
+                        rec.experimental_homo = homo
+                    if lumo is not None:
+                        rec.experimental_lumo = lumo
 
         info = self._refit_delta_correction()
         self._state.last_refit_generation = current_generation
