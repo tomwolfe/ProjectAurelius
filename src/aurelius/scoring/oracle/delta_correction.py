@@ -95,18 +95,52 @@ class DeltaCorrection:
     to its raw TOM prediction to produce the corrected orbital energy. The
     associated GPR standard deviation quantifies prediction uncertainty and
     feeds into the conformal confidence discount in the selection layer.
+
+    Optional OOD calibration set support: molecules from out-of-distribution
+    chemical scaffolds can be included with 2× weight during training, improving
+    correction accuracy for novel chemistries where TOM's particle-in-a-box
+    model systematically fails (branched π-systems, through-bond coupling,
+    hyperconjugation from C–F / C–O sigma bonds).
     """
 
-    def __init__(self, calib: list[dict[str, float]] | None = None, calib_smiles: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        calib: list[dict[str, float]] | None = None,
+        calib_smiles: list[str] | None = None,
+        ood_calibration_set: list[dict[str, float]] | None = None,
+    ) -> None:
         self._calib = calib if calib is not None else _load_calibration()
         self._calib_smiles = calib_smiles if calib_smiles is not None else [
             Chem.MolToSmiles(Chem.MolFromSmiles(entry["smiles"])) for entry in self._calib
             if Chem.MolFromSmiles(entry["smiles"]) is not None
         ]
-        self._X = np.zeros((len(self._calib), 2048), dtype=np.float64)
-        self._y_homo = np.zeros(len(self._calib), dtype=np.float64)
-        self._y_lumo = np.zeros(len(self._calib), dtype=np.float64)
-        for i, entry in enumerate(self._calib):
+
+        # Build base calibration arrays
+        base_entries = list(self._calib)
+        base_smiles = list(self._calib_smiles)
+
+        # Append OOD calibration entries with 2× weight (duplicated)
+        ood_entries: list[dict[str, float]] = []
+        ood_smiles: list[str] = []
+        if ood_calibration_set is not None:
+            for entry in ood_calibration_set:
+                mol = Chem.MolFromSmiles(entry.get("smiles", ""))
+                if mol is None:
+                    continue
+                ood_entries.append(entry)
+                ood_smiles.append(
+                    Chem.MolToSmiles(Chem.MolFromSmiles(entry["smiles"]))
+                )
+
+        # Combine: OOD entries are duplicated for 2× weight
+        all_entries = base_entries + ood_entries + ood_entries
+        all_smiles = base_smiles + ood_smiles + ood_smiles
+
+        n = len(all_entries)
+        self._X = np.zeros((n, 2048), dtype=np.float64)
+        self._y_homo = np.zeros(n, dtype=np.float64)
+        self._y_lumo = np.zeros(n, dtype=np.float64)
+        for i, entry in enumerate(all_entries):
             mol = Chem.MolFromSmiles(entry["smiles"])
             if mol is None:
                 raise ValueError(f"Unparseable calibration SMILES: {entry['smiles']}")
@@ -220,3 +254,49 @@ def get_delta_correction() -> DeltaCorrection:
 def predict_corrected_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     """Public convenience wrapper: corrected (homo_eV, lumo_eV) for a molecule."""
     return get_delta_correction().predict_corrected(mol)
+
+
+def compute_ood_spearman(
+    ood_entries: list[dict[str, float]],
+    model: DeltaCorrection | None = None,
+) -> float:
+    """Compute Spearman ρ between corrected HOMO predictions and DFT reference
+    for out-of-distribution molecules.
+
+    Physical justification: OOD Spearman ρ measures how well the Δ-correction
+    model generalizes to novel chemical scaffolds not represented in the
+    calibration set. A ρ > 0.30 indicates the correction captures meaningful
+    electronic structure trends in OOD molecules, while ρ < 0.10 suggests
+    the model is effectively reverting to raw TOM for novel scaffolds.
+
+    Args:
+        ood_entries: List of dicts with keys: smiles, homo_eV, lumo_eV.
+        model: Optional DeltaCorrection instance. If None, uses the singleton.
+
+    Returns:
+        float: Spearman ρ between corrected HOMO and DFT HOMO for OOD molecules.
+    """
+    from scipy.stats import spearmanr
+
+    if model is None:
+        model = get_delta_correction()
+
+    preds: list[float] = []
+    refs: list[float] = []
+    for entry in ood_entries:
+        smiles = entry.get("smiles", "")
+        ref_homo = entry.get("homo_eV")
+        if ref_homo is None or not smiles:
+            continue
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            continue
+        raw_h, raw_l = predict_tom_orbitals(mol)
+        corr_h, corr_l = model.predict_corrected(mol, base=(raw_h, raw_l))
+        preds.append(corr_h)
+        refs.append(ref_homo)
+
+    if len(preds) < 3:
+        return 0.0
+    rho, _ = spearmanr(preds, refs)
+    return float(rho)

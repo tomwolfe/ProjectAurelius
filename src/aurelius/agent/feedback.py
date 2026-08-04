@@ -80,6 +80,7 @@ class FeedbackState:
     last_refit_generation: int = 0
     total_refits: int = 0
     refit_history: list[dict[str, float]] = field(default_factory=list)
+    active_learning_triggers: list[dict[str, Any]] = field(default_factory=list)
 
     def save(self, path: str) -> None:
         serialisable = {
@@ -87,6 +88,7 @@ class FeedbackState:
             "last_refit_generation": self.last_refit_generation,
             "total_refits": self.total_refits,
             "refit_history": self.refit_history,
+            "active_learning_triggers": self.active_learning_triggers,
         }
         tmp_path = path + ".tmp"
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -104,6 +106,7 @@ class FeedbackState:
                 last_refit_generation=data.get("last_refit_generation", 0),
                 total_refits=data.get("total_refits", 0),
                 refit_history=data.get("refit_history", []),
+                active_learning_triggers=data.get("active_learning_triggers", []),
             )
         except (FileNotFoundError, json.JSONDecodeError):
             return cls()
@@ -316,6 +319,41 @@ class FeedbackController:
             self._conformal_residuals: dict[str, list[float]] = {}
         self._conformal_residuals.setdefault(property_name, []).append(residual)
 
+    def log_active_learning_trigger(
+        self,
+        smiles: str,
+        generation: int,
+        original_conf: float,
+    ) -> None:
+        """Log an active learning escalation event.
+
+        When a TOM prediction has low confidence (tom_low) and conformal
+        confidence falls below the active learning threshold, the molecule
+        is escalated to xTB for re-evaluation. This method records the
+        escalation for tracking and analysis.
+
+        Physical justification: Passive feedback accumulates data but does
+        not act on uncertainty. Active escalation ensures that low-confidence
+        TOM predictions are immediately re-evaluated with higher-accuracy xTB,
+        maximizing information gain per compute dollar and preventing the EA
+        from exploiting TOM's blind spots.
+
+        Args:
+            smiles: SMILES of the escalated molecule.
+            generation: Generation number where escalation occurred.
+            original_conf: Conformal confidence that triggered escalation.
+        """
+        trigger = {
+            "smiles": smiles,
+            "generation": generation,
+            "original_conf": original_conf,
+        }
+        self._state.active_learning_triggers.append(trigger)
+        logger.info(
+            "Active learning trigger logged: %s (gen=%d, conf=%.3f)",
+            smiles, generation, original_conf,
+        )
+
     def save(self, path: str) -> None:
         """Checkpoint feedback state to ``path``."""
         self._state.save(path)
@@ -335,6 +373,11 @@ class FeedbackController:
     @property
     def num_records(self) -> int:
         return len(self._state.records)
+
+    @property
+    def num_active_learning_triggers(self) -> int:
+        """Return the number of active learning escalation triggers."""
+        return len(self._state.active_learning_triggers)
 
     def get_delta_correction(self) -> DeltaCorrection:
         """Return the (possibly refit) DeltaCorrection instance."""

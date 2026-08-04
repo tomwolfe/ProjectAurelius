@@ -41,6 +41,8 @@ def generate_run_summary(
     Replaces the previous multi-file output (manifest, statistics markdown,
     chemical insights markdown, CSV, SMI, etc.) with one structured JSON.
 
+    Includes a run_config_hash (SHA-256 of run_config.json) for reproducibility.
+
     Args:
         state: LoopState instance.
         all_results: All screening results.
@@ -49,10 +51,20 @@ def generate_run_summary(
         output_dir: Directory to write to.
         top_mixtures: Optional top-N binary mixture results.
     """
+    import hashlib
+    import json as _json
+
     log = logging.getLogger("aurelius_agent")
 
     path = _resolve_output_path(path, output_dir)
     scores = [r.total_score for r in all_results]
+
+    # Compute run config hash for reproducibility
+    run_config_hash = ""
+    run_config_path = "run_config.json"
+    if os.path.exists(run_config_path):
+        with open(run_config_path, "rb") as f:
+            run_config_hash = hashlib.sha256(f.read()).hexdigest()
 
     plateau = check_score_plateau(state.batch_means)
     saturation = check_structural_saturation(state.scaffolds_per_batch)
@@ -67,7 +79,8 @@ def generate_run_summary(
 
     summary: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
-        "pipeline": "Project Aurelius v10.0 — Multi-Objective Electrolyte Discovery Engine",
+        "pipeline": "Project Aurelius v11.0 — Prospective Validation Release",
+        "run_config_hash": run_config_hash,
         "search_statistics": {
             "total_screened": state.total_screened,
             "generations_run": state.generations,
@@ -117,7 +130,7 @@ def generate_run_summary(
         summary["top_mixtures"] = top_mixtures
 
     with open(path, "w") as f:
-        json.dump(summary, f, indent=2)
+        _json.dump(summary, f, indent=2)
     log.info("Run summary written to %s", path)
 
 

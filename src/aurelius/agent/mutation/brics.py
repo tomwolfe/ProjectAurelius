@@ -255,32 +255,47 @@ def _cached_retrosynthetic_depth(smiles: str) -> int:
 
 
 def combined_grounding_score(mol: Chem.Mol) -> float:
-    """Combined grounding score: max of BRICS coverage, functional-group coverage, and retrosynthetic depth.
+    """Combined grounding score: weighted blend of BRICS coverage and template-based synthesis feasibility.
 
-    Uses the maximum of the three coverage metrics so that a molecule with a
-    novel BRICS scaffold but fully commercial functional groups and direct precursors
-    is not unduly penalised. Depth penalty reduces score for molecules requiring
-    multi-step synthesis.
+    Uses a weighted combination of BRICS building-block coverage
+    and template-based synthesis feasibility:
+      0.4 × BRICS_coverage + 0.6 × template_feasibility
 
-    Returns: score in [0, 1] where 1.0 = perfect synthesizability (depth=1, all commercial)
+    The template feasibility component checks the molecule's
+    BRICS fragments against known reaction SMARTS templates for
+    core electrolyte transformations (carbonate formation, ether
+    alkylation, nitrile substitution, sulfone coupling,
+    fluorination, etc.).
+
+    Physical justification: BRICS fragment matching alone
+    overestimates synthesizability for molecules whose fragments
+    are not commercially available but whose synthetic routes are
+    well-precedented. Template-based feasibility captures this
+    by checking whether the molecule's disconnections match
+    known reaction templates. The 0.4/0.6 weighting prioritizes
+    template feasibility because a molecule with a novel BRICS
+    scaffold but well-known synthetic routes is more likely to be
+    practically synthesizable than one with commercial fragments
+    but no clear route.
+
+    Returns: score in [0, 1] where 1.0 = perfect synthesizability.
     """
     brics_cov = brics_building_block_coverage(mol)
-    fg_cov = functional_group_coverage(mol)
+    from aurelius.agent.mutation.retrosynthetic import compute_synthesis_feasibility
+    template_feas = compute_synthesis_feasibility(mol)
     depth = brics_retrosynthetic_depth(mol)
 
-    # Apply depth penalty
     depth_penalty = {
-        1: 1.0,   # Direct precursor - no penalty
-        2: 0.95,  # One-step synthesis - small penalty
-        3: 0.85,  # Two-step synthesis - moderate penalty
-        4: 0.75,  # Three-step synthesis - significant penalty
-        5: 0.65,  # Four+ steps - high penalty
+        1: 1.0,
+        2: 0.95,
+        3: 0.85,
+        4: 0.75,
+        5: 0.65,
     }
     max_depth = max(depth_penalty.keys())
     depth_penalty_factor = depth_penalty.get(depth, depth_penalty[max_depth])
 
-    # Combined score: max of all three, with depth penalty applied
-    return max(brics_cov, fg_cov) * depth_penalty_factor
+    return (0.4 * brics_cov + 0.6 * template_feas) * depth_penalty_factor
 
 
 # ---------------------------------------------------------------------------

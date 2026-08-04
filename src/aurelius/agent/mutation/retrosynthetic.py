@@ -1,7 +1,8 @@
 """Precursor database and retrosynthetic depth estimation for Project Aurelius.
 
-This module implements the precursor database expansion and retrosynthetic
-depth estimation for Gap 2: Synthesizable outputs.
+This module implements the precursor database expansion, retrosynthetic
+depth estimation, and template-based synthesis feasibility assessment
+for Gap 2: Synthesizable outputs.
 """
 
 import json
@@ -13,6 +14,123 @@ from rdkit.Chem import BRICS
 
 
 COMMERCIAL_PRECURSORS_PATH = Path("src/aurelius/data/commercial_precursors.json")
+SYNTHESIS_TEMPLATES_PATH = Path("src/aurelius/data/synthesis_templates.json")
+
+
+def _load_synthesis_templates() -> list[dict[str, str]]:
+    """Load synthesis reaction templates from JSON file.
+
+    Returns:
+        List of template dicts with keys: name, smarts, description, category.
+        Returns empty list if file not found or invalid.
+    """
+    if not SYNTHESIS_TEMPLATES_PATH.exists():
+        return []
+    try:
+        with open(SYNTHESIS_TEMPLATES_PATH, "r") as f:
+            data = json.load(f)
+        return data.get("templates", [])
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+@lru_cache(maxsize=512)
+def _load_template_smarts() -> list[tuple[str, str]]:
+    """Pre-compile synthesis template SMARTS patterns.
+
+    Returns:
+        List of (smarts_string, template_name) tuples for valid templates.
+    """
+    templates = _load_synthesis_templates()
+    compiled = []
+    for tmpl in templates:
+        smarts = tmpl.get("smarts", "")
+        name = tmpl.get("name", "")
+        try:
+            pat = Chem.MolFromSmarts(smarts)
+            if pat is not None:
+                compiled.append((smarts, name))
+        except Exception:
+            continue
+    return compiled
+
+
+def compute_synthesis_feasibility(mol: Chem.Mol) -> float:
+    """Compute template-based synthesis feasibility score for a molecule.
+
+    Checks the molecule for the presence of functional groups that
+    correspond to known feasible synthesis routes for electrolyte
+    molecules. Core electrolyte functional groups (carbonate, ether,
+    sulfone) indicate high synthesizability via well-precedented
+    synthetic routes. Supporting functional groups (nitrile, fluoride,
+    hydroxyl, etc.) indicate moderate synthesizability. Molecules with
+    no recognizable electrolyte functional groups are scored low.
+
+    Scoring:
+      - Any core group matched: 0.9 (directly synthesizable)
+      - Any functional group matched but no core: 0.5 (moderate)
+      - No groups matched: 0.1 (low, likely Frankenstein)
+      - No templates available: 0.5 (neutral default)
+
+    Physical justification: BRICS depth alone cannot distinguish
+    between fragments that are commercially available and those
+    that require multi-step synthesis. Template matching provides
+    a direct check against known feasible reaction pathways that
+    are standard in electrolyte synthesis. A molecule whose
+    structure is built from common electrolyte functional groups
+    (carbonates, ethers, sulfones) is more likely to be practically
+    synthesizable than one containing exotic or unusual functional
+    groups.
+
+    Args:
+        mol: RDKit molecule to evaluate.
+
+    Returns:
+        float: Synthesis feasibility score in [0.0, 1.0].
+    """
+    if mol is None:
+        return 0.0
+
+    templates = _load_template_smarts()
+    if not templates:
+        return 0.5
+
+    matched_core = _has_core_group(mol, templates)
+    matched_functional = _has_functional_group(mol, templates)
+
+    if matched_core:
+        return 0.9
+    if matched_functional:
+        return 0.5
+    return 0.1
+
+
+def _has_core_group(mol: Chem.Mol, templates: list[tuple[str, str]]) -> bool:
+    """Check if molecule contains any core electrolyte functional group."""
+    for smarts, _name in templates:
+        try:
+            pat = Chem.MolFromSmarts(smarts)
+            if pat is not None and mol.HasSubstructMatch(pat):
+                for tmpl in _load_synthesis_templates():
+                    if tmpl.get("smarts") == smarts and tmpl.get("category") == "core":
+                        return True
+        except Exception:
+            continue
+    return False
+
+
+def _has_functional_group(mol: Chem.Mol, templates: list[tuple[str, str]]) -> bool:
+    """Check if molecule contains any supporting functional group."""
+    for smarts, _name in templates:
+        try:
+            pat = Chem.MolFromSmarts(smarts)
+            if pat is not None and mol.HasSubstructMatch(pat):
+                for tmpl in _load_synthesis_templates():
+                    if tmpl.get("smarts") == smarts and tmpl.get("category") == "functional":
+                        return True
+        except Exception:
+            continue
+    return False
 
 
 def _load_precursors():

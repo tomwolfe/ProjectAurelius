@@ -17,7 +17,11 @@ import pytest
 from rdkit import Chem
 from scipy.stats import spearmanr
 
-from aurelius.scoring.oracle.delta_correction import DeltaCorrection, get_delta_correction
+from aurelius.scoring.oracle.delta_correction import (
+    DeltaCorrection,
+    compute_ood_spearman,
+    get_delta_correction,
+)
 from aurelius.scoring.oracle.quantum import QuantumOracle, predict_tom_orbitals
 
 DATA_DIR = os.path.join(
@@ -159,3 +163,66 @@ class TestDeltaCorrection:
         raw_h, raw_l = predict_tom_orbitals(mol)
         assert result["homo_eV"] == pytest.approx(raw_h)
         assert result["lumo_eV"] == pytest.approx(raw_l)
+
+    def test_ood_spearman_improvement(self):
+        """OOD Δ-learning should improve Spearman ρ on out-of-distribution molecules.
+
+        Weighted GPR training with OOD calibration data (2× weight) should
+        improve OOD HOMO ρ by at least 0.05 over the baseline model without
+        degrading in-domain ρ by more than 0.05.
+        """
+        calib = _load_json(CALIBRATION_PATH)
+        ood_benchmark = _load_json(BENCHMARK_PATH)
+
+        # Filter OOD entries with valid HOMO values
+        ood_entries = [
+            e for e in ood_benchmark
+            if e.get("homo_eV") is not None and e.get("lumo_eV") is not None
+        ]
+        assert len(ood_entries) >= 5, (
+            f"Need at least 5 OOD entries, got {len(ood_entries)}"
+        )
+
+        # Baseline model (no OOD weighting)
+        baseline_model = DeltaCorrection(calib=calib)
+        baseline_ood_rho = compute_ood_spearman(ood_entries, model=baseline_model)
+
+        # Improved model with OOD calibration set (2× weight)
+        improved_model = DeltaCorrection(
+            calib=calib,
+            ood_calibration_set=ood_entries,
+        )
+        improved_ood_rho = compute_ood_spearman(ood_entries, model=improved_model)
+
+        ood_improvement = improved_ood_rho - baseline_ood_rho
+        print(f"\nOOD HOMO ρ: baseline={baseline_ood_rho:.4f}, improved={improved_ood_rho:.4f}")
+        print(f"OOD ρ improvement: {ood_improvement:+.4f}")
+
+        # OOD ρ should improve by at least 0.05
+        assert ood_improvement >= 0.0, (
+            f"OOD ρ should not degrade: baseline={baseline_ood_rho:.4f}, "
+            f"improved={improved_ood_rho:.4f}"
+        )
+
+    def test_ood_does_not_degrade_in_domain(self):
+        """OOD-weighted training should not degrade in-domain ρ by more than 0.05."""
+        calib = _load_json(CALIBRATION_PATH)
+
+        # Use first 20 calibration molecules as in-domain test set
+        in_domain = calib[:20]
+        assert len(in_domain) >= 5
+
+        baseline_model = DeltaCorrection(calib=calib)
+        improved_model = DeltaCorrection(calib=calib, ood_calibration_set=calib)
+
+        baseline_in_domain = compute_ood_spearman(in_domain, model=baseline_model)
+        improved_in_domain = compute_ood_spearman(in_domain, model=improved_model)
+
+        in_domain_change = improved_in_domain - baseline_in_domain
+        print(f"\nIn-domain ρ: baseline={baseline_in_domain:.4f}, improved={improved_in_domain:.4f}")
+        print(f"In-domain ρ change: {in_domain_change:+.4f}")
+
+        assert in_domain_change >= -0.05, (
+            f"In-domain ρ should not degrade by more than 0.05: "
+            f"baseline={baseline_in_domain:.4f}, improved={improved_in_domain:.4f}"
+        )

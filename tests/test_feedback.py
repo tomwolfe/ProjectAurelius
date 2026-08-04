@@ -168,6 +168,45 @@ class TestFeedbackController:
         finally:
             os.unlink(path)
 
+    def test_log_active_learning_trigger(self):
+        """Active learning triggers should be recorded in FeedbackController."""
+        fc = FeedbackController()
+        fc.log_active_learning_trigger(
+            smiles="CCO",
+            generation=3,
+            original_conf=0.5,
+        )
+        assert fc.num_active_learning_triggers == 1
+        trigger = fc.state.active_learning_triggers[0]
+        assert trigger["smiles"] == "CCO"
+        assert trigger["generation"] == 3
+        assert trigger["original_conf"] == 0.5
+
+    def test_active_learning_triggers_persist(self):
+        """Active learning triggers should survive save/load roundtrip."""
+        fc = FeedbackController()
+        fc.log_active_learning_trigger(
+            smiles="CCO",
+            generation=3,
+            original_conf=0.5,
+        )
+        fc.log_active_learning_trigger(
+            smiles="C1COCCO1",
+            generation=5,
+            original_conf=0.3,
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
+            path = f.name
+        try:
+            fc.save(path)
+            loaded = FeedbackController.load(path)
+            assert loaded.num_active_learning_triggers == 2
+            assert loaded.state.active_learning_triggers[0]["smiles"] == "CCO"
+            assert loaded.state.active_learning_triggers[1]["smiles"] == "C1COCCO1"
+        finally:
+            os.unlink(path)
+
 
 class TestExperimentalFeedback:
     """FeedbackController should load experimental HOMO/LUMO and

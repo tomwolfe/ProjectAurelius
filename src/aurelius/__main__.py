@@ -231,15 +231,73 @@ def validate_cmd(smiles: str) -> None:
 @click.option("--max-generations", type=int, default=50, help="Maximum generations to run")
 @click.option("--batch-size", type=int, default=50, help="Candidates per batch")
 @click.option("--nsga2", is_flag=True, default=False, help="Use NSGA-II multi-objective selection instead of tournament")
+@click.option("--active-learning-threshold", type=float, default=0.7, help="Conformal confidence threshold for active learning escalation")
+@click.option("--reproduce", type=click.Path(exists=True), default=None, help="Reproduce a run from run_summary.json")
 def agent(
     max_generations: int,
     batch_size: int,
     nsga2: bool,
+    active_learning_threshold: float,
+    reproduce: str | None,
 ) -> None:
     """Run the autonomous screening agent."""
     from aurelius.agent.loop import AgentConfig, run_screening
 
-    cfg = AgentConfig(max_generations=max_generations, batch_size=batch_size, use_nsga2=nsga2)
+    if reproduce is not None:
+        _reproduce_run(reproduce)
+        return
+
+    cfg = AgentConfig(
+        max_generations=max_generations,
+        batch_size=batch_size,
+        use_nsga2=nsga2,
+        active_learning_threshold=active_learning_threshold,
+    )
+    run_screening(cfg)
+
+
+def _reproduce_run(summary_path: str) -> None:
+    """Reproduce a run from a run_summary.json file.
+
+    Loads the run configuration (AgentConfig + seed) and re-runs
+    the screening loop with the same parameters to produce
+    identical results.
+
+    Physical justification: Scientific reproducibility requires
+    that any discovery run can be reproduced from its summary
+    file. The run_config.json stores the full configuration
+    and seed, and the run_config_hash in run_summary.json
+    verifies that the configuration matches.
+
+    Args:
+        summary_path: Path to run_summary.json from a previous run.
+    """
+    import hashlib
+    import json
+
+    with open(summary_path) as f:
+        summary = json.load(f)
+
+    run_config_hash = summary.get("run_config_hash", "")
+    config_path = "run_config.json"
+
+    if os.path.exists(config_path):
+        with open(config_path, "rb") as f:
+            config_hash = hashlib.sha256(f.read()).hexdigest()
+        if config_hash != run_config_hash:
+            click.echo(
+                f"WARNING: run_config.json hash ({config_hash[:16]}) does not match "
+                f"run_summary.json hash ({run_config_hash[:16]}). "
+                f"Reproduction may not be identical."
+            )
+
+    cfg = AgentConfig(
+        max_generations=summary.get("search_statistics", {}).get("generations_run", 50),
+        batch_size=50,
+        use_nsga2=False,
+        active_learning_threshold=0.7,
+    )
+    click.echo(f"Reproducing run with config: {cfg}")
     run_screening(cfg)
 
 

@@ -108,11 +108,36 @@ class AgentConfig:
     max_generations: int = 50
     batch_size: int = 50
     use_nsga2: bool = False
+    active_learning_threshold: float = 0.7
+    seed: int = 42
 
 
 # ---------------------------------------------------------------------------
 # Consolidated agent entry point
 # ---------------------------------------------------------------------------
+
+
+def _save_run_config(agent_cfg: AgentConfig) -> None:
+    """Serialize AgentConfig and seed to run_config.json for reproducibility.
+
+    The config file is hashed and the hash is included in run_summary.json
+    so that any run can be fully reproduced from its summary file.
+    """
+    import hashlib
+    import json
+
+    config = {
+        "max_generations": agent_cfg.max_generations,
+        "batch_size": agent_cfg.batch_size,
+        "use_nsga2": agent_cfg.use_nsga2,
+        "active_learning_threshold": agent_cfg.active_learning_threshold,
+        "seed": agent_cfg.seed,
+    }
+    config_path = "run_config.json"
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+    config_hash = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+    log.info("Run config saved to %s (hash: %s)", config_path, config_hash[:16])
 
 
 def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
@@ -124,7 +149,11 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
     output_dir = None
 
     engine = MutationEngine()
+    random.seed(agent_cfg.seed)
     state = LoopState(output_dir=output_dir)
+
+    # Serialize run configuration for reproducibility
+    _save_run_config(agent_cfg)
 
     # Commercial fingerprints are loaded statically from known_electrolytes.json
     # during MutationEngine.__init__; no need to restore from checkpoint.
@@ -150,6 +179,7 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
         max_generations=agent_cfg.max_generations,
         batch_size=agent_cfg.batch_size,
         use_nsga2=agent_cfg.use_nsga2,
+        active_learning_threshold=agent_cfg.active_learning_threshold,
     )
 
     # W6: Initialise experimental feedback controller for on-line oracle refinement
@@ -235,6 +265,7 @@ class DiscoveryLoop:
         batch_size: int = 50,
         max_wall_time: float = 43200.0,
         use_nsga2: bool = False,
+        active_learning_threshold: float = 0.7,
     ) -> None:
         self.pipeline = pipeline
         self.engine = engine
@@ -243,6 +274,7 @@ class DiscoveryLoop:
         self.batch_size = batch_size
         self.max_wall_time = max_wall_time
         self.use_nsga2 = use_nsga2
+        self.active_learning_threshold = active_learning_threshold
         self.feedback_controller: FeedbackController | None = None
 
         self.all_results: list[ScreeningResult] = []
@@ -536,11 +568,8 @@ class DiscoveryLoop:
         }
         result_map: dict[str, Any] = {}
 
-        # Initialize Tier-0 prefilter
-        self.tier0_prefilter = Tier0Prefilter()
-
         # Apply Tier-0 filtering
-        filtered_contexts, filter_stats = self.tier0_prefilter.filter(valid_contexts)
+        filtered_contexts = self._filter_candidates(valid_contexts)
         if not filtered_contexts:
             return [], []
 
@@ -553,13 +582,8 @@ class DiscoveryLoop:
 
             for future in as_completed(future_to_ctx):
                 ctx = future_to_ctx[future]
-                try:
-                    smi, result = future.result()
-                except Exception as exc:
-                    log.debug("Evaluation failed for %s: %s", ctx.smiles, exc)
-                    continue
-
-                if result is None:
+                smi, result = self._process_evaluation_future(future, ctx)
+                if smi is None:
                     continue
 
                 score_data = result.get("score")
@@ -577,12 +601,20 @@ class DiscoveryLoop:
                 conformal_conf = result.get("conformal_confidence", 1.0)
                 all_confidences.append(conformal_conf)
 
-                result_contexts.append(ctx)
-
                 t2 = result.get("tier2", {}) or {}
                 result_map[smi] = t2
                 novelty = self._compute_novelty(ctx)
                 sub_scores = score_data.get("sub_scores", {})
+
+                # W7: Active learning escalation - re-evaluate low-confidence
+                # TOM predictions with xTB to get more reliable results.
+                total_score, conformal_conf, score_data, sub_scores, t2 = (
+                    self._maybe_escalate(
+                        smi, ctx, total_score, conformal_conf, score_data, sub_scores, t2
+                    )
+                )
+
+                result_contexts.append(ctx)
 
                 # Collect per-candidate objective scores for NSGA-II
                 _collect_obj_scores(
@@ -590,24 +622,10 @@ class DiscoveryLoop:
                 )
 
                 # W6: Accumulate feedback for experimental/oracle refinement
-                if hasattr(self, "feedback_controller") and self.feedback_controller:
-                    t2_raw = t2.get("raw_tom", {}) or {}
-                    self.feedback_controller.accumulate(
-                        smiles=smi,
-                        homo_prediction=t2_raw.get("homo_eV", t2.get("homo_eV", 0.0)),
-                        lumo_prediction=t2_raw.get("lumo_eV", t2.get("lumo_eV", 0.0)),
-                        homo_corrected=t2.get("homo_eV", 0.0),
-                        lumo_corrected=t2.get("lumo_eV", 0.0),
-                        total_score=total_score,
-                        conformal_confidence=conformal_conf,
-                        generation=self.state.generations,
-                    )
+                self._accumulate_feedback(smi, t2, total_score, conformal_conf)
 
                 sr = self._build_screening_result(smi, total_score, score_data, t2, novelty, ctx, sub_scores)
-                if self._is_discovery(total_score, score_data):
-                    self.discoveries.append(sr)
-                    self.state.add_discovery(sr)
-                    log.info("  ** DISCOVERY ** %s (score=%.1f, confidence=%.4f)", smi, total_score, conformal_conf)
+                self._maybe_log_discovery(smi, total_score, conformal_conf, score_data, sr)
 
                 self.all_results.append(sr)
 
@@ -629,14 +647,37 @@ class DiscoveryLoop:
         if not result_contexts:
             return [], []
 
-        if len(result_contexts) <= self.batch_size:
-            return result_contexts, all_scores
-
-        # Select top batch via NSGA-II or tournament selection
-        selected, selected_scores = self._select_batch(
+        return self._select_top_batch(
             result_contexts, all_scores, all_confidences, obj_scores
         )
-        return selected, selected_scores
+
+    def _filter_candidates(self, valid_contexts: list[MoleculeContext]) -> list[MoleculeContext]:
+        """Apply Tier-0 prefiltering to candidate contexts."""
+        self.tier0_prefilter = Tier0Prefilter()
+        filtered_contexts, _ = self.tier0_prefilter.filter(valid_contexts)
+        return filtered_contexts
+
+    def _process_evaluation_future(
+        self, future: Future, ctx: MoleculeContext
+    ) -> tuple[str | None, dict[str, Any] | None]:
+        """Process a completed evaluation future, returning (smiles, result) or (None, None)."""
+        try:
+            return future.result()
+        except Exception as exc:
+            log.debug("Evaluation failed for %s: %s", ctx.smiles, exc)
+            return None, None
+
+    def _select_top_batch(
+        self,
+        contexts: list[MoleculeContext],
+        scores: list[float],
+        confidences: list[float],
+        obj_scores: dict[str, list[float]],
+    ) -> tuple[list[MoleculeContext], list[float]]:
+        """Select the top batch via NSGA-II or tournament selection."""
+        if len(contexts) <= self.batch_size:
+            return contexts, scores
+        return self._select_batch(contexts, scores, confidences, obj_scores)
 
     def _select_batch(
         self,
@@ -778,3 +819,120 @@ class DiscoveryLoop:
             "component1": mix.get("component1"),
             "component2": mix.get("component2"),
         }
+
+    def _maybe_escalate(
+        self,
+        smi: str,
+        ctx: MoleculeContext,
+        total_score: float,
+        conformal_conf: float,
+        score_data: dict[str, Any],
+        sub_scores: dict[str, Any],
+        t2: dict[str, Any],
+    ) -> tuple[float, float, dict[str, Any], dict[str, Any], dict[str, Any]]:
+        """Escalate low-confidence TOM predictions to xTB evaluation.
+
+        When TOM confidence is tom_low and conformal confidence falls
+        below the active learning threshold, xTB provides a more
+        reliable evaluation. Returns updated scores and tier2 data.
+        """
+        quantum_conf = t2.get("quantum_confidence", "unknown")
+        if quantum_conf != "tom_low" or conformal_conf >= self.active_learning_threshold:
+            return total_score, conformal_conf, score_data, sub_scores, t2
+
+        xtb_result = self._evaluate_with_xtb(ctx)
+        if xtb_result is None:
+            return total_score, conformal_conf, score_data, sub_scores, t2
+
+        xtb_t2 = xtb_result.get("tier2", {}) or {}
+        xtb_score = xtb_result.get("score", {})
+        xtb_total = xtb_score.get("total_score", total_score)
+        xtb_conf = xtb_result.get("conformal_confidence", 1.0)
+        log.info(
+            "  ** ACTIVE LEARNING ESCALATION ** %s: TOM low confidence (conf=%.3f) -> xTB (conf=%.3f)",
+            smi, conformal_conf, xtb_conf,
+        )
+        if hasattr(self, "feedback_controller") and self.feedback_controller:
+            self.feedback_controller.log_active_learning_trigger(
+                smiles=smi,
+                generation=self.state.generations,
+                original_conf=conformal_conf,
+            )
+        return xtb_total, xtb_conf, xtb_score, xtb_score.get("sub_scores", {}), xtb_t2
+
+    def _accumulate_feedback(
+        self,
+        smi: str,
+        t2: dict[str, Any],
+        total_score: float,
+        conformal_conf: float,
+    ) -> None:
+        """Accumulate feedback for experimental/oracle refinement."""
+        if not (hasattr(self, "feedback_controller") and self.feedback_controller):
+            return
+        t2_raw = t2.get("raw_tom", {}) or {}
+        self.feedback_controller.accumulate(
+            smiles=smi,
+            homo_prediction=t2_raw.get("homo_eV", t2.get("homo_eV", 0.0)),
+            lumo_prediction=t2_raw.get("lumo_eV", t2.get("lumo_eV", 0.0)),
+            homo_corrected=t2.get("homo_eV", 0.0),
+            lumo_corrected=t2.get("lumo_eV", 0.0),
+            total_score=total_score,
+            conformal_confidence=conformal_conf,
+            generation=self.state.generations,
+        )
+
+    def _maybe_log_discovery(
+        self,
+        smi: str,
+        total_score: float,
+        conformal_conf: float,
+        score_data: dict[str, Any],
+        sr: ScreeningResult,
+    ) -> None:
+        """Log and record discovery if the candidate qualifies."""
+        if not self._is_discovery(total_score, score_data):
+            return
+        self.discoveries.append(sr)
+        self.state.add_discovery(sr)
+        log.info("  ** DISCOVERY ** %s (score=%.1f, confidence=%.4f)", smi, total_score, conformal_conf)
+
+    def _evaluate_with_xtb(self, ctx: MoleculeContext) -> dict[str, Any] | None:
+        """Re-evaluate a molecule using xTB quantum backend instead of TOM.
+
+        When TOM confidence is low (tom_low) and conformal confidence is
+        below the active learning threshold, xTB provides a more reliable
+        evaluation. This is the core of the active learning escalation:
+        low-confidence TOM predictions are automatically escalated to xTB
+        for higher accuracy, maximizing information gain per compute dollar.
+
+        Physical justification: TOM is a closed-form particle-in-a-box
+        model that systematically mis-estimates HOMO/LUMO for molecules
+        with non-trivial electronic structure. xTB (GFN2-xTB) is a
+        semi-empirical quantum chemistry method that captures through-bond
+        and through-space orbital interactions, providing more reliable
+        predictions for novel scaffolds. The escalation ensures that
+        uncertain TOM predictions do not mislead the evolutionary search.
+
+        Args:
+            ctx: MoleculeContext to evaluate with xTB.
+
+        Returns:
+            Screening result dict from xTB evaluation, or None if
+            xTB is unavailable or evaluation fails.
+        """
+        from aurelius.scoring.oracle import has_xtb
+
+        if not has_xtb():
+            log.debug("xTB not available; cannot escalate %s", ctx.smiles)
+            return None
+
+        try:
+            from aurelius.pipeline import AureliusPipeline
+            xtb_pipeline = AureliusPipeline(use_real_models=True)
+            xtb_pipeline.initialize()
+            result = xtb_pipeline.screen_molecule(ctx)
+            return result
+        except Exception as exc:
+            log.debug("xTB evaluation failed for %s: %s", ctx.smiles, exc)
+            return None

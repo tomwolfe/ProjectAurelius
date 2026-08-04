@@ -1,7 +1,8 @@
 """Retrosynthetic depth estimation tests for Project Aurelius - Workstream 2.
 
-Validates the BRICS retrosynthetic depth calculation and precursor database
-functionality for Gap 2: Synthesizable outputs.
+Validates the BRICS retrosynthetic depth calculation, precursor database
+functionality, and template-based synthesis feasibility for Gap 2:
+Synthesizable outputs.
 """
 
 from rdkit import Chem
@@ -13,6 +14,7 @@ from aurelius.agent.mutation.brics import (
 from aurelius.agent.mutation.retrosynthetic import (
     _load_precursors,
     brics_retrosynthetic_depth,
+    compute_synthesis_feasibility,
     get_commercial_precursors,
     get_commercial_precursor_count,
 )
@@ -94,7 +96,67 @@ def test_precursor_data_structure():
         assert "smiles" in entry, "Precursor missing 'smiles' key"
         assert "name" in entry, "Precursor missing 'name' key"
         assert "category" in entry, "Precursor missing 'category' key"
-        
+
         assert isinstance(entry["smiles"], str), "SMILES must be string"
         assert isinstance(entry["name"], str), "Name must be string"
         assert isinstance(entry["category"], str), "Category must be string"
+
+
+def test_synthesis_feasibility_known_electrolyte():
+    """Known synthesizable electrolytes should score >0.7 on template feasibility."""
+    # DMC: dimethyl carbonate - direct precursor, well-known synthesis
+    mol = Chem.MolFromSmiles("COC(=O)OC")
+    assert mol is not None
+    score = compute_synthesis_feasibility(mol)
+    assert score > 0.7, (
+        f"DMC synthesis feasibility {score:.2f} should be >0.7 "
+        "for a known, directly available precursor"
+    )
+
+
+def test_synthesis_feasibility_frankenstein_molecule():
+    """Frankenstein molecules (non-electrolyte scaffolds) should score <0.3."""
+    # A complex molecule with no clear electrolyte synthesis route
+    mol = Chem.MolFromSmiles("c1ccccc1")
+    assert mol is not None
+    score = compute_synthesis_feasibility(mol)
+    assert score < 0.3, (
+        f"Benzene synthesis feasibility {score:.2f} should be <0.3 "
+        "for a non-electrolyte Frankenstein molecule"
+    )
+
+
+def test_synthesis_feasibility_range():
+    """Synthesis feasibility score should always be in [0, 1]."""
+    test_smiles = [
+        "COC(=O)OC",
+        "C1COCCO1",
+        "CS(=O)(=O)C",
+        "CC#N",
+        "c1ccccc1",
+        "C1CCCCC1",
+    ]
+    for smi in test_smiles:
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            continue
+        score = compute_synthesis_feasibility(mol)
+        assert 0.0 <= score <= 1.0, (
+            f"Score {score} for {smi} must be in [0, 1]"
+        )
+
+
+def test_combined_grounding_score_improved():
+    """Combined grounding score with template feasibility should differentiate
+    known-good molecules from Frankenstein molecules."""
+    known_mol = Chem.MolFromSmiles("COC(=O)OC")
+    frankenstein_mol = Chem.MolFromSmiles("c1ccccc1")
+    assert known_mol is not None and frankenstein_mol is not None
+
+    known_score = combined_grounding_score(known_mol)
+    frankenstein_score = combined_grounding_score(frankenstein_mol)
+
+    assert known_score > frankenstein_score, (
+        f"Known electrolyte (score={known_score:.2f}) should score higher "
+        f"than Frankenstein molecule (score={frankenstein_score:.2f})"
+    )
