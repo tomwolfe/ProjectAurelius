@@ -22,6 +22,7 @@ from typing import Any
 import numpy as np
 from rdkit import Chem
 
+from aurelius.agent.mutation.retrosynthetic import brics_retrosynthetic_depth
 from aurelius.constants import (
     AL_CORROSION_LUMO_THRESHOLD,
     AL_CORROSION_MIN_FLUORINE,
@@ -240,8 +241,6 @@ class AureliusPipeline:
             dielectric_proxy = oracle_result.get("dielectric_proxy", 0.0)
             viscosity_proxy = oracle_result.get("viscosity_proxy", 99.0)
             li_solvation_proxy = oracle_result.get("li_solvation_proxy", 0.0)
-
-            domain_penalty = oracle_result.get("domain_penalty", 1.0)
 
             # Copy ALL oracle result keys, then set defaults for required fields
             t2_result = dict(oracle_result)
@@ -498,11 +497,16 @@ class AureliusPipeline:
 
         # Compute custom SA score once
         sa_score: float = 5.0
+        synthesis_depth: int = 3  # Default moderate depth
         if ctx is not None:
             try:
                 sa_score = electrolyte_synthetic_accessibility(ctx)
             except Exception:
                 sa_score = 5.0
+            try:
+                synthesis_depth = brics_retrosynthetic_depth(ctx.mol)
+            except Exception:
+                synthesis_depth = 3
         raw_values["sa_score"] = sa_score
 
         for obj in _OBJECTIVES:
@@ -530,6 +534,7 @@ class AureliusPipeline:
             "is_viable": is_viable,
             "sub_scores": sub_scores,
             "sa_score": round(sa_score, 4),
+            "synthesis_depth": synthesis_depth,
             "rejection_reasons": rejection_reasons,
         }
 

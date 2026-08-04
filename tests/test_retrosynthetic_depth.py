@@ -37,9 +37,9 @@ def test_retrosynthetic_depth_complex():
 
 
 def test_precursor_database_count():
-    """Precursor database should have ≥ 70 entries of genuine electrolytes."""
+    """Precursor database should have >= 200 entries of genuine electrolytes."""
     count = get_commercial_precursor_count()
-    assert count >= 70, f"Precursor database has {count} entries, should be ≥ 70"
+    assert count >= 200, f"Precursor database has {count} entries, should be >= 200"
 
 
 def test_precursor_database_validity():

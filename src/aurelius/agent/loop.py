@@ -28,12 +28,20 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+
+from aurelius.agent.feedback import FeedbackController
 from aurelius.agent.mutation import MutationEngine
 from aurelius.agent.reporting import generate_discoveries_sdf, generate_run_summary
-from aurelius.agent.selection import compute_pairwise_diversity, tournament_select
+from aurelius.agent.selection import (
+    compute_pairwise_diversity,
+    nsga2_select,
+    tournament_select,
+)
 from aurelius.agent.state import LoopState
 from aurelius.constants import DISCOVERY_THRESHOLD
 from aurelius.pipeline import AureliusPipeline
+from aurelius.scoring.oracle.delta_correction import get_delta_correction
 from aurelius.screening.tier0.prefilter import Tier0Prefilter
 from aurelius.types import (
     MoleculeContext,
@@ -70,12 +78,36 @@ def _evaluate_single_molecule(
         return ctx.smiles, None
 
 
+def _collect_obj_scores(
+    obj_scores: dict[str, list[float]],
+    total_score: float,
+    t2: dict[str, Any],
+    score_data: dict[str, Any],
+    confidence: float,
+) -> None:
+    """Collect per-candidate objective scores into ``obj_scores`` dict.
+
+    Called for each evaluated candidate to populate the multi-objective
+    matrix used by NSGA-II selection.
+    """
+    obj_scores["total_score"].append(total_score)
+    obj_scores["dielectric_proxy"].append(t2.get("dielectric_proxy", 0.0))
+    obj_scores["viscosity_proxy"].append(t2.get("viscosity_proxy", 99.0))
+    obj_scores["li_solvation_proxy"].append(t2.get("li_solvation_proxy", 0.0))
+    obj_scores["homo_eV"].append(t2.get("homo_eV", -99.0))
+    obj_scores["lumo_eV"].append(t2.get("lumo_eV", -99.0))
+    obj_scores["sa_score"].append(score_data.get("sa_score", 5.0))
+    obj_scores["synthesis_depth"].append(float(score_data.get("synthesis_depth", 3)))
+    obj_scores["confidence"].append(confidence)
+
+
 @dataclass(frozen=True)
 class AgentConfig:
     """Parameters for the autonomous screening agent."""
 
     max_generations: int = 50
     batch_size: int = 50
+    use_nsga2: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +149,14 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
         state=state,
         max_generations=agent_cfg.max_generations,
         batch_size=agent_cfg.batch_size,
+        use_nsga2=agent_cfg.use_nsga2,
     )
+
+    # W6: Initialise experimental feedback controller for on-line oracle refinement
+    feedback_controller = FeedbackController(
+        delta_correction=get_delta_correction(),
+    )
+    loop.feedback_controller = feedback_controller
     results = loop.execute()
 
     all_results = results["all_results"]
@@ -195,6 +234,7 @@ class DiscoveryLoop:
         max_generations: int = 50,
         batch_size: int = 50,
         max_wall_time: float = 43200.0,
+        use_nsga2: bool = False,
     ) -> None:
         self.pipeline = pipeline
         self.engine = engine
@@ -202,6 +242,8 @@ class DiscoveryLoop:
         self.max_generations = max_generations
         self.batch_size = batch_size
         self.max_wall_time = max_wall_time
+        self.use_nsga2 = use_nsga2
+        self.feedback_controller: FeedbackController | None = None
 
         self.all_results: list[ScreeningResult] = []
         self.discoveries: list[ScreeningResult] = []
@@ -240,6 +282,18 @@ class DiscoveryLoop:
                 continue
 
             self._record_results(batch_contexts, batch_scores, generation)
+
+            # W6: Periodically refit the delta-correction model with accumulated feedback
+            if self.feedback_controller:
+                refit_info = self.feedback_controller.maybe_refit(generation)
+                if refit_info:
+                    log.info(
+                        "  Feedback refit #%d: LOO MAE %.4f → %.4f (%d new entries)",
+                        self.feedback_controller.state.total_refits,
+                        refit_info["loo_mae_before"],
+                        refit_info["loo_mae_after"],
+                        refit_info["new_calibration_entries"],
+                    )
 
             should_stop, reason = self.state.should_terminate()
             if should_stop:
@@ -365,6 +419,7 @@ class DiscoveryLoop:
             viscosity_proxy=t2.get("viscosity_proxy"),
             li_solvation_proxy=t2.get("li_solvation_proxy"),
             sa_score=score_data.get("sa_score"),
+            synthesis_depth=score_data.get("synthesis_depth"),
             sub_scores=sub_scores,
         )
 
@@ -467,6 +522,18 @@ class DiscoveryLoop:
         all_scores: list[float] = []
         all_confidences: list[float] = []
         result_contexts: list[MoleculeContext] = []
+        # Per-candidate objective scores for NSGA-II multi-objective selection.
+        obj_scores: dict[str, list[float]] = {
+            "total_score": [],
+            "dielectric_proxy": [],
+            "viscosity_proxy": [],
+            "li_solvation_proxy": [],
+            "homo_eV": [],
+            "lumo_eV": [],
+            "sa_score": [],
+            "synthesis_depth": [],
+            "confidence": [],
+        }
         result_map: dict[str, Any] = {}
 
         # Initialize Tier-0 prefilter
@@ -517,6 +584,25 @@ class DiscoveryLoop:
                 novelty = self._compute_novelty(ctx)
                 sub_scores = score_data.get("sub_scores", {})
 
+                # Collect per-candidate objective scores for NSGA-II
+                _collect_obj_scores(
+                    obj_scores, total_score, t2, score_data, conformal_conf
+                )
+
+                # W6: Accumulate feedback for experimental/oracle refinement
+                if hasattr(self, "feedback_controller") and self.feedback_controller:
+                    t2_raw = t2.get("raw_tom", {}) or {}
+                    self.feedback_controller.accumulate(
+                        smiles=smi,
+                        homo_prediction=t2_raw.get("homo_eV", t2.get("homo_eV", 0.0)),
+                        lumo_prediction=t2_raw.get("lumo_eV", t2.get("lumo_eV", 0.0)),
+                        homo_corrected=t2.get("homo_eV", 0.0),
+                        lumo_corrected=t2.get("lumo_eV", 0.0),
+                        total_score=total_score,
+                        conformal_confidence=conformal_conf,
+                        generation=self.state.generations,
+                    )
+
                 sr = self._build_screening_result(smi, total_score, score_data, t2, novelty, ctx, sub_scores)
                 if self._is_discovery(total_score, score_data):
                     self.discoveries.append(sr)
@@ -528,6 +614,17 @@ class DiscoveryLoop:
         mix_contexts, mix_scores = self._evaluate_mixture_pairs(valid_contexts, result_map)
         result_contexts.extend(mix_contexts)
         all_scores.extend(mix_scores)
+        # Pad objective scores and confidences for mixture candidates so
+        # NSGA-II arrays align with the full candidate list.
+        for mix_score in mix_scores:
+            all_confidences.append(1.0)
+            for key in obj_scores:
+                val = (
+                    mix_score if key == "total_score"
+                    else (3.0 if key == "synthesis_depth" else 0.0
+                    )
+                )
+                obj_scores[key].append(val)
 
         if not result_contexts:
             return [], []
@@ -535,14 +632,50 @@ class DiscoveryLoop:
         if len(result_contexts) <= self.batch_size:
             return result_contexts, all_scores
 
-        # Use conformal confidence in tournament selection
-        selected = tournament_select(
-            result_contexts, 
-            all_scores, 
-            batch_size=self.batch_size,
-            confidences=all_confidences
+        # Select top batch via NSGA-II or tournament selection
+        selected, selected_scores = self._select_batch(
+            result_contexts, all_scores, all_confidences, obj_scores
         )
-        selected_scores = [all_scores[result_contexts.index(ctx)] for ctx in selected]
+        return selected, selected_scores
+
+    def _select_batch(
+        self,
+        contexts: list[MoleculeContext],
+        scores: list[float],
+        confidences: list[float],
+        obj_scores: dict[str, list[float]],
+    ) -> tuple[list[MoleculeContext], list[float]]:
+        """Dispatch to NSGA-II or tournament selection."""
+        if self.use_nsga2:
+            # Confidence is passed via the confidences parameter, not as
+            # a separate objective — avoids double-counting.
+            objectives = [
+                ("dielectric_proxy", "max"),
+                ("viscosity_proxy", "min"),
+                ("li_solvation_proxy", "max"),
+                ("homo_eV", "max"),
+                ("lumo_eV", "max"),
+                ("sa_score", "min"),
+                ("synthesis_depth", "min"),
+            ]
+            smi_to_score = {ctx.smiles: sc for ctx, sc in zip(contexts, scores, strict=True)}
+            selected = nsga2_select(
+                contexts, obj_scores, objectives,
+                batch_size=self.batch_size,
+                confidences=confidences,
+            )
+            selected_scores = [smi_to_score[c.smiles] for c in selected]
+            return selected, selected_scores
+
+        # Default: tournament selection with conformal confidence
+        selected = tournament_select(
+            contexts,
+            scores,
+            batch_size=self.batch_size,
+            confidences=confidences,
+        )
+        smi_to_score = {ctx.smiles: sc for ctx, sc in zip(contexts, scores, strict=True)}
+        selected_scores = [smi_to_score[c.smiles] for c in selected]
         return selected, selected_scores
 
     def _evolve_seed_pool(self, batch_contexts: list[MoleculeContext], batch_scores: list[float]) -> None:
@@ -589,13 +722,26 @@ class DiscoveryLoop:
         self.state.record_batch(batch_scores, batch_viable)
 
         mean_div = compute_pairwise_diversity(batch_contexts)
+
+        # Retrosynthetic depth statistics (W7)
+        depths = [r.synthesis_depth for r in self.all_results
+                  if r.synthesis_depth is not None and r.synthesis_depth > 0]
+        depth_msg = ""
+        if depths:
+            recent_depths = depths[-len(batch_contexts):] if len(depths) >= len(batch_contexts) else depths
+            mean_depth = float(np.mean(recent_depths))
+            min_depth = min(recent_depths)
+            max_depth = max(recent_depths)
+            depth_msg = f" depth[min={min_depth},μ={mean_depth:.1f},max={max_depth}]"
+
         log.info(
-            "  Generation %d: %d screened, %d viable, best=%.1f, diversity=%.4f",
+            "  Generation %d: %d screened, %d viable, best=%.1f, diversity=%.4f%s",
             generation,
             len(batch_contexts),
             batch_viable,
             max(batch_scores) if batch_scores else 0,
             mean_div,
+            depth_msg,
         )
 
     def _screen_molecule(self, ctx: MoleculeContext) -> dict[str, Any] | None:

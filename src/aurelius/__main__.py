@@ -230,14 +230,16 @@ def validate_cmd(smiles: str) -> None:
 @cli.command("agent")
 @click.option("--max-generations", type=int, default=50, help="Maximum generations to run")
 @click.option("--batch-size", type=int, default=50, help="Candidates per batch")
+@click.option("--nsga2", is_flag=True, default=False, help="Use NSGA-II multi-objective selection instead of tournament")
 def agent(
     max_generations: int,
     batch_size: int,
+    nsga2: bool,
 ) -> None:
     """Run the autonomous screening agent."""
     from aurelius.agent.loop import AgentConfig, run_screening
 
-    cfg = AgentConfig(max_generations=max_generations, batch_size=batch_size)
+    cfg = AgentConfig(max_generations=max_generations, batch_size=batch_size, use_nsga2=nsga2)
     run_screening(cfg)
 
 

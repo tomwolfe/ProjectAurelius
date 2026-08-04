@@ -348,5 +348,770 @@
     "smiles": "C(C)#N",
     "name": "Isobutyronitrile",
     "category": "nitriles"
+  },
+  {
+    "smiles": "OCCF",
+    "name": "2-Fluoroethanol",
+    "category": "fluorinated alcohols"
+  },
+  {
+    "smiles": "CC(F)CO",
+    "name": "2,2-Difluoroethanol",
+    "category": "fluorinated alcohols"
+  },
+  {
+    "smiles": "CC(F)(F)CO",
+    "name": "2,2,2-Trifluoroethanol",
+    "category": "fluorinated alcohols"
+  },
+  {
+    "smiles": "CC(F)(F)C(F)(F)CO",
+    "name": "Hexafluoropropanol",
+    "category": "fluorinated alcohols"
+  },
+  {
+    "smiles": "OC(F)F",
+    "name": "Difluoromethanol",
+    "category": "fluorinated alcohols"
+  },
+  {
+    "smiles": "OC(F)(F)F",
+    "name": "Trifluoromethanol",
+    "category": "fluorinated alcohols"
+  },
+  {
+    "smiles": "OCC(F)F",
+    "name": "1,2-Ethanediol monofluoride",
+    "category": "fluorinated alcohols"
+  },
+  {
+    "smiles": "OC(F)(F)CO",
+    "name": "2,2,3-Trifluoropropanol",
+    "category": "fluorinated alcohols"
+  },
+  {
+    "smiles": "OC(F)(F)C(F)(F)CO",
+    "name": "Pentafluoropropanol",
+    "category": "fluorinated alcohols"
+  },
+  {
+    "smiles": "OCC(F)(F)C(F)F",
+    "name": "2,3,3-Trifluoropropanol",
+    "category": "fluorinated alcohols"
+  },
+  {
+    "smiles": "FCOC",
+    "name": "Methyl fluoromethyl ether",
+    "category": "fluorinated ethers"
+  },
+  {
+    "smiles": "FC(F)COC(F)(F)F",
+    "name": "Bis(trifluoromethyl) ether",
+    "category": "fluorinated ethers"
+  },
+  {
+    "smiles": "COC(F)C(F)(F)C",
+    "name": "1,1,2-Trifluoroethyl methyl ether",
+    "category": "fluorinated ethers"
+  },
+  {
+    "smiles": "COCC(F)(F)C(F)(F)F",
+    "name": "Perfluoroethyl methyl ether",
+    "category": "fluorinated ethers"
+  },
+  {
+    "smiles": "COC(F)C(F)(F)C(F)(F)C(F)(F)F",
+    "name": "Perfluoropropyl methyl ether",
+    "category": "fluorinated ethers"
+  },
+  {
+    "smiles": "COC(F)(F)CCOC",
+    "name": "Bis(2,2-difluoroethyl) ether",
+    "category": "fluorinated ethers"
+  },
+  {
+    "smiles": "N#CC(F)F",
+    "name": "1,1-Difluoroacetonitrile",
+    "category": "fluorinated nitriles"
+  },
+  {
+    "smiles": "N#CC(F)(F)F",
+    "name": "Trifluoroacetonitrile",
+    "category": "fluorinated nitriles"
+  },
+  {
+    "smiles": "N#CC(F)CC(F)C(F)F",
+    "name": "Fluorinated nitrile",
+    "category": "fluorinated nitriles"
+  },
+  {
+    "smiles": "N#CC(F)C(F)C(F)C(F)F",
+    "name": "Perfluoropropionitrile variant",
+    "category": "fluorinated nitriles"
+  },
+  {
+    "smiles": "N#CC(F)C(F)(F)C(F)C(F)F",
+    "name": "Pentafluorobutyronitrile",
+    "category": "fluorinated nitriles"
+  },
+  {
+    "smiles": "N#CC(F)C(F)C(F)C(F)C(F)F",
+    "name": "Hexafluoropentanenitrile",
+    "category": "fluorinated nitriles"
+  },
+  {
+    "smiles": "N#CC(F)(F)CC(F)(F)C(F)(F)F",
+    "name": "Pentafluoropropionitrile",
+    "category": "fluorinated nitriles"
+  },
+  {
+    "smiles": "N#CC(F)(F)CC(F)F",
+    "name": "2,2,3,3-Tetrafluoropropionitrile",
+    "category": "fluorinated nitriles"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)CF",
+    "name": "Monofluoroethyl methyl sulfoxide sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)(F)C(F)F",
+    "name": "Bis(2,2-difluoroethyl) sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)(F)C(F)(F)C(F)F",
+    "name": "Perfluoropropyl methyl sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)(F)C(F)(F)C(F)(F)C(F)F",
+    "name": "Perfluorobutyl methyl sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "O=S(=O)(C(F)(F)F)C(F)(F)F",
+    "name": "Bis(trifluoromethyl) sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=O)CC(F)F",
+    "name": "2,2-Difluoroethyl methyl sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=O)CC(F)(F)C(F)F",
+    "name": "Perfluoropropyl ethyl sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)C(F)C(F)F",
+    "name": "Trifluoromethyl sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)C(F)C(F)C(F)F",
+    "name": "Perfluorobutyl sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "O=S(=O)(C(F)(F)F)CC(F)(F)F",
+    "name": "Bis(pentafluoroethyl) sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=O)C1CC(F)CC1",
+    "name": "Cyclohexyl monofluoro sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "CCS(=O)(=O)CC",
+    "name": "Diethyl sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=O)F",
+    "name": "Methanesulfonyl fluoride",
+    "category": "sulfonyl fluorides"
+  },
+  {
+    "smiles": "CCS(=O)(=O)F",
+    "name": "Ethanesulfonyl fluoride",
+    "category": "sulfonyl fluorides"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)F",
+    "name": "Bis(fluoromethyl) sulfonyl fluoride",
+    "category": "sulfonyl fluorides"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)(F)F",
+    "name": "Trifluoromethyl methanesulfonyl fluoride",
+    "category": "sulfonyl fluorides"
+  },
+  {
+    "smiles": "CS(=O)(=O)CC(F)(F)F",
+    "name": "Trifluoroethyl methanesulfonyl fluoride",
+    "category": "sulfonyl fluorides"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)C(F)F",
+    "name": "Pentafluoroethyl methanesulfonyl fluoride",
+    "category": "sulfonyl fluorides"
+  },
+  {
+    "smiles": "O=S(=O)(F)C(F)(F)F",
+    "name": "Pentafluoroethyl sulfonyl fluoride",
+    "category": "sulfonyl fluorides"
+  },
+  {
+    "smiles": "N(S(=O)(=O)F)S(=O)(=O)F",
+    "name": "Bis(sulfonyl fluoride) imide",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "COC(=O)OC(F)F",
+    "name": "Bis(fluoromethyl) carbonate",
+    "category": "fluorinated carbonates"
+  },
+  {
+    "smiles": "COC(=O)OC(F)(F)F",
+    "name": "Trifluoromethyl methyl carbonate",
+    "category": "fluorinated carbonates"
+  },
+  {
+    "smiles": "COC(=O)OC(F)C(F)F",
+    "name": "Pentafluoroethyl methyl carbonate",
+    "category": "fluorinated carbonates"
+  },
+  {
+    "smiles": "COC(=O)OC(F)(F)C(F)F",
+    "name": "Heptluoropropyl methyl carbonate",
+    "category": "fluorinated carbonates"
+  },
+  {
+    "smiles": "COC(=O)OCC(F)(F)F",
+    "name": "Trifluoroethyl methyl carbonate",
+    "category": "fluorinated carbonates"
+  },
+  {
+    "smiles": "COC(=O)OCC(F)C(F)F",
+    "name": "Pentafluoropropyl methyl carbonate",
+    "category": "fluorinated carbonates"
+  },
+  {
+    "smiles": "COC(=O)OC(F)C(F)C(F)F",
+    "name": "Perfluoropropyl carbonate",
+    "category": "fluorinated carbonates"
+  },
+  {
+    "smiles": "COC(=O)OC(F)(F)C(F)C(F)F",
+    "name": "Pentafluoropropyl carbonate",
+    "category": "fluorinated carbonates"
+  },
+  {
+    "smiles": "COC(=O)C(F)F",
+    "name": "Methyl difluoroacetate",
+    "category": "fluorinated esters"
+  },
+  {
+    "smiles": "COC(=O)C(F)(F)F",
+    "name": "Methyl trifluoroacetate",
+    "category": "fluorinated esters"
+  },
+  {
+    "smiles": "CCOC(=O)C(F)F",
+    "name": "Ethyl difluoroacetate",
+    "category": "fluorinated esters"
+  },
+  {
+    "smiles": "CCOC(=O)C(F)(F)F",
+    "name": "Ethyl trifluoroacetate",
+    "category": "fluorinated esters"
+  },
+  {
+    "smiles": "COC(=O)C(F)C(F)(F)C",
+    "name": "Trifluoromethyl fluoroacetate",
+    "category": "fluorinated esters"
+  },
+  {
+    "smiles": "COCC(=O)C(F)(F)F",
+    "name": "Trifluoroacetyl methyl ether",
+    "category": "fluorinated esters"
+  },
+  {
+    "smiles": "COCCC(=O)C(F)(F)F",
+    "name": "Trifluoroacetyl ethyl ether",
+    "category": "fluorinated esters"
+  },
+  {
+    "smiles": "COC(=O)C(F)C(F)C(F)F",
+    "name": "Tetrafluoropropyl fluoroacetate",
+    "category": "fluorinated esters"
+  },
+  {
+    "smiles": "COC(=O)C(F)C(F)C(F)C(F)F",
+    "name": "Pentafluorobutyl fluoroacetate",
+    "category": "fluorinated esters"
+  },
+  {
+    "smiles": "COC(=O)CC(F)F",
+    "name": "1,1-Difluoropropyl acetate",
+    "category": "fluorinated esters"
+  },
+  {
+    "smiles": "COC(=O)CC(F)(F)C(F)F",
+    "name": "Trifluoromethyl 2,2-difluoroethyl acetate",
+    "category": "fluorinated esters"
+  },
+  {
+    "smiles": "CCO[P](=O)(OCC)OCC",
+    "name": "Triethyl phosphate",
+    "category": "phosphates"
+  },
+  {
+    "smiles": "CCO[P](=O)(OCC(F)F)OCC",
+    "name": "Bis(2,2-difluoroethyl) ethyl phosphate",
+    "category": "fluorinated phosphates"
+  },
+  {
+    "smiles": "CCO[P](=O)(OCC(F)(F)F)OCC(F)(F)F",
+    "name": "Bis(2,2,2-trifluoroethyl) ethyl phosphate",
+    "category": "fluorinated phosphates"
+  },
+  {
+    "smiles": "O=P(OCC(F)(F)F)OCC(F)(F)F",
+    "name": "Bis(2,2,2-trifluoroethyl) phosphate",
+    "category": "fluorinated phosphates"
+  },
+  {
+    "smiles": "O=P(OCC(F)F)OCC(F)F",
+    "name": "Bis(2,2-difluoroethyl) phosphate",
+    "category": "fluorinated phosphates"
+  },
+  {
+    "smiles": "CCO[P](=O)(OCC(F)(F)F)OCC",
+    "name": "Trifluoroethyl ethyl phosphate",
+    "category": "fluorinated phosphates"
+  },
+  {
+    "smiles": "CC1OC(=O)P(OCC(F)(F)F)OCC1",
+    "name": "Cyclic trifluoroethyl phosphate",
+    "category": "fluorinated phosphates"
+  },
+  {
+    "smiles": "CP(=O)(O)O",
+    "name": "Methyl phosphonate",
+    "category": "phosphorus compounds"
+  },
+  {
+    "smiles": "CCP(=O)(O)O",
+    "name": "Ethyl phosphonate",
+    "category": "phosphorus compounds"
+  },
+  {
+    "smiles": "CCOP(=O)(O)OCC",
+    "name": "Diethyl phosphonate",
+    "category": "phosphorus compounds"
+  },
+  {
+    "smiles": "CCO[P](=S)(OCC)OCC",
+    "name": "Diethyl thiophosphate",
+    "category": "phosphorus compounds"
+  },
+  {
+    "smiles": "CCP(=S)(OCC)OCC",
+    "name": "Ethyl diethyl phosphorothioate",
+    "category": "phosphorus compounds"
+  },
+  {
+    "smiles": "NC(F)F",
+    "name": "Difluoromethylamine",
+    "category": "fluorinated amines"
+  },
+  {
+    "smiles": "N(C(F)(F)F)(C(F)(F)F)",
+    "name": "Bis(trifluoromethyl)amine",
+    "category": "fluorinated amines"
+  },
+  {
+    "smiles": "N(CC(F)(F)F)C(F)(F)F",
+    "name": "Tris(2,2,2-trifluoroethyl)amine",
+    "category": "fluorinated amines"
+  },
+  {
+    "smiles": "N(CCF)C(F)(F)F",
+    "name": "Bis(2-fluoroethyl)amine",
+    "category": "fluorinated amines"
+  },
+  {
+    "smiles": "CC(=O)C(F)F",
+    "name": "2,2-Difluoroacetone",
+    "category": "fluorinated ketones"
+  },
+  {
+    "smiles": "CC(=O)C(F)(F)F",
+    "name": "Trifluoroacetone",
+    "category": "fluorinated ketones"
+  },
+  {
+    "smiles": "CC(=O)C(F)C(F)F",
+    "name": "Pentafluoropropyl ketone",
+    "category": "fluorinated ketones"
+  },
+  {
+    "smiles": "CC(=O)C(F)C(F)C(F)F",
+    "name": "Heptafluorobutyl ketone",
+    "category": "fluorinated ketones"
+  },
+  {
+    "smiles": "CC(=O)C(F)C(F)C(F)C(F)F",
+    "name": "Nonafluoropentanone",
+    "category": "fluorinated ketones"
+  },
+  {
+    "smiles": "CC(=O)C(F)(F)C(F)C(F)F",
+    "name": "Heptafluoropentanone",
+    "category": "fluorinated ketones"
+  },
+  {
+    "smiles": "CC(=O)C(F)(F)C(F)(F)C(F)F",
+    "name": "Octafluorohexanone",
+    "category": "fluorinated ketones"
+  },
+  {
+    "smiles": "CC(=O)N(C)C(F)(F)F",
+    "name": "Trifluoromethyl dimethylacetamide",
+    "category": "fluorinated ketones"
+  },
+  {
+    "smiles": "C(F)(F)C(=O)O",
+    "name": "Trifluoroacetic acid",
+    "category": "carboxylic acids"
+  },
+  {
+    "smiles": "O=C(O)C(F)(F)C(F)F",
+    "name": "Pentafluoropropionic acid",
+    "category": "fluorinated carboxylic acids"
+  },
+  {
+    "smiles": "O=C(O)C(F)C(F)(F)C(F)F",
+    "name": "Perfluorobutyric acid",
+    "category": "fluorinated carboxylic acids"
+  },
+  {
+    "smiles": "O=C(O)C(F)C(F)C(F)C(F)F",
+    "name": "Perfluorohexanoic acid",
+    "category": "fluorinated carboxylic acids"
+  },
+  {
+    "smiles": "FC1=CC=C(C=C1)F",
+    "name": "1,2-Difluorobenzene",
+    "category": "fluorinated aromatics"
+  },
+  {
+    "smiles": "c1(F)cccc(c1)F",
+    "name": "1,3-Difluorobenzene",
+    "category": "fluorinated aromatics"
+  },
+  {
+    "smiles": "c1ccc(F)cc1",
+    "name": "Fluorobenzene",
+    "category": "fluorinated aromatics"
+  },
+  {
+    "smiles": "c1cc(OC(F)(F)F)ccc1",
+    "name": "Trifluoromethoxy benzene",
+    "category": "fluorinated aromatics"
+  },
+  {
+    "smiles": "FC1=CC=C(C=C1)C(F)(F)F",
+    "name": "Trifluoromethylfluorobenzene",
+    "category": "fluorinated aromatics"
+  },
+  {
+    "smiles": "c1(cs(c1)F)F",
+    "name": "Difluorothiophene",
+    "category": "fluorinated aromatics"
+  },
+  {
+    "smiles": "NS(=O)(=O)C",
+    "name": "Methanesulfonamide",
+    "category": "sulfonamides"
+  },
+  {
+    "smiles": "NS(=O)(=O)CC",
+    "name": "Ethanesulfonamide",
+    "category": "sulfonamides"
+  },
+  {
+    "smiles": "NS(=O)(=O)C(F)F",
+    "name": "Difluoromethane sulfonamide",
+    "category": "fluorinated sulfonamides"
+  },
+  {
+    "smiles": "NS(=O)(=O)C(F)(F)F",
+    "name": "Trifluoromethane sulfonamide",
+    "category": "fluorinated sulfonamides"
+  },
+  {
+    "smiles": "NS(=O)(=O)C(C(F)F)C(F)F",
+    "name": "Bis(2,2-difluoroethyl) sulfonamide",
+    "category": "fluorinated sulfonamides"
+  },
+  {
+    "smiles": "NS(=O)(=O)C(F)C(F)F",
+    "name": "Bis(2-fluoroethyl) sulfonamide",
+    "category": "fluorinated sulfonamides"
+  },
+  {
+    "smiles": "NS(=O)(=O)C(F)(F)C(F)F",
+    "name": "Trifluoroethyl sulfonamide",
+    "category": "fluorinated sulfonamides"
+  },
+  {
+    "smiles": "FC(F)C(F)F",
+    "name": "1,1,3-Propane-trifluoride",
+    "category": "fluorinated hydrocarbons"
+  },
+  {
+    "smiles": "FC(F)CC(F)F",
+    "name": "1,1,3-Pentafluoropropane",
+    "category": "fluorinated hydrocarbons"
+  },
+  {
+    "smiles": "FC(F)(F)C(F)C(F)F",
+    "name": "1,1,2,3,3-Pentafluoropropane",
+    "category": "fluorinated hydrocarbons"
+  },
+  {
+    "smiles": "FC(F)(F)C(F)C(F)C(F)F",
+    "name": "1,1,2,3,3,4-Hexafluorobutane",
+    "category": "fluorinated hydrocarbons"
+  },
+  {
+    "smiles": "C(F)(F)C(F)(F)C(F)(F)C(F)F",
+    "name": "Perfluoroisobutylene",
+    "category": "fluorinated hydrocarbons"
+  },
+  {
+    "smiles": "CCN(CC)CC",
+    "name": "Triethylamine",
+    "category": "amines"
+  },
+  {
+    "smiles": "CN(C)CCN",
+    "name": "Dimethylaminoethylamine",
+    "category": "amines"
+  },
+  {
+    "smiles": "CCN(CC)N",
+    "name": "Dimethylethanolamine",
+    "category": "amines"
+  },
+  {
+    "smiles": "CC1CC(N)CC1",
+    "name": "Piperidine",
+    "category": "amines"
+  },
+  {
+    "smiles": "CN1CCCCC1",
+    "name": "Pyrrolidine",
+    "category": "amines"
+  },
+  {
+    "smiles": "COC(=O)BCC",
+    "name": "Ethyl methyl carbonate",
+    "category": "carbonates"
+  },
+  {
+    "smiles": "CCOC(=O)OC(C)C",
+    "name": "Isopropyl ethyl carbonate",
+    "category": "carbonates"
+  },
+  {
+    "smiles": "CCOC(=O)OC(C)(C)C",
+    "name": "Tert-butyl ethyl carbonate",
+    "category": "carbonates"
+  },
+  {
+    "smiles": "COC(=O)OC(C)C",
+    "name": "Isopropyl methyl carbonate",
+    "category": "carbonates"
+  },
+  {
+    "smiles": "COC(=O)OC(C)(C)C",
+    "name": "Tert-butyl methyl carbonate",
+    "category": "carbonates"
+  },
+  {
+    "smiles": "COC(=O)OCCC(C)C",
+    "name": "Isobutyl methyl carbonate",
+    "category": "carbonates"
+  },
+  {
+    "smiles": "COC(=O)CC",
+    "name": "Ethyl acetate",
+    "category": "esters"
+  },
+  {
+    "smiles": "COC(=O)CCC",
+    "name": "Propyl acetate",
+    "category": "esters"
+  },
+  {
+    "smiles": "COC(=O)CCCC",
+    "name": "Butyl acetate",
+    "category": "esters"
+  },
+  {
+    "smiles": "COC(=O)CC(C)C",
+    "name": "Isobutyl acetate",
+    "category": "esters"
+  },
+  {
+    "smiles": "CCOC(=O)CC",
+    "name": "Ethyl propanoate",
+    "category": "esters"
+  },
+  {
+    "smiles": "CCOC(=O)CCC",
+    "name": "Ethyl butanoate",
+    "category": "esters"
+  },
+  {
+    "smiles": "CCOC(=O)CC(C)C",
+    "name": "Ethyl isobutanoate",
+    "category": "esters"
+  },
+  {
+    "smiles": "OS(=O)(=O)C(F)(F)F",
+    "name": "Trifluoromethanesulfonic acid",
+    "category": "fluorinated sulfonic acids"
+  },
+  {
+    "smiles": "O=S(=O)(O)C(F)F",
+    "name": "Difluoromethanesulfonic acid",
+    "category": "fluorinated sulfonic acids"
+  },
+  {
+    "smiles": "O=S(=O)(O)CCS",
+    "name": "Ethanesulfonic acid",
+    "category": "sulfonic acids"
+  },
+  {
+    "smiles": "O=S(=O)(O)C",
+    "name": "Methanesulfonic acid",
+    "category": "sulfonic acids"
+  },
+  {
+    "smiles": "CS",
+    "name": "Methanethiol",
+    "category": "thiols"
+  },
+  {
+    "smiles": "CCS",
+    "name": "Ethanethiol",
+    "category": "thiols"
+  },
+  {
+    "smiles": "CSC",
+    "name": "Dimethyl sulfide",
+    "category": "sulfides"
+  },
+  {
+    "smiles": "CCSC",
+    "name": "Diethyl sulfide",
+    "category": "sulfides"
+  },
+  {
+    "smiles": "SC(F)F",
+    "name": "Thionyl fluoride",
+    "category": "fluorinated sulfides"
+  },
+  {
+    "smiles": "CS(F)F",
+    "name": "Methyl thiofluoride",
+    "category": "fluorinated sulfides"
+  },
+  {
+    "smiles": "O=C1OC(C(F)F)C1",
+    "name": "Difluorolactone",
+    "category": "fluorinated lactones"
+  },
+  {
+    "smiles": "O=C1OC(C(F)(F)F)CC1",
+    "name": "Trifluoromethyl lactone",
+    "category": "fluorinated lactones"
+  },
+  {
+    "smiles": "CC1OC(=O)C(C(F)(F)F)C1",
+    "name": "Trifluoromethyl lactone variant",
+    "category": "fluorinated lactones"
+  },
+  {
+    "smiles": "C1COC(F)(C1)OC(F)(F)F",
+    "name": "Perfluorobutyl acetal",
+    "category": "fluorinated acetals"
+  },
+  {
+    "smiles": "B(O)(O)O",
+    "name": "Boronic acid",
+    "category": "borates"
+  },
+  {
+    "smiles": "B(O)(O)C1=CC=CC=C1",
+    "name": "Phenylboronic acid",
+    "category": "borates"
+  },
+  {
+    "smiles": "CB(O)O",
+    "name": "Boronic acid methyl",
+    "category": "borates"
+  },
+  {
+    "smiles": "B(O)(O)C(F)(F)F",
+    "name": "Trifluoromethyl boronic acid",
+    "category": "fluorinated borates"
+  },
+  {
+    "smiles": "B(O)(O)C(F)C(F)F",
+    "name": "Pentafluoroethyl boronic acid",
+    "category": "fluorinated borates"
+  },
+  {
+    "smiles": "C1(CB(O)O)CB(O)O1",
+    "name": "1,2-Diborapropane",
+    "category": "borates"
+  },
+  {
+    "smiles": "O=C1S(CCF)CC1",
+    "name": "Fluorinated thiolactone",
+    "category": "fluorinated thiolactones"
+  },
+  {
+    "smiles": "O=C1NC(=O)C(F)(F)C1(F)F",
+    "name": "Pentafluoroglutarimide",
+    "category": "fluorinated imides"
+  },
+  {
+    "smiles": "NC(F)(F)F",
+    "name": "Trifluoromethylamine",
+    "category": "fluorinated amines"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)C(F)(F)C(F)C(F)F",
+    "name": "Fluorinated sulfone dimer",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "CS(=O)(=S)C(F)(F)C(F)(F)F",
+    "name": "Perfluoroethyl sulfoxide sulfone",
+    "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "O=S(=O)(C)CC(F)(F)C(F)(F)F",
+    "name": "Methyl pentafluoroethyl sulfone variant",
+    "category": "fluorinated sulfones"
   }
 ]

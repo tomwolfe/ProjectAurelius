@@ -38,8 +38,9 @@ class ScreeningResult:
     lumo_eV: float | None = None
     dielectric_proxy: float | None = None
     viscosity_proxy: float | None = None
-    li_solvation_proxy: float | None = None
+    lip_solvation_proxy: float | None = None
     sa_score: float | None = None
+    synthesis_depth: int | None = None
     sub_scores: dict[str, float] | None = None
 
 

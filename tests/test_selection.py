@@ -1,9 +1,10 @@
-"""Tests for Tournament/Early-stopping selection strategy."""
+"""Tests for Tournament, NSGA-II, and conformal confidence selection strategies."""
 
 from __future__ import annotations
 
 import numpy as np
 
+from aurelius.agent.selection import nsga2_select
 from aurelius.types import MoleculeContext
 
 
@@ -92,9 +93,139 @@ class TestTournamentSelection:
         assert len(selected_high) == 3
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+class TestNSGA2Selection:
+    """Tests for the NSGA-II multi-objective selection strategy."""
+
+    def test_basic_batch_size(self):
+        """NSGA-II should return exactly batch_size when pool > batch_size."""
+        smiles = ["CCO", "CCCO", "CCCCO", "CCCCCO", "CCCCCCO", "CCCCCCCO"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {
+            "dielectric_proxy": [30, 40, 50, 60, 70, 80],
+            "viscosity_proxy": [5, 4, 3, 2, 1, 2],
+            "sa_score": [3, 3, 4, 4, 5, 5],
+        }
+        objectives = [
+            ("dielectric_proxy", "max"),
+            ("viscosity_proxy", "min"),
+            ("sa_score", "min"),
+        ]
+        selected = nsga2_select(contexts, scores_dict, objectives, batch_size=3)
+        assert len(selected) == 3
+        for ctx in selected:
+            assert ctx in contexts
+
+    def test_all_selected_when_fewer_than_batch(self):
+        """If pool size <= batch_size, all candidates should be returned."""
+        smiles = ["CCO", "CCCO", "CCCCO"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {"dielectric_proxy": [10, 20, 30]}
+        objectives = [("dielectric_proxy", "max")]
+        selected = nsga2_select(contexts, scores_dict, objectives, batch_size=10)
+        assert len(selected) == 3
+
+    def test_empty_pool(self):
+        """Empty input should return empty list."""
+        selected = nsga2_select([], {"dielectric_proxy": []}, [("dielectric_proxy", "max")], batch_size=5)
+        assert selected == []
+
+    def test_pareto_front_preserved(self):
+        """Pareto-optimal candidates should be preferred."""
+        # Candidate 0: diele=80, visc=1, sa=3  (best on dielectric, worst on viscosity)
+        # Candidate 1: diele=60, visc=2, sa=4
+        # Candidate 2: diele=40, visc=3, sa=5
+        # Candidate 3: diele=20, visc=4, sa=6
+        # Candidate 4: diele=10, visc=5, sa=7
+        contexts = [_valid_context(f"CC{'C'*i}O") for i in range(5)]
+        scores_dict = {
+            "dielectric_proxy": [80, 60, 40, 20, 10],
+            "viscosity_proxy": [1,  2,  3,  4,  5],
+            "sa_score":        [3,  4,  5,  6,  7],
+        }
+        objectives = [
+            ("dielectric_proxy", "max"),
+            ("viscosity_proxy", "min"),
+            ("sa_score", "min"),
+        ]
+        selected = nsga2_select(contexts, scores_dict, objectives, batch_size=4)
+        assert len(selected) == 4
+        # The best candidate (index 0) should always be selected — it's on the Pareto front
+        assert contexts[0] in selected
+
+    def test_confidence_bias(self):
+        """Higher-confidence candidates should be preferred when other things are equal."""
+        smiles = [f"CC{'C'*i}O" for i in range(8)]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {
+            "dielectric_proxy": [50, 50, 50, 50, 50, 50, 50, 50],
+            "viscosity_proxy": [2, 2, 2, 2, 2, 2, 2, 2],
+        }
+        objectives = [("dielectric_proxy", "max"), ("viscosity_proxy", "min")]
+        low_conf = [0.5, 0.5, 0.5, 0.5, 0.9, 0.9, 0.9, 0.9]
+        confidence_selected = nsga2_select(
+            contexts, scores_dict, objectives, batch_size=4, confidences=low_conf
+        )
+        # All candidates are Pareto-optimal (same scores), so confidence should
+        # break ties — higher confidence ones should be selected more.
+        high_conf_idx = {smiles.index(c.smiles) for c in confidence_selected if c.smiles in smiles[4:]}
+        # At least some should be from the high-confidence group
+        assert len(high_conf_idx) >= 1
+
+    def test_deterministic_with_same_seed(self):
+        """Same seed should produce identical results."""
+        smiles = [f"CC{'C'*i}O" for i in range(10)]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {
+            "dielectric_proxy": list(range(10, 0, -1)),
+            "viscosity_proxy": list(range(1, 11)),
+        }
+        objectives = [("dielectric_proxy", "max"), ("viscosity_proxy", "min")]
+        result1 = nsga2_select(contexts, scores_dict, objectives, batch_size=3, rng_seed=42)
+        result2 = nsga2_select(contexts, scores_dict, objectives, batch_size=3, rng_seed=42)
+        assert [c.smiles for c in result1] == [c.smiles for c in result2]
+
+    def test_returns_from_original_pool(self):
+        """All selected candidates must be from the original pool."""
+        smiles = ["CCO", "CCCO", "CCCCO", "CCCCCO", "CCCCCCO",
+                  "CCCCCCCO", "CCCCCCCCO", "COCCOC", "CCOCC", "CCCOCC"]
+        contexts = [_valid_context(s) for s in smiles]
+        rng = np.random.default_rng(42)
+        scores_dict = {
+            "dielectric_proxy": rng.random(10) * 100,
+            "viscosity_proxy": rng.random(10) * 10,
+            "sa_score": rng.random(10) * 7 + 1,
+        }
+        objectives = [
+            ("dielectric_proxy", "max"),
+            ("viscosity_proxy", "min"),
+            ("sa_score", "min"),
+        ]
+        selected = nsga2_select(contexts, scores_dict, objectives, batch_size=5)
+        assert len(selected) == 5
+        for ctx in selected:
+            assert ctx in contexts
+
+    def test_single_objective_reduces_to_ranking(self):
+        """With a single objective, NSGA-II should prefer the best value."""
+        smiles = ["CCO", "CCCO", "CCCCO"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {"dielectric_proxy": [30.0, 60.0, 90.0]}
+        objectives = [("dielectric_proxy", "max")]
+        selected = nsga2_select(contexts, scores_dict, objectives, batch_size=2)
+        assert len(selected) == 2
+        # The best (index 2) should be selected
+        assert contexts[2] in selected
+
+    def test_minimisation_objective(self):
+        """Minimisation objectives should prefer smaller values."""
+        smiles = ["CCO", "CCCO", "CCCCO"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {"viscosity_proxy": [5.0, 2.0, 8.0]}
+        objectives = [("viscosity_proxy", "min")]
+        selected = nsga2_select(contexts, scores_dict, objectives, batch_size=1)
+        assert len(selected) == 1
+        # Best (lowest viscosity = index 1) should be selected
+        assert selected[0] == contexts[1]
 
 
 def _valid_context(smiles: str) -> MoleculeContext:

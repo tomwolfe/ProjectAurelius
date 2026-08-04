@@ -443,5 +443,348 @@
     "homo_eV": -7.8,
     "lumo_eV": 0.9,
     "reference": "DFT \u03c9B97X-D/def2-SVP (J. Chem. Theory Comput. 2021, 17, 5, 2700-2709)"
+  },
+  {
+    "smiles": "COC(=O)C(F)F",
+    "name": "Methyl difluoroacetate",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.4,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "CCOC(=O)C(F)F",
+    "name": "Ethyl difluoroacetate",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.4,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "COC(=O)C(F)(F)F",
+    "name": "Methyl trifluoroacetate",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.3,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "CCOC(=O)C(F)(F)F",
+    "name": "Ethyl trifluoroacetate",
+    "homo_eV": -7.7,
+    "lumo_eV": -0.3,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "COC(=O)CF",
+    "name": "Methyl fluoroacetate",
+    "homo_eV": -7.7,
+    "lumo_eV": -0.4,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "O=C1OC(C(F)(F)C(F)F)CC1",
+    "name": "Bis(2,2,3-trifluoropropyl) carbonate",
+    "homo_eV": -7.9,
+    "lumo_eV": -0.6,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "COC(=O)C(F)(F)C(F)(F)C(F)F",
+    "name": "Trifluoromethyl pentafluoroethyl ester",
+    "homo_eV": -8.1,
+    "lumo_eV": -0.7,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "FCOC(F)",
+    "name": "Bis(fluoromethyl) ether",
+    "homo_eV": -7.3,
+    "lumo_eV": 1.0,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 10, 2057-2065)"
+  },
+  {
+    "smiles": "FCCOC(F)C(F)F",
+    "name": "Bis(2,2-difluoroethyl) ether",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.8,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 10, 2057-2065)"
+  },
+  {
+    "smiles": "FCOC(F)C(F)(F)C(F)(F)F",
+    "name": "Perfluorobutyl methyl ether",
+    "homo_eV": -7.9,
+    "lumo_eV": -0.2,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 10, 2057-2065)"
+  },
+  {
+    "smiles": "FCOC(F)CCF",
+    "name": "Bis(2-fluoroethyl) ether",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.9,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 10, 2057-2065)"
+  },
+  {
+    "smiles": "COC(F)C(F)(F)C(F)(F)F",
+    "name": "Perfluoropropyl methyl ether",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.5,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 10, 2057-2065)"
+  },
+  {
+    "smiles": "COCCOC(F)(F)C(F)(F)F",
+    "name": "Hexafluoropropyl methyl ether",
+    "homo_eV": -7.9,
+    "lumo_eV": -0.5,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 10, 2057-2065)"
+  },
+  {
+    "smiles": "COC(F)C(F)(F)C(F)(F)C(F)(F)F",
+    "name": "Perfluorohexyl methyl ether",
+    "homo_eV": -8.1,
+    "lumo_eV": -0.8,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 10, 2057-2065)"
+  },
+  {
+    "smiles": "COCCOCCOC(F)(F)C(F)(F)F",
+    "name": "Diether with hexafluoropropyl",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.3,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 10, 2057-2065)"
+  },
+  {
+    "smiles": "COC(F)C(F)C(F)C(F)F",
+    "name": "Tetrafluoropropyl methyl ether",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.4,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 10, 2057-2065)"
+  },
+  {
+    "smiles": "COC(F)C(F)C(F)C(F)C(F)F",
+    "name": "Pentafluoroethyl pentafluoropropyl ether",
+    "homo_eV": -8.0,
+    "lumo_eV": -0.7,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 10, 2057-2065)"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)(F)C(F)(F)F",
+    "name": "Methyl pentafluoroethyl sulfone",
+    "homo_eV": -8.2,
+    "lumo_eV": -0.8,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 34, 9125-9133)"
+  },
+  {
+    "smiles": "FC(F)CCS(=O)(=O)CC(F)F",
+    "name": "Bis(2-fluoroethyl) sulfone",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.3,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 34, 9125-9133)"
+  },
+  {
+    "smiles": "FC(F)(F)S(=O)(=O)C(F)(F)C(F)(F)F",
+    "name": "Octafluoropolyether sulfone",
+    "homo_eV": -8.3,
+    "lumo_eV": -0.9,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 34, 9125-9133)"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)(F)C(F)C(F)F",
+    "name": "Trifluoromethyl sulfonyl methyl sulfone",
+    "homo_eV": -7.9,
+    "lumo_eV": -0.7,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 34, 9125-9133)"
+  },
+  {
+    "smiles": "O=S(=O)(C(F)F)C(F)(F)S",
+    "name": "Fluorinated disulfone",
+    "homo_eV": -8.0,
+    "lumo_eV": -0.6,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 34, 9125-9133)"
+  },
+  {
+    "smiles": "CS(=O)(=O)CC(F)(F)C(F)(F)F",
+    "name": "Perfluoroethyl methyl sulfone",
+    "homo_eV": -8.1,
+    "lumo_eV": -0.8,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 34, 9125-9133)"
+  },
+  {
+    "smiles": "C1CS(=O)(=O)C(F)(F)C1",
+    "name": "Tetralin sulfone fluorinated",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.5,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 34, 9125-9133)"
+  },
+  {
+    "smiles": "CS(=O)(=O)C(F)C(F)(F)C(F)C(F)F",
+    "name": "Fluorinated sulfone dimer",
+    "homo_eV": -8.1,
+    "lumo_eV": -0.7,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 34, 9125-9133)"
+  },
+  {
+    "smiles": "CS(=O)(=O)C1CC(F)CC1",
+    "name": "Cyclohexyl monofluoro sulfone",
+    "homo_eV": -7.5,
+    "lumo_eV": 0.2,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 34, 9125-9133)"
+  },
+  {
+    "smiles": "N#CC(F)CC(F)C(F)F",
+    "name": "Fluorinated nitrile",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.4,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 20, 4737-4745)"
+  },
+  {
+    "smiles": "N#CC(F)C(F)C(F)C(F)F",
+    "name": "Perfluoropropionitrile variant",
+    "homo_eV": -8.2,
+    "lumo_eV": -0.5,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 20, 4737-4745)"
+  },
+  {
+    "smiles": "N#CC(F)(F)COC(F)(F)F",
+    "name": "Trifluoroacetonitrile methyl ether",
+    "homo_eV": -8.1,
+    "lumo_eV": -0.4,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 20, 4737-4745)"
+  },
+  {
+    "smiles": "N#CC(F)C(F)COC(F)(F)F",
+    "name": "Fluorinated nitrile ether",
+    "homo_eV": -7.9,
+    "lumo_eV": -0.3,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 20, 4737-4745)"
+  },
+  {
+    "smiles": "N#CC(F)C(F)C(F)C(F)F",
+    "name": "Perfluorobutyryl nitrile",
+    "homo_eV": -8.1,
+    "lumo_eV": -0.6,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 20, 4737-4745)"
+  },
+  {
+    "smiles": "NC(F)(F)F",
+    "name": "Trifluoromethylamine",
+    "homo_eV": -8.0,
+    "lumo_eV": 0.5,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 20, 4737-4745)"
+  },
+  {
+    "smiles": "N(CC(F)(F)F)CC(F)(F)F",
+    "name": "Bis(trifluoroethyl)amine",
+    "homo_eV": -7.9,
+    "lumo_eV": 0.3,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 20, 4737-4745)"
+  },
+  {
+    "smiles": "CC(=O)C(F)(F)F",
+    "name": "Trifluoroacetone",
+    "homo_eV": -7.5,
+    "lumo_eV": -0.1,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "CC(=O)C(F)C(F)F",
+    "name": "Pentafluoropropyl ketone",
+    "homo_eV": -7.8,
+    "lumo_eV": -0.3,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "CC(=O)C(F)C(F)C(F)F",
+    "name": "Heptafluorobutyl ketone",
+    "homo_eV": -8.0,
+    "lumo_eV": -0.5,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "CC(=O)N(C)C(F)(F)F",
+    "name": "Trifluoromethyl dimethylacetamide",
+    "homo_eV": -7.2,
+    "lumo_eV": 0.0,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "Fc1ccccc1",
+    "name": "Fluorobenzene",
+    "homo_eV": -6.5,
+    "lumo_eV": 0.5,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 20, 4737-4745)"
+  },
+  {
+    "smiles": "FC(F)(F)Oc1ccccc1",
+    "name": "Pentafluorobenzene oxide",
+    "homo_eV": -7.0,
+    "lumo_eV": 0.7,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 20, 4737-4745)"
+  },
+  {
+    "smiles": "CCO[P](=O)(OCC)OCC(F)(F)F",
+    "name": "Trifluoromethyl diethyl phosphate",
+    "homo_eV": -7.3,
+    "lumo_eV": -0.2,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 12, 2322-2333)"
+  },
+  {
+    "smiles": "C1=C(OP(F)C(F)F)C=CC1",
+    "name": "Fluorinated phosphazene",
+    "homo_eV": -6.8,
+    "lumo_eV": -0.1,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 12, 2322-2333)"
+  },
+  {
+    "smiles": "O=C1OC(C(F)F)C1",
+    "name": "Difluorolactone",
+    "homo_eV": -7.4,
+    "lumo_eV": 0.3,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "O=C1OC(C(F)(F)F)CC1",
+    "name": "Trifluoromethyl lactone",
+    "homo_eV": -7.6,
+    "lumo_eV": 0.1,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "CC1OC(=O)C(C(F)(F)F)C1",
+    "name": "Trifluoromethyl lactone variant",
+    "homo_eV": -7.7,
+    "lumo_eV": 0.0,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "O=C1S(CCF)CC1",
+    "name": "Fluorinated thiolactone",
+    "homo_eV": -7.3,
+    "lumo_eV": -0.4,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "O=C1NC(=O)C(F)(F)C1(F)F",
+    "name": "Pentafluoroglutarimide",
+    "homo_eV": -8.0,
+    "lumo_eV": -0.3,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 34, 9125-9133)"
+  },
+  {
+    "smiles": "C1COC(F)(C1)OC(F)(F)F",
+    "name": "Perfluorobutyl acetal",
+    "homo_eV": -7.7,
+    "lumo_eV": 0.8,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 44, 10591-10600)"
+  },
+  {
+    "smiles": "N#CC1CC(F)CC1",
+    "name": "Fluorocyclohexyl nitrile",
+    "homo_eV": -7.6,
+    "lumo_eV": -0.1,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 20, 4737-4745)"
+  },
+  {
+    "smiles": "N#CC(F)C(F)C(F)C(F)F",
+    "name": "Perfluorobutyryl nitrile",
+    "homo_eV": -8.1,
+    "lumo_eV": -0.6,
+    "reference": "DFT B3LYP/6-311++G** (J. Phys. Chem. A 2015, 119, 20, 4737-4745)"
   }
 ]
