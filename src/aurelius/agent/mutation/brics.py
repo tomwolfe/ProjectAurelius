@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import re
 from functools import lru_cache
-from pathlib import Path
 
 from rdkit import Chem
 from rdkit.Chem import BRICS
@@ -23,36 +22,42 @@ from aurelius.types import MoleculeContext
 # Prevents memory bloat and combinatorial explosion over many generations.
 _MAX_HARVESTED_FRAGMENTS = 200
 
-# Load commercial precursors from extended JSON file
-_COMMERCIAL_PRECURSORS_PATH = Path("src/aurelius/data/commercial_precursors.json")
+
+from importlib.resources import files
+from pathlib import Path
+
+_COMMERCIAL_PRECURSORS_PATH = Path(files("aurelius.data")) / "commercial_precursors.json"
 
 
 def _load_all_precursors():
     """Load commercial precursors from both constants and JSON file.
-    
+
     Returns:
         tuple[Chem.Mol, ...]: Combined precursor molecules (constants + JSON)
     """
+    import json
+
     # Start with constants
     precursors = []
     for smi in COMMERCIAL_BUILDING_BLOCK_SMILES:
         mol = Chem.MolFromSmiles(smi)
         if mol is not None:
             precursors.append(mol)
-    
+
     # Load from JSON file
-    if _COMMERCIAL_PRECURSORS_PATH.exists():
-        import json
+    try:
         with open(_COMMERCIAL_PRECURSORS_PATH, "r") as f:
             json_precursors = json.load(f)
-        
-        # Add valid SMILES from JSON
-        for entry in json_precursors:
-            smiles = entry["smiles"]
-            mol = Chem.MolFromSmiles(smiles)
-            if mol is not None:
-                precursors.append(mol)
-    
+    except (FileNotFoundError, json.JSONDecodeError):
+        json_precursors = []
+
+    # Add valid SMILES from JSON
+    for entry in json_precursors:
+        smiles = entry["smiles"]
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is not None:
+            precursors.append(mol)
+
     # Remove duplicates while preserving order
     seen = set()
     unique_precursors = []
@@ -61,7 +66,7 @@ def _load_all_precursors():
         if smiles not in seen:
             seen.add(smiles)
             unique_precursors.append(mol)
-    
+
     return tuple(unique_precursors)
 
 # Load all precursors at module import time

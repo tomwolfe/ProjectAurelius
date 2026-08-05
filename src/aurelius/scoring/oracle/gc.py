@@ -51,6 +51,7 @@ import logging
 import math
 import os
 
+import numpy as np
 from rdkit import Chem
 
 from aurelius.constants import MAX_DIELECTRIC_PER_TPSA
@@ -243,6 +244,22 @@ def _count_fragments(mol: Chem.Mol) -> dict[str, int]:
         matches = mol.GetSubstructMatches(pattern)
         counts[name] = len(matches)
     return counts
+
+
+def _count_fragments_batch(contexts: list[MoleculeContext]) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Count fragment occurrences for a batch of molecules.
+
+    Returns a 2D array of shape (n_molecules, n_fragments) where
+    each entry is the count of that fragment in that molecule.
+    """
+    n_frags = len(_GC_FRAGMENTS)
+    n_mols = len(contexts)
+    result = np.zeros((n_mols, n_frags), dtype=np.float32)
+    for i, ctx in enumerate(contexts):
+        for j, (_pattern, _name, _dd, _dv, _ls) in enumerate(_GC_FRAGMENTS):
+            matches = ctx.mol.GetSubstructMatches(_pattern)
+            result[i, j] = len(matches)
+    return result
 
 
 # Non-linear cross-term corrections for dielectric proxy.

@@ -30,11 +30,9 @@ from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
 
-_DATA_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "data"
-)
-_ORBITAL_CALIBRATION_PATH = os.path.join(_DATA_DIR, "orbital_calibration.json")
-_EXTERNAL_BENCHMARK_PATH = os.path.join(_DATA_DIR, "external_property_benchmark.json")
+_DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+_ORBITAL_CALIBRATION_PATH = os.path.join(_DATA_DIR, "..", "..", "data", "orbital_calibration.json")
+_EXTERNAL_BENCHMARK_PATH = os.path.join(_DATA_DIR, "..", "..", "data", "external_property_benchmark.json")
 
 _CONFIDENCE = 0.90
 

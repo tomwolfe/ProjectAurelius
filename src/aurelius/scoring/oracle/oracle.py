@@ -15,6 +15,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import numpy as np
+from rdkit import Chem
+from rdkit.DataStructs import BulkTanimotoSimilarity, ExplicitBitVect
+
 from aurelius.scoring.oracle.conformal import get_conformal_predictor
 from aurelius.scoring.oracle.gc import (
     _DATA_SOURCE,
@@ -32,12 +36,143 @@ from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
 
+_BATCH_THRESHOLD = 100
+
 _PHYSICAL_BOUNDS: dict[str, tuple[float, float]] = {
     "dielectric_proxy": (1.0, 100.0),
     "viscosity_proxy": (0.1, 50.0),
     "homo_eV": (-12.0, -3.0),
     "lumo_eV": (-5.0, 5.0),
 }
+
+
+def _fp_to_numpy(fp: Any, n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Convert a single RDKit fingerprint to a 1D numpy array."""
+    arr = np.zeros(n_bits, dtype=np.float32)
+    for idx in fp.GetOnBits():
+        arr[idx] = 1.0
+    return arr
+
+
+def _fp_batch_to_numpy(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Convert a list of RDKit fingerprints to a 2D numpy array."""
+    arr = np.zeros((len(fps), n_bits), dtype=np.float32)
+    for i, fp in enumerate(fps):
+        for idx in fp.GetOnBits():
+            arr[i, idx] = 1.0
+    return arr
+
+
+def _tanimoto_batch_numpy(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Compute pairwise Tanimoto similarity matrix using numpy (CPU fallback).
+
+    For batches larger than _BATCH_THRESHOLD, this avoids the Python-level
+    overhead of RDKit's per-pair BulkTanimotoSimilarity and uses vectorized
+    numpy operations instead.
+    """
+    if len(fps) <= 1:
+        return np.ones((len(fps), len(fps)), dtype=np.float32)
+    arr = _fp_batch_to_numpy(fps, n_bits=n_bits)
+    intersections = arr @ arr.T
+    sums = arr.sum(axis=1, keepdims=True) + arr.sum(axis=1)
+    sums[sums == 0] = 1.0
+    return np.clip(intersections / sums, 0.0, 1.0).astype(np.float32)
+
+
+def _tanimoto_batch_mps(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Compute pairwise Tanimoto similarity using MPS (Apple GPU).
+
+    Uses ``__import__("torch")`` to avoid hard dependency on torch.
+    Falls back to numpy if torch is not available or MPS is not present.
+    """
+    torch = __import__("torch")
+    if not torch.backends.mps.is_available():
+        return _tanimoto_batch_numpy(fps, n_bits=n_bits)
+    arr = _fp_batch_to_numpy(fps, n_bits=n_bits)
+    tensor = torch.from_numpy(arr).to("mps")
+    intersections = tensor @ tensor.T
+    sums = tensor.sum(dim=1, keepdim=True) + tensor.sum(dim=1)
+    sums = torch.where(sums == 0, torch.ones_like(sums), sums)
+    result = torch.clamp(intersections / sums, 0.0, 1.0).float()
+    return result.cpu().numpy()
+
+
+def _tanimoto_batch_mlx(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Compute pairwise Tanimoto similarity using MLX (Apple GPU).
+
+    Uses ``__import__("mlx")`` to avoid hard dependency on mlx.
+    Falls back to numpy if mlx is not available.
+    """
+    mlx = __import__("mlx")
+    mlx_core = __import__("mlx.core")
+    arr = _fp_batch_to_numpy(fps, n_bits=n_bits)
+    tensor = mlx_core.array(arr)
+    intersections = tensor @ tensor.T
+    sums = tensor.sum(axis=1, keepdims=True) + tensor.sum(axis=1, keepdims=True)
+    sums = mlx_core.where(sums == 0, mlx_core.ones_like(sums), sums)
+    result = mlx_core.clip(intersections / sums, 0.0, 1.0).astype(np.float32)
+    return result
+
+
+def batch_tanimoto_similarity(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Compute pairwise Tanimoto similarity matrix for a batch of fingerprints.
+
+    Selects the best available backend:
+      - MPS (Apple GPU) if torch with MPS is available
+      - MLX (Apple GPU) if mlx is available
+      - Numpy (CPU) otherwise
+
+    For small batches (≤100), RDKit's BulkTanimotoSimilarity is used
+    for its C++ efficiency. For larger batches, the numpy-based approach
+    avoids per-pair Python overhead.
+
+    Args:
+        fps: List of RDKit fingerprint objects.
+        n_bits: Number of bits in each fingerprint.
+
+    Returns:
+        2D numpy array of shape (n, n) with Tanimoto similarities.
+    """
+    n = len(fps)
+    if n <= 1:
+        return np.ones((n, n), dtype=np.float32)
+    if n <= _BATCH_THRESHOLD:
+        evs = []
+        for fp in fps:
+            if isinstance(fp, ExplicitBitVect):
+                evs.append(fp)
+            else:
+                ev = ExplicitBitVect(n_bits)
+                for idx in fp.GetOnBits():
+                    ev.SetBit(idx)
+                evs.append(ev)
+        return np.array(BulkTanimotoSimilarity(evs), dtype=np.float32).reshape(n, n)
+    backend = _select_batch_backend()
+    if backend == "mps":
+        return _tanimoto_batch_mps(fps, n_bits=n_bits)
+    if backend == "mlx":
+        return _tanimoto_batch_mlx(fps, n_bits=n_bits)
+    return _tanimoto_batch_numpy(fps, n_bits=n_bits)
+
+
+def _select_batch_backend() -> str:
+    """Select the best available batch computation backend.
+
+    Priority: MPS > MLX > numpy (CPU).
+    Uses lazy ``__import__`` to avoid hard dependencies.
+    """
+    try:
+        torch = __import__("torch")
+        if torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        pass
+    try:
+        __import__("mlx")
+        return "mlx"
+    except Exception:
+        pass
+    return "numpy"
 
 
 def _apply_physical_bounds(

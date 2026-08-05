@@ -3,12 +3,16 @@
 All molecular parsing and featurization is handled by ``MoleculeContext``.
 This module only retains unique utilities not duplicated in MoleculeContext:
 fingerprint serialization/deserialization, SA scoring via a data-driven rule
-registry, and Tanimoto helpers for the mutation engine.
+registry, Tanimoto helpers for the mutation engine, and canonical-SMILES
+caching with a size-bounded persistent store.
 """
 
 from __future__ import annotations
 
+import os
+import shelve
 from collections.abc import Callable
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
@@ -38,6 +42,75 @@ from aurelius.constants import (
 from aurelius.constants import (
     SULFONE_SA_PATTERN as _SULFONE_SA_PATTERN,
 )
+
+_SMILES_CACHE_MAXSIZE = 4096
+_SMILES_PERSISTENT_PATH = "smiles_cache.shelve"
+
+
+@lru_cache(maxsize=_SMILES_CACHE_MAXSIZE)
+def _canonical_smiles_lru(smiles: str) -> str:
+    """Return canonical SMILES, cached in an LRU cache."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return ""
+    try:
+        Chem.SanitizeMol(mol)
+    except Exception:
+        return ""
+    return Chem.MolToSmiles(mol)
+
+
+def _smiles_persistent_store() -> shelve.Shelf | None:
+    """Open the persistent SMILES cache shelve, or return None on failure."""
+    try:
+        return shelve.open(_SMILES_PERSISTENT_PATH, writeback=False)
+    except Exception:
+        return None
+
+
+def get_canonical_smiles(smiles: str) -> str:
+    """Return the canonical SMILES for a given SMILES string.
+
+    Checks the persistent cache first, then the in-memory LRU cache,
+    and finally parses the SMILES fresh. Results are written back to
+    both caches.
+
+    Args:
+        smiles: Input SMILES string.
+
+    Returns:
+        Canonical SMILES string, or empty string if parsing fails.
+    """
+    persistent = _smiles_persistent_store()
+    if persistent is not None:
+        try:
+            cached = persistent.get(smiles)
+            if cached is not None:
+                persistent.close()
+                return str(cached)
+        except Exception:
+            pass
+        try:
+            persistent.close()
+        except Exception:
+            pass
+
+    result = _canonical_smiles_lru(smiles)
+
+    persistent = _smiles_persistent_store()
+    if persistent is not None:
+        try:
+            persistent[smiles] = result
+            persistent.sync()
+        except Exception:
+            pass
+        try:
+            persistent.close()
+        except Exception:
+            pass
+
+    return result
+
 
 # ---------------------------------------------------------------------------
 # Fingerprint serialization / deserialization (used by MutationEngine)
@@ -257,4 +330,5 @@ __all__ = [
     "_deserialize_fp",
     "_tanimoto",
     "electrolyte_synthetic_accessibility",
+    "get_canonical_smiles",
 ]

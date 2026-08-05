@@ -13,8 +13,13 @@ from rdkit import Chem
 from rdkit.Chem import BRICS
 
 
-COMMERCIAL_PRECURSORS_PATH = Path("src/aurelius/data/commercial_precursors.json")
-SYNTHESIS_TEMPLATES_PATH = Path("src/aurelius/data/synthesis_templates.json")
+def _data_path(filename: str) -> Path:
+    from importlib.resources import files
+    return Path(files("aurelius.data")) / filename
+
+
+COMMERCIAL_PRECURSORS_PATH = _data_path("commercial_precursors.json")
+SYNTHESIS_TEMPLATES_PATH = _data_path("synthesis_templates.json")
 
 
 def _load_synthesis_templates() -> list[dict[str, str]]:
@@ -24,13 +29,11 @@ def _load_synthesis_templates() -> list[dict[str, str]]:
         List of template dicts with keys: name, smarts, description, category.
         Returns empty list if file not found or invalid.
     """
-    if not SYNTHESIS_TEMPLATES_PATH.exists():
-        return []
     try:
         with open(SYNTHESIS_TEMPLATES_PATH, "r") as f:
             data = json.load(f)
         return data.get("templates", [])
-    except (json.JSONDecodeError, OSError):
+    except (FileNotFoundError, json.JSONDecodeError):
         return []
 
 
@@ -135,15 +138,15 @@ def _has_functional_group(mol: Chem.Mol, templates: list[tuple[str, str]]) -> bo
 
 def _load_precursors():
     """Load commercial precursors from JSON and pre-compile to Mol objects.
-    
+
     Returns:
         tuple[Chem.Mol, ...]: Pre-compiled precursor molecules
     """
-    if not COMMERCIAL_PRECURSORS_PATH.exists():
-        raise FileNotFoundError(f"Commercial precursors file not found: {COMMERCIAL_PRECURSORS_PATH}")
-    
-    with open(COMMERCIAL_PRECURSORS_PATH, "r") as f:
-        precursor_data = json.load(f)
+    try:
+        with open(COMMERCIAL_PRECURSORS_PATH, "r") as f:
+            precursor_data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return tuple()
     
     # Convert SMILES to Mol objects and filter invalid ones
     precursor_mols = []

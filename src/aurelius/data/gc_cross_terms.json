@@ -67,6 +67,6 @@
   "ridge_alpha": 1.0,
   "n_training_molecules": 56,
   "n_bootstrap": 50,
-  "fitted_from": "/Users/tom/Documents/apps/ProjectAurelius/scripts/../src/aurelius/data/external_property_benchmark.json",
+  "fitted_from": "external_property_benchmark.json",
   "method": "ridge regression on dielectric residuals with bootstrap CI; non-significant terms fall back to original hand-tuned values"
 }

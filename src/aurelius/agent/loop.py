@@ -344,8 +344,8 @@ class DiscoveryLoop:
 
     def _inject_tier0_seeds(self) -> None:
         import json
-        from pathlib import Path
-        tier0_path = Path(__file__).resolve().parent.parent.parent / "data" / "tier0_seed_smiles.json"
+        from importlib.resources import files
+        tier0_path = files("aurelius.data") / "tier0_seed_smiles.json"
         if not tier0_path.exists():
             return
         with open(tier0_path) as f:

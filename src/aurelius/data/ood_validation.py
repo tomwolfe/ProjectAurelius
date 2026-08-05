@@ -5,10 +5,10 @@ for testing oracle robustness.
 """
 
 import json
+from importlib.resources import files
 from pathlib import Path
 
-# DATA_DIR not defined in constants.py, use Path directly
-OOD_VALIDATION_PATH = Path("src/aurelius/data/ood_validation.json")
+_OOD_VALIDATION_PATH = Path(files("aurelius.data")) / "ood_validation.json"
 
 
 def get_ood_molecules():
@@ -22,8 +22,5 @@ def get_ood_molecules():
             - expected_dielectric_rank: "high|medium|low"
             - expected_viscosity_rank: "high|medium|low"
     """
-    if not OOD_VALIDATION_PATH.exists():
-        raise FileNotFoundError(f"OOD validation file not found: {OOD_VALIDATION_PATH}")
-
-    with open(OOD_VALIDATION_PATH, "r") as f:
+    with open(_OOD_VALIDATION_PATH, "r") as f:
         return json.load(f)

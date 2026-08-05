@@ -27,6 +27,44 @@ from rdkit.Chem import AllChem, Descriptors
 MIXTURE_SEPARATOR: str = "|"
 
 
+def get_ecfp4_batch(contexts: list[MoleculeContext]) -> list[Any]:
+    """Generate ECFP4 fingerprints for a batch of MoleculeContext objects.
+
+    Uses a list comprehension over RDKit's MorganGenerator for
+    consistent, fast batch generation.
+
+    Args:
+        contexts: List of pre-parsed MoleculeContext objects.
+
+    Returns:
+        List of RDKit fingerprint objects (one per context).
+    """
+    return [
+        AllChem.GetMorganFingerprintAsBitVect(ctx.mol, radius=2, nBits=2048)
+        for ctx in contexts
+    ]
+
+
+def fingerprints_to_numpy(
+    fps: list[Any], n_bits: int = 2048, dtype: np.dtype[np.float32] = np.float32,
+) -> np.ndarray[Any, Any]:
+    """Convert a list of RDKit fingerprints to a 2D numpy array.
+
+    Args:
+        fps: List of RDKit fingerprint objects.
+        n_bits: Number of bits in each fingerprint.
+        dtype: Numpy dtype for the output array.
+
+    Returns:
+        2D array of shape (n_fingerprints, n_bits).
+    """
+    arr = np.zeros((len(fps), n_bits), dtype=dtype)
+    for i, fp in enumerate(fps):
+        for idx in fp.GetOnBits():
+            arr[i, idx] = 1.0
+    return arr
+
+
 @dataclass(frozen=True)
 class ScreeningResult:
     """Result from a single molecule screening."""
@@ -93,6 +131,24 @@ class MoleculeContext:
                 self.mol, radius=2, nBits=2048
             )
         return self.fingerprint_ecfp4
+
+    @classmethod
+    def get_ecfp4_batch(cls, contexts: list[MoleculeContext]) -> list[Any]:
+        """Generate ECFP4 fingerprints for a batch of MoleculeContext objects.
+
+        Uses a list comprehension over RDKit's MorganGenerator for
+        consistent, fast batch generation.
+
+        Args:
+            contexts: List of pre-parsed MoleculeContext objects.
+
+        Returns:
+            List of RDKit fingerprint objects (one per context).
+        """
+        return [
+            AllChem.GetMorganFingerprintAsBitVect(ctx.mol, radius=2, nBits=2048)
+            for ctx in contexts
+        ]
 
     @cached_property
     def mw(self) -> float:
@@ -243,4 +299,6 @@ __all__ = [
     "parse_mixture_smiles_n",
     "format_mixture_smiles",
     "format_mixture_smiles_n",
+    "get_ecfp4_batch",
+    "fingerprints_to_numpy",
 ]

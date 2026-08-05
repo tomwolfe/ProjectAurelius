@@ -10,6 +10,9 @@ Seeds are stored as MoleculeContext objects to enforce single-point parsing.
 
 Delegates novelty checking to ``NoveltyValidator`` and fragment harvesting
 to ``FragmentHarvester`` for single-responsibility separation.
+
+Independent mutation evaluations can be parallelized via joblib
+for throughput on multi-core machines (e.g. M5 Pro).
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import joblib
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import BRICS, AllChem
@@ -62,7 +66,13 @@ class MutationEngine:
     components (NoveltyValidator, FragmentHarvester).
     """
 
-    def __init__(self, seed_smiles: list[str] | None = None, known_fps_hex: list[str] | None = None, adaptive_bias: bool = True) -> None:
+    def __init__(
+        self,
+        seed_smiles: list[str] | None = None,
+        known_fps_hex: list[str] | None = None,
+        adaptive_bias: bool = True,
+        n_jobs: int = 1,
+    ) -> None:
         self.seed_pool, self.seed_contexts, self.seed_fingerprints = self._init_seeds(seed_smiles)
 
         self._commercial_fps = []
@@ -84,6 +94,7 @@ class MutationEngine:
         self._adaptive_bias = adaptive_bias
         self._reaction_scores: dict[str, list[float]] = {}
         self._product_to_reaction: dict[str, str] = {}
+        self._n_jobs = n_jobs
 
         # Delegated components
         self._novelty_validator = NoveltyValidator(
@@ -100,11 +111,11 @@ class MutationEngine:
 
     @staticmethod
     def _init_seeds(seed_smiles: list[str] | None) -> tuple[list[str], list[MoleculeContext], list[Any]]:
-        from pathlib import Path
+        from importlib.resources import files
         if seed_smiles is None:
             import json
-            json_path = str(Path(__file__).resolve().parent.parent.parent / "data" / "tier0_seed_smiles.json")
-            with open(json_path) as f:
+            tier0_path = files("aurelius.data") / "tier0_seed_smiles.json"
+            with open(tier0_path) as f:
                 seed_smiles = json.load(f)
         pool = list(set(seed_smiles))
         contexts = []
@@ -152,12 +163,10 @@ class MutationEngine:
         return self._ctx_cache.get(smiles)
 
     def _load_known_electrolytes(self) -> None:
+        from importlib.resources import files
         import json
-        import os
 
-        json_path = os.path.join(
-            os.path.dirname(__file__), "..", "..", "data", "known_electrolytes.json"
-        )
+        json_path = files("aurelius.data") / "known_electrolytes.json"
         try:
             with open(json_path) as f:
                 smiles_list = json.load(f)
@@ -426,10 +435,22 @@ class MutationEngine:
 
     def mutate_batch(self, batch_smiles: list[str], batch_size: int = 50, force_exploration: bool = False) -> list[str]:
         all_variants: list[str] = []
-        for smi in batch_smiles:
-            variants = self.mutate(smi, batch_size, force_exploration=force_exploration)
-            all_variants.extend(variants)
+        if self._n_jobs <= 1:
+            for smi in batch_smiles:
+                variants = self.mutate(smi, batch_size, force_exploration=force_exploration)
+                all_variants.extend(variants)
+        else:
+            results = joblib.Parallel(n_jobs=self._n_jobs, prefer="threads")(
+                joblib.delayed(self.mutate)(smi, batch_size, force_exploration=force_exploration)
+                for smi in batch_smiles
+            )
+            for variants in results:
+                all_variants.extend(variants)
         return list(set(all_variants))
+
+    def _mutate_single(self, smi: str, batch_size: int = 50, force_exploration: bool = False) -> list[str]:
+        """Wrapper for joblib parallelism — mutates a single SMILES."""
+        return self.mutate(smi, batch_size=batch_size, force_exploration=force_exploration)
 
     def propose_candidates(
         self,
@@ -437,9 +458,17 @@ class MutationEngine:
         batch_size: int = 50,
     ) -> list[str]:
         all_variants: list[str] = []
-        for smi in self.seed_pool:
-            variants = self.mutate(smi, batch_size)
-            all_variants.extend(variants)
+        if self._n_jobs <= 1:
+            for smi in self.seed_pool:
+                variants = self.mutate(smi, batch_size)
+                all_variants.extend(variants)
+        else:
+            results = joblib.Parallel(n_jobs=self._n_jobs, prefer="threads")(
+                joblib.delayed(self.mutate)(smi, batch_size)
+                for smi in self.seed_pool
+            )
+            for variants in results:
+                all_variants.extend(variants)
 
         unique = list(dict.fromkeys(all_variants))
         if len(unique) > n_candidates:

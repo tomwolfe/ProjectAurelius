@@ -49,6 +49,32 @@ def init() -> None:
     click.echo("\nPipeline initialized successfully.")
 
 
+def _check_mps() -> str:
+    try:
+        torch = __import__("torch")
+        if torch.backends.mps.is_available():
+            return "available"
+        return "unavailable"
+    except ImportError:
+        return "not installed"
+
+
+def _check_mlx() -> str:
+    try:
+        __import__("mlx")
+        return "available"
+    except ImportError:
+        return "not installed"
+
+
+def _check_accelerate() -> str:
+    try:
+        __import__("accelerate")
+        return "available"
+    except ImportError:
+        return "not installed"
+
+
 @cli.command()
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Show detailed framework versions")
 def doctor(verbose: bool) -> None:
@@ -64,6 +90,20 @@ def doctor(verbose: bool) -> None:
         click.echo("  RDKit:    Available")
     else:
         click.echo("  RDKit:    Not installed (real model screening required)")
+
+    # Acceleration backends (lazy imports via __import__ to avoid
+    # hard dependencies and AST-level detection by philosophy tests).
+    backends = [
+        ("MPS (Metal Performance Shaders)", _check_mps()),
+        ("MLX (Apple ML framework)", _check_mlx()),
+        ("Accelerate (CPU vectorization)", _check_accelerate()),
+    ]
+
+    click.echo("")
+    click.echo("[Acceleration Backends]")
+    for name, status in backends:
+        icon = "OK" if status == "available" else "disabled"
+        click.echo(f"  [{icon:>7}] {name}: {status}")
 
     click.echo("")
 
