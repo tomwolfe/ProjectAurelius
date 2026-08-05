@@ -22,6 +22,9 @@ from aurelius.scoring.oracle.oracle import (
     _fp_batch_to_numpy,
     _select_batch_backend,
 )
+from aurelius.scoring.oracle.quantum import (
+    predict_tom_orbitals_batch,
+)
 from aurelius.scoring.oracle.gc import (
     _count_fragments_batch,
     predict_dielectric_proxy_batch,
@@ -156,6 +159,28 @@ def benchmark_oracle_batch(contexts: list[MoleculeContext]) -> dict[str, float]:
     }
 
 
+def benchmark_tom_batch(contexts: list[MoleculeContext]) -> dict[str, float]:
+    """Benchmark batch TOM orbital prediction (quantum oracle)."""
+    mols = [ctx.mol for ctx in contexts]
+
+    times: list[float] = []
+    for _ in range(N_REPEATS):
+        start = time.perf_counter()
+        homo, lumo = predict_tom_orbitals_batch(mols)
+        elapsed = time.perf_counter() - start
+        times.append(elapsed)
+
+    median_time = float(np.median(times))
+    return {
+        "n_molecules": len(contexts),
+        "backend": _select_batch_backend(),
+        "median_time_ms": median_time * 1000,
+        "throughput_mols_per_sec": len(contexts) / median_time,
+        "homo_mean": round(float(np.mean(homo)), 4) if len(homo) else 0.0,
+        "lumo_mean": round(float(np.mean(lumo)), 4) if len(lumo) else 0.0,
+    }
+
+
 def main() -> None:
     print("=" * 60)
     print("Project Aurelius v11.0 — GPU Throughput Benchmark")
@@ -193,6 +218,14 @@ def main() -> None:
     results["oracle_batch"] = oracle_result
     print(f"  Backend: {oracle_result['backend']}")
     print(f"  Throughput: {oracle_result['throughput_mols_per_sec']:.0f} molecules/sec")
+    print()
+
+    print("--- TOM Batch Orbital Prediction ---")
+    tom_result = benchmark_tom_batch(contexts)
+    results["tom_batch"] = tom_result
+    print(f"  Backend: {tom_result['backend']}")
+    print(f"  Throughput: {tom_result['throughput_mols_per_sec']:.0f} molecules/sec")
+    print(f"  HOMO mean: {tom_result['homo_mean']:.4f}, LUMO mean: {tom_result['lumo_mean']:.4f}")
     print()
 
     # Save results

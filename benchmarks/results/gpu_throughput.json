@@ -1,13 +1,13 @@
 {
   "gc_batch": {
     "n_molecules": 1000,
-    "median_time_ms": 66.67312496574596,
-    "throughput_mols_per_sec": 14998.547023463516
+    "median_time_ms": 47.290457994677126,
+    "throughput_mols_per_sec": 21145.914892863948
   },
   "fp_conversion": {
     "n_molecules": 1000,
-    "median_time_ms": 12.214416987262666,
-    "throughput_mols_per_sec": 81870.4651268097,
+    "median_time_ms": 6.001750007271767,
+    "throughput_mols_per_sec": 166618.06952778643,
     "matrix_shape": [
       1000,
       2048
@@ -15,9 +15,9 @@
   },
   "tanimoto_mps": {
     "n_molecules": 1000,
-    "backend": "mps",
-    "median_time_ms": 18.320542003493756,
-    "throughput_pairs_per_sec": 27264477.213869795,
+    "backend": "GPU (MLX)",
+    "median_time_ms": 8.924667024984956,
+    "throughput_pairs_per_sec": 55968474.63346589,
     "matrix_shape": [
       1000,
       1000
@@ -25,9 +25,9 @@
   },
   "oracle_batch": {
     "n_molecules": 1000,
-    "backend": "mps",
-    "median_time_ms": 78.25483399210498,
-    "throughput_mols_per_sec": 12778.763291490575,
+    "backend": "GPU (MLX)",
+    "median_time_ms": 2317.6545000169426,
+    "throughput_mols_per_sec": 431.4706959094592,
     "keys": [
       "dielectric_proxy",
       "viscosity_proxy",
@@ -35,7 +35,18 @@
       "conductivity_proxy",
       "tpsa",
       "mw",
-      "fp"
+      "fp",
+      "homo_eV",
+      "lumo_eV",
+      "gap_eV"
     ]
+  },
+  "tom_batch": {
+    "n_molecules": 1000,
+    "backend": "GPU (MLX)",
+    "median_time_ms": 2281.257833004929,
+    "throughput_mols_per_sec": 438.354659228841,
+    "homo_mean": -4.8417,
+    "lumo_mean": -1.0605
   }
 }

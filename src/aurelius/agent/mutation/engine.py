@@ -32,6 +32,9 @@ from aurelius.agent.mutation.brics import (
 from aurelius.agent.mutation.brics import (
     has_excessive_aliphatic_chain as _has_excessive_aliphatic_chain_fn,
 )
+from aurelius.agent.mutation.brics import (
+    combined_grounding_score as _combined_grounding_score,
+)
 from aurelius.agent.mutation.harvester import FragmentHarvester
 from aurelius.agent.mutation.novelty import NoveltyValidator
 from aurelius.agent.mutation.smarts import (
@@ -95,6 +98,13 @@ class MutationEngine:
         self._reaction_scores: dict[str, list[float]] = {}
         self._product_to_reaction: dict[str, str] = {}
         self._n_jobs = n_jobs
+
+        # Synthesis-aware mutation bias (ADR-2026-08-05)
+        # Minimum combined grounding score for BRICS products to survive
+        # validation. Molecules below this threshold are only kept when
+        # force_exploration=True, biasing the default search toward
+        # synthetically tractable candidates.
+        self._grounding_threshold = 0.3
 
         # Delegated components
         self._novelty_validator = NoveltyValidator(
@@ -363,6 +373,15 @@ class MutationEngine:
             return None
         if self._has_excessive_aliphatic_chain(r_mol):
             return None
+        # Synthesis-aware grounding bias (ADR-2026-08-05):
+        # Require a minimum grounding score unless explicitly exploring.
+        if not force_exploration:
+            try:
+                grounding = _combined_grounding_score(r_mol)
+            except Exception:
+                grounding = 0.5
+            if grounding < self._grounding_threshold:
+                return None
         return s
 
     def _build_from_pairs(self, all_frags: list[Chem.Mol], valid_pairs: list[tuple[int, int]], force_exploration: bool = False) -> list[str]:
@@ -405,6 +424,23 @@ class MutationEngine:
     # Public mutation API
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _rank_by_grounding(candidates: list[str]) -> list[str]:
+        """Rank candidates by combined grounding score (descending)."""
+        scored = []
+        for smi in candidates:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is not None:
+                try:
+                    score = _combined_grounding_score(mol)
+                except Exception:
+                    score = 0.0
+            else:
+                score = 0.0
+            scored.append((smi, score))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [smi for smi, _ in scored]
+
     def mutate(self, smiles: str, batch_size: int = 50, force_exploration: bool = False) -> list[str]:
         ctx = self._get_ctx(smiles)
         if ctx is None:
@@ -422,8 +458,9 @@ class MutationEngine:
 
         result_list = list(candidates)
         if len(result_list) > batch_size:
-            indices = self._rng.choice(len(result_list), size=batch_size, replace=False)
-            result_list = [result_list[i] for i in indices]
+            # Rank by combined grounding score, keep top batch_size.
+            # This biases candidate selection toward synthesizable molecules.
+            result_list = self._rank_by_grounding(result_list)[:batch_size]
 
         brics_count = sum(1 for s in result_list if s not in (smarts_results if not force_exploration else set()))
         logger.info(

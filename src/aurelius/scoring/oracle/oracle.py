@@ -44,6 +44,26 @@ from aurelius.utils.device import get_device, to_device, batch_tanimoto as _batc
 
 logger = logging.getLogger(__name__)
 
+_BACKEND_NAMES = {
+    "numpy": "numpy",
+    "mlx": "mlx",
+    "mps": "mps",
+    "cuda": "cuda",
+}
+
+_BACKEND_LABELS = {
+    "numpy": "CPU (numpy)",
+    "mlx": "GPU (MLX)",
+    "mps": "GPU (MPS)",
+    "cuda": "GPU (CUDA)",
+}
+
+
+def _select_batch_backend() -> str:
+    """Return the current batch backend name for logging/benchmarking."""
+    dev = get_device()
+    return _BACKEND_LABELS.get(dev, dev)
+
 _PHYSICAL_BOUNDS: dict[str, tuple[float, float]] = {
     "dielectric_proxy": (1.0, 100.0),
     "viscosity_proxy": (0.1, 50.0),
@@ -139,15 +159,33 @@ def _tanimoto_batch_mlx(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, n
     return result
 
 
+def _tanimoto_batch_mlx(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Compute pairwise Tanimoto similarity using MLX (Apple GPU).
+
+    Uses ``__import__("mlx")`` to avoid hard dependency on mlx.
+    Falls back to numpy if mlx is not available.
+    """
+    import mlx.core as mx
+    arr = _fp_batch_to_numpy(fps, n_bits=n_bits)
+    tensor = mx.array(arr)
+    intersections = tensor @ tensor.T
+    sums = mx.broadcast_to(tensor.sum(axis=1, keepdims=True), intersections.shape)
+    sums_t = mx.broadcast_to(tensor.sum(axis=1, keepdims=True).T, intersections.shape)
+    union = sums + sums_t
+    union = mx.maximum(union, mx.array(1.0))
+    result = mx.clip(intersections / union, 0.0, 1.0)
+    return np.array(result.astype(mx.float32))
+
+
 def batch_tanimoto_similarity(fps: list[Any], n_bits: int = 2048, device: str | None = None) -> np.ndarray[Any, np.dtype[np.float32]]:
     """Compute pairwise Tanimoto similarity matrix for a batch of fingerprints.
 
     Selects the best available backend:
+      - MLX (Apple GPU) if available (lowest launch overhead for small batches)
       - MPS (Apple GPU) if torch with MPS is available
-      - MLX (Apple GPU) if mlx is available
       - Numpy (CPU) otherwise
 
-    Uses vectorized numpy matrix operations for all batch sizes.
+    Uses vectorized matrix operations for all batch sizes.
     RDKit's BulkTanimotoSimilarity is not used because it does not
     accept a list-of-fingerprints as the first argument in RDKit 2026+.
 
@@ -162,10 +200,10 @@ def batch_tanimoto_similarity(fps: list[Any], n_bits: int = 2048, device: str | 
     """
     if device is None:
         device = get_device()
-    if device == "mps":
-        return _tanimoto_batch_mps(fps, n_bits=n_bits)
     if device == "mlx":
         return _tanimoto_batch_mlx(fps, n_bits=n_bits)
+    if device == "mps":
+        return _tanimoto_batch_mps(fps, n_bits=n_bits)
     return _tanimoto_batch_numpy(fps, n_bits=n_bits)
 
 

@@ -36,6 +36,9 @@ dev = [
     "types-psutil",
     "radon>=2.6.0",
 ]
+gpu = [
+    "mlx>=0.24.0",
+]
 
 [project.scripts]
 aurelius = "aurelius.__main__:cli"

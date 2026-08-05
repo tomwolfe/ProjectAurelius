@@ -51,6 +51,7 @@ from rdkit.Chem import BondType
 
 from aurelius.constants import NITRILE_PATTERN
 from aurelius.types import MoleculeContext
+from aurelius.utils.device import get_device
 
 logger = logging.getLogger(__name__)
 
@@ -1006,20 +1007,136 @@ def predict_tom_orbitals_batch(mols: list[Chem.Mol]) -> tuple[np.ndarray, np.nda
 
     Vectorizes the expensive per-molecule computations (longest conjugation path,
     heteroatom counts, Wiener index) and applies the particle-in-a-box gap
-    calculation as a vectorized numpy operation. Per-molecule fallback is
-    maintained for edge cases.
+    calculation as a vectorized operation. When MLX is available on Apple
+    Silicon, the vectorized physics math runs on the GPU for lower launch
+    overhead than PyTorch MPS at EA-loop batch sizes (20–200).
 
     Physical justification: The particle-in-a-box gap (ΔE ∝ 1/L²) is a
     closed-form analytic formula that is trivially vectorizable across a
     population of molecules. The heteroatom perturbations and Wiener
     compactness adjustment are applied per-molecule but the resulting
-    shifts are accumulated as vectorized numpy operations.
+    shifts are accumulated as vectorised operations on the best backend.
 
     Args:
         mols: List of RDKit Mol objects.
 
     Returns:
         Tuple of (homo_array, lumo_array) as 1-D numpy arrays of float32.
+    """
+    n = len(mols)
+    if n == 0:
+        return np.array([], dtype=np.float32), np.array([], dtype=np.float32)
+
+    device = get_device()
+    if device == "mlx":
+        return _predict_tom_orbitals_batch_mlx(mols)
+    return _predict_tom_orbitals_batch_numpy(mols)
+
+
+def _batch_atom_counts(mols: list[Chem.Mol], atomic_num: int) -> np.ndarray:
+    """Count atoms of a given atomic number per molecule."""
+    return np.array(
+        [sum(a.GetAtomicNum() == atomic_num for a in mol.GetAtoms()) for mol in mols],
+        dtype=np.float32,
+    )
+
+
+def _batch_aromatic_ring_counts(mols: list[Chem.Mol]) -> np.ndarray:
+    """Count aromatic rings per molecule."""
+    return np.array(
+        [_count_aromatic_rings(mol) for mol in mols], dtype=np.float32
+    )
+
+
+def _batch_nitrile_counts(mols: list[Chem.Mol]) -> np.ndarray:
+    """Count nitrile groups per molecule."""
+    return np.array(
+        [len(mol.GetSubstructMatches(NITRILE_PATTERN)) for mol in mols],
+        dtype=np.float32,
+    )
+
+
+def _compute_L_final(L_array: np.ndarray, mols: list[Chem.Mol]) -> tuple[np.ndarray, np.ndarray]:
+    """Compute effective conjugation length and 3D compactness.
+
+    Applies Wiener compactness adjustment (2D) and radius-of-gyration
+    compactness adjustment (3D), matching the single-molecule logic in
+    ``predict_tom_orbitals`` exactly (including ``int(round())`` for
+    the 3D step).
+    """
+    L_array = np.maximum(L_array, 2)
+    L_array = np.array(
+        [_topological_sanity_l(mol, int(L_array[i])) for i, mol in enumerate(mols)],
+        dtype=np.int32,
+    )
+    w_array = _batch_wiener_index(mols)
+    n_atoms_array = np.array([mol.GetNumAtoms() for mol in mols], dtype=np.int32)
+    w_linear = np.maximum(
+        n_atoms_array * (n_atoms_array * n_atoms_array - 1) / 6.0, 1.0
+    )
+    compactness = np.maximum(0.0, 1.0 - w_array / w_linear)
+    L_eff = np.maximum(
+        (L_array.astype(np.float32) * (1.0 - 0.3 * compactness)).astype(np.int32),
+        2,
+    )
+
+    R_g_array = np.array(
+        [_compute_radius_of_gyration(mol) for mol in mols], dtype=np.float32
+    )
+    R_g_linear = np.array(
+        [_get_ideal_gyration_for_conjugation_length(int(l)) for l in L_eff],
+        dtype=np.float32,
+    )
+    R_g_linear = np.maximum(R_g_linear, 1e-6)
+    compactness_3d = np.maximum(0.0, 1.0 - R_g_array / R_g_linear)
+    L_final = np.maximum(
+        np.round(L_eff.astype(np.float32) * (1.0 - 0.2 * compactness_3d)).astype(np.int32),
+        2,
+    )
+    return L_final, compactness_3d
+
+
+def _extract_tom_per_molecule_arrays(mols: list[Chem.Mol]) -> dict[str, np.ndarray]:
+    """Extract all per-molecule RDKit properties into numpy arrays.
+
+    These are the CPU/GIL-bound portion that must stay on the host because
+    RDKit's C++ core cannot be dispatched through a Python-level GPU queue.
+    Everything downstream (gap math, heteroatom shifts, etc.) is pure
+    float32 vector arithmetic that *can* run on MLX.
+
+    Returns a dict with intermediate arrays needed by both the NumPy and
+    MLX backends, including the fully-computed ``L_final`` (effective
+    conjugation length after compactness adjustments) so both backends
+    produce identical numerical results.
+    """
+    n = len(mols)
+    L_array = _batch_longest_conjugation_path(mols)
+    L_final, compactness_3d = _compute_L_final(L_array, mols)
+    n_ew, n_ed, n_pi = _batch_heteroatom_counts(mols)
+    n_f = _batch_atom_counts(mols, 9)
+    n_arom = _batch_aromatic_ring_counts(mols)
+    n_nitrile = _batch_nitrile_counts(mols)
+    n_p = _batch_atom_counts(mols, 15)
+    n_s = _batch_atom_counts(mols, 16)
+
+    return {
+        "L_final": L_final,
+        "n_ew": n_ew,
+        "n_ed": n_ed,
+        "n_pi": n_pi,
+        "n_f": n_f,
+        "n_arom": n_arom,
+        "n_nitrile": n_nitrile,
+        "n_p": n_p,
+        "n_s": n_s,
+        "compactness_3d": compactness_3d,
+    }
+
+
+def _predict_tom_orbitals_batch_numpy(mols: list[Chem.Mol]) -> tuple[np.ndarray, np.ndarray]:
+    """NumPy/CPU backend for batch TOM prediction.
+
+    This is the original implementation, extracted as the CPU fallback path.
     """
     n = len(mols)
     if n == 0:
@@ -1035,38 +1152,23 @@ def predict_tom_orbitals_batch(mols: list[Chem.Mol]) -> tuple[np.ndarray, np.nda
     arom_lumo = tom_params["arom_stab_lumo"]
     nitrile_shift = tom_params["nitrile_shift"]
 
-    L_array = _batch_longest_conjugation_path(mols)
-    L_array = np.maximum(L_array, 2)
-
-    n_ew, n_ed, _n_pi = _batch_heteroatom_perturbations(mols)
-    w_array = _batch_wiener_index(mols)
-
-    n_atoms_array = np.array([mol.GetNumAtoms() for mol in mols], dtype=np.int32)
-    w_linear = n_atoms_array * (n_atoms_array * n_atoms_array - 1) / 6.0
-    w_linear = np.maximum(w_linear, 1.0)
-    compactness = np.maximum(0.0, 1.0 - w_array / w_linear)
-    L_eff = (L_array.astype(np.float32) * (1.0 - 0.3 * compactness)).astype(np.int32)
-    L_eff = np.maximum(L_eff, 2)
-
-    R_g_array = np.array(
-        [_compute_radius_of_gyration(mol) for mol in mols], dtype=np.float32
-    )
-    R_g_linear = np.array(
-        [_get_ideal_gyration_for_conjugation_length(int(l)) for l in L_eff],
-        dtype=np.float32,
-    )
-    R_g_linear = np.maximum(R_g_linear, 1e-6)
-    compactness_3d = np.maximum(0.0, 1.0 - R_g_array / R_g_linear)
-    L_final = (L_eff.astype(np.float32) * (1.0 - 0.2 * compactness_3d)).astype(np.int32)
-    L_final = np.maximum(L_final, 2)
+    props = _extract_tom_per_molecule_arrays(mols)
+    L_final = props["L_final"]
 
     gap = _batch_particle_in_a_box_gap(L_final)
     mid = (base_homo + base_lumo) / 2.0
-    homo = mid - gap / 2.0
-    lumo = mid + gap / 2.0
+    # Match single-molecule behaviour: when L < 3, use base offsets directly
+    # (gap is 0 but homo/lumo must still be base_homo/base_lumo, not mid).
+    homo = np.where(L_final >= 3, mid - gap / 2.0, base_homo)
+    lumo = np.where(L_final >= 3, mid + gap / 2.0, base_lumo)
+
+    # Apply 3D conformational correction (matches _apply_3d_correction)
+    compactness_3d = props["compactness_3d"]
+    homo -= 0.10 * compactness_3d
+    lumo -= 0.05 * compactness_3d
 
     homo, lumo = _apply_batch_heteroatom_shifts(
-        homo, lumo, n_ew, n_ed, ew_coeff, ed_coeff, gamma
+        homo, lumo, props["n_ew"], props["n_ed"], ew_coeff, ed_coeff, gamma
     )
     homo, lumo = _apply_batch_fluorine_correction(homo, lumo, mols)
     homo, lumo = _apply_batch_aromatic_stabilization(
@@ -1077,3 +1179,93 @@ def predict_tom_orbitals_batch(mols: list[Chem.Mol]) -> tuple[np.ndarray, np.nda
     homo, lumo = _apply_batch_hyperconjugation(homo, lumo, mols)
 
     return homo.astype(np.float32), lumo.astype(np.float32)
+
+
+def _predict_tom_orbitals_batch_mlx(mols: list[Chem.Mol]) -> tuple[np.ndarray, np.ndarray]:
+    """MLX-GPU backend for batch TOM prediction.
+
+    Uses MLX for the vectorised physics math (particle-in-a-box gap,
+    heteroatom perturbations, fluorine/aryl/nitrile corrections). The
+    per-molecule RDKit property extraction stays on CPU (GIL-bound) but
+    the float32 array operations are offloaded to the Metal compute
+    pipeline, which has lower launch overhead than PyTorch MPS for
+    batch sizes typical in EA loops (20–200).
+    """
+    import mlx.core as mx
+
+    n = len(mols)
+    if n == 0:
+        return np.array([], dtype=np.float32), np.array([], dtype=np.float32)
+
+    tom_params = _get_tom_params()
+    base_homo = tom_params["base_homo"]
+    base_lumo = tom_params["base_lumo"]
+    ew_coeff = tom_params["ew_coeff"]
+    ed_coeff = tom_params["ed_coeff"]
+    gamma = tom_params["gamma"]
+    arom_homo = tom_params["arom_stab_homo"]
+    arom_lumo = tom_params["arom_stab_lumo"]
+    nitrile_shift = tom_params["nitrile_shift"]
+
+    props = _extract_tom_per_molecule_arrays(mols)
+    L = mx.array(props["L_final"].astype(np.float32))
+    n_ew = mx.array(props["n_ew"].astype(np.float32))
+    n_ed = mx.array(props["n_ed"].astype(np.float32))
+    n_f = mx.array(props["n_f"].astype(np.float32))
+    n_arom = mx.array(props["n_arom"].astype(np.float32))
+    n_nitrile = mx.array(props["n_nitrile"].astype(np.float32))
+    n_p = mx.array(props["n_p"].astype(np.float32))
+    n_s = mx.array(props["n_s"].astype(np.float32))
+
+    # Pre-compute hyperconjugation correction deltas (per-molecule RDKit bond
+    # iteration, computed on CPU then added as a vectorised MLX operation).
+    homo_hc = np.zeros(n, dtype=np.float32)
+    lumo_hc = np.zeros(n, dtype=np.float32)
+    for i, mol in enumerate(mols):
+        try:
+            dh, dl = _apply_hyperconjugation_correction(0.0, 0.0, mol)
+            homo_hc[i] = dh
+            lumo_hc[i] = dl
+        except Exception:
+            pass
+
+    # --- All vectorized physics math on MLX GPU ---
+    L_sq = L * L
+    gap = mx.where(L >= 3, mx.array(37.6) / L_sq, mx.array(0.0))
+
+    mid = mx.array((base_homo + base_lumo) / 2.0)
+    # Match single-molecule behaviour: when L < 3, use base offsets directly.
+    homo = mx.where(L >= 3, mid - gap / 2.0, mx.array(base_homo))
+    lumo = mx.where(L >= 3, mid + gap / 2.0, mx.array(base_lumo))
+
+    # Apply 3D conformational correction (matches _apply_3d_correction)
+    compactness_3d = mx.array(props["compactness_3d"])
+    homo = homo - mx.array(0.10) * compactness_3d
+    lumo = lumo - mx.array(0.05) * compactness_3d
+
+    # Heteroatom perturbations (Hueckel-like correction)
+    ew_shift = mx.array(ew_coeff) * n_ew
+    ed_shift = mx.array(ed_coeff) * n_ed
+    homo = homo + ew_shift + ed_shift
+    lumo = lumo + ew_shift * mx.array(gamma) + ed_shift * mx.array(0.5)
+
+    # Fluorine inductive correction
+    homo = homo - mx.array(0.15) * n_f
+    lumo = lumo - mx.array(0.15) * n_f
+
+    # Aromatic ring stabilization
+    homo = homo + mx.array(arom_homo) * n_arom
+    lumo = lumo + mx.array(arom_lumo) * n_arom
+
+    # Nitrile triple bond LUMO correction
+    lumo = lumo + mx.array(nitrile_shift) * n_nitrile
+
+    # Phosphorus and sulfur inductive corrections
+    homo = homo + mx.array(0.25) * n_s
+    lumo = lumo - mx.array(0.15) * n_p
+
+    # Hyperconjugation corrections (pre-computed as numpy, added as MLX)
+    homo = homo + mx.array(homo_hc)
+    lumo = lumo + mx.array(lumo_hc)
+
+    return np.array(homo.astype(mx.float32)), np.array(lumo.astype(mx.float32))

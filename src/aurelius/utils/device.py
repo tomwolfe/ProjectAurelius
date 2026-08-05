@@ -21,23 +21,29 @@ import numpy as np
 def get_device() -> str:
     """Return the best available device backend.
 
-    Priority: mps > mlx > cpu.
+    Priority: mlx > mps > cpu.
     Uses lazy ``__import__`` to avoid hard dependencies.
 
+    Physical justification: On M-series Apple Silicon, MLX has lower
+    kernel launch overhead than PyTorch MPS for the batch sizes (20–200)
+    typical in EA loops. MLX's unified-memory model and lack of
+    eager-graph conversion overhead make it the preferred backend for
+    fine-grained tensor operations on small arrays.
+
     Returns:
-        "mps" if Apple MPS is available,
         "mlx" if MLX is available,
+        "mps" if Apple MPS is available,
         "cpu" otherwise.
     """
+    try:
+        __import__("mlx.core")
+        return "mlx"
+    except Exception:
+        pass
     try:
         torch = __import__("torch")
         if torch.backends.mps.is_available():
             return "mps"
-    except Exception:
-        pass
-    try:
-        __import__("mlx")
-        return "mlx"
     except Exception:
         pass
     return "cpu"
@@ -60,7 +66,7 @@ def to_device(array: np.ndarray, device: str) -> np.ndarray:
         torch = __import__("torch")
         return torch.from_numpy(array).to("mps")
     if device == "mlx":
-        mlx_core = __import__("mlx.core")
+        import mlx.core as mlx_core
         return mlx_core.array(array)
     return array
 
@@ -83,8 +89,8 @@ def batch_tanimoto(fps: list, device: str | None = None) -> np.ndarray:
     if device is None:
         device = get_device()
 
-    if device == "mps":
-        return batch_tanimoto_similarity(fps)
     if device == "mlx":
-        return batch_tanimoto_similarity(fps)
-    return batch_tanimoto_similarity(fps)
+        return batch_tanimoto_similarity(fps, device="mlx")
+    if device == "mps":
+        return batch_tanimoto_similarity(fps, device="mps")
+    return batch_tanimoto_similarity(fps, device="cpu")
