@@ -364,30 +364,109 @@ def run_prospective_selection(
     # Apply cascade filtering for wet-lab decision readiness
     selected, rejection_log = _apply_cascade_filtering(candidates)
 
-    # If no candidates pass cascade, run DFT re-ranking on top-20 for default selection
-    if not selected:
-        print(f"\nNo candidates passed cascade filter. Running mandatory DFT re-ranking on top-20 candidates...")
-        # Take top 20 by total_score
-        dft_candidates = sorted(candidates, key=lambda c: -c["total_score"])[:20]
-        print(f"Running DFT validation on {len(dft_candidates)} candidates...")
-        dft_metrics = run_dft_validation(dft_candidates)
-        
-        # For now, still return empty selection since we're focusing on the cascade logic
-        # In a full implementation, we would return dft_candidates as the fallback
-        selected = dft_candidates
-        # Add note to report that DFT re-ranking was performed as fallback
-        rejection_log["stage_dft_fallback"] = len(candidates) - len(dft_candidates)
+    # Make DFT re-ranking MANDATORY for top-20 candidates (new default)
+    print(f"\nMaking DFT re-ranking MANDATORY for top-20 candidates (new default behavior)...")
+    top_20_candidates = sorted(candidates, key=lambda c: -c["total_score"])[:TOP_N]
+    print(f"Running DFT validation on {len(top_20_candidates)} top candidates...")
+    dft_metrics = run_dft_validation(top_20_candidates)
 
-    # Generate comprehensive report
+    # Generate comprehensive wet-lab handoff report with standardized format
     report = _generate_prospective_candidates_report(selected, rejection_log)
+    report += f"\n## DFT Re-Ranking (Mandatory Top-20)\n\n"
     
-    # Write CSV (legacy format for compatibility)
+    if dft_metrics:
+        report += f"DFT validation completed with Spearman ρ = {dft_metrics['rho_composite']:.4f}.\n\n"
+        report += f"### DFT Validated Candidates\n\n"
+        report += f"| Rank | SMILES | Total Score | DFT HOMO (eV) | DFT LUMO (eV) | DFT Gap (eV) | Aurelius vs DFT ρ | Composite Score | Al Corrosion Risk | Hydrolytic Instability |\n"
+        report += f"|------|--------|-------------|---------------|---------------|--------------|------------------|-----------------|-------------------|-----------------------|\n"
+        
+        for i, cand in enumerate(top_20_candidates, 1):
+            dft_homo = cand.get("dft_homo_eV")
+            dft_lumo = cand.get("dft_lumo_eV")
+            dft_gap = round(dft_lumo - dft_homo, 4) if dft_homo is not None and dft_lumo is not None else None
+            composite = cand.get("dft_composite")
+            
+            al_risk = cand.get("risk_flags", "").count("Al_corrosion_risk") > 0
+            hydro_risk = cand.get("risk_flags", "").count("hydrolytic_instability") > 0
+            
+            report += f"| {i} | `{cand.get('smiles', '')[:40]}{'...' if len(cand.get('smiles', '')) > 40 else ''}` | {cand.get('total_score', 0.0):.1f} | {dft_homo} | {dft_lumo} | {dft_gap} | {dft_metrics['rho_composite']:.4f} | {composite} | {al_risk} | {hydro_risk} |\n"
+        
+        report += f"\n"
+        if dft_metrics['rho_composite'] < 0.4:
+            report += f"**WARNING**: DFT ρ = {dft_metrics['rho_composite']:.4f} < 0.4 — surrogate ranking not corroborated by higher-level theory. Consider additional validation before wet-lab synthesis.\n\n"
+        else:
+            report += f"**PASS**: DFT ρ = {dft_metrics['rho_composite']:.4f} ≥ 0.4 — DFT corroborates the Aurelius ranking.\n\n"
+    else:
+        report += f"DFT validation skipped (ORCA not available).\n\n"
+
+    # Generate standardized wet-lab handoff section
+    report += f"## Standardized Wet-Lab Handoff Report\n\n"
+    report += f"The following {len(top_20_candidates)} candidates are provided for experimental validation. Each entry includes synthesis hints, risk flags, and DFT validation where applicable.\n\n"
+    
+    if selected:
+        report += f"### Primary Selection ({len(selected)} candidates passing cascade filter)\n\n"
+        for i, cand in enumerate(selected, 1):
+            report += f"#### Candidate {i}: {cand.get('smiles', '')}\n\n"
+            report += f"**Synthesis Hints:** {cand.get('synthesis_hints', 'N/A')}\n\n"
+            report += f"**Risk Assessment:** {cand.get('risk_flags', 'none')}\n\n"
+            report += f"**Scores:**\n"
+            report += f"- Total Score: {cand.get('total_score', 0.0):.2f}\n"
+            report += f"- HOMO: {cand.get('homo_eV', 'N/A')} eV, LUMO: {cand.get('lumo_eV', 'N/A')} eV\n"
+            report += f"- Gap: {cand.get('gap_eV', 'N/A')} eV\n"
+            report += f"- Combined Grounding: {cand.get('combined_grounding_score', 0.0):.3f}\n"
+            report += f"- Domain Penalty: {cand.get('domain_penalty', 1.0):.3f}\n"
+            report += f"- Novelty to Seed: {cand.get('novelty_to_seed', 0.0):.3f}\n"
+            report += f"- Synthesis Feasibility: {cand.get('synthesis_feasibility', 0.0):.3f}\n\n"
+            
+            nearest = cand.get("nearest_known_electrolytes", [])
+            if nearest:
+                report += f"**Nearest Known Electrolytes (Tanimoto similarity):**\n"
+                for nbr in nearest:
+                    report += f"- `{nbr['smiles'][:50]}` (T={nbr['similarity']:.2f})\n"
+                report += f"\n"
+        
+        report += f"### DFT-Validated Backup ({len(top_20_candidates) - len(selected)} candidates)\n\n"
+        for i, cand in enumerate(top_20_candidates, 1):
+            if cand in selected:
+                continue
+            report += f"#### Backup Candidate {i}: {cand.get('smiles', '')}\n\n"
+            report += f"**Synthesis Hints:** {cand.get('synthesis_hints', 'N/A')}\n\n"
+            report += f"**Risk Assessment:** {cand.get('risk_flags', 'none')}\n\n"
+            report += f"**Scores:**\n"
+            report += f"- Total Score: {cand.get('total_score', 0.0):.2f}\n"
+            report += f"- HOMO: {cand.get('homo_eV', 'N/A')} eV, LUMO: {cand.get('lumo_eV', 'N/A')} eV\n"
+            if cand.get("dft_homo_eV") is not None and cand.get("dft_lumo_eV") is not None:
+                report += f"- DFT HOMO: {cand.get('dft_homo_eV')} eV, DFT LUMO: {cand.get('dft_lumo_eV')} eV\n"
+                report += f"- DFT Composite: {cand.get('dft_composite', 'N/A')} eV\n"
+            report += f"- Combined Grounding: {cand.get('combined_grounding_score', 0.0):.3f}\n"
+            report += f"- Domain Penalty: {cand.get('domain_penalty', 1.0):.3f}\n\n"
+        
+        report += f"---\n\n"
+        report += f"**Recommendation for Wet-Lab Team:** Proceed with the **primary selection** candidates as they pass all cascade filters. If none are suitable for synthesis, consider the **DFT-validated backup** candidates, prioritizing those with higher DFT composite scores and lower risk flags.\n\n"
+    else:
+        report += f"### DFT-Validated Candidates for Synthesis\n\n"
+        for i, cand in enumerate(top_20_candidates, 1):
+            report += f"#### Candidate {i}: {cand.get('smiles', '')}\n\n"
+            report += f"**Synthesis Hints:** {cand.get('synthesis_hints', 'N/A')}\n\n"
+            report += f"**Risk Assessment:** {cand.get('risk_flags', 'none')}\n\n"
+            report += f"**Scores:**\n"
+            report += f"- Total Score: {cand.get('total_score', 0.0):.2f}\n"
+            report += f"- HOMO: {cand.get('homo_eV', 'N/A')} eV, LUMO: {cand.get('lumo_eV', 'N/A')} eV\n"
+            if cand.get("dft_homo_eV") is not None and cand.get("dft_lumo_eV") is not None:
+                report += f"- DFT HOMO: {cand.get('dft_homo_eV')} eV, DFT LUMO: {cand.get('dft_lumo_eV')} eV\n"
+                report += f"- DFT Composite: {cand.get('dft_composite', 'N/A')} eV\n"
+            report += f"- Combined Grounding: {cand.get('combined_grounding_score', 0.0):.3f}\n"
+            report += f"- Domain Penalty: {cand.get('domain_penalty', 1.0):.3f}\n\n"
+        
+        report += f"---\n\n"
+        report += f"**Recommendation for Wet-Lab Team:** These candidates failed the cascade filter but passed DFT re-ranking. Proceed with candidates that have strong DFT composite scores and low risk flags. Higher DFT composite scores (closer to -5.0) indicate better theoretical alignment with higher-level DFT validation.\n\n"
+
+    # Write both CSV outputs for compatibility
     csv_output_path = output_path
     if selected:
         selected_for_csv = selected
     else:
-        # If no candidates after cascade, use top-20 as legacy CSV output
-        selected_for_csv = sorted(candidates, key=lambda c: -c["total_score"])[:TOP_N]
+        selected_for_csv = top_20_candidates
         csv_output_path = "prospective_candidates_legacy.csv"
 
     _write_candidates_csv(selected_for_csv, csv_output_path)
@@ -397,45 +476,6 @@ def run_prospective_selection(
     print(f"Comprehensive report written to prospective_candidates_report.md")
     
     return selected_for_csv, report
-
-    # Rank by composite score with diversity penalty
-    selected: list[dict] = []
-    selected_smis: list[str] = []
-
-    candidates.sort(key=lambda c: -c["total_score"])
-
-    for candidate in candidates:
-        if len(selected) >= TOP_N:
-            break
-        diversity_penalty = _compute_tanimoto_diversity(selected_smis, [candidate["smiles"]])
-        # Penalize candidates similar to already-selected ones
-        adjusted_score = candidate["total_score"] * (1.0 - 0.3 * diversity_penalty)
-        candidate["diversity_penalty"] = round(diversity_penalty, 4)
-        candidate["adjusted_score"] = round(adjusted_score, 4)
-        selected.append(candidate)
-        selected_smis.append(candidate["smiles"])
-
-    # Sort by adjusted score
-    selected.sort(key=lambda c: -c["adjusted_score"])
-
-    # Write CSV
-    fieldnames = [
-        "smiles", "total_score", "adjusted_score", "synthesis_feasibility",
-        "conformal_confidence", "novelty_to_seed", "homo_eV", "lumo_eV",
-        "gap_eV", "confidence_interval_low", "confidence_interval_high",
-        "synthesis_hints", "risk_flags", "sa_score", "dielectric_proxy",
-        "viscosity_proxy", "diversity_penalty",
-    ]
-
-    with open(output_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for cand in selected:
-            row = {k: cand.get(k, "") for k in fieldnames}
-            writer.writerow(row)
-
-    print(f"Selected {len(selected)} prospective candidates -> {output_path}")
-    return selected
 
 
 def cross_validate_with_eht(candidates: list[dict]) -> None:

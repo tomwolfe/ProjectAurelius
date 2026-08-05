@@ -1,13 +1,13 @@
 {
   "gc_batch": {
     "n_molecules": 1000,
-    "median_time_ms": 47.290457994677126,
-    "throughput_mols_per_sec": 21145.914892863948
+    "median_time_ms": 46.74829205032438,
+    "throughput_mols_per_sec": 21391.155829254752
   },
   "fp_conversion": {
     "n_molecules": 1000,
-    "median_time_ms": 6.001750007271767,
-    "throughput_mols_per_sec": 166618.06952778643,
+    "median_time_ms": 5.184874986298382,
+    "throughput_mols_per_sec": 192868.68104681655,
     "matrix_shape": [
       1000,
       2048
@@ -16,8 +16,8 @@
   "tanimoto_mps": {
     "n_molecules": 1000,
     "backend": "GPU (MLX)",
-    "median_time_ms": 8.924667024984956,
-    "throughput_pairs_per_sec": 55968474.63346589,
+    "median_time_ms": 8.593000005930662,
+    "throughput_pairs_per_sec": 58128709.37452092,
     "matrix_shape": [
       1000,
       1000
@@ -26,8 +26,8 @@
   "oracle_batch": {
     "n_molecules": 1000,
     "backend": "GPU (MLX)",
-    "median_time_ms": 2317.6545000169426,
-    "throughput_mols_per_sec": 431.4706959094592,
+    "median_time_ms": 2315.6787919579074,
+    "throughput_mols_per_sec": 431.838821287688,
     "keys": [
       "dielectric_proxy",
       "viscosity_proxy",
@@ -44,8 +44,8 @@
   "tom_batch": {
     "n_molecules": 1000,
     "backend": "GPU (MLX)",
-    "median_time_ms": 2281.257833004929,
-    "throughput_mols_per_sec": 438.354659228841,
+    "median_time_ms": 2267.3819590127096,
+    "throughput_mols_per_sec": 441.03729238254675,
     "homo_mean": -4.8417,
     "lumo_mean": -1.0605
   }

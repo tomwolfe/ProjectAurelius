@@ -858,9 +858,8 @@ class DiscoveryLoop:
     ) -> tuple[float, float, dict[str, Any], dict[str, Any], dict[str, Any]]:
         """Escalate low-confidence TOM predictions to xTB evaluation.
 
-        When TOM confidence is tom_low and conformal confidence falls
-        below the active learning threshold, xTB provides a more
-        reliable evaluation. Returns updated scores and tier2 data.
+        When TOM confidence is tom_low, xTB provides a more reliable evaluation.
+        Returns updated scores and tier2 data.
 
         Budget enforcement: escalation is skipped when the per-generation
         xtb budget is exhausted. The active_learning_threshold is
@@ -871,7 +870,7 @@ class DiscoveryLoop:
             return total_score, conformal_conf, score_data, sub_scores, t2
 
         quantum_conf = t2.get("quantum_confidence", "unknown")
-        if quantum_conf != "tom_low" or conformal_conf >= self.active_learning_threshold:
+        if quantum_conf != "tom_low":
             return total_score, conformal_conf, score_data, sub_scores, t2
 
         xtb_result = self._evaluate_with_xtb(ctx)

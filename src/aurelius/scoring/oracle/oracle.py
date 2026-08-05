@@ -89,17 +89,26 @@ def _fp_to_numpy(fp: Any, n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.flo
 def _fp_batch_to_numpy(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.float32]]:
     """Convert a list of RDKit fingerprints to a 2D numpy array.
 
-    Uses numpy fancy indexing per fingerprint instead of a Python
-    for-loop over individual bits.
+    Uses vectorized numpy operations to process all fingerprints at once,
+    eliminating Python for-loop over individual bits.
     """
     n = len(fps)
     arr = np.zeros((n, n_bits), dtype=np.float32)
+    
+    # Collect all on-bit indices for all fingerprints
+    all_on_bits = []
+    row_indices = []
+    
     for i, fp in enumerate(fps):
         n_on = fp.GetNumOnBits()
         if n_on == 0:
             continue
-        on_bits = np.fromiter(fp.GetOnBits(), dtype=np.int32, count=n_on)
-        arr[i, on_bits] = 1.0
+        on_bits = fp.GetOnBits()
+        all_on_bits.extend(on_bits)
+        row_indices.extend([i] * n_on)
+    
+    # Use advanced numpy indexing to set all values at once
+    arr[np.array(row_indices), np.array(all_on_bits)] = 1.0
     return arr
 
 

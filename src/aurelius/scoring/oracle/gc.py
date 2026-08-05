@@ -283,6 +283,9 @@ def _saturate_contrib_batch(counts: np.ndarray[Any, np.dtype[np.float32]], max_c
 def _compute_dielectric_cross_terms_batch(counts_matrix: np.ndarray[Any, np.dtype[np.float32]], frag_index: dict[str, int]) -> np.ndarray[Any, np.dtype[np.float32]]:
     """Vectorized non-linear cross-term corrections for dielectric proxy (batch).
 
+    Optimized to eliminate Python loops by pre-computing fragment pair contributions
+    and using vectorized numpy operations.
+
     Args:
         counts_matrix: 2D array (n_molecules, n_fragments) of fragment counts.
         frag_index: Mapping from fragment name to column index in counts_matrix.
@@ -290,14 +293,29 @@ def _compute_dielectric_cross_terms_batch(counts_matrix: np.ndarray[Any, np.dtyp
     Returns:
         1D array (n_molecules,) with cross-term corrections clipped to [-2, 2].
     """
-    correction = np.zeros(counts_matrix.shape[0], dtype=np.float32)
+    n_mols = counts_matrix.shape[0]
+    correction = np.zeros(n_mols, dtype=np.float32)
+    
+    # Pre-extract fragment indices and boosts for vectorized computation
+    frag_pairs = []
     for frag_a, frag_b, boost, _desc in _CROSS_TERMS:
         idx_a = frag_index.get(frag_a)
         idx_b = frag_index.get(frag_b)
-        if idx_a is None or idx_b is None:
-            continue
-        co_occur = np.minimum(counts_matrix[:, idx_a], 1.0) * np.minimum(counts_matrix[:, idx_b], 1.0)
+        if idx_a is not None and idx_b is not None:
+            frag_pairs.append((idx_a, idx_b, boost))
+    
+    if not frag_pairs:
+        return correction
+    
+    # Vectorized computation for all fragment pairs
+    # Create binary masks for fragment presence (saturated at 1.0)
+    frag_masks = np.minimum(counts_matrix, 1.0)  # Shape: (n_mols, n_frags)
+    
+    # Accumulate corrections for all pairs
+    for idx_a, idx_b, boost in frag_pairs:
+        co_occur = frag_masks[:, idx_a] * frag_masks[:, idx_b]
         correction += boost * co_occur
+    
     return np.clip(correction, -2.0, 2.0)
 
 

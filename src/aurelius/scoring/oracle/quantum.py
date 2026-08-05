@@ -1108,16 +1108,64 @@ def _extract_tom_per_molecule_arrays(mols: list[Chem.Mol]) -> dict[str, np.ndarr
     MLX backends, including the fully-computed ``L_final`` (effective
     conjugation length after compactness adjustments) so both backends
     produce identical numerical results.
+
+    Optimized to pre-compute all per-molecule RDKit properties in a single
+    pass over the molecules, reducing CPU overhead.
     """
     n = len(mols)
-    L_array = _batch_longest_conjugation_path(mols)
-    L_final, compactness_3d = _compute_L_final(L_array, mols)
-    n_ew, n_ed, n_pi = _batch_heteroatom_counts(mols)
-    n_f = _batch_atom_counts(mols, 9)
-    n_arom = _batch_aromatic_ring_counts(mols)
-    n_nitrile = _batch_nitrile_counts(mols)
-    n_p = _batch_atom_counts(mols, 15)
-    n_s = _batch_atom_counts(mols, 16)
+    
+    # Pre-compute all per-molecule RDKit properties in a single pass
+    L_final = np.zeros(n, dtype=np.int32)
+    compactness_3d = np.zeros(n, dtype=np.float32)
+    n_ew = np.zeros(n, dtype=np.int32)
+    n_ed = np.zeros(n, dtype=np.int32)
+    n_pi = np.zeros(n, dtype=np.int32)
+    n_f = np.zeros(n, dtype=np.float32)
+    n_arom = np.zeros(n, dtype=np.float32)
+    n_nitrile = np.zeros(n, dtype=np.float32)
+    n_p = np.zeros(n, dtype=np.float32)
+    n_s = np.zeros(n, dtype=np.float32)
+    
+    for i, mol in enumerate(mols):
+        # Longest conjugation path
+        L = _longest_conjugation_path(mol)
+        L = max(L, 2)
+        
+        # Compute Wiener index for compactness
+        w = _wiener_index(mol)
+        n_atoms = mol.GetNumAtoms()
+        if n_atoms > 1:
+            w_linear = n_atoms * (n_atoms * n_atoms - 1) / 6.0
+            if w_linear > 0:
+                compactness = max(0.0, 1.0 - w / w_linear)
+                L = int(L * (1.0 - 0.3 * compactness))
+                L = max(L, 2)
+        
+        # Apply topological sanity L (sp3 support)
+        L = _topological_sanity_l(mol, L)
+        L_final[i] = L
+        
+        # Compute radius of gyration and compactness_3d
+        R_g = _compute_radius_of_gyration(mol)
+        R_g_linear = _get_ideal_gyration_for_conjugation_length(L)
+        
+        if R_g_linear > 0:
+            compactness_3d[i] = max(0.0, 1.0 - R_g / R_g_linear)
+        else:
+            compactness_3d[i] = 0.0
+        
+        # Heteroatom counts
+        ew, ed, pi = _count_heteroatom_perturbations(mol)
+        n_ew[i] = ew
+        n_ed[i] = ed
+        n_pi[i] = pi
+        
+        # Other atom counts
+        n_f[i] = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
+        n_arom[i] = _count_aromatic_rings(mol)
+        n_nitrile[i] = len(mol.GetSubstructMatches(NITRILE_PATTERN))
+        n_p[i] = sum(a.GetAtomicNum() == 15 for a in mol.GetAtoms())
+        n_s[i] = sum(a.GetAtomicNum() == 16 for a in mol.GetAtoms())
 
     return {
         "L_final": L_final,
