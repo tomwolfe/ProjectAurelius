@@ -8,6 +8,10 @@ Direct, interpretable selection strategy:
 
 This approach is simple, fast, and works naturally for both cheap (TOM+GC)
 and expensive (xTB) oracles — just adjust ``batch_size``.
+
+Acceleration: batch Tanimoto similarity uses vectorized numpy (CPU) or
+MPS/MLX (Apple GPU) for large candidate sets, avoiding per-pair RDKit
+overhead.
 """
 
 from __future__ import annotations
@@ -17,20 +21,43 @@ import random
 from typing import Any
 
 import numpy as np
-from rdkit.DataStructs import BulkTanimotoSimilarity, TanimotoSimilarity
 
+from aurelius.scoring.oracle.oracle import batch_tanimoto_similarity, _fp_batch_to_numpy
 from aurelius.types import MoleculeContext
 
 log = logging.getLogger(__name__)
 
 
-def _adjusted_score(idx: int, scores: list[float], fps_list: list[Any], selected_fps: list[Any], diversity_lambda: float) -> float:
+def _fp_to_numpy(fp: Any, n_bits: int = 2048) -> np.ndarray:
+    """Convert a single RDKit fingerprint to a 1D numpy array."""
+    arr = np.zeros(n_bits, dtype=np.float32)
+    for idx in fp.GetOnBits():
+        arr[idx] = 1.0
+    return arr
+
+
+def _adjusted_score(idx: int, scores: list[float], fps_list: list[Any], selected_fps: list[Any], diversity_lambda: float, sim_matrix: np.ndarray | None = None) -> float:
     """Compute diversity-penalised score for a candidate."""
     if not selected_fps:
         return scores[idx]
-    fp = fps_list[idx]
-    max_sim = max(TanimotoSimilarity(fp, sfp) for sfp in selected_fps)
+    if sim_matrix is not None:
+        max_sim = float(np.max(sim_matrix[idx, [fps_list.index(sfp) for sfp in selected_fps]]))
+    else:
+        fp = fps_list[idx]
+        max_sim = max(_tanimoto_single(fp, sfp) for sfp in selected_fps)
     return scores[idx] * (1.0 - diversity_lambda * max_sim)
+
+
+def _tanimoto_single(fp_a: Any, fp_b: Any) -> float:
+    """Compute Tanimoto similarity between two fingerprints using numpy."""
+    n_bits = 2048
+    arr_a = _fp_to_numpy(fp_a, n_bits=n_bits)
+    arr_b = _fp_to_numpy(fp_b, n_bits=n_bits)
+    intersection = float(np.dot(arr_a, arr_b))
+    total = float(arr_a.sum() + arr_b.sum())
+    if total == 0:
+        return 0.0
+    return min(1.0, intersection / total)
 
 
 def _best_in_tournament(
@@ -40,13 +67,18 @@ def _best_in_tournament(
     selected_fps: list[Any],
     diversity_lambda: float,
     confidences: list[float] | None = None,
+    sim_matrix: np.ndarray | None = None,
 ) -> tuple[int, float]:
     """Find the best candidate in a tournament, adjusted for diversity and optionally confidence."""
-    # Compute adjusted scores with confidence if provided
     adjusted_scores = []
     for i, (score, fp) in enumerate(zip(scores, fps_list, strict=True)):
         conf = confidences[i] if confidences and i < len(confidences) else 1.0
-        max_sim = max(TanimotoSimilarity(fp, sfp) for sfp in selected_fps) if selected_fps else 0.0
+        if selected_fps and sim_matrix is not None:
+            max_sim = float(np.max(sim_matrix[i, [fps_list.index(sfp) for sfp in selected_fps]]))
+        elif selected_fps:
+            max_sim = max(_tanimoto_single(fp, sfp) for sfp in selected_fps)
+        else:
+            max_sim = 0.0
         adj = score * conf * (1.0 - diversity_lambda * max_sim)
         adjusted_scores.append(adj)
 
@@ -71,6 +103,22 @@ def tournament_select(
 
     If ``confidences`` is provided, scores are adjusted by confidence:
     ``adjusted_score = score × confidence × (1.0 - diversity_lambda * max_sim)``
+
+    Acceleration: pairwise Tanimoto similarities are computed once with
+    ``batch_tanimoto_similarity`` (numpy or MPS/MLX) and reused across
+    all tournament rounds.
+
+    Args:
+        contexts: Candidate molecules.
+        scores: Score for each candidate.
+        batch_size: Number of candidates to select.
+        tournament_size: Size of each tournament.
+        diversity_lambda: Diversity penalty weight [0, 1].
+        rng_seed: Random seed.
+        confidences: Optional conformal-confidence multipliers.
+
+    Returns:
+        Selected candidates, ordered by selection order.
     """
     n = len(contexts)
     if n == 0:
@@ -80,6 +128,10 @@ def tournament_select(
 
     rng = random.Random(rng_seed)
     fps_list = [ctx.get_ecfp4() for ctx in contexts]
+
+    # Pre-compute pairwise similarity matrix with batch Tanimoto
+    sim_matrix = batch_tanimoto_similarity(fps_list)
+
     selected: list[MoleculeContext] = []
     selected_fps: list[Any] = []
     used_indices: set[int] = set()
@@ -90,7 +142,10 @@ def tournament_select(
             break
 
         tournament = rng.sample(pool, min(tournament_size, len(pool)))
-        best_idx, _ = _best_in_tournament(tournament, scores, fps_list, selected_fps, diversity_lambda, confidences)
+        best_idx, _ = _best_in_tournament(
+            tournament, scores, fps_list, selected_fps,
+            diversity_lambda, confidences, sim_matrix=sim_matrix,
+        )
 
         used_indices.add(best_idx)
         selected.append(contexts[best_idx])
@@ -100,19 +155,23 @@ def tournament_select(
 
 
 def compute_pairwise_diversity(contexts: list[MoleculeContext]) -> float:
-    """Compute mean Tanimoto dissimilarity (1 - similarity) across contexts."""
+    """Compute mean Tanimoto dissimilarity (1 - similarity) across contexts.
+
+    Uses ``batch_tanimoto_similarity`` for vectorized computation
+    (numpy or MPS/MLX) instead of per-pair RDKit calls.
+    """
     if len(contexts) < 2:
         return 0.0
 
     fps = [ctx.get_ecfp4() for ctx in contexts]
-    similarities: list[float] = []
-    for i, fp_i in enumerate(fps):
-        sims = BulkTanimotoSimilarity(fp_i, fps[i + 1:])
-        similarities.extend(sims)
-
-    if not similarities:
+    sim_matrix = batch_tanimoto_similarity(fps)
+    n = sim_matrix.shape[0]
+    # Mean of upper triangle (excluding diagonal)
+    upper_indices = np.triu_indices(n, k=1)
+    if len(upper_indices[0]) == 0:
         return 0.0
-    return float(1.0 - np.mean(similarities))
+    mean_sim = float(np.mean(sim_matrix[upper_indices]))
+    return float(1.0 - mean_sim)
 
 
 # ---------------------------------------------------------------------------

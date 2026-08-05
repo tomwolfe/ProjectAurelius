@@ -17,7 +17,6 @@ from typing import Any
 
 import numpy as np
 from rdkit import Chem
-from rdkit.DataStructs import BulkTanimotoSimilarity, ExplicitBitVect
 
 from aurelius.scoring.oracle.conformal import get_conformal_predictor
 from aurelius.scoring.oracle.gc import (
@@ -35,8 +34,6 @@ from aurelius.scoring.oracle.quantum import (
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
-
-_BATCH_THRESHOLD = 100
 
 _PHYSICAL_BOUNDS: dict[str, tuple[float, float]] = {
     "dielectric_proxy": (1.0, 100.0),
@@ -66,15 +63,20 @@ def _fp_batch_to_numpy(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, np
 def _tanimoto_batch_numpy(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.float32]]:
     """Compute pairwise Tanimoto similarity matrix using numpy (CPU fallback).
 
-    For batches larger than _BATCH_THRESHOLD, this avoids the Python-level
-    overhead of RDKit's per-pair BulkTanimotoSimilarity and uses vectorized
-    numpy operations instead.
+    Uses vectorized numpy operations: intersection = arr @ arr.T,
+    union = sum(arr, axis=1)[:, None] + sum(arr, axis=1)[None, :].
+    Tanimoto = intersection / union, clipped to [0, 1].
+
+    This is the single correct path for all batch sizes since RDKit's
+    BulkTanimotoSimilarity does not accept a list-of-fingerprints as
+    the first argument in RDKit 2026+.
     """
-    if len(fps) <= 1:
-        return np.ones((len(fps), len(fps)), dtype=np.float32)
+    n = len(fps)
+    if n <= 1:
+        return np.ones((n, n), dtype=np.float32)
     arr = _fp_batch_to_numpy(fps, n_bits=n_bits)
     intersections = arr @ arr.T
-    sums = arr.sum(axis=1, keepdims=True) + arr.sum(axis=1)
+    sums = arr.sum(axis=1, keepdims=True) + arr.sum(axis=1, keepdims=True).T
     sums[sums == 0] = 1.0
     return np.clip(intersections / sums, 0.0, 1.0).astype(np.float32)
 
@@ -91,7 +93,7 @@ def _tanimoto_batch_mps(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, n
     arr = _fp_batch_to_numpy(fps, n_bits=n_bits)
     tensor = torch.from_numpy(arr).to("mps")
     intersections = tensor @ tensor.T
-    sums = tensor.sum(dim=1, keepdim=True) + tensor.sum(dim=1)
+    sums = tensor.sum(dim=1, keepdim=True) + tensor.sum(dim=1, keepdim=True).T
     sums = torch.where(sums == 0, torch.ones_like(sums), sums)
     result = torch.clamp(intersections / sums, 0.0, 1.0).float()
     return result.cpu().numpy()
@@ -108,7 +110,7 @@ def _tanimoto_batch_mlx(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, n
     arr = _fp_batch_to_numpy(fps, n_bits=n_bits)
     tensor = mlx_core.array(arr)
     intersections = tensor @ tensor.T
-    sums = tensor.sum(axis=1, keepdims=True) + tensor.sum(axis=1, keepdims=True)
+    sums = tensor.sum(axis=1, keepdims=True) + tensor.sum(axis=1, keepdims=True).T
     sums = mlx_core.where(sums == 0, mlx_core.ones_like(sums), sums)
     result = mlx_core.clip(intersections / sums, 0.0, 1.0).astype(np.float32)
     return result
@@ -122,9 +124,9 @@ def batch_tanimoto_similarity(fps: list[Any], n_bits: int = 2048) -> np.ndarray[
       - MLX (Apple GPU) if mlx is available
       - Numpy (CPU) otherwise
 
-    For small batches (≤100), RDKit's BulkTanimotoSimilarity is used
-    for its C++ efficiency. For larger batches, the numpy-based approach
-    avoids per-pair Python overhead.
+    Uses vectorized numpy matrix operations for all batch sizes.
+    RDKit's BulkTanimotoSimilarity is not used because it does not
+    accept a list-of-fingerprints as the first argument in RDKit 2026+.
 
     Args:
         fps: List of RDKit fingerprint objects.
@@ -133,25 +135,6 @@ def batch_tanimoto_similarity(fps: list[Any], n_bits: int = 2048) -> np.ndarray[
     Returns:
         2D numpy array of shape (n, n) with Tanimoto similarities.
     """
-    n = len(fps)
-    if n <= 1:
-        return np.ones((n, n), dtype=np.float32)
-    if n <= _BATCH_THRESHOLD:
-        evs = []
-        for fp in fps:
-            if isinstance(fp, ExplicitBitVect):
-                evs.append(fp)
-            else:
-                ev = ExplicitBitVect(n_bits)
-                for idx in fp.GetOnBits():
-                    ev.SetBit(idx)
-                evs.append(ev)
-        return np.array(BulkTanimotoSimilarity(evs), dtype=np.float32).reshape(n, n)
-    backend = _select_batch_backend()
-    if backend == "mps":
-        return _tanimoto_batch_mps(fps, n_bits=n_bits)
-    if backend == "mlx":
-        return _tanimoto_batch_mlx(fps, n_bits=n_bits)
     return _tanimoto_batch_numpy(fps, n_bits=n_bits)
 
 

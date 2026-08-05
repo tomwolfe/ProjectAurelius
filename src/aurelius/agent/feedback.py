@@ -48,6 +48,41 @@ _DEFAULT_REFIT_INTERVAL: int = 5
 _MAX_ACCUMULATED: int = 200
 
 
+def _validate_experimental_homo(homo: float | None) -> bool:
+    """Check if an experimental HOMO value is physically reasonable."""
+    if homo is None:
+        return True
+    return -15.0 <= homo <= 0.0
+
+
+def _validate_experimental_lumo(lumo: float | None) -> bool:
+    """Check if an experimental LUMO value is physically reasonable."""
+    if lumo is None:
+        return True
+    return -10.0 <= lumo <= 5.0
+
+
+def _validate_experimental_total_score(score: float | None) -> bool:
+    """Check if an experimental total score is within the valid range."""
+    if score is None:
+        return True
+    return 0.0 <= score <= 100.0
+
+
+def _validate_experimental_entry(entry: dict[str, Any]) -> bool:
+    """Validate an experimental feedback entry has physically reasonable values.
+
+    Returns True if the entry passes all checks, False otherwise.
+    """
+    if not _validate_experimental_homo(entry.get("experimental_homo_eV")):
+        return False
+    if not _validate_experimental_lumo(entry.get("experimental_lumo_eV")):
+        return False
+    if not _validate_experimental_total_score(entry.get("experimental_total_score")):
+        return False
+    return True
+
+
 @dataclass
 class FeedbackRecord:
     """A single feedback data point from an evaluated candidate."""
@@ -194,6 +229,26 @@ class FeedbackController:
         experimental_total_score: float | None = None,
     ) -> None:
         """Record a new feedback data point from an evaluated candidate."""
+        # Validate experimental values before recording
+        if experimental_homo is not None and not _validate_experimental_homo(experimental_homo):
+            logger.warning(
+                "Feedback: experimental HOMO %.3f eV out of range [-15, 0] for %s — skipping",
+                experimental_homo, smiles,
+            )
+            experimental_homo = None
+        if experimental_lumo is not None and not _validate_experimental_lumo(experimental_lumo):
+            logger.warning(
+                "Feedback: experimental LUMO %.3f eV out of range [-10, 5] for %s — skipping",
+                experimental_lumo, smiles,
+            )
+            experimental_lumo = None
+        if experimental_total_score is not None and not _validate_experimental_total_score(experimental_total_score):
+            logger.warning(
+                "Feedback: experimental total score %.3f out of range [0, 100] for %s — skipping",
+                experimental_total_score, smiles,
+            )
+            experimental_total_score = None
+
         record = FeedbackRecord(
             smiles=smiles,
             homo_prediction=homo_prediction,
