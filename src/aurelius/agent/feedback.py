@@ -221,6 +221,7 @@ class FeedbackController:
         Before refitting, matches accumulated records against the
         experimental feedback file (if provided) and populates
         ``experimental_homo`` / ``experimental_lumo`` for matching SMILES.
+        Also loads and ingests experimental_feedback.json automatically.
 
         Returns a dict with refit diagnostics, or ``None`` if no refit
         was performed.

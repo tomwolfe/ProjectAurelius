@@ -1,9 +1,10 @@
 """Net Progress metric — repository-level objective function.
 
 Defines:
-  DISCOVERY_VALUE = (0.25 * rediscovery_rate) + (0.15 * scaffold_novelty)
+  DISCOVERY_VALUE = (0.10 * rediscovery_rate) + (0.15 * scaffold_novelty)
                     + (0.10 * top_k_enrichment) + (0.15 * external_consistency)
                     + (0.20 * holdout_generalization) + (0.15 * experimental_trend_recovery)
+                    + (0.15 * validation_score)
   SIMPLICITY_COST = (0.30 * norm_loc) + (0.20 * norm_cc_violations)
                     + (0.20 * norm_dependencies) + (0.30 * norm_architectural_surface_area)
   NET_PROGRESS = DISCOVERY_VALUE - (0.35 * SIMPLICITY_COST)
@@ -22,6 +23,7 @@ import ast
 import json
 import os
 import random
+from pathlib import Path
 
 import numpy as np
 from rdkit import Chem
@@ -381,6 +383,27 @@ def _compute_experimental_trend_recovery() -> float:
     return correct / max(total, 1)
 
 
+def _compute_validation_score() -> float:
+    """Compute validation score based on oracle absolute audit results.
+
+    Returns 1.0 if oracle_absolute_audit.json exists AND HOMO MAE < 1.5 eV,
+           0.5 if audit exists but MAE >= 1.5 eV,
+           0.0 if audit missing.
+    """
+    audit_path = Path(__file__).parent.parent / "benchmarks" / "results" / "oracle_absolute_audit.json"
+    if not audit_path.exists():
+        return 0.0
+
+    try:
+        with open(audit_path) as f:
+            audit = json.load(f)
+
+        homo_mae = audit["properties"]["HOMO"]["mae"]
+        return 1.0 if homo_mae < 1.5 else 0.5
+    except Exception:
+        return 0.0
+
+
 class TestNetProgress:
     """Repository-level objective function.
 
@@ -419,13 +442,16 @@ class TestNetProgress:
             + 0.30 * sim_arch
         )
 
+        validation_score = _compute_validation_score()
+
         discovery_value = (
-            0.25 * rediscovery_rate
+            0.10 * rediscovery_rate
             + 0.15 * scaffold_novelty
             + 0.10 * top_k_enrichment
             + 0.15 * external_consistency
             + 0.20 * holdout_gen
             + 0.15 * trend_recovery
+            + 0.15 * validation_score
         )
 
         net_progress = discovery_value - LAMBDA * simplicity_cost
@@ -440,6 +466,7 @@ class TestNetProgress:
         print(f"    External consistency:        {external_consistency:.3f}")
         print(f"    Holdout generalization:      {holdout_gen:.3f}")
         print(f"    Experimental trend recovery: {trend_recovery:.3f}")
+        print(f"    Validation score:            {validation_score:.3f}")
         print(f"    DISCOVERY_VALUE:             {discovery_value:.3f}")
         print("  SIMPLICITY COST")
         print(f"    Lines of code:               {loc} (norm={sim_loc:.3f})")

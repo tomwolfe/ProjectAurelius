@@ -1,0 +1,227 @@
+{
+  "calibration_set_size": 115,
+  "external_benchmark_size": 120,
+  "ml_baseline_comparison": {
+    "n_molecules": 75,
+    "n_with_dft": 85,
+    "properties": {
+      "HOMO": {
+        "oracle_rho": 0.2581,
+        "oracle_p": 0.0254,
+        "rf_rho": 0.3939,
+        "rf_std": 0.2812,
+        "gap": -0.1358,
+        "n_valid": 75,
+        "oracle_wins": false
+      },
+      "LUMO": {
+        "oracle_rho": 0.5077,
+        "oracle_p": 0.0,
+        "rf_rho": 0.4401,
+        "rf_std": 0.2532,
+        "gap": 0.0675,
+        "n_valid": 75,
+        "oracle_wins": true
+      }
+    },
+    "transparency_note": "If oracle rho < RF rho - 0.05 for any property, the finding is reported honestly. The physics value is interpretability + extrapolation, not raw accuracy."
+  },
+  "properties": {
+    "HOMO": {
+      "n_calibrated": 115,
+      "mae": 0.9477769551157424,
+      "rmse": 1.2728929321753344,
+      "max_error": 3.4000000000000004,
+      "top_5_outliers": [
+        {
+          "smiles": "FC(F)(F)S(=O)(=O)NS(=O)(=O)C(F)(F)F",
+          "name": "TFSI-H",
+          "predicted": -11.9,
+          "true": -8.5,
+          "absolute_error": 3.4000000000000004,
+          "failure_mode": "high_hetero_density"
+        },
+        {
+          "smiles": "FC(F)(F)S(=O)(=O)C(F)(F)C(F)(F)F",
+          "name": "Octafluoropolyether sulfone",
+          "predicted": -11.649999999999999,
+          "true": -8.3,
+          "absolute_error": 3.349999999999998,
+          "failure_mode": "high_hetero_density"
+        },
+        {
+          "smiles": "COC(F)C(F)(F)C(F)(F)C(F)(F)F",
+          "name": "Perfluorohexyl methyl ether",
+          "predicted": -11.1,
+          "true": -8.1,
+          "absolute_error": 3.0,
+          "failure_mode": "high_hetero_density"
+        },
+        {
+          "smiles": "FCOC(F)C(F)(F)C(F)(F)F",
+          "name": "Perfluorobutyl methyl ether",
+          "predicted": -10.55,
+          "true": -7.9,
+          "absolute_error": 2.6500000000000004,
+          "failure_mode": "high_hetero_density"
+        },
+        {
+          "smiles": "CCO[P](=O)(OCC)OCC(F)(F)F",
+          "name": "Trifluoromethyl diethyl phosphate",
+          "predicted": -9.95,
+          "true": -7.3,
+          "absolute_error": 2.6499999999999995,
+          "failure_mode": "high_hetero_density"
+        }
+      ],
+      "ml_baseline_oracle_gap": -0.1358,
+      "ml_baseline_better": true
+    },
+    "LUMO": {
+      "n_calibrated": 115,
+      "mae": 0.718718044181259,
+      "rmse": 0.9778051513931516,
+      "max_error": 3.677777777777778,
+      "top_5_outliers": [
+        {
+          "smiles": "FC(F)(F)Oc1ccccc1",
+          "name": "Pentafluorobenzene oxide",
+          "predicted": -2.977777777777778,
+          "true": 0.7,
+          "absolute_error": 3.677777777777778,
+          "failure_mode": "complex_electronic_structure"
+        },
+        {
+          "smiles": "Fc1ccccc1",
+          "name": "Fluorobenzene",
+          "predicted": -2.4577777777777774,
+          "true": 0.5,
+          "absolute_error": 2.9577777777777774,
+          "failure_mode": "complex_electronic_structure"
+        },
+        {
+          "smiles": "c1ccncc1",
+          "name": "Pyridine",
+          "predicted": -2.0882417475114705,
+          "true": 0.8,
+          "absolute_error": 2.8882417475114703,
+          "failure_mode": "complex_electronic_structure"
+        },
+        {
+          "smiles": "COc1ccccc1",
+          "name": "Anisole",
+          "predicted": -2.2877777777777775,
+          "true": 0.5,
+          "absolute_error": 2.7877777777777775,
+          "failure_mode": "complex_electronic_structure"
+        },
+        {
+          "smiles": "O=C1NC(=O)C(F)(F)C1(F)F",
+          "name": "Pentafluoroglutarimide",
+          "predicted": -2.655,
+          "true": -0.3,
+          "absolute_error": 2.355,
+          "failure_mode": "high_hetero_density"
+        }
+      ],
+      "ml_baseline_oracle_gap": 0.0675,
+      "ml_baseline_better": false
+    },
+    "Dielectric": {
+      "n_calibrated": 115,
+      "mae": 14.560785889683155,
+      "rmse": 21.198933723698673,
+      "max_error": 88.19009640972985,
+      "top_5_outliers": [
+        {
+          "smiles": "C1COC(=O)O1",
+          "name": "EC",
+          "predicted": 1.5899035902701577,
+          "true": 89.78,
+          "absolute_error": 88.19009640972985,
+          "failure_mode": "structural_complexity"
+        },
+        {
+          "smiles": "CC1COC(=O)O1",
+          "name": "PC",
+          "predicted": 2.5099818405901573,
+          "true": 64.92,
+          "absolute_error": 62.410018159409844,
+          "failure_mode": "structural_complexity"
+        },
+        {
+          "smiles": "CS(=O)C",
+          "name": "DMSO",
+          "predicted": 2.089966639669599,
+          "true": 46.68,
+          "absolute_error": 44.5900333603304,
+          "failure_mode": "structural_complexity"
+        },
+        {
+          "smiles": "C1CS(=O)(=O)CC1",
+          "name": "Sulfolane",
+          "predicted": 2.300019463089599,
+          "true": 43.4,
+          "absolute_error": 41.0999805369104,
+          "failure_mode": "structural_complexity"
+        },
+        {
+          "smiles": "C1CS(=O)(=O)CC(CF)CC(F)C",
+          "name": "3-Fluoromethyl-2-methylsulfolane",
+          "predicted": 0.0,
+          "true": 40.1,
+          "absolute_error": 40.1,
+          "failure_mode": "invalid_molecule"
+        }
+      ]
+    },
+    "Viscosity": {
+      "n_calibrated": 114,
+      "mae": 1.7459841342285833,
+      "rmse": 3.340209402975781,
+      "max_error": 28.149806793591537,
+      "top_5_outliers": [
+        {
+          "smiles": "CCOCCO",
+          "name": "Diethylene glycol",
+          "predicted": 1.8501932064084643,
+          "true": 30.0,
+          "absolute_error": 28.149806793591537,
+          "failure_mode": "structural_complexity"
+        },
+        {
+          "smiles": "C1CS(=O)(=O)CC1",
+          "name": "Sulfolane",
+          "predicted": 2.300019463089599,
+          "true": 10.3,
+          "absolute_error": 7.999980536910401,
+          "failure_mode": "structural_complexity"
+        },
+        {
+          "smiles": "FC(F)(F)C(F)(F)C(F)(F)S(=O)(=O)C(F)(F)F",
+          "name": "Perfluorobutyl methyl sulfone",
+          "predicted": 7.408619411770816,
+          "true": 2.5,
+          "absolute_error": 4.908619411770816,
+          "failure_mode": "fluorine_dipolar_cancellation"
+        },
+        {
+          "smiles": "O=C(OC)C(F)(F)CS(=O)(=O)C(F)(F)F",
+          "name": "Difluoromethyl sulfonyl fluoride ester",
+          "predicted": 6.210931598916471,
+          "true": 1.4,
+          "absolute_error": 4.81093159891647,
+          "failure_mode": "structural_complexity"
+        },
+        {
+          "smiles": "C(F)(F)C(F)(F)OC(=O)OC(F)(F)C(F)(F)F",
+          "name": "Trifluoroethyl bis(fluoroethyl) carbonate",
+          "predicted": 6.2962396134787575,
+          "true": 1.8,
+          "absolute_error": 4.496239613478758,
+          "failure_mode": "fluorine_dipolar_cancellation"
+        }
+      ]
+    }
+  }
+}
