@@ -21,9 +21,15 @@ from rdkit import Chem
 from aurelius.scoring.oracle.conformal import get_conformal_predictor
 from aurelius.scoring.oracle.gc import (
     _DATA_SOURCE,
+    _compute_dielectric_cross_terms_batch,
     _count_branch_points,
     _count_fragments_batch,
     _count_stereocenters,
+    _GC_BASE_DIELECTRIC,
+    _GC_BASE_LI_SOLVATION,
+    _GC_BASE_VISCOSITY,
+    _GC_FRAGMENTS,
+    _saturate_contrib_batch,
     compute_gc_domain_penalty,
     predict_dielectric_proxy,
     predict_dielectric_proxy_batch,
@@ -34,6 +40,7 @@ from aurelius.scoring.oracle.gc import (
     predict_viscosity_proxy,
     predict_viscosity_proxy_batch,
 )
+from aurelius.constants import MAX_DIELECTRIC_PER_TPSA
 from aurelius.scoring.oracle.quantum import (
     QuantumOracle,
     compute_quantum_domain_penalty,
@@ -341,6 +348,12 @@ class PropertyOracle:
         quantum orbital prediction, and property prediction to
         leverage MPS/MLX acceleration where available.
 
+        Physical justification: On M5 Pro, fusing GC+TOM computations into
+        a single MLX computation graph eliminates intermediate numpy copies
+        and reduces CPU-GPU synchronization overhead. Target batch sizes
+        of 200-500 molecules saturate GPU bandwidth while minimizing kernel
+        launch overhead for MLX (lower than MPS for fine-grained operations).
+
         Args:
             contexts: List of pre-parsed MoleculeContext objects.
 
@@ -362,11 +375,15 @@ class PropertyOracle:
                 "gap_eV": np.array([], dtype=np.float32),
             }
 
+        # Get device and convert everything to device at once to avoid intermediate copies
+        device = get_device()
+
         # Batch fingerprint matrix
         fps = [ctx.get_ecfp4() for ctx in contexts]
         fp_matrix = _fp_batch_to_numpy(fps, n_bits=2048)
+        fp_tensor = to_device(fp_matrix, device)
 
-        # Batch fragment counting
+        # Batch fragment counting (return numpy arrays)
         counts = _count_fragments_batch(contexts)
 
         # Batch GC property prediction
@@ -378,12 +395,68 @@ class PropertyOracle:
         n_branch = np.array([_count_branch_points(ctx.mol) for ctx in contexts], dtype=np.int32)
         n_stereo = np.array([_count_stereocenters(ctx.mol) for ctx in contexts], dtype=np.int32)
 
-        dielectric = predict_dielectric_proxy_batch(counts, tpsa_values)
-        viscosity = predict_viscosity_proxy_batch(counts, mw_values, n_rotatable, n_branch, n_stereo)
-        li_solvation = predict_li_solvation_proxy_batch(counts, mw_values)
-        conductivity = predict_ionic_conductivity_proxy_batch(dielectric, viscosity, li_solvation)
+        # Fuse GC operations: convert all inputs to device and compute in one graph
+        counts_tensor = to_device(counts, device)
+        tpsa_tensor = to_device(tpsa_values, device)
+        mw_tensor = to_device(mw_values, device)
+        n_rotatable_tensor = to_device(n_rotatable, device)
+        n_branch_tensor = to_device(n_branch, device)
+        n_stereo_tensor = to_device(n_stereo, device)
 
-        # Vectorized TOM batch evaluation for HOMO/LUMO
+        if device == "mlx":
+            import mlx.core as mx
+
+            # GC bulk properties computation fused in MLX
+            n_frags = counts_tensor.shape[1]
+            contributions = mx.array([dd for _, _, dd, _dv, _ls in _GC_FRAGMENTS])
+            
+            saturated = _saturate_contrib_batch(counts_tensor, contributions * 2.0)
+            dielectric_tensor = mx.array(_GC_BASE_DIELECTRIC) + mx.sum(saturated, axis=1)
+
+            frag_index = {name: j for j, (_, name, _, _, _) in enumerate(_GC_FRAGMENTS)}
+            cross_terms = _compute_dielectric_cross_terms_batch(counts_tensor, frag_index)
+            dielectric_tensor += cross_terms
+
+            dielectric_tensor += tpsa_tensor * 0.030
+            max_diel = mx.array(_GC_BASE_DIELECTRIC) + tpsa_tensor * MAX_DIELECTRIC_PER_TPSA
+            dielectric_tensor = mx.minimum(dielectric_tensor, max_diel)
+            dielectric_tensor = mx.maximum(dielectric_tensor, mx.array(1.0))
+
+            # Viscosity
+            dv_contributions = mx.array([dv for _, _, _dd, dv, _ls in _GC_FRAGMENTS])
+            saturated_visc = _saturate_contrib_batch(counts_tensor, dv_contributions * 2.0)
+            viscosity_tensor = mx.array(_GC_BASE_VISCOSITY) + mx.sum(saturated_visc, axis=1)
+            viscosity_tensor += (mw_tensor - mx.array(30.0)) * 0.005
+            viscosity_tensor += n_rotatable_tensor * 0.15
+            viscosity_tensor += n_branch_tensor * 0.80
+            viscosity_tensor += n_stereo_tensor * 0.05
+            viscosity_tensor = mx.maximum(viscosity_tensor, mx.array(0.1))
+
+            # Li+ solvation
+            li_solvation_tensor = mx.array(_GC_BASE_LI_SOLVATION)
+            ls_contributions = mx.array([ls for _, _, _dd, _dv, ls in _GC_FRAGMENTS])
+            saturated_ls = _saturate_contrib_batch(counts_tensor, ls_contributions * 2.0)
+            li_solvation_tensor += mx.sum(saturated_ls, axis=1)
+            li_solvation_tensor += (mw_tensor - mx.array(30.0)) * 0.05
+            li_solvation_tensor = mx.maximum(li_solvation_tensor, mx.array(1.0))
+
+            # Conductivity proxy (Walden-product)
+            conductivity_tensor = mx.exp(-viscosity_tensor) * dielectric_tensor * li_solvation_tensor
+
+            # Convert back to numpy
+            dielectric = np.array(dielectric_tensor)
+            viscosity = np.array(viscosity_tensor)
+            li_solvation = np.array(li_solvation_tensor)
+            conductivity = np.array(conductivity_tensor)
+
+        else:
+            # CPU fallback (original implementation)
+            dielectric = predict_dielectric_proxy_batch(counts, tpsa_values)
+            viscosity = predict_viscosity_proxy_batch(counts, mw_values, n_rotatable, n_branch, n_stereo)
+            li_solvation = predict_li_solvation_proxy_batch(counts, mw_values)
+            conductivity = predict_ionic_conductivity_proxy_batch(dielectric, viscosity, li_solvation)
+
+        # Vectorized TOM batch evaluation for HOMO/LUMO (already optimized)
         homo_array, lumo_array = predict_tom_orbitals_batch([ctx.mol for ctx in contexts])
         gap_array = lumo_array - homo_array
 

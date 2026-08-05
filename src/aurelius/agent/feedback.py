@@ -383,6 +383,7 @@ class FeedbackController:
         smiles: str,
         generation: int,
         original_conf: float,
+        update_successful: bool = True,
     ) -> None:
         """Log an active learning escalation event.
 
@@ -401,16 +402,18 @@ class FeedbackController:
             smiles: SMILES of the escalated molecule.
             generation: Generation number where escalation occurred.
             original_conf: Conformal confidence that triggered escalation.
+            update_successful: Whether the Δ-correction model was updated.
         """
         trigger = {
             "smiles": smiles,
             "generation": generation,
             "original_conf": original_conf,
+            "update_successful": update_successful,
         }
         self._state.active_learning_triggers.append(trigger)
         logger.info(
-            "Active learning trigger logged: %s (gen=%d, conf=%.3f)",
-            smiles, generation, original_conf,
+            "Active learning trigger logged: %s (gen=%d, conf=%.3f, updated=%s)",
+            smiles, generation, original_conf, update_successful,
         )
 
     def log_budget_utilization(

@@ -735,11 +735,30 @@ class DiscoveryLoop:
             return selected, selected_scores
 
         # Default: tournament selection with conformal confidence
+        # Extract synergy_bonus from result_map if available
+        synergy_bonus = []
+        is_mixture = []
+        for ctx in contexts:
+            result = result_map.get(ctx.smiles) if result_map else None
+            if result:
+                is_mix = is_mixture_smiles(ctx.smiles)
+                is_mixture.append(is_mix)
+                if is_mix:
+                    synergy = result.get("mixture_properties", {}).get("synergy_bonus", 0.0)
+                    synergy_bonus.append(synergy)
+                else:
+                    synergy_bonus.append(0.0)
+            else:
+                is_mixture.append(False)
+                synergy_bonus.append(0.0)
+        
         selected = tournament_select(
             contexts,
             scores,
             batch_size=self.batch_size,
             confidences=confidences,
+            synergy_bonus=synergy_bonus,
+            is_mixture=is_mixture,
         )
         smi_to_score = {ctx.smiles: sc for ctx, sc in zip(contexts, scores, strict=True)}
         selected_scores = [smi_to_score[c.smiles] for c in selected]
@@ -888,11 +907,29 @@ class DiscoveryLoop:
             "  ** ACTIVE LEARNING ESCALATION ** %s: TOM low confidence (conf=%.3f) -> xTB (conf=%.3f)",
             smi, conformal_conf, xtb_conf,
         )
+        # Online update of Δ-correction model with new xTB evaluation data
+        update_successful = False
+        if hasattr(self, "feedback_controller") and self.feedback_controller:
+            delta_correction = self.feedback_controller.get_delta_correction()
+            # Extract original TOM predictions (homo_tom, lumo_tom) from t2
+            homo_tom = t2.get("raw_tom", {}).get("homo_eV", t2.get("homo_eV", homo_tom))
+            lumo_tom = t2.get("raw_tom", {}).get("lumo_eV", t2.get("lumo_eV", lumo_tom))
+            # Extract xTB predictions (treated as DFT reference) from xtb_t2
+            homo_dft = xtb_t2.get("homo_eV", homo_dft)
+            lumo_dft = xtb_t2.get("lumo_eV", lumo_dft)
+            # Update online model with new data
+            try:
+                delta_correction.update_online(smi, homo_tom, lumo_tom, homo_dft, lumo_dft)
+                update_successful = True
+            except Exception:
+                update_successful = False
+
         if hasattr(self, "feedback_controller") and self.feedback_controller:
             self.feedback_controller.log_active_learning_trigger(
                 smiles=smi,
                 generation=self.state.generations,
                 original_conf=conformal_conf,
+                update_successful=update_successful,
             )
 
         # Dynamically adjust threshold based on success rate
