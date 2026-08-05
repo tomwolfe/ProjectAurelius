@@ -21,11 +21,18 @@ from rdkit import Chem
 from aurelius.scoring.oracle.conformal import get_conformal_predictor
 from aurelius.scoring.oracle.gc import (
     _DATA_SOURCE,
+    _count_branch_points,
+    _count_fragments_batch,
+    _count_stereocenters,
     compute_gc_domain_penalty,
     predict_dielectric_proxy,
+    predict_dielectric_proxy_batch,
     predict_ionic_conductivity_proxy,
+    predict_ionic_conductivity_proxy_batch,
     predict_li_solvation_proxy,
+    predict_li_solvation_proxy_batch,
     predict_viscosity_proxy,
+    predict_viscosity_proxy_batch,
 )
 from aurelius.scoring.oracle.quantum import (
     QuantumOracle,
@@ -44,19 +51,33 @@ _PHYSICAL_BOUNDS: dict[str, tuple[float, float]] = {
 
 
 def _fp_to_numpy(fp: Any, n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.float32]]:
-    """Convert a single RDKit fingerprint to a 1D numpy array."""
+    """Convert a single RDKit fingerprint to a 1D numpy array.
+
+    Uses numpy fancy indexing instead of a Python for-loop over bits.
+    """
+    n_on = fp.GetNumOnBits()
+    if n_on == 0:
+        return np.zeros(n_bits, dtype=np.float32)
+    on_bits = np.fromiter(fp.GetOnBits(), dtype=np.int32, count=n_on)
     arr = np.zeros(n_bits, dtype=np.float32)
-    for idx in fp.GetOnBits():
-        arr[idx] = 1.0
+    arr[on_bits] = 1.0
     return arr
 
 
 def _fp_batch_to_numpy(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.float32]]:
-    """Convert a list of RDKit fingerprints to a 2D numpy array."""
-    arr = np.zeros((len(fps), n_bits), dtype=np.float32)
+    """Convert a list of RDKit fingerprints to a 2D numpy array.
+
+    Uses numpy fancy indexing per fingerprint instead of a Python
+    for-loop over individual bits.
+    """
+    n = len(fps)
+    arr = np.zeros((n, n_bits), dtype=np.float32)
     for i, fp in enumerate(fps):
-        for idx in fp.GetOnBits():
-            arr[i, idx] = 1.0
+        n_on = fp.GetNumOnBits()
+        if n_on == 0:
+            continue
+        on_bits = np.fromiter(fp.GetOnBits(), dtype=np.int32, count=n_on)
+        arr[i, on_bits] = 1.0
     return arr
 
 
@@ -135,6 +156,11 @@ def batch_tanimoto_similarity(fps: list[Any], n_bits: int = 2048) -> np.ndarray[
     Returns:
         2D numpy array of shape (n, n) with Tanimoto similarities.
     """
+    backend = _select_batch_backend()
+    if backend == "mps":
+        return _tanimoto_batch_mps(fps, n_bits=n_bits)
+    if backend == "mlx":
+        return _tanimoto_batch_mlx(fps, n_bits=n_bits)
     return _tanimoto_batch_numpy(fps, n_bits=n_bits)
 
 
@@ -275,6 +301,63 @@ class PropertyOracle:
 
         self._cache[smiles] = result
         return result
+
+    def predict_batch_properties(self, contexts: list[MoleculeContext]) -> dict[str, np.ndarray[Any, np.dtype[np.float32]]]:
+        """Batch-predict GC-derived properties for a list of molecules.
+
+        Vectorizes fragment counting, fingerprint generation, and
+        property prediction to leverage MPS/MLX acceleration where
+        available. Quantum properties (HOMO/LUMO) are excluded from
+        batch prediction since they require per-molecule xTB/TOM
+        calculations.
+
+        Args:
+            contexts: List of pre-parsed MoleculeContext objects.
+
+        Returns:
+            Dict mapping property names to 1D numpy arrays.
+            Keys: dielectric_proxy, viscosity_proxy, li_solvation_proxy,
+                  conductivity_proxy, tpsa, mw, fp (2048-dim fingerprint matrix).
+        """
+        n = len(contexts)
+        if n == 0:
+            return {
+                "dielectric_proxy": np.array([], dtype=np.float32),
+                "viscosity_proxy": np.array([], dtype=np.float32),
+                "li_solvation_proxy": np.array([], dtype=np.float32),
+                "conductivity_proxy": np.array([], dtype=np.float32),
+            }
+
+        # Batch fingerprint matrix (numpy for now; MPS conversion happens downstream)
+        fps = [ctx.get_ecfp4() for ctx in contexts]
+        fp_matrix = _fp_batch_to_numpy(fps, n_bits=2048)
+
+        # Batch fragment counting
+        counts = _count_fragments_batch(contexts)
+
+        # Batch GC property prediction
+        tpsa_values = np.array([ctx.tpsa for ctx in contexts], dtype=np.float32)
+        mw_values = np.array([ctx.mw for ctx in contexts], dtype=np.float32)
+        n_rotatable = np.array([ctx.rotatable_bonds for ctx in contexts], dtype=np.int32)
+
+        # Compute branch points and stereocenters in batch
+        n_branch = np.array([_count_branch_points(ctx.mol) for ctx in contexts], dtype=np.int32)
+        n_stereo = np.array([_count_stereocenters(ctx.mol) for ctx in contexts], dtype=np.int32)
+
+        dielectric = predict_dielectric_proxy_batch(counts, tpsa_values)
+        viscosity = predict_viscosity_proxy_batch(counts, mw_values, n_rotatable, n_branch, n_stereo)
+        li_solvation = predict_li_solvation_proxy_batch(counts, mw_values)
+        conductivity = predict_ionic_conductivity_proxy_batch(dielectric, viscosity, li_solvation)
+
+        return {
+            "dielectric_proxy": dielectric,
+            "viscosity_proxy": viscosity,
+            "li_solvation_proxy": li_solvation,
+            "conductivity_proxy": conductivity,
+            "tpsa": tpsa_values,
+            "mw": mw_values,
+            "fp": fp_matrix,
+        }
 
     def __getstate__(self) -> dict[str, Any]:
         state = self.__dict__.copy()

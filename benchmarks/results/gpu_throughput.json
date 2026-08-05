@@ -1,0 +1,41 @@
+{
+  "gc_batch": {
+    "n_molecules": 1000,
+    "median_time_ms": 66.67312496574596,
+    "throughput_mols_per_sec": 14998.547023463516
+  },
+  "fp_conversion": {
+    "n_molecules": 1000,
+    "median_time_ms": 12.214416987262666,
+    "throughput_mols_per_sec": 81870.4651268097,
+    "matrix_shape": [
+      1000,
+      2048
+    ]
+  },
+  "tanimoto_mps": {
+    "n_molecules": 1000,
+    "backend": "mps",
+    "median_time_ms": 18.320542003493756,
+    "throughput_pairs_per_sec": 27264477.213869795,
+    "matrix_shape": [
+      1000,
+      1000
+    ]
+  },
+  "oracle_batch": {
+    "n_molecules": 1000,
+    "backend": "mps",
+    "median_time_ms": 78.25483399210498,
+    "throughput_mols_per_sec": 12778.763291490575,
+    "keys": [
+      "dielectric_proxy",
+      "viscosity_proxy",
+      "li_solvation_proxy",
+      "conductivity_proxy",
+      "tpsa",
+      "mw",
+      "fp"
+    ]
+  }
+}

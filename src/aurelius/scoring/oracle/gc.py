@@ -262,6 +262,126 @@ def _count_fragments_batch(contexts: list[MoleculeContext]) -> np.ndarray[Any, n
     return result
 
 
+def _saturate_contrib_batch(counts: np.ndarray[Any, np.dtype[np.float32]], max_contrib: float) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Vectorized Michaelis-Menten saturation for a batch of fragment counts.
+
+    Args:
+        counts: 2D array (n_molecules, n_fragments) of fragment counts.
+        max_contrib: Maximum contribution per fragment instance.
+
+    Returns:
+        Array of shape (n_molecules, n_fragments) with saturated contributions.
+    """
+    return max_contrib * (1.0 - np.exp(-_GC_SATURATION_K * counts))
+
+
+def _compute_dielectric_cross_terms_batch(counts_matrix: np.ndarray[Any, np.dtype[np.float32]], frag_index: dict[str, int]) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Vectorized non-linear cross-term corrections for dielectric proxy (batch).
+
+    Args:
+        counts_matrix: 2D array (n_molecules, n_fragments) of fragment counts.
+        frag_index: Mapping from fragment name to column index in counts_matrix.
+
+    Returns:
+        1D array (n_molecules,) with cross-term corrections clipped to [-2, 2].
+    """
+    correction = np.zeros(counts_matrix.shape[0], dtype=np.float32)
+    for frag_a, frag_b, boost, _desc in _CROSS_TERMS:
+        idx_a = frag_index.get(frag_a)
+        idx_b = frag_index.get(frag_b)
+        if idx_a is None or idx_b is None:
+            continue
+        co_occur = np.minimum(counts_matrix[:, idx_a], 1.0) * np.minimum(counts_matrix[:, idx_b], 1.0)
+        correction += boost * co_occur
+    return np.clip(correction, -2.0, 2.0)
+
+
+def predict_dielectric_proxy_batch(counts_matrix: np.ndarray[Any, np.dtype[np.float32]], tpsa_values: np.ndarray[Any, np.dtype[np.float32]]) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Vectorized dielectric proxy prediction for a batch of molecules.
+
+    Args:
+        counts_matrix: 2D array (n_molecules, n_fragments) of fragment counts.
+        tpsa_values: 1D array (n_molecules,) of TPSA values.
+
+    Returns:
+        1D array (n_molecules,) of dielectric proxy predictions.
+    """
+    n_frags = counts_matrix.shape[1]
+    contributions = np.array([dd for _, _, dd, _dv, _ls in _GC_FRAGMENTS], dtype=np.float32)
+    saturated = _saturate_contrib_batch(counts_matrix, contributions * 2.0)
+    value = _GC_BASE_DIELECTRIC + saturated.sum(axis=1)
+
+    frag_index = {name: j for j, (_, name, _, _, _) in enumerate(_GC_FRAGMENTS)}
+    cross_terms = _compute_dielectric_cross_terms_batch(counts_matrix, frag_index)
+    value += cross_terms
+
+    value += tpsa_values * 0.030
+    max_diel = _GC_BASE_DIELECTRIC + tpsa_values * MAX_DIELECTRIC_PER_TPSA
+    value = np.minimum(value, max_diel)
+    value = np.maximum(value, 1.0)
+    return value
+
+
+def predict_viscosity_proxy_batch(counts_matrix: np.ndarray[Any, np.dtype[np.float32]], mw_values: np.ndarray[Any, np.dtype[np.float32]], n_rotatable: np.ndarray[Any, np.dtype[np.int32]], n_branch: np.ndarray[Any, np.dtype[np.int32]], n_stereo: np.ndarray[Any, np.dtype[np.int32]]) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Vectorized viscosity proxy prediction for a batch of molecules.
+
+    Args:
+        counts_matrix: 2D array (n_molecules, n_fragments) of fragment counts.
+        mw_values: 1D array (n_molecules,) of molecular weights.
+        n_rotatable: 1D array (n_molecules,) of rotatable bond counts.
+        n_branch: 1D array (n_molecules,) of branch point counts.
+        n_stereo: 1D array (n_molecules,) of stereocenter counts.
+
+    Returns:
+        1D array (n_molecules,) of viscosity proxy predictions.
+    """
+    contributions = np.array([dv for _, _, _dd, dv, _ls in _GC_FRAGMENTS], dtype=np.float32)
+    saturated = _saturate_contrib_batch(counts_matrix, contributions * 2.0)
+    value = _GC_BASE_VISCOSITY + saturated.sum(axis=1)
+    value += (mw_values - 30.0) * 0.005
+    value += n_rotatable * 0.15
+    value += n_branch * 0.80
+    value += n_stereo * 0.05
+    value = np.maximum(value, 0.1)
+    return value
+
+
+def predict_li_solvation_proxy_batch(counts_matrix: np.ndarray[Any, np.dtype[np.float32]], mw_values: np.ndarray[Any, np.dtype[np.float32]]) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Vectorized Li+ solvation proxy prediction for a batch of molecules.
+
+    Args:
+        counts_matrix: 2D array (n_molecules, n_fragments) of fragment counts.
+        mw_values: 1D array (n_molecules,) of molecular weights.
+
+    Returns:
+        1D array (n_molecules,) of Li+ solvation proxy predictions.
+    """
+    contributions = np.array([ls for _, _, _dd, _dv, ls in _GC_FRAGMENTS], dtype=np.float32)
+    saturated = _saturate_contrib_batch(counts_matrix, contributions * 2.0)
+    value = _GC_BASE_LI_SOLVATION + saturated.sum(axis=1)
+    value += np.maximum(0.0, (mw_values - 50.0)) * 0.002
+    value = np.maximum(value, 0.5)
+    return value
+
+
+def predict_ionic_conductivity_proxy_batch(
+    dielectric: np.ndarray[Any, np.dtype[np.float32]],
+    viscosity: np.ndarray[Any, np.dtype[np.float32]],
+    li_solvation: np.ndarray[Any, np.dtype[np.float32]],
+) -> np.ndarray[Any, np.dtype[np.float32]]:
+    """Vectorized ionic conductivity proxy via Walden-product model (batch).
+
+    Combines dielectric (salt dissociation), viscosity (Stokes-Einstein
+    mobility), and Li+ solvation (charge carrier availability) into a
+    single figure of merit.
+    """
+    viscosity = np.maximum(viscosity, 0.001)
+    effective_dielec = np.maximum(0.0, dielectric - 1.0)
+    solvation_factor = np.exp(-0.5 * ((li_solvation - 3.5) / 1.5) ** 2)
+    conductivity = effective_dielec * solvation_factor / viscosity
+    return np.clip(conductivity, 0.0, 10.0)
+
+
 # Non-linear cross-term corrections for dielectric proxy.
 _CROSS_TERMS: list[tuple[str, str, float, str]] = [
     ("carbonate", "ether", 0.8, "carbonate-ether synergy (glyme-carbonate hybrids)"),
