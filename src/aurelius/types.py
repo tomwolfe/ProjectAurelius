@@ -83,6 +83,7 @@ class ScreeningResult:
     sa_score: float | None = None
     synthesis_depth: int | None = None
     sub_scores: dict[str, float] | None = None
+    combined_grounding_score: float | None = None
 
 
 @dataclass

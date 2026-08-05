@@ -22,7 +22,7 @@ from typing import Any
 
 import numpy as np
 
-from aurelius.scoring.oracle.oracle import batch_tanimoto_similarity, _fp_batch_to_numpy
+from aurelius.utils.device import batch_tanimoto, get_device
 from aurelius.types import MoleculeContext
 
 log = logging.getLogger(__name__)
@@ -130,7 +130,7 @@ def tournament_select(
     fps_list = [ctx.get_ecfp4() for ctx in contexts]
 
     # Pre-compute pairwise similarity matrix with batch Tanimoto
-    sim_matrix = batch_tanimoto_similarity(fps_list)
+    sim_matrix = batch_tanimoto(fps_list)
 
     selected: list[MoleculeContext] = []
     selected_fps: list[Any] = []
@@ -164,7 +164,7 @@ def compute_pairwise_diversity(contexts: list[MoleculeContext]) -> float:
         return 0.0
 
     fps = [ctx.get_ecfp4() for ctx in contexts]
-    sim_matrix = batch_tanimoto_similarity(fps)
+    sim_matrix = batch_tanimoto(fps)
     n = sim_matrix.shape[0]
     # Mean of upper triangle (excluding diagonal)
     upper_indices = np.triu_indices(n, k=1)

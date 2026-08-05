@@ -99,6 +99,9 @@ def _collect_obj_scores(
     obj_scores["sa_score"].append(score_data.get("sa_score", 5.0))
     obj_scores["synthesis_depth"].append(float(score_data.get("synthesis_depth", 3)))
     obj_scores["confidence"].append(confidence)
+    obj_scores["combined_grounding_score"].append(
+        score_data.get("grounding", 0.0)
+    )
 
 
 @dataclass(frozen=True)
@@ -109,6 +112,7 @@ class AgentConfig:
     batch_size: int = 50
     use_nsga2: bool = False
     active_learning_threshold: float = 0.7
+    xtb_budget_per_generation: int = 10
     seed: int = 42
 
 
@@ -180,6 +184,7 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
         batch_size=agent_cfg.batch_size,
         use_nsga2=agent_cfg.use_nsga2,
         active_learning_threshold=agent_cfg.active_learning_threshold,
+        xtb_budget_per_generation=agent_cfg.xtb_budget_per_generation,
     )
 
     # W6: Initialise experimental feedback controller for on-line oracle refinement
@@ -266,6 +271,7 @@ class DiscoveryLoop:
         max_wall_time: float = 43200.0,
         use_nsga2: bool = False,
         active_learning_threshold: float = 0.7,
+        xtb_budget_per_generation: int = 10,
     ) -> None:
         self.pipeline = pipeline
         self.engine = engine
@@ -275,11 +281,17 @@ class DiscoveryLoop:
         self.max_wall_time = max_wall_time
         self.use_nsga2 = use_nsga2
         self.active_learning_threshold = active_learning_threshold
+        self.xtb_budget_per_generation = xtb_budget_per_generation
         self.feedback_controller: FeedbackController | None = None
 
         self.all_results: list[ScreeningResult] = []
         self.discoveries: list[ScreeningResult] = []
         self.screened_smiles: set[str] = set()
+
+        # Active learning budget tracking
+        self._xtb_escalation_count: int = 0
+        self._xtb_escalation_success: int = 0
+        self._escalation_history: list[dict[str, Any]] = []
 
     def execute(self) -> dict[str, Any]:
         wall_start = time.time()
@@ -289,6 +301,9 @@ class DiscoveryLoop:
             if elapsed > self.max_wall_time:
                 log.info("Time cap reached (%.0fs). Exiting loop.", elapsed)
                 break
+
+            # Reset xtb escalation counter for new generation
+            self._xtb_escalation_count = 0
 
             force_exploration = self.state.has_scaffold_stagnation(2)
             if force_exploration:
@@ -326,6 +341,14 @@ class DiscoveryLoop:
                         refit_info["loo_mae_after"],
                         refit_info["new_calibration_entries"],
                     )
+                # Log active learning budget utilization
+                self.feedback_controller.log_budget_utilization(
+                    generation=generation,
+                    xtb_budget=self.xtb_budget_per_generation,
+                    xtb_escalations=self._xtb_escalation_count,
+                    xtb_successes=self._xtb_escalation_success,
+                    threshold=self.active_learning_threshold,
+                )
 
             should_stop, reason = self.state.should_terminate()
             if should_stop:
@@ -453,6 +476,7 @@ class DiscoveryLoop:
             sa_score=score_data.get("sa_score"),
             synthesis_depth=score_data.get("synthesis_depth"),
             sub_scores=sub_scores,
+            combined_grounding_score=score_data.get("grounding"),
         )
 
     @staticmethod
@@ -565,6 +589,7 @@ class DiscoveryLoop:
             "sa_score": [],
             "synthesis_depth": [],
             "confidence": [],
+            "combined_grounding_score": [],
         }
         result_map: dict[str, Any] = {}
 
@@ -698,6 +723,7 @@ class DiscoveryLoop:
                 ("lumo_eV", "max"),
                 ("sa_score", "min"),
                 ("synthesis_depth", "min"),
+                ("combined_grounding_score", "max"),
             ]
             smi_to_score = {ctx.smiles: sc for ctx, sc in zip(contexts, scores, strict=True)}
             selected = nsga2_select(
@@ -835,15 +861,26 @@ class DiscoveryLoop:
         When TOM confidence is tom_low and conformal confidence falls
         below the active learning threshold, xTB provides a more
         reliable evaluation. Returns updated scores and tier2 data.
+
+        Budget enforcement: escalation is skipped when the per-generation
+        xtb budget is exhausted. The active_learning_threshold is
+        dynamically adjusted based on the escalation success rate.
         """
+        # Enforce xtb budget per generation
+        if self._xtb_escalation_count >= self.xtb_budget_per_generation:
+            return total_score, conformal_conf, score_data, sub_scores, t2
+
         quantum_conf = t2.get("quantum_confidence", "unknown")
         if quantum_conf != "tom_low" or conformal_conf >= self.active_learning_threshold:
             return total_score, conformal_conf, score_data, sub_scores, t2
 
         xtb_result = self._evaluate_with_xtb(ctx)
+        self._xtb_escalation_count += 1
+
         if xtb_result is None:
             return total_score, conformal_conf, score_data, sub_scores, t2
 
+        self._xtb_escalation_success += 1
         xtb_t2 = xtb_result.get("tier2", {}) or {}
         xtb_score = xtb_result.get("score", {})
         xtb_total = xtb_score.get("total_score", total_score)
@@ -858,6 +895,23 @@ class DiscoveryLoop:
                 generation=self.state.generations,
                 original_conf=conformal_conf,
             )
+
+        # Dynamically adjust threshold based on success rate
+        if self._xtb_escalation_count > 0:
+            success_rate = self._xtb_escalation_success / self._xtb_escalation_count
+            if success_rate < 0.3:
+                self.active_learning_threshold = min(0.95, self.active_learning_threshold + 0.05)
+            elif success_rate > 0.7:
+                self.active_learning_threshold = max(0.5, self.active_learning_threshold - 0.05)
+
+        self._escalation_history.append({
+            "smiles": smi,
+            "generation": self.state.generations,
+            "success": xtb_result is not None,
+            "original_conf": conformal_conf,
+            "xtb_conf": xtb_conf,
+        })
+
         return xtb_total, xtb_conf, xtb_score, xtb_score.get("sub_scores", {}), xtb_t2
 
     def _accumulate_feedback(

@@ -96,6 +96,64 @@ def _compute_tanimoto_diversity(
     return max_sim
 
 
+def _load_known_electrolytes() -> list[str]:
+    """Load known commercial electrolyte SMILES from data file."""
+    data_path = os.path.join(
+        os.path.dirname(__file__), "..", "src", "aurelius", "data",
+        "known_electrolytes.json",
+    )
+    try:
+        with open(data_path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _find_nearest_known_electrolyte(
+    candidate_smi: str,
+    known_electrolytes: list[str],
+    top_n: int = 3,
+) -> list[dict[str, str]]:
+    """Find the nearest known commercial electrolytes by Tanimoto similarity.
+
+    Args:
+        candidate_smi: SMILES of the candidate molecule.
+        known_electrolytes: List of known commercial electrolyte SMILES.
+        top_n: Number of nearest neighbors to return.
+
+    Returns:
+        List of dicts with 'smiles', 'similarity', and 'name' keys.
+    """
+    if not known_electrolytes:
+        return []
+
+    cand_mol = Chem.MolFromSmiles(candidate_smi)
+    if cand_mol is None:
+        return []
+
+    cand_fp = AllChem.GetMorganFingerprintAsBitVect(
+        cand_mol, radius=2, nBits=2048
+    )
+
+    similarities: list[tuple[str, float]] = []
+    for known_smi in known_electrolytes:
+        known_mol = Chem.MolFromSmiles(known_smi)
+        if known_mol is None:
+            continue
+        known_fp = AllChem.GetMorganFingerprintAsBitVect(
+            known_mol, radius=2, nBits=2048
+        )
+        from rdkit.DataStructs import TanimotoSimilarity
+        sim = TanimotoSimilarity(cand_fp, known_fp)
+        similarities.append((known_smi, sim))
+
+    similarities.sort(key=lambda x: -x[1])
+    return [
+        {"smiles": smi, "similarity": round(sim, 4)}
+        for smi, sim in similarities[:top_n]
+    ]
+
+
 def _write_candidates_csv(candidates: list[dict], output_path: str) -> None:
     """Write candidates to CSV in legacy format."""
     if not candidates:
@@ -227,6 +285,10 @@ def run_prospective_selection(
 
     print(f"Discovery loop complete: {len(all_results)} evaluated, {len(discoveries)} viable")
 
+    # Load known commercial electrolytes for nearest-neighbor lookup
+    known_electrolytes = _load_known_electrolytes()
+    print(f"Loaded {len(known_electrolytes)} known commercial electrolytes for similarity lookup")
+
     # Filter and rank candidates
     pipeline = AureliusPipeline()
     pipeline.initialize()
@@ -271,6 +333,11 @@ def run_prospective_selection(
         combined_grounding_score = result.sub_scores.get("grounding", 0.0) if result.sub_scores else 0.0
         domain_penalty = result.sub_scores.get("domain", 1.0) if result.sub_scores else 1.0
 
+        # Find nearest known commercial electrolytes
+        nearest_known = _find_nearest_known_electrolyte(
+            result.smiles, known_electrolytes, top_n=3
+        )
+
         candidates.append({
             "smiles": result.smiles,
             "total_score": result.total_score,
@@ -291,6 +358,7 @@ def run_prospective_selection(
             "domain_penalty": round(domain_penalty, 4),
             "is_viable": result.is_viable,
             "synthesis_depth": result.synthesis_depth,
+            "nearest_known_electrolytes": nearest_known,
         })
 
     # Apply cascade filtering for wet-lab decision readiness
@@ -490,8 +558,8 @@ def _generate_prospective_candidates_report(
     # Candidate details
     if selected:
         report += "## Final Candidate Table\n\n"
-        report += "| Rank | SMILES | Total Score | HOMO (eV) | LUMO (eV) | Gap (eV) | Synthesis Feasibility | Conformal Confidence | Novelty | Combined Grounding | Domain Penalty | Synthesis Hints | Risk Flags |\n"
-        report += "|------|--------|-------------|-----------|-----------|----------|----------------------|----------------------|---------|-------------------|----------------|-----------------|------------|\n"
+        report += "| Rank | SMILES | Total Score | HOMO (eV) | LUMO (eV) | Gap (eV) | Synthesis Feasibility | Conformal Confidence | Novelty | Combined Grounding | Domain Penalty | Nearest Known | Synthesis Hints | Risk Flags |\n"
+        report += "|------|--------|-------------|-----------|-----------|----------|----------------------|----------------------|---------|-------------------|----------------|---------------|-----------------|------------|\n"
 
         for i, cand in enumerate(selected, 1):
             smiles = cand.get("smiles", "")
@@ -506,8 +574,12 @@ def _generate_prospective_candidates_report(
             domain = cand.get("domain_penalty", 1.0)
             hints = cand.get("synthesis_hints", "")
             risks = cand.get("risk_flags", "none")
+            nearest = cand.get("nearest_known_electrolytes", [])
+            nearest_str = ""
+            if nearest:
+                nearest_str = f"{nearest[0]['smiles'][:20]} (T={nearest[0]['similarity']:.2f})"
 
-            report += f"| {i} | `{smiles[:40]}{'...' if len(smiles) > 40 else ''}` | {total_score:.1f} | {homo} | {lumo} | {gap} | {synthesis_feas:.3f} | {conf:.3f} | {novelty:.3f} | {grounding:.3f} | {domain:.3f} | {hints} | {risks} |\n"
+            report += f"| {i} | `{smiles[:40]}{'...' if len(smiles) > 40 else ''}` | {total_score:.1f} | {homo} | {lumo} | {gap} | {synthesis_feas:.3f} | {conf:.3f} | {novelty:.3f} | {grounding:.3f} | {domain:.3f} | `{nearest_str}` | {hints} | {risks} |\n"
 
         report += "\n"
 
@@ -545,7 +617,17 @@ def _generate_prospective_candidates_report(
             report += f"- Combined Grounding Score: {cand.get('combined_grounding_score', 0.0):.3f}\n"
             report += f"- Domain Penalty: {cand.get('domain_penalty', 1.0):.3f}\n"
             report += f"- Synthesis Hints: {cand.get('synthesis_hints', 'N/A')}\n"
-            report += f"- Risk Flags: {cand.get('risk_flags', 'none')}\n\n"
+            report += f"- Risk Flags: {cand.get('risk_flags', 'none')}\n"
+
+            # Nearest known electrolytes
+            nearest = cand.get("nearest_known_electrolytes", [])
+            if nearest:
+                report += f"- **Nearest Known Electrolytes (Tanimoto):**\n"
+                for nbr in nearest:
+                    report += f"  - `{nbr['smiles'][:50]}` (Tanimoto={nbr['similarity']:.4f})\n"
+            else:
+                report += "- **Nearest Known Electrolytes (Tanimoto):** No matches found\n"
+            report += "\n"
 
     else:
         report += "## No Candidates Pass Cascade Filter\n\n"

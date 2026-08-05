@@ -37,8 +37,10 @@ from aurelius.scoring.oracle.gc import (
 from aurelius.scoring.oracle.quantum import (
     QuantumOracle,
     compute_quantum_domain_penalty,
+    predict_tom_orbitals_batch,
 )
 from aurelius.types import MoleculeContext
+from aurelius.utils.device import get_device, to_device, batch_tanimoto as _batch_tanimoto
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +139,7 @@ def _tanimoto_batch_mlx(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, n
     return result
 
 
-def batch_tanimoto_similarity(fps: list[Any], n_bits: int = 2048) -> np.ndarray[Any, np.dtype[np.float32]]:
+def batch_tanimoto_similarity(fps: list[Any], n_bits: int = 2048, device: str | None = None) -> np.ndarray[Any, np.dtype[np.float32]]:
     """Compute pairwise Tanimoto similarity matrix for a batch of fingerprints.
 
     Selects the best available backend:
@@ -152,36 +154,19 @@ def batch_tanimoto_similarity(fps: list[Any], n_bits: int = 2048) -> np.ndarray[
     Args:
         fps: List of RDKit fingerprint objects.
         n_bits: Number of bits in each fingerprint.
+        device: Optional device override ("mps", "mlx", "cpu").
+            If None, auto-detects via ``get_device()``.
 
     Returns:
         2D numpy array of shape (n, n) with Tanimoto similarities.
     """
-    backend = _select_batch_backend()
-    if backend == "mps":
+    if device is None:
+        device = get_device()
+    if device == "mps":
         return _tanimoto_batch_mps(fps, n_bits=n_bits)
-    if backend == "mlx":
+    if device == "mlx":
         return _tanimoto_batch_mlx(fps, n_bits=n_bits)
     return _tanimoto_batch_numpy(fps, n_bits=n_bits)
-
-
-def _select_batch_backend() -> str:
-    """Select the best available batch computation backend.
-
-    Priority: MPS > MLX > numpy (CPU).
-    Uses lazy ``__import__`` to avoid hard dependencies.
-    """
-    try:
-        torch = __import__("torch")
-        if torch.backends.mps.is_available():
-            return "mps"
-    except Exception:
-        pass
-    try:
-        __import__("mlx")
-        return "mlx"
-    except Exception:
-        pass
-    return "numpy"
 
 
 def _apply_physical_bounds(
@@ -303,13 +288,11 @@ class PropertyOracle:
         return result
 
     def predict_batch_properties(self, contexts: list[MoleculeContext]) -> dict[str, np.ndarray[Any, np.dtype[np.float32]]]:
-        """Batch-predict GC-derived properties for a list of molecules.
+        """Batch-predict properties for a list of molecules.
 
-        Vectorizes fragment counting, fingerprint generation, and
-        property prediction to leverage MPS/MLX acceleration where
-        available. Quantum properties (HOMO/LUMO) are excluded from
-        batch prediction since they require per-molecule xTB/TOM
-        calculations.
+        Vectorizes fragment counting, fingerprint generation,
+        quantum orbital prediction, and property prediction to
+        leverage MPS/MLX acceleration where available.
 
         Args:
             contexts: List of pre-parsed MoleculeContext objects.
@@ -317,7 +300,8 @@ class PropertyOracle:
         Returns:
             Dict mapping property names to 1D numpy arrays.
             Keys: dielectric_proxy, viscosity_proxy, li_solvation_proxy,
-                  conductivity_proxy, tpsa, mw, fp (2048-dim fingerprint matrix).
+                  conductivity_proxy, tpsa, mw, fp (2048-dim fingerprint matrix),
+                  homo_eV, lumo_eV, gap_eV.
         """
         n = len(contexts)
         if n == 0:
@@ -326,9 +310,12 @@ class PropertyOracle:
                 "viscosity_proxy": np.array([], dtype=np.float32),
                 "li_solvation_proxy": np.array([], dtype=np.float32),
                 "conductivity_proxy": np.array([], dtype=np.float32),
+                "homo_eV": np.array([], dtype=np.float32),
+                "lumo_eV": np.array([], dtype=np.float32),
+                "gap_eV": np.array([], dtype=np.float32),
             }
 
-        # Batch fingerprint matrix (numpy for now; MPS conversion happens downstream)
+        # Batch fingerprint matrix
         fps = [ctx.get_ecfp4() for ctx in contexts]
         fp_matrix = _fp_batch_to_numpy(fps, n_bits=2048)
 
@@ -349,6 +336,10 @@ class PropertyOracle:
         li_solvation = predict_li_solvation_proxy_batch(counts, mw_values)
         conductivity = predict_ionic_conductivity_proxy_batch(dielectric, viscosity, li_solvation)
 
+        # Vectorized TOM batch evaluation for HOMO/LUMO
+        homo_array, lumo_array = predict_tom_orbitals_batch([ctx.mol for ctx in contexts])
+        gap_array = lumo_array - homo_array
+
         return {
             "dielectric_proxy": dielectric,
             "viscosity_proxy": viscosity,
@@ -357,6 +348,9 @@ class PropertyOracle:
             "tpsa": tpsa_values,
             "mw": mw_values,
             "fp": fp_matrix,
+            "homo_eV": homo_array,
+            "lumo_eV": lumo_array,
+            "gap_eV": gap_array,
         }
 
     def __getstate__(self) -> dict[str, Any]:

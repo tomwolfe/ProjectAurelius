@@ -10,9 +10,13 @@ from aurelius.utils.chem_utils import (
     _serialize_fp,
     _tanimoto,
 )
+from aurelius.utils.device import get_device, to_device, batch_tanimoto
 
 __all__ = [
     "_deserialize_fp",
     "_serialize_fp",
     "_tanimoto",
+    "get_device",
+    "to_device",
+    "batch_tanimoto",
 ]

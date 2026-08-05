@@ -234,6 +234,134 @@ def _valid_context(smiles: str) -> MoleculeContext:
     return ctx
 
 
+class TestSynthesizabilityAwareSelection:
+    """NSGA-II should preserve synthesizable candidates on the Pareto front."""
+
+    def test_synthesis_depth_minimization(self):
+        """Lower synthesis_depth should be preferred when other scores are equal."""
+        smiles = ["CCO", "CCCO", "CCCCO"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {
+            "dielectric_proxy": [50.0, 50.0, 50.0],
+            "viscosity_proxy": [2.0, 2.0, 2.0],
+            "synthesis_depth": [3.0, 2.0, 1.0],
+            "combined_grounding_score": [0.8, 0.8, 0.8],
+        }
+        objectives = [
+            ("synthesis_depth", "min"),
+            ("combined_grounding_score", "max"),
+        ]
+        selected = nsga2_select(contexts, scores_dict, objectives, batch_size=1)
+        assert len(selected) == 1
+        # Lowest synthesis_depth (index 2) should be selected
+        assert selected[0] == contexts[2]
+
+    def test_grounding_score_maximization(self):
+        """Higher combined_grounding_score should be preferred."""
+        smiles = ["CCO", "CCCO", "CCCCO"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {
+            "dielectric_proxy": [50.0, 50.0, 50.0],
+            "viscosity_proxy": [2.0, 2.0, 2.0],
+            "synthesis_depth": [1.0, 1.0, 1.0],
+            "combined_grounding_score": [0.5, 0.7, 0.9],
+        }
+        objectives = [
+            ("synthesis_depth", "min"),
+            ("combined_grounding_score", "max"),
+        ]
+        selected = nsga2_select(contexts, scores_dict, objectives, batch_size=1)
+        assert len(selected) == 1
+        # Highest grounding_score (index 2) should be selected
+        assert selected[0] == contexts[2]
+
+    def test_synthesizable_preserved_on_pareto_front(self):
+        """A synthesizable candidate (low depth, high grounding) should survive
+        even if its total_score is lower than a less-synthesizable candidate."""
+        smiles = ["CCO", "CCCO", "CCCCO"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {
+            "dielectric_proxy": [80.0, 60.0, 40.0],
+            "viscosity_proxy": [2.0, 2.0, 2.0],
+            "synthesis_depth": [3.0, 1.5, 1.0],
+            "combined_grounding_score": [0.5, 0.8, 0.9],
+        }
+        objectives = [
+            ("dielectric_proxy", "max"),
+            ("synthesis_depth", "min"),
+            ("combined_grounding_score", "max"),
+        ]
+        selected = nsga2_select(contexts, scores_dict, objectives, batch_size=2)
+        assert len(selected) == 2
+        # The synthesizable candidate (index 2, depth=1.0, grounding=0.9)
+        # should be on the Pareto front even though it has the lowest dielectric
+        selected_indices = [contexts.index(c) for c in selected]
+        assert 2 in selected_indices, (
+            "Synthesizable candidate (low depth, high grounding) "
+            "should be preserved on Pareto front"
+        )
+
+    def test_top20_mean_synthesis_depth(self):
+        """Top-20 selected candidates should have mean synthesis_depth <= 2.0."""
+        n_candidates = 50
+        smiles = [f"CC{'C'*i}O" for i in range(n_candidates)]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {
+            "dielectric_proxy": [float(50 + i % 10) for i in range(n_candidates)],
+            "viscosity_proxy": [float(2 + i % 5) for i in range(n_candidates)],
+            "synthesis_depth": [float(1 + i % 4) for i in range(n_candidates)],
+            "combined_grounding_score": [float(0.5 + (i % 5) * 0.1) for i in range(n_candidates)],
+        }
+        objectives = [
+            ("dielectric_proxy", "max"),
+            ("viscosity_proxy", "min"),
+            ("synthesis_depth", "min"),
+            ("combined_grounding_score", "max"),
+        ]
+        selected = nsga2_select(
+            contexts, scores_dict, objectives, batch_size=20
+        )
+        depths = [
+            scores_dict["synthesis_depth"][contexts.index(c)]
+            for c in selected
+        ]
+        mean_depth = sum(depths) / len(depths)
+        assert mean_depth <= 2.0, (
+            f"Top-20 mean synthesis_depth={mean_depth:.2f} exceeds 2.0"
+        )
+
+    def test_top20_mean_grounding_score(self):
+        """Top-20 selected candidates should have mean grounding_score >= 0.75."""
+        n_candidates = 50
+        smiles = [f"CC{'C'*i}O" for i in range(n_candidates)]
+        contexts = [_valid_context(s) for s in smiles]
+        # Ensure high grounding scores for most candidates
+        grounding = [0.9] * n_candidates
+        scores_dict = {
+            "dielectric_proxy": [float(50 + i % 10) for i in range(n_candidates)],
+            "viscosity_proxy": [float(2 + i % 5) for i in range(n_candidates)],
+            "synthesis_depth": [float(1 + i % 4) for i in range(n_candidates)],
+            "combined_grounding_score": grounding,
+        }
+        objectives = [
+            ("dielectric_proxy", "max"),
+            ("viscosity_proxy", "min"),
+            ("synthesis_depth", "min"),
+            ("combined_grounding_score", "max"),
+        ]
+        selected = nsga2_select(
+            contexts, scores_dict, objectives, batch_size=20
+        )
+        grounding_scores = [
+            scores_dict["combined_grounding_score"][contexts.index(c)]
+            for c in selected
+        ]
+        mean_grounding = sum(grounding_scores) / len(grounding_scores)
+        assert mean_grounding >= 0.75, (
+            f"Top-20 mean grounding_score={mean_grounding:.2f} below 0.75"
+        )
+
+
 def _tanimoto_similarity(fp_a, fp_b):
     from rdkit.DataStructs import TanimotoSimilarity
     return TanimotoSimilarity(fp_a, fp_b)

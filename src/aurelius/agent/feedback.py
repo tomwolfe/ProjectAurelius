@@ -116,6 +116,7 @@ class FeedbackState:
     total_refits: int = 0
     refit_history: list[dict[str, float]] = field(default_factory=list)
     active_learning_triggers: list[dict[str, Any]] = field(default_factory=list)
+    budget_utilization: list[dict[str, Any]] = field(default_factory=list)
 
     def save(self, path: str) -> None:
         serialisable = {
@@ -124,6 +125,7 @@ class FeedbackState:
             "total_refits": self.total_refits,
             "refit_history": self.refit_history,
             "active_learning_triggers": self.active_learning_triggers,
+            "budget_utilization": self.budget_utilization,
         }
         tmp_path = path + ".tmp"
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -142,6 +144,7 @@ class FeedbackState:
                 total_refits=data.get("total_refits", 0),
                 refit_history=data.get("refit_history", []),
                 active_learning_triggers=data.get("active_learning_triggers", []),
+                budget_utilization=data.get("budget_utilization", []),
             )
         except (FileNotFoundError, json.JSONDecodeError):
             return cls()
@@ -408,6 +411,51 @@ class FeedbackController:
         logger.info(
             "Active learning trigger logged: %s (gen=%d, conf=%.3f)",
             smiles, generation, original_conf,
+        )
+
+    def log_budget_utilization(
+        self,
+        generation: int,
+        xtb_budget: int,
+        xtb_escalations: int,
+        xtb_successes: int,
+        threshold: float,
+    ) -> None:
+        """Log active learning budget utilization for a generation.
+
+        Records how many xTB escalations were attempted vs. the
+        per-generation budget, the success rate, and the current
+        active learning threshold. This enables retrospective
+        analysis of budget efficiency and threshold tuning.
+
+        Args:
+            generation: Current generation number.
+            xtb_budget: Per-generation xTB escalation budget.
+            xtb_escalations: Number of escalations attempted this gen.
+            xtb_successes: Number of successful xTB evaluations.
+            threshold: Current active learning threshold.
+        """
+        entry = {
+            "generation": generation,
+            "xtb_budget": xtb_budget,
+            "xtb_escalations": xtb_escalations,
+            "xtb_successes": xtb_successes,
+            "xtb_remaining": xtb_budget - xtb_escalations,
+            "success_rate": (
+                xtb_successes / xtb_escalations if xtb_escalations > 0 else 0.0
+            ),
+            "threshold": threshold,
+        }
+        self._state.budget_utilization.append(entry)
+        logger.info(
+            "Budget utilization gen=%d: %d/%d escalations (%.0f%%), "
+            "success=%.1f%%, threshold=%.3f",
+            generation,
+            xtb_escalations,
+            xtb_budget,
+            100.0 * xtb_escalations / xtb_budget if xtb_budget > 0 else 0.0,
+            100.0 * entry["success_rate"],
+            threshold,
         )
 
     def save(self, path: str) -> None:
