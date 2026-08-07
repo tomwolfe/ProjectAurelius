@@ -81,12 +81,22 @@ def test_oracle_caching(oracle: PropertyOracle) -> None:
 
 
 def test_oracle_known_molecules_consistent(oracle: PropertyOracle) -> None:
+    """Dielectric predictions must bracket the experimental constant.
+
+    ADR-2026-08-07-04: bounds were re-referenced to the true epsilon scale.
+    They previously asserted EC in [4, 20] — satisfiable only because the
+    fragment-additive model was capped near 15 and could not reach the
+    experimental 89.78. The bounds below bracket literature values (CRC 97th
+    ed.; Xu 2004), so this test now fails if the physics regresses rather
+    than merely if the output leaves an arbitrary window.
+    """
+    # (smiles, min_dielectric, max_dielectric, min_viscosity, max_viscosity)
     known_molecules: list[tuple[str, float, float, float, float]] = [
-        ("COC(=O)OC", 3.0, 15.0, 0.1, 3.0),
-        ("O=C1OCCO1", 4.0, 20.0, 0.5, 4.0),
-        ("C1COC(=O)O1", 4.0, 20.0, 0.5, 4.0),
-        ("CC#N", 5.0, 15.0, 0.1, 2.5),
-        ("CS(=O)(=O)C", 3.0, 20.0, 0.1, 4.0),
+        ("COC(=O)OC", 2.0, 6.0, 0.1, 3.0),      # DMC,  exp eps 3.11
+        ("C1COC(=O)O1", 60.0, 100.0, 0.5, 4.0),  # EC,   exp eps 89.78
+        ("CC1COC(=O)O1", 45.0, 80.0, 0.5, 4.0),  # PC,   exp eps 64.92
+        ("CC#N", 25.0, 45.0, 0.1, 2.5),          # ACN,  exp eps 35.94
+        ("CS(=O)C", 32.0, 58.0, 0.1, 4.0),       # DMSO, exp eps 46.7
     ]
     for smi, min_diel, max_diel, min_visc, max_visc in known_molecules:
         try:

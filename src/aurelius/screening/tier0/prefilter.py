@@ -34,12 +34,20 @@ class Tier0Prefilter:
     entirely (counted as invalid for the batch).
     """
 
-    def __init__(self, min_dielectric: float = 2.0, max_viscosity: float = 8.0) -> None:
+    def __init__(self, min_dielectric: float = 2.6, max_viscosity: float = 8.0) -> None:
         """Initialize prefilter thresholds.
 
         Args:
-            min_dielectric: Minimum dielectric proxy for viability.
+            min_dielectric: Minimum dielectric constant for viability.
             max_viscosity: Maximum viscosity proxy for viability.
+
+        ADR-2026-08-07-04: ``min_dielectric`` moved 2.0 -> 2.6 when the oracle
+        switched to the true ε scale. This remains a deliberately permissive
+        gate that rejects only clearly non-dissociating hydrocarbons
+        (hexane 2.14, cyclohexane 2.23, toluene 2.41, CCl4 2.38) while
+        retaining every practical co-solvent, including the low-ε linear
+        carbonates DEC (2.81) and DMC (3.13) that are essential as
+        viscosity-reducing blend components.
         """
         self.min_dielectric = min_dielectric
         self.max_viscosity = max_viscosity

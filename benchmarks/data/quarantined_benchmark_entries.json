@@ -1,0 +1,242 @@
+[
+  {
+    "smiles": "N#CCCC",
+    "name": "Butyronitrile",
+    "reference": "CRC Handbook",
+    "dielectric_constant": 3.4,
+    "viscosity_cP": 0.66,
+    "donor_number": null,
+    "homo_eV": null,
+    "lumo_eV": null,
+    "homo_source": null,
+    "lumo_source": null,
+    "quarantine_reasons": [
+      "dielectric 3.4 contradicts verified 24.83 (Butyronitrile)"
+    ]
+  },
+  {
+    "smiles": "N#CC(C)C",
+    "name": "Isobutyronitrile",
+    "reference": "CRC Handbook",
+    "dielectric_constant": 2.7,
+    "viscosity_cP": 0.55,
+    "donor_number": null,
+    "homo_eV": null,
+    "lumo_eV": null,
+    "homo_source": null,
+    "lumo_source": null,
+    "quarantine_reasons": [
+      "dielectric 2.7 contradicts verified 20.4 (Isobutyronitrile)"
+    ]
+  },
+  {
+    "smiles": "CC1OC(=O)CC1",
+    "name": "Gamma-butyrolactone",
+    "reference": "CRC Handbook; J. Chem. Eng. Data 2003, 48, 980",
+    "dielectric_constant": 39.0,
+    "viscosity_cP": 1.73,
+    "donor_number": 18.0,
+    "homo_eV": null,
+    "lumo_eV": null,
+    "homo_source": null,
+    "lumo_source": null,
+    "quarantine_reasons": [
+      "dielectric 39.0 contradicts verified 36.5 (gamma-Valerolactone)"
+    ]
+  },
+  {
+    "smiles": "C(F)(F)C(F)(F)OC(=O)OC(C(F)(F)F)C1",
+    "name": "Perfluorobutyl carbonate",
+    "reference": "J. Phys. Chem. B 2009, 113, 14956",
+    "dielectric_constant": 2.8,
+    "viscosity_cP": 1.5,
+    "donor_number": null,
+    "homo_eV": -7.5,
+    "lumo_eV": -0.2,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "SMILES does not parse"
+    ]
+  },
+  {
+    "smiles": "C(F)(F)OC(=O)OCF(F)F",
+    "name": "Trifluoromethyl fluoroethyl carbonate",
+    "reference": "J. Fluorine Chem. 2006, 127, 172",
+    "dielectric_constant": 2.0,
+    "viscosity_cP": 0.85,
+    "donor_number": null,
+    "homo_eV": -7.8,
+    "lumo_eV": -0.6,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "SMILES does not parse"
+    ]
+  },
+  {
+    "smiles": "C1CS(=O)(=O)CC(F)F",
+    "name": "2-Fluoroethyl sulfolane",
+    "reference": "J. Chem. Eng. Data 2003, 48, 980",
+    "dielectric_constant": 38.5,
+    "viscosity_cP": 1.95,
+    "donor_number": 13.8,
+    "homo_eV": -7.2,
+    "lumo_eV": -0.4,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "SMILES does not parse"
+    ]
+  },
+  {
+    "smiles": "C1CS(=O)(=O)CC(F)(F)C",
+    "name": "2,2-Difluoroethyl sulfolane",
+    "reference": "J. Chem. Eng. Data 2003, 48, 980",
+    "dielectric_constant": 39.2,
+    "viscosity_cP": 1.98,
+    "donor_number": 13.5,
+    "homo_eV": -7.3,
+    "lumo_eV": -0.3,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "SMILES does not parse"
+    ]
+  },
+  {
+    "smiles": "C1CS(=O)(=O)CC(CF)CC(F)C",
+    "name": "3-Fluoromethyl-2-methylsulfolane",
+    "reference": "J. Fluorine Chem. 2010, 131, 845",
+    "dielectric_constant": 40.1,
+    "viscosity_cP": 2.1,
+    "donor_number": 13.2,
+    "homo_eV": -7.4,
+    "lumo_eV": -0.2,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "SMILES does not parse"
+    ]
+  },
+  {
+    "smiles": "C1CS(=O)(=O)CC(F)CC",
+    "name": "3-Fluoroethyl sulfolane",
+    "reference": "J. Chem. Eng. Data 2003, 48, 980",
+    "dielectric_constant": 38.9,
+    "viscosity_cP": 1.97,
+    "donor_number": 13.6,
+    "homo_eV": -7.35,
+    "lumo_eV": -0.35,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "SMILES does not parse"
+    ]
+  },
+  {
+    "smiles": "CC(F)OC(F)C(=O)OC(C(F)F)C",
+    "name": "Difluoroethyl carbonate ester",
+    "reference": "J. Phys. Chem. B 2009, 113, 14956",
+    "dielectric_constant": 2.8,
+    "viscosity_cP": 1.3,
+    "donor_number": null,
+    "homo_eV": -7.4,
+    "lumo_eV": -0.3,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "name says carbonate but structure has no O-C(=O)-O"
+    ]
+  },
+  {
+    "smiles": "FCS(=O)(=O)C(F)(F)OC(=O)C(F)(F)F",
+    "name": "Difluoromethyl sulfonyl fluoride carbonate",
+    "reference": "J. Fluorine Chem. 2010, 131, 845",
+    "dielectric_constant": 10.2,
+    "viscosity_cP": 2.8,
+    "donor_number": null,
+    "homo_eV": -7.0,
+    "lumo_eV": -0.2,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "name says carbonate but structure has no O-C(=O)-O"
+    ]
+  },
+  {
+    "smiles": "C1COC(=O)OCC(F)F",
+    "name": "Fluoroethyl ethyl carbonate",
+    "reference": "J. Phys. Chem. B 2009, 113, 14956",
+    "dielectric_constant": 3.5,
+    "viscosity_cP": 0.9,
+    "donor_number": null,
+    "homo_eV": -7.4,
+    "lumo_eV": -0.3,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "SMILES does not parse"
+    ]
+  },
+  {
+    "smiles": "C1CS(=O)(=O)CC(F)CCF",
+    "name": "3,3-Difluoroethyl sulfolane",
+    "reference": "J. Chem. Eng. Data 2003, 48, 980",
+    "dielectric_constant": 39.5,
+    "viscosity_cP": 2.0,
+    "donor_number": null,
+    "homo_eV": -7.3,
+    "lumo_eV": -0.35,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "SMILES does not parse"
+    ]
+  },
+  {
+    "smiles": "N#C(F)C(F)F",
+    "name": "1,1,1-Trifluoroacetonitrile",
+    "reference": "J. Chem. Eng. Data 2005, 50, 1112",
+    "dielectric_constant": 38.0,
+    "viscosity_cP": 1.3,
+    "donor_number": null,
+    "homo_eV": -7.8,
+    "lumo_eV": -0.4,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "SMILES does not parse"
+    ]
+  },
+  {
+    "smiles": "CC1CC2OCCO2C1",
+    "name": "Decalin",
+    "reference": "J. Chem. Eng. Data 2003, 48, 980",
+    "dielectric_constant": 6.8,
+    "viscosity_cP": 2.5,
+    "donor_number": null,
+    "homo_eV": -7.5,
+    "lumo_eV": -0.1,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "SMILES does not parse"
+    ]
+  },
+  {
+    "smiles": "N#CC(F)OC(=O)C(F)F",
+    "name": "Fluorinated acetyl carbonate nitrile",
+    "reference": "J. Phys. Chem. B 2009, 113, 14956",
+    "dielectric_constant": 5.5,
+    "viscosity_cP": 1.7,
+    "donor_number": null,
+    "homo_eV": -7.4,
+    "lumo_eV": -0.4,
+    "homo_source": "DFT",
+    "lumo_source": "DFT",
+    "quarantine_reasons": [
+      "name says carbonate but structure has no O-C(=O)-O"
+    ]
+  }
+]

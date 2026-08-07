@@ -673,7 +673,7 @@ class DiscoveryLoop:
             return [], []
 
         return self._select_top_batch(
-            result_contexts, all_scores, all_confidences, obj_scores
+            result_contexts, all_scores, all_confidences, obj_scores, result_map
         )
 
     def _apply_tier0_filter(self, valid_contexts: list[MoleculeContext]) -> list[MoleculeContext]:
@@ -698,11 +698,12 @@ class DiscoveryLoop:
         scores: list[float],
         confidences: list[float],
         obj_scores: dict[str, list[float]],
+        result_map: dict[str, Any] | None = None,
     ) -> tuple[list[MoleculeContext], list[float]]:
         """Select the top batch via NSGA-II or tournament selection."""
         if len(contexts) <= self.batch_size:
             return contexts, scores
-        return self._select_batch(contexts, scores, confidences, obj_scores)
+        return self._select_batch(contexts, scores, confidences, obj_scores, result_map)
 
     def _select_batch(
         self,
@@ -710,6 +711,7 @@ class DiscoveryLoop:
         scores: list[float],
         confidences: list[float],
         obj_scores: dict[str, list[float]],
+        result_map: dict[str, Any] | None = None,
     ) -> tuple[list[MoleculeContext], list[float]]:
         """Dispatch to NSGA-II or tournament selection."""
         if self.use_nsga2:

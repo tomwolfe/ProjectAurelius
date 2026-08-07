@@ -1,6 +1,6 @@
 {
   "calibration_set_size": 115,
-  "external_benchmark_size": 120,
+  "external_benchmark_size": 104,
   "ml_baseline_comparison": {
     "n_molecules": 75,
     "n_with_dft": 85,
@@ -128,57 +128,57 @@
       "ml_baseline_better": false
     },
     "Dielectric": {
-      "n_calibrated": 115,
-      "mae": 14.560785889683155,
-      "rmse": 21.198933723698673,
-      "max_error": 88.19009640972985,
+      "n_calibrated": 99,
+      "mae": 6.958761865047123,
+      "rmse": 11.602035504790729,
+      "max_error": 69.01244209503064,
       "top_5_outliers": [
         {
-          "smiles": "C1COC(=O)O1",
-          "name": "EC",
-          "predicted": 1.5899035902701577,
-          "true": 89.78,
-          "absolute_error": 88.19009640972985,
+          "smiles": "OCCS(=O)(=O)C(F)(F)F",
+          "name": "Fluoromethyl methyl sulfone",
+          "predicted": 77.21244209503064,
+          "true": 8.2,
+          "absolute_error": 69.01244209503064,
           "failure_mode": "structural_complexity"
         },
         {
-          "smiles": "CC1COC(=O)O1",
-          "name": "PC",
-          "predicted": 2.5099818405901573,
-          "true": 64.92,
-          "absolute_error": 62.410018159409844,
+          "smiles": "CCS(=O)(=O)CC",
+          "name": "Diethyl sulfone",
+          "predicted": 27.88825809471419,
+          "true": 2.8,
+          "absolute_error": 25.088258094714188,
           "failure_mode": "structural_complexity"
         },
         {
-          "smiles": "CS(=O)C",
-          "name": "DMSO",
-          "predicted": 2.089966639669599,
-          "true": 46.68,
-          "absolute_error": 44.5900333603304,
+          "smiles": "CP(=O)(OC(C(F)F))OC",
+          "name": "Difluoroethyl phosphite",
+          "predicted": 4.476399760252232,
+          "true": 28.3,
+          "absolute_error": 23.82360023974777,
           "failure_mode": "structural_complexity"
         },
         {
-          "smiles": "C1CS(=O)(=O)CC1",
-          "name": "Sulfolane",
-          "predicted": 2.300019463089599,
-          "true": 43.4,
-          "absolute_error": 41.0999805369104,
+          "smiles": "O=COC(=O)C1CS(=O)(=O)C1",
+          "name": "Sulfonate ethyl ester",
+          "predicted": 32.244368113665345,
+          "true": 8.5,
+          "absolute_error": 23.744368113665345,
           "failure_mode": "structural_complexity"
         },
         {
-          "smiles": "C1CS(=O)(=O)CC(CF)CC(F)C",
-          "name": "3-Fluoromethyl-2-methylsulfolane",
-          "predicted": 0.0,
-          "true": 40.1,
-          "absolute_error": 40.1,
-          "failure_mode": "invalid_molecule"
+          "smiles": "CP(=O)(OC(C(F)F)C(F)F)O",
+          "name": "Difluoropropyl phosphite",
+          "predicted": 4.311696005548778,
+          "true": 27.5,
+          "absolute_error": 23.18830399445122,
+          "failure_mode": "structural_complexity"
         }
       ]
     },
     "Viscosity": {
-      "n_calibrated": 114,
-      "mae": 1.7459841342285833,
-      "rmse": 3.340209402975781,
+      "n_calibrated": 98,
+      "mae": 1.7407149080577609,
+      "rmse": 3.5033385793474,
       "max_error": 28.149806793591537,
       "top_5_outliers": [
         {

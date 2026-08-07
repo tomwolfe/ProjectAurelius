@@ -1,149 +1,192 @@
 [
   {
     "smiles": "CCOP(=O)(OCC)OCC",
-    "name": "TEP",
-    "class": "phosphoric ester",
-    "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "high"
+    "name": "Triethyl phosphate (TEP)",
+    "class": "phosphate ester",
+    "formula": "C6H15O4P",
+    "expected_dielectric_rank": "medium",
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 1.69
   },
   {
     "smiles": "COc1ccccc1",
     "name": "Anisole",
     "class": "aryl ether",
-    "expected_dielectric_rank": "medium",
-    "expected_viscosity_rank": "high"
+    "formula": "C7H8O",
+    "expected_dielectric_rank": "low",
+    "expected_viscosity_rank": "medium",
+    "experimental_viscosity_cP": 1.06
   },
   {
-    "smiles": "C(C)(C)(C)O",
-    "name": "tert-butanol",
+    "smiles": "CC(C)(C)O",
+    "name": "tert-Butanol",
     "class": "sterically hindered alcohol",
-    "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "high"
+    "formula": "C4H10O",
+    "expected_dielectric_rank": "medium",
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 4.31
   },
   {
-    "smiles": "CCN(C)C=O",
-    "name": "N,N-dimethylacetamide",
-    "class": "N,N-dimethyl amide",
+    "smiles": "CC(=O)N(C)C",
+    "name": "N,N-Dimethylacetamide",
+    "class": "N,N-dialkyl amide",
+    "formula": "C4H9NO",
     "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "high"
+    "expected_viscosity_rank": "medium",
+    "experimental_viscosity_cP": 0.92
   },
   {
-    "smiles": "S(=O)(=O)(O)",
-    "name": "methylsulfonyl",
-    "class": "sulfonyl group",
+    "smiles": "CS(=O)(=O)O",
+    "name": "Methanesulfonic acid",
+    "class": "sulfonic acid",
+    "formula": "CH4O3S",
     "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "high"
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 9.7
   },
   {
     "smiles": "O=C1CCCCC1",
-    "name": "cyclopentanone",
+    "name": "Cyclohexanone",
     "class": "cyclic ketone",
+    "formula": "C6H10O",
     "expected_dielectric_rank": "medium",
-    "expected_viscosity_rank": "low"
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 2.02
   },
   {
-    "smiles": "C1C(C)(C)OC(=O)O1",
-    "name": "methyl acetate cyclic",
-    "class": "cyclic ester",
+    "smiles": "CC1(C)COC(=O)O1",
+    "name": "4,4-Dimethyl-1,3-dioxolan-2-one",
+    "class": "cyclic carbonate",
+    "formula": "C5H8O3",
     "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "high"
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 2.5
   },
   {
-    "smiles": "CCOC(=O)OC(C)C",
-    "name": "isopropyl acetate",
-    "class": "branched ester",
+    "smiles": "CC(=O)OC(C)C",
+    "name": "Isopropyl acetate",
+    "class": "acyclic ester",
+    "formula": "C5H10O2",
     "expected_dielectric_rank": "medium",
-    "expected_viscosity_rank": "high"
+    "expected_viscosity_rank": "medium",
+    "experimental_viscosity_cP": 0.53
+  },
+  {
+    "smiles": "COCC(C)O",
+    "name": "Propylene glycol methyl ether",
+    "class": "glycol ether",
+    "formula": "C4H10O2",
+    "expected_dielectric_rank": "medium",
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 1.7
   },
   {
     "smiles": "CC(C)OC(=O)OC(C)C",
-    "name": "dipropylene glycol methyl ether",
-    "class": "ether ester",
-    "expected_dielectric_rank": "medium",
-    "expected_viscosity_rank": "high"
-  },
-  {
-    "smiles": "CC(C)(C)OCCOCC",
-    "name": "branched triol",
-    "class": "polyol",
-    "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "high"
-  },
-  {
-    "smiles": "CC(C)C(C)OC",
-    "name": "neopentyl glycol ether",
-    "class": "sterically hindered ether",
-    "expected_dielectric_rank": "medium",
-    "expected_viscosity_rank": "high"
-  },
-  {
-    "smiles": "C(C)(C)C(=O)O",
-    "name": "pivalic acid",
-    "class": "tert-butyl carboxylic acid",
-    "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "high"
-  },
-  {
-    "smiles": "CC(=O)COC(=O)CC",
-    "name": "succinic anhydride precursor",
-    "class": "diester linkage",
-    "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "high"
-  },
-  {
-    "smiles": "O=C1CCCCC1C(=O)O",
-    "name": "cis-4-carboxycyclohexanone",
-    "class": "cyclic keto-acid",
-    "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "high"
-  },
-  {
-    "smiles": "CC(C)C(F)(F)C(F)(F)F",
-    "name": "perfluoro-tert-butyl",
-    "class": "extreme fluorination",
+    "name": "Diisopropyl carbonate",
+    "class": "linear carbonate",
+    "formula": "C7H14O3",
     "expected_dielectric_rank": "low",
-    "expected_viscosity_rank": "high"
+    "expected_viscosity_rank": "medium",
+    "experimental_viscosity_cP": 1.0
+  },
+  {
+    "smiles": "COC(C)C(C)C",
+    "name": "2-Methoxy-3-methylbutane",
+    "class": "branched ether",
+    "formula": "C6H14O",
+    "expected_dielectric_rank": "low",
+    "expected_viscosity_rank": "low",
+    "experimental_viscosity_cP": 0.45
+  },
+  {
+    "smiles": "CC(C)(C)C(=O)O",
+    "name": "Pivalic acid",
+    "class": "carboxylic acid",
+    "formula": "C5H10O2",
+    "expected_dielectric_rank": "low",
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 1.9
+  },
+  {
+    "smiles": "O=C1CCC(=O)O1",
+    "name": "Succinic anhydride",
+    "class": "cyclic anhydride",
+    "formula": "C4H4O3",
+    "expected_dielectric_rank": "high",
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 2.2
+  },
+  {
+    "smiles": "O=C1CCC(C(=O)O)CC1",
+    "name": "4-Oxocyclohexanecarboxylic acid",
+    "class": "keto acid",
+    "formula": "C7H10O3",
+    "expected_dielectric_rank": "medium",
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 3.0
+  },
+  {
+    "smiles": "COC(C(F)(F)F)(C(F)(F)F)C(F)(F)F",
+    "name": "Perfluoro-tert-butyl methyl ether",
+    "class": "fluorinated ether",
+    "formula": "C5H3F9O",
+    "expected_dielectric_rank": "low",
+    "expected_viscosity_rank": "medium",
+    "experimental_viscosity_cP": 0.6
   },
   {
     "smiles": "CC#N",
-    "name": "acetonitrile",
-    "class": "nitrile solvent",
+    "name": "Acetonitrile",
+    "class": "nitrile",
+    "formula": "C2H3N",
     "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "medium"
+    "expected_viscosity_rank": "low",
+    "experimental_viscosity_cP": 0.34
   },
   {
     "smiles": "O=C1CCCC1=O",
-    "name": "cyclopentanone cyclic",
-    "class": "cyclic ketone",
-    "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "medium"
+    "name": "1,2-Cyclopentanedione",
+    "class": "cyclic diketone",
+    "formula": "C5H6O2",
+    "expected_dielectric_rank": "medium",
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 2.2,
+    "note": "solid at 25 C (mp 55 C); no reliable liquid epsilon, rank is indicative only"
   },
   {
-    "smiles": "CC(C)OC(=O)OCCOCC",
-    "name": "branched ester triol",
-    "class": "branched ester alcohol",
-    "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "high"
+    "smiles": "CCOCCOC(=O)OC(C)C",
+    "name": "2-Ethoxyethyl isopropyl carbonate",
+    "class": "carbonate ether",
+    "formula": "C8H16O4",
+    "expected_dielectric_rank": "low",
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 1.8
   },
   {
-    "smiles": "CC(C)(C)OC(=O)O",
-    "name": "tert-butyl acetate",
-    "class": "branched ester",
-    "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "high"
+    "smiles": "COC(=O)OC(C)(C)C",
+    "name": "tert-Butyl methyl carbonate",
+    "class": "linear carbonate",
+    "formula": "C6H12O3",
+    "expected_dielectric_rank": "low",
+    "expected_viscosity_rank": "medium",
+    "experimental_viscosity_cP": 0.9
   },
   {
     "smiles": "CCOCCOCCOCC",
-    "name": "branched ether glycol",
-    "class": "polyether",
-    "expected_dielectric_rank": "high",
-    "expected_viscosity_rank": "high"
+    "name": "Triethylene glycol diethyl ether",
+    "class": "glyme",
+    "formula": "C8H18O3",
+    "expected_dielectric_rank": "medium",
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 2.3
   },
   {
-    "smiles": "CC(C)OC(=O)OC(C)C",
-    "name": "isopropyl diphenyl ether",
+    "smiles": "c1ccc(Oc2ccccc2)cc1",
+    "name": "Diphenyl ether",
     "class": "aryl ether",
-    "expected_dielectric_rank": "medium",
-    "expected_viscosity_rank": "high"
+    "formula": "C12H10O",
+    "expected_dielectric_rank": "low",
+    "expected_viscosity_rank": "high",
+    "experimental_viscosity_cP": 3.87
   }
 ]

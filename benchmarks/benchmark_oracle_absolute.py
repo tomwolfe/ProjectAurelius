@@ -39,7 +39,14 @@ def _predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
 
 
 def _predict_gc_properties(mol: Chem.Mol) -> tuple[float, float]:
-    """Predict dielectric_proxy and viscosity_proxy using Generalized Contour method."""
+    """Predict (dielectric_proxy, viscosity_proxy) via group-contribution models.
+
+    ADR-2026-08-07-01: Callers previously unpacked this as
+    ``_, dielectric_pred = ...``, which silently reported *viscosity* as the
+    dielectric constant. That is the sole origin of the "EC epsilon = 1.6 vs
+    89.8" figure in oracle_absolute_audit.json — 1.59 is EC's predicted
+    viscosity, not its dielectric. Return order is (dielectric, viscosity).
+    """
     if mol is None:
         return 0.0, 0.0
     from aurelius.types import MoleculeContext
@@ -219,7 +226,7 @@ def main() -> None:
         if entry.get("dielectric_constant") is None:
             continue
         mol = Chem.MolFromSmiles(entry["smiles"])
-        _, dielectric_pred = _predict_gc_properties(mol)
+        dielectric_pred, _ = _predict_gc_properties(mol)
         dielectric_true = entry["dielectric_constant"]
         error = abs(dielectric_pred - dielectric_true)
         dielectric_errors.append({

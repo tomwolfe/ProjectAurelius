@@ -80,7 +80,7 @@ def benchmark_gc_batch(contexts: list[MoleculeContext]) -> dict[str, float]:
         n_branch = np.array([_count_branch_points(c.mol) for c in contexts], dtype=np.int32)
         n_stereo = np.array([_count_stereocenters(c.mol) for c in contexts], dtype=np.int32)
 
-        d = predict_dielectric_proxy_batch(counts, tpsa)
+        d = predict_dielectric_proxy_batch(counts, tpsa, contexts)
         v = predict_viscosity_proxy_batch(counts, mw, n_rot, n_branch, n_stereo)
         ls = predict_li_solvation_proxy_batch(counts, mw)
         c = predict_ionic_conductivity_proxy_batch(d, v, ls)

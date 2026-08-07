@@ -9,12 +9,38 @@ A physically-grounded Evolutionary Algorithm pipeline with a **hybrid quantum + 
 | Property | Method | Rationale |
 |----------|--------|-----------|
 | HOMO / LUMO | QuantumOracle (xTB or TOM) | Orbitals are delocalised quantum phenomena — NOT additive. GC would be "gamed" by stacking fragments. |
-| Dielectric ε | GC fragment-additivity + TPSA | Bulk polarity is reasonably additive. |
+| Dielectric ε | Kirkwood-Fröhlich (closed form) | ε is a bulk orientational response, **not** additive: it scales as μ²g/V_m and spans 2→90. Inputs (McGowan volume, Clausius-Mossotti ε∞, group dipole, correlation factor g) are all structure-derived. |
 | Viscosity | GC fragment-additivity + MW + RotB | Transport properties correlate with group contributions. |
 | Li+ Solvation | GC fragment-additivity | Donor-number additivity is physically valid. |
 | Ionic Conductivity | Walden-product proxy (ε, η, Li⁺) | Unifies salt dissociation, mobility, and charge-carrier availability into a single figure of merit. |
 
-The hybrid oracle (non-linear quantum HOMO/LUMO + additive GC bulk properties) keeps the pipeline physically grounded while maintaining interpretability. A Walden-product conductivity proxy combines dielectric, viscosity, and Li+ solvation into a unified transport metric.
+The hybrid oracle (non-linear quantum HOMO/LUMO + closed-form dielectric + additive GC transport properties) keeps the pipeline physically grounded while maintaining interpretability. A Walden-product conductivity proxy combines dielectric, viscosity, and Li+ solvation into a unified transport metric (reporting only — see the docstring for its saturation caveat).
+
+### Dielectric accuracy (ADR-2026-08-07-04)
+
+Against 55 formula-checked, literature-cited dielectric constants
+(`benchmarks/data/dielectric_verified.json`):
+
+| Model | MAE | Spearman ρ |
+|---|---|---|
+| Previous fragment-additive + TPSA cap | 10.62 | 0.444 |
+| **Kirkwood-Fröhlich** | **3.89** | **0.925** |
+| ECFP4 + RandomForest (5-fold CV) | 18.09 | 0.116 |
+
+On the ten canonical commercial solvents: MAE 3.01, ρ 1.00. EC 76.3 (exp
+89.78), PC 61.5 (64.92), DMC 3.13 (3.11), DEC 2.81 (2.82) — cyclic carbonates
+corrected without perturbing linear ones, and with no cyclic-specific term.
+
+**Known limitation.** EC carries essentially all remaining commercial-solvent
+error (MAE excluding EC is 1.85). The model uses the gas-phase dipole 4.90 D;
+condensed-phase estimates reach ~5.35 D, which would give ε = 90.7. This was
+not applied because it is a per-molecule adjustment rather than physics.
+
+**Note on the ML baseline.** Earlier audits reported the oracle losing to a
+fingerprint regressor. That comparison ran against benchmark entries with
+incorrect reference values (see `benchmarks/data/README.md`), which a
+fingerprint model can memorise and a physical model cannot. On verified
+labels the ordering reverses decisively.
 
 ## Architecture
 
@@ -153,7 +179,16 @@ particle-in-a-box and Hückel theory. TOM estimates HOMO/LUMO from:
 - Nitrile C≡N π* correction (−0.70 eV per C≡N)
 
 TOM is non-linear in molecular topology and cannot be "gamed" by fragment stacking.
-Wiener-index compactness improved external HOMO Spearman ρ from 0.20 to 0.5115. Ester SMARTS disambiguation (ADR-2026-06-05d) improved Dielectric Spearman ρ from 0.5855 to 0.8493, Viscosity from 0.7431 to 0.8024, and Donor Number from 0.5309 to 0.6956.
+Wiener-index compactness improved external HOMO Spearman ρ from 0.20 to 0.5115.
+
+> **Caveat on historical validation figures.** Correlation numbers quoted for
+> earlier ADRs were measured against `external_property_benchmark.json` before
+> it was audited. That file contained 16 entries that failed structural
+> integrity checks (unparseable SMILES, name/structure mismatches, dielectric
+> values contradicting CRC by an order of magnitude); they have since been
+> quarantined. Pre-audit figures are not comparable to current ones. See
+> `benchmarks/data/README.md` and run
+> `python -m benchmarks.audit_benchmark_integrity`.
 
 ## Anti-Gaming Constraints
 

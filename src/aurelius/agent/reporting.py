@@ -60,11 +60,13 @@ def generate_run_summary(
     scores = [r.total_score for r in all_results]
 
     # Compute run config hash for reproducibility
+    # ADR-2026-08-07-07: was `os.path.exists` without `import os`, raising
+    # NameError at the end of every completed run. Uses pathlib, already
+    # imported here, rather than adding an os dependency.
     run_config_hash = ""
-    run_config_path = "run_config.json"
-    if os.path.exists(run_config_path):
-        with open(run_config_path, "rb") as f:
-            run_config_hash = hashlib.sha256(f.read()).hexdigest()
+    run_config_path = Path("run_config.json")
+    if run_config_path.exists():
+        run_config_hash = hashlib.sha256(run_config_path.read_bytes()).hexdigest()
 
     plateau = check_score_plateau(state.batch_means)
     saturation = check_structural_saturation(state.scaffolds_per_batch)

@@ -1,0 +1,392 @@
+{
+  "description": "Experimentally verified static dielectric constants at 25 C unless noted. Every SMILES canonicalised and formula-checked against the named compound.",
+  "source": "CRC Handbook 97th ed.; Xu, Chem. Rev. 104 (2004) 4303",
+  "n_entries": 55,
+  "entries": [
+    {
+      "name": "Ethylene carbonate (EC)",
+      "smiles": "O=C1OCCO1",
+      "formula": "C3H4O3",
+      "dielectric_constant": 89.78,
+      "reference": "Xu 2004 (40 C)"
+    },
+    {
+      "name": "Propylene carbonate (PC)",
+      "smiles": "CC1COC(=O)O1",
+      "formula": "C4H6O3",
+      "dielectric_constant": 64.92,
+      "reference": "Xu 2004"
+    },
+    {
+      "name": "Dimethyl carbonate (DMC)",
+      "smiles": "COC(=O)OC",
+      "formula": "C3H6O3",
+      "dielectric_constant": 3.11,
+      "reference": "Xu 2004"
+    },
+    {
+      "name": "Diethyl carbonate (DEC)",
+      "smiles": "CCOC(=O)OCC",
+      "formula": "C5H10O3",
+      "dielectric_constant": 2.82,
+      "reference": "Xu 2004"
+    },
+    {
+      "name": "Ethyl methyl carbonate (EMC)",
+      "smiles": "CCOC(=O)OC",
+      "formula": "C4H8O3",
+      "dielectric_constant": 2.96,
+      "reference": "Xu 2004"
+    },
+    {
+      "name": "gamma-Butyrolactone (GBL)",
+      "smiles": "O=C1CCCO1",
+      "formula": "C4H6O2",
+      "dielectric_constant": 39.0,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "gamma-Valerolactone",
+      "smiles": "CC1CCC(=O)O1",
+      "formula": "C5H8O2",
+      "dielectric_constant": 36.5,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Dimethyl sulfoxide (DMSO)",
+      "smiles": "CS(C)=O",
+      "formula": "C2H6OS",
+      "dielectric_constant": 46.7,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Sulfolane",
+      "smiles": "O=S1(=O)CCCC1",
+      "formula": "C4H8O2S",
+      "dielectric_constant": 43.3,
+      "reference": "CRC 97th (30 C)"
+    },
+    {
+      "name": "N,N-Dimethylformamide (DMF)",
+      "smiles": "CN(C)C=O",
+      "formula": "C3H7NO",
+      "dielectric_constant": 36.7,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "N,N-Dimethylacetamide (DMAc)",
+      "smiles": "CC(=O)N(C)C",
+      "formula": "C4H9NO",
+      "dielectric_constant": 37.8,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "N-Methyl-2-pyrrolidone (NMP)",
+      "smiles": "CN1CCCC1=O",
+      "formula": "C5H9NO",
+      "dielectric_constant": 32.2,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "2-Pyrrolidone",
+      "smiles": "O=C1CCCN1",
+      "formula": "C4H7NO",
+      "dielectric_constant": 28.2,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Acetonitrile (ACN)",
+      "smiles": "CC#N",
+      "formula": "C2H3N",
+      "dielectric_constant": 35.94,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Propionitrile",
+      "smiles": "CCC#N",
+      "formula": "C3H5N",
+      "dielectric_constant": 28.9,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Butyronitrile",
+      "smiles": "CCCC#N",
+      "formula": "C4H7N",
+      "dielectric_constant": 24.83,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Isobutyronitrile",
+      "smiles": "CC(C)C#N",
+      "formula": "C4H7N",
+      "dielectric_constant": 20.4,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Valeronitrile",
+      "smiles": "CCCCC#N",
+      "formula": "C5H9N",
+      "dielectric_constant": 19.7,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Benzonitrile",
+      "smiles": "N#Cc1ccccc1",
+      "formula": "C7H5N",
+      "dielectric_constant": 25.9,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Acetone",
+      "smiles": "CC(C)=O",
+      "formula": "C3H6O",
+      "dielectric_constant": 20.7,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "2-Butanone (MEK)",
+      "smiles": "CCC(C)=O",
+      "formula": "C4H8O",
+      "dielectric_constant": 18.246,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Cyclohexanone",
+      "smiles": "O=C1CCCCC1",
+      "formula": "C6H10O",
+      "dielectric_constant": 15.62,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Methyl acetate",
+      "smiles": "COC(C)=O",
+      "formula": "C3H6O2",
+      "dielectric_constant": 6.68,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Ethyl acetate",
+      "smiles": "CCOC(C)=O",
+      "formula": "C4H8O2",
+      "dielectric_constant": 6.02,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Methyl propionate",
+      "smiles": "CCC(=O)OC",
+      "formula": "C4H8O2",
+      "dielectric_constant": 6.08,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Tetrahydrofuran (THF)",
+      "smiles": "C1CCOC1",
+      "formula": "C4H8O",
+      "dielectric_constant": 7.58,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "2-Methyltetrahydrofuran",
+      "smiles": "CC1CCCO1",
+      "formula": "C5H10O",
+      "dielectric_constant": 6.97,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "1,4-Dioxane",
+      "smiles": "C1COCCO1",
+      "formula": "C4H8O2",
+      "dielectric_constant": 2.22,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "1,2-Dimethoxyethane (DME)",
+      "smiles": "COCCOC",
+      "formula": "C4H10O2",
+      "dielectric_constant": 7.2,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Diglyme",
+      "smiles": "COCCOCCOC",
+      "formula": "C6H14O3",
+      "dielectric_constant": 7.4,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Diethyl ether",
+      "smiles": "CCOCC",
+      "formula": "C4H10O",
+      "dielectric_constant": 4.27,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Water",
+      "smiles": "O",
+      "formula": "H2O",
+      "dielectric_constant": 78.36,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Methanol",
+      "smiles": "CO",
+      "formula": "CH4O",
+      "dielectric_constant": 32.66,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Ethanol",
+      "smiles": "CCO",
+      "formula": "C2H6O",
+      "dielectric_constant": 24.5,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "1-Propanol",
+      "smiles": "CCCO",
+      "formula": "C3H8O",
+      "dielectric_constant": 20.8,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "2-Propanol",
+      "smiles": "CC(C)O",
+      "formula": "C3H8O",
+      "dielectric_constant": 19.26,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Ethylene glycol",
+      "smiles": "OCCO",
+      "formula": "C2H6O2",
+      "dielectric_constant": 41.4,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Formic acid",
+      "smiles": "O=CO",
+      "formula": "CH2O2",
+      "dielectric_constant": 51.1,
+      "reference": "CRC 97th (20 C)"
+    },
+    {
+      "name": "Acetic acid",
+      "smiles": "CC(=O)O",
+      "formula": "C2H4O2",
+      "dielectric_constant": 6.2,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Nitromethane",
+      "smiles": "C[N+](=O)[O-]",
+      "formula": "CH3NO2",
+      "dielectric_constant": 36.56,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Nitrobenzene",
+      "smiles": "O=[N+]([O-])c1ccccc1",
+      "formula": "C6H5NO2",
+      "dielectric_constant": 34.78,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Trimethyl phosphate (TMP)",
+      "smiles": "COP(=O)(OC)OC",
+      "formula": "C3H9O4P",
+      "dielectric_constant": 20.6,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Triethyl phosphate (TEP)",
+      "smiles": "CCOP(=O)(OCC)OCC",
+      "formula": "C6H15O4P",
+      "dielectric_constant": 13.1,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Pyridine",
+      "smiles": "c1ccncc1",
+      "formula": "C5H5N",
+      "dielectric_constant": 12.98,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Piperidine",
+      "smiles": "C1CCNCC1",
+      "formula": "C5H11N",
+      "dielectric_constant": 5.8,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Triethylamine",
+      "smiles": "CCN(CC)CC",
+      "formula": "C6H15N",
+      "dielectric_constant": 2.42,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Aniline",
+      "smiles": "Nc1ccccc1",
+      "formula": "C6H7N",
+      "dielectric_constant": 6.89,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Dichloromethane",
+      "smiles": "ClCCl",
+      "formula": "CH2Cl2",
+      "dielectric_constant": 8.93,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Chloroform",
+      "smiles": "ClC(Cl)Cl",
+      "formula": "CHCl3",
+      "dielectric_constant": 4.81,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Toluene",
+      "smiles": "Cc1ccccc1",
+      "formula": "C7H8",
+      "dielectric_constant": 2.38,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Benzene",
+      "smiles": "c1ccccc1",
+      "formula": "C6H6",
+      "dielectric_constant": 2.27,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "n-Hexane",
+      "smiles": "CCCCCC",
+      "formula": "C6H14",
+      "dielectric_constant": 1.88,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Cyclohexane",
+      "smiles": "C1CCCCC1",
+      "formula": "C6H12",
+      "dielectric_constant": 2.02,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Carbon tetrachloride",
+      "smiles": "ClC(Cl)(Cl)Cl",
+      "formula": "CCl4",
+      "dielectric_constant": 2.23,
+      "reference": "CRC 97th"
+    },
+    {
+      "name": "Fluoroethylene carbonate (FEC)",
+      "smiles": "O=C1OCC(F)O1",
+      "formula": "C3H3FO3",
+      "dielectric_constant": 78.4,
+      "reference": "J. Power Sources 2013"
+    }
+  ]
+}

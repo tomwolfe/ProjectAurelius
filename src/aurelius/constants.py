@@ -41,25 +41,46 @@ LUMO_SIGMA: float = 0.75
 # ---------------------------------------------------------------------------
 # Dielectric Constant Thresholds
 # ---------------------------------------------------------------------------
-# Physical basis: A minimum dielectric constant (ε > 5) is required to
-# dissociate Li/Na salts into free ions. Low-ε solvents like pure ethers
-# (ε ≈ 2-3) form ion pairs rather than free ions, reducing conductivity.
-# High-ε solvents like EC (ε ≈ 90) or propylene carbonate (ε ≈ 65) are
-# excellent salt dissociators. The proxy is a unitless model-derived value.
+# Physical basis: A minimum dielectric constant is required to dissociate
+# Li/Na salts into free ions. Low-ε solvents like pure ethers (ε ≈ 2-7) form
+# ion pairs rather than free ions, reducing conductivity. High-ε solvents like
+# EC (ε ≈ 90) or propylene carbonate (ε ≈ 65) are excellent salt dissociators.
+#
+# ADR-2026-08-07-04: These thresholds were re-referenced to the true physical
+# ε scale. The oracle previously returned a compressed fragment-additive proxy
+# bounded to roughly 1-15 by a TPSA cap; it now returns the Kirkwood-Fröhlich
+# static dielectric constant, directly comparable to experiment.
 
-DIELECTRIC_TARGET: float = 5.0
-"""Minimum target dielectric proxy value. Values below this indicate poor salt dissolution."""
+DIELECTRIC_TARGET: float = 15.0
+"""Sigmoid midpoint for the dielectric reward, on the true ε scale.
 
-DIELECTRIC_SIGMOID_STEEPNESS: float = 1.5
-"""Steepness of the sigmoid reward for dielectric proxy above target."""
+Set at ε = 15 — the accepted boundary between solvents that support
+substantial salt dissociation and those that do not. Bjerrum theory places
+the onset of extensive ion pairing for a 1:1 salt near ε ≈ 10-20, and this
+value reproduces the known ordering of battery solvents: DMC/DEC (ε ≈ 3)
+score ≈ 0.05, ethers (ε ≈ 5-7) score ≈ 0.07-0.11, while ACN/GBL/PC/EC
+(ε ≈ 36-90) all score > 0.99."""
 
-# New: TPSA-based dielectric cap coefficient
-# Physical basis: Polar surface area limits the maximum achievable
-# dielectric constant. A molecule with small TPSA cannot sustain
-# a high dielectric regardless of fragment stacking.
+DIELECTRIC_SIGMOID_STEEPNESS: float = 0.25
+"""Steepness of the sigmoid reward for dielectric above target.
+
+Reduced from 1.5 because the input scale expanded ~6x. The product
+steepness × scale is what sets selectivity: 1.5 on the old 1-15 proxy
+corresponds to ≈ 0.25 on the true 2-90 ε scale, preserving the transition
+width in relative terms."""
+
+# TPSA-based dielectric cap coefficient.
+#
+# ADR-2026-08-07-04: No longer applied to the dielectric prediction. It
+# formerly imposed ε_max = 1.9 + TPSA × 0.60, which capped EC at 33.5 and was
+# the binding constraint that made the "EC ε = 90" target unreachable by any
+# fragment recalibration. The Kirkwood-Fröhlich model bounds ε through molar
+# volume and the correlation factor instead, which is the physically correct
+# mechanism. Retained only for backward compatibility with the legacy
+# additive batch path.
 MAX_DIELECTRIC_PER_TPSA: float = 0.60
-"""Upper bound on dielectric contribution per unit TPSA (Å²).
-Dielectric_proxy_max = base + TPSA * MAX_DIELECTRIC_PER_TPSA."""
+"""Deprecated. Upper bound on dielectric contribution per unit TPSA (Å²),
+used only by the legacy fragment-additive dielectric path."""
 
 # ---------------------------------------------------------------------------
 # Viscosity Thresholds
