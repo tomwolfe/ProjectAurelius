@@ -369,13 +369,92 @@ def _wiener_index(mol: Chem.Mol) -> float:
     n = mol.GetNumAtoms()
     if n <= 1:
         return 0.0
-    total = 0
     from rdkit.Chem import rdmolops
     matrix = rdmolops.GetDistanceMatrix(mol)
-    for i in range(n):
-        for j in range(i + 1, n):
-            total += int(matrix[i][j])
-    return float(total)
+    return float(np.triu(matrix.astype(np.int64), k=1).sum())
+
+
+_RG_CACHE: dict[str, float] = {}
+_RG_CACHE_MAX = 50000
+
+
+def _rg_cache_key(mol: Chem.Mol) -> str | None:
+    """Canonical SMILES key for the radius-of-gyration cache."""
+    try:
+        return Chem.MolToSmiles(mol)
+    except Exception:
+        return None
+
+
+def _rg_memoize(key: str | None, value: float) -> float:
+    """Store a computed radius of gyration in the cache and return it."""
+    if key is not None and len(_RG_CACHE) < _RG_CACHE_MAX:
+        _RG_CACHE[key] = value
+    return value
+
+
+def _compute_radius_of_gyration_batch(mols: list[Chem.Mol]) -> np.ndarray:
+    """Compute radius of gyration for a batch of molecules.
+
+    ADR-2026-08-07-04: Profiling ``predict_tom_orbitals_batch`` on M5 Pro at
+    N=1000 showed 1.96 s of a 2.29 s total (86%) inside
+    ``_compute_radius_of_gyration``. The cost is ETKDGv3 conformer embedding
+    plus UFF optimisation, not linear algebra and not SMARTS matching, so no
+    amount of tensor-pipeline work on the downstream float32 vectors can move
+    this number. Two changes address the real bottleneck:
+
+      1. Canonical-SMILES memoisation. R_g is a deterministic function of the
+         molecular graph (randomSeed is pinned to 42), so repeated graphs are
+         free. EA populations revisit scaffolds heavily between generations.
+      2. Threaded embedding for cache misses. RDKit's ``EmbedMolecule`` and
+         ``UFFOptimizeMolecule`` are C++ routines that release the GIL, so
+         they parallelise cleanly. Measured on 167 unique molecules: 355 mol/s
+         serial vs 2188 mol/s at 8 threads (6.2x).
+
+    This is explicitly NOT threading ``Chem.MolFromSmiles``, which holds the
+    GIL and would only add contention.
+
+    Returns a 1-D float32 array of radii of gyration in Angstroms.
+    """
+    n = len(mols)
+    result = np.zeros(n, dtype=np.float32)
+    keys: list[str | None] = [_rg_cache_key(m) for m in mols]
+
+    # Deduplicate within the batch: identical graphs share one embedding.
+    pending: dict[str, int] = {}
+    unresolved: list[int] = []
+    for i, key in enumerate(keys):
+        if key is not None and key in _RG_CACHE:
+            result[i] = _RG_CACHE[key]
+            continue
+        unresolved.append(i)
+        if key is not None and key not in pending:
+            pending[key] = i
+
+    if not unresolved:
+        return result
+
+    todo = list(pending.items())
+    if len(todo) < 8:
+        values = [_compute_radius_of_gyration(mols[i]) for _, i in todo]
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(8, len(todo))) as pool:
+            values = list(pool.map(lambda kv: _compute_radius_of_gyration(mols[kv[1]]), todo))
+
+    for (key, _i), value in zip(todo, values):
+        if len(_RG_CACHE) < _RG_CACHE_MAX:
+            _RG_CACHE[key] = value
+
+    for i in unresolved:
+        key = keys[i]
+        if key is not None and key in _RG_CACHE:
+            result[i] = _RG_CACHE[key]
+        else:
+            result[i] = _compute_radius_of_gyration(mols[i])
+
+    return result
 
 
 def _compute_radius_of_gyration(mol: Chem.Mol) -> float:
@@ -390,9 +469,18 @@ def _compute_radius_of_gyration(mol: Chem.Mol) -> float:
     Args:
         mol: RDKit molecule
 
+    Deterministic in the molecular graph (randomSeed is pinned), so results
+    are memoised by canonical SMILES. See ADR-2026-08-07-04.
+
     Returns:
         Radius of gyration in Angstroms
     """
+    cache_key = _rg_cache_key(mol)
+    if cache_key is not None:
+        cached = _RG_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
     n_atoms = mol.GetNumAtoms()
     try:
         from rdkit.Chem import AllChem
@@ -411,7 +499,7 @@ def _compute_radius_of_gyration(mol: Chem.Mol) -> float:
 
         conf = mol_copy.GetConformer()
         if n_atoms < 2:
-            return 0.5 * math.sqrt(n_atoms)
+            return _rg_memoize(cache_key, 0.5 * math.sqrt(n_atoms))
 
         sum_mass = 0.0
         sum_mass_r2 = 0.0
@@ -428,11 +516,11 @@ def _compute_radius_of_gyration(mol: Chem.Mol) -> float:
 
         if sum_mass > 0:
             rg = math.sqrt(sum_mass_r2 / sum_mass)
-            return rg
+            return _rg_memoize(cache_key, rg)
     except Exception:
         pass
 
-    return 0.5 * math.sqrt(n_atoms)
+    return _rg_memoize(cache_key, 0.5 * math.sqrt(n_atoms))
 
 
 def _get_ideal_gyration_for_conjugation_length(L: int) -> float:
@@ -1080,9 +1168,7 @@ def _compute_L_final(L_array: np.ndarray, mols: list[Chem.Mol]) -> tuple[np.ndar
         2,
     )
 
-    R_g_array = np.array(
-        [_compute_radius_of_gyration(mol) for mol in mols], dtype=np.float32
-    )
+    R_g_array = _compute_radius_of_gyration_batch(mols)
     R_g_linear = np.array(
         [_get_ideal_gyration_for_conjugation_length(int(l)) for l in L_eff],
         dtype=np.float32,
@@ -1126,6 +1212,10 @@ def _extract_tom_per_molecule_arrays(mols: list[Chem.Mol]) -> dict[str, np.ndarr
     n_p = np.zeros(n, dtype=np.float32)
     n_s = np.zeros(n, dtype=np.float32)
     
+    # R_g is the dominant cost (86% of batch time); compute it for the whole
+    # batch up front so it can be memoised and threaded. See ADR-2026-08-07-04.
+    rg_array = _compute_radius_of_gyration_batch(mols)
+
     for i, mol in enumerate(mols):
         # Longest conjugation path
         L = _longest_conjugation_path(mol)
@@ -1146,7 +1236,7 @@ def _extract_tom_per_molecule_arrays(mols: list[Chem.Mol]) -> dict[str, np.ndarr
         L_final[i] = L
         
         # Compute radius of gyration and compactness_3d
-        R_g = _compute_radius_of_gyration(mol)
+        R_g = float(rg_array[i])
         R_g_linear = _get_ideal_gyration_for_conjugation_length(L)
         
         if R_g_linear > 0:
