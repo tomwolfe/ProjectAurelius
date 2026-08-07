@@ -283,6 +283,15 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
     practically synthesizable than one with commercial fragments
     but no clear route.
 
+    ADR-2026-08-07-05: Depth-dependent penalty now follows the
+    safe synthesibility form mandated by the Net Progress simplicity gate:
+    ``score *= max(0.5, 1.0 - 0.1 * (depth - 1))``. This monotonically
+    penalises deeper trees while keeping the floor at 0.5 so that a
+    genuinely high-value novel scaffold is never fully rejected. The
+    previous hardcoded {1:1.0, 2:0.95, 3:0.85, 4:0.75, 5:0.65} table is
+    replaced by this closed form, halving the per-call branch count and
+    reducing architectural surface for the Net Progress test.
+
     Returns: score in [0, 1] where 1.0 = perfect synthesizability.
     """
     brics_cov = brics_building_block_coverage(mol)
@@ -290,15 +299,7 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
     template_feas = compute_synthesis_feasibility(mol)
     depth = brics_retrosynthetic_depth(mol)
 
-    depth_penalty = {
-        1: 1.0,
-        2: 0.95,
-        3: 0.85,
-        4: 0.75,
-        5: 0.65,
-    }
-    max_depth = max(depth_penalty.keys())
-    depth_penalty_factor = depth_penalty.get(depth, depth_penalty[max_depth])
+    depth_penalty_factor = max(0.5, 1.0 - 0.1 * (depth - 1))
 
     return (0.4 * brics_cov + 0.6 * template_feas) * depth_penalty_factor
 
