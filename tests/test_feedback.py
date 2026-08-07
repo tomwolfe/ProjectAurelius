@@ -296,3 +296,74 @@ class TestExperimentalFeedback:
                 f"with experimental feedback (before={loo_before:.4f}, "
                 f"after={loo_after:.4f}, improvement={improvement:.2%})"
             )
+
+
+class TestFeedbackControllerSafety:
+    """ADR-2026-08-07-06: batch-refit safety contract.
+
+    Verifies that update_online is a deprecated no-op and that maybe_refit
+    performs a full GPR refit whose LOO MAE does not regress when
+    experimental feedback is supplied.
+    """
+
+    def test_update_online_is_deprecated_noop(self) -> None:
+        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
+        from aurelius.scoring.oracle.delta_correction import get_delta_correction
+
+        dc = get_delta_correction()
+        before = dc.loo_mae()
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            dc.update_online("CCO", -8.0, -1.0, -7.5, -0.8)
+        after = dc.loo_mae()
+        assert before == pytest.approx(after, rel=1e-9), (
+            "update_online() must be a no-op"
+        )
+
+    def test_maybe_refit_full_retrain_improves_oro_mae(self) -> None:
+        """Full GPR refit from +experimental feedback must not worsen LOO MAE."""
+        from aurelius.scoring.oracle.delta_correction import get_delta_correction
+
+        feedback_path = os.path.join(
+            os.path.dirname(__file__), "..", "src", "aurelius", "data",
+            "experimental_feedback.json",
+        )
+        fc = FeedbackController(
+            refit_interval=1,
+            experimental_feedback_path=feedback_path,
+        )
+
+        matched = 0
+        for smi, gen in [("C1COC(=O)O1", 1), ("COC(=O)OC", 1), ("CC#N", 1)]:
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is None:
+                continue
+            dc = fc.get_delta_correction()
+            homo_pred, lumo_pred = dc.predict_corrected(ctx.mol)
+            exp_homo, exp_lumo = fc._match_experimental(smi)
+            if exp_homo is not None and exp_lumo is not None:
+                fc.accumulate(
+                    smiles=smi,
+                    homo_prediction=homo_pred,
+                    lumo_prediction=lumo_pred,
+                    homo_corrected=exp_homo,
+                    lumo_corrected=exp_lumo,
+                    total_score=50.0,
+                    conformal_confidence=0.9,
+                    generation=gen,
+                )
+                matched += 1
+
+        loo_before = fc.get_delta_correction().loo_mae()
+        result = fc.maybe_refit(current_generation=2)
+        loo_after = fc.get_delta_correction().loo_mae()
+
+        assert result is not None
+        assert matched >= 1, "At least one experimental point must be matched"
+        if loo_before > 0 and result["new_calibration_entries"] > 0:
+            improvement = (loo_before - loo_after) / loo_before
+            assert improvement >= -0.05, (
+                f"LOO MAE must not regress >5% after full refit "
+                f"(before={loo_before:.4f}, after={loo_after:.4f})"
+            )

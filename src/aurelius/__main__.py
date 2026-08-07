@@ -12,6 +12,8 @@ Usage:
     aurelius evaluate <smiles>       Run full pipeline evaluation
     aurelius validate <smiles>       Run full pipeline with per-objective scorecard
     aurelius agent                   Run the autonomous screening agent
+    aurelius report                  Generate wet-lab handoff report
+                              [from a de-novo or reproduced discovery run]
 """
 
 from __future__ import annotations
@@ -545,6 +547,63 @@ def agent(
         active_learning_threshold=active_learning_threshold,
     )
     run_screening(cfg)
+
+
+@cli.command("report")
+@click.option("--top", type=int, default=20, help="Number of top candidates to include")
+@click.option("--dft", is_flag=True, default=False, help="Run ORCA DFT re-ranking of top candidates")
+@click.option("--output", type=click.Path(), default=".", help="Output directory for artifacts")
+@click.option("--generations", type=int, default=50, help="Discovery-loop generations (de novo run)")
+@click.option("--batch-size", type=int, default=50, help="Batch size for de-novo run")
+@click.option("--summary", type=click.Path(exists=True), default=None, help="Reuse an existing run_summary.json instead of a de-novo run")
+def report_cmd(top: int, dft: bool, output: str, generations: int, batch_size: int, summary: str | None) -> None:
+    """Generate a standardized wet-lab candidate handoff report.
+
+    Runs a de-novo discovery loop (unless --summary is given) and applies
+    the 5-stage wet-lab cascade filter, emitting a markdown report plus a
+    legacy-compatible CSV into --output.
+    """
+    from aurelius.reporting import ReportingEngine, _load_known_electrolytes
+
+    engine = ReportingEngine()
+    if summary is not None:
+        import json as _json
+        from aurelius.agent.loop import ScreeningResult as _SR
+
+        with open(summary) as f:
+            loaded = _json.load(f)
+        entries = loaded.get("discoveries", []) or loaded.get("all_results", [])
+        results: list = []
+        for e in entries:
+            try:
+                results.append(_SR(**{k: e.get(k) for k in _SR.__dataclass_fields__}))
+            except Exception:
+                continue
+        known = _load_known_electrolytes()
+        built = []
+        for r in results:
+            cand = engine._build_candidate(r, known)
+            if cand is not None:
+                built.append(cand)
+        selected, rej = engine._apply_cascade(built)
+        md = engine._render_markdown(built, selected, rej)
+        import os
+        os.makedirs(output, exist_ok=True)
+        engine._render_csv(selected or built[:top], os.path.join(output, "prospective_candidates.csv"))
+        with open(os.path.join(output, "prospective_candidates_report.md"), "w") as f:
+            f.write(md)
+        click.echo(f"Report written to {output}/ (selected {len(selected)} of {len(built)})")
+        return
+
+    selected, report = engine.generate_report(
+        n_generations=generations,
+        batch_size=batch_size,
+        top_n=top,
+        output_dir=output,
+        dft=dft,
+    )
+    click.echo(f"Selected {len(selected)} candidates -> {output}/prospective_candidates.csv")
+    click.echo(f"Report -> {output}/prospective_candidates_report.md")
 
 
 def _reproduce_run(summary_path: str) -> None:

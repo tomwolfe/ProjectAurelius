@@ -919,12 +919,26 @@ class DiscoveryLoop:
             # Extract xTB predictions (treated as DFT reference) from xtb_t2
             homo_dft = xtb_t2.get("homo_eV", homo_dft)
             lumo_dft = xtb_t2.get("lumo_eV", lumo_dft)
-            # Update online model with new data
-            try:
-                delta_correction.update_online(smi, homo_tom, lumo_tom, homo_dft, lumo_dft)
-                update_successful = True
-            except Exception:
-                update_successful = False
+            # ADR-2026-08-07-06: accumulate via the feedback controller (full
+            # batch refit on the refit interval) instead of the deprecated
+            # DeltaCorrection.update_online() point-update, which can corrupt
+            # GPR state during long discovery runs.
+            update_successful = False
+            if hasattr(self, "feedback_controller") and self.feedback_controller:
+                try:
+                    self.feedback_controller.accumulate(
+                        smiles=smi,
+                        homo_prediction=homo_tom,
+                        lumo_prediction=lumo_tom,
+                        homo_corrected=homo_dft,
+                        lumo_corrected=lumo_dft,
+                        total_score=xtb_total,
+                        conformal_confidence=xtb_conf,
+                        generation=self.state.generations,
+                    )
+                    update_successful = True
+                except Exception:
+                    update_successful = False
 
         if hasattr(self, "feedback_controller") and self.feedback_controller:
             self.feedback_controller.log_active_learning_trigger(

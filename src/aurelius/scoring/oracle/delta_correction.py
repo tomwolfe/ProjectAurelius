@@ -199,58 +199,31 @@ class DeltaCorrection:
         self, smiles: str, homo_tom: float, lumo_tom: float,
         homo_dft: float, lumo_dft: float
     ) -> None:
-        """Online update of the GPR residual model with new data.
+        """DEPRECATED — no-op with warning.
 
-        Physical justification: In active learning, low-confidence TOM predictions
-        are escalated to xTB (and eventually DFT) for more accurate evaluation.
-        The accumulated feedback should immediately update the Δ-correction
-        model so that subsequent predictions benefit from this new information
-        without waiting for a periodic refit. The incremental update preserves
-        the probabilistic properties of the GPR while adapting to new data
-        patterns.
+        ADR-2026-08-07-06: Online point-updates of the GPR are unsafe during
+        long discovery runs. Each incremental ``partial_fit`` call perturbs
+        the kernel hyperparameters and can drive the model into an
+        overfitting or numerical-unstable regime, silently corrupting the
+        Δ-correction applied to *all* subsequent candidates.
 
-        Args:
-            smiles: SMILES string for the molecule
-            homo_tom: Raw TOM HOMO prediction (eV)
-            lumo_tom: Raw TOM LUMO prediction (eV)
-            homo_dft: DFT HOMO reference (eV)
-            lumo_dft: DFT LUMO reference (eV)
+        Use ``FeedbackController.accumulate()`` + periodic
+        ``FeedbackController.maybe_refit()`` instead.  ``maybe_refit``
+        performs a *full* GPR retrain from the combined calibration +
+        feedback set on a configurable interval (default every 5
+        generations), which is both numerically stable and cheaper than
+        repeated partial fits at EA-loop batch sizes.
         """
-        try:
-            import sklearn.gaussian_process
-            from sklearn.gaussian_process import GaussianProcessRegressor
-            
-            # Calculate residuals
-            delta_homo = homo_dft - homo_tom
-            delta_lumo = lumo_dft - lumo_tom
-            
-            # Convert SMILES to ECFP4 fingerprint
-            mol = Chem.MolFromSmiles(smiles)
-            if mol is None:
-                return
-            fp_vec = _ecfp4_vector(mol).reshape(1, -1)
-            
-            # Online update using partial_fit (available in sklearn >= 1.0)
-            # For older sklearn versions, we'll accumulate new data points
-            if hasattr(self._homo_model, 'partial_fit'):
-                # Use partial_fit for incremental updates
-                self._homo_model.partial_fit(fp_vec, np.array([delta_homo]))
-                self._lumo_model.partial_fit(fp_vec, np.array([delta_lumo]))
-                self._X = np.vstack([self._X, fp_vec])
-                self._y_homo = np.append(self._y_homo, delta_homo)
-                self._y_lumo = np.append(self._y_lumo, delta_lumo)
-            else:
-                # For older sklearn, accumulate data and retrain on all accumulated data
-                self._X = np.vstack([self._X, fp_vec])
-                self._y_homo = np.append(self._y_homo, delta_homo)
-                self._y_lumo = np.append(self._y_lumo, delta_lumo)
-                
-                # Retrain models with accumulated data
-                self._homo_model = GaussianProcessRegressor(**_GPR_KWARGS).fit(self._X, self._y_homo)
-                self._lumo_model = GaussianProcessRegressor(**_GPR_KWARGS).fit(self._X, self._y_lumo)
-                
-        except Exception as e:
-            logger.debug(f"Online update failed for {smiles}: {e}")
+        import warnings
+
+        warnings.warn(
+            "DeltaCorrection.update_online() is deprecated (ADR-2026-08-07-06) "
+            "and is now a no-op to prevent GPR state corruption during long "
+            "discovery runs. Use FeedbackController.accumulate() + maybe_refit() "
+            "for periodic batch refits instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
             # Graceful degradation: if online update fails, continue without it
 
     def loo_mae(self) -> float:
