@@ -104,7 +104,7 @@ def test_no_escalation_when_confidence_high():
             conformal_conf=0.9,
             score_data={},
             sub_scores={},
-            t2={"quantum_confidence": "tom_low", "homo_eV": -7.0, "lumo_eV": -1.0}
+            t2={"quantum_confidence": "xtb", "homo_eV": -7.0, "lumo_eV": -1.0}
         )
 
         mock_feedback_controller.log_active_learning_trigger.assert_not_called()

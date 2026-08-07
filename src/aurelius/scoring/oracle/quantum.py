@@ -393,6 +393,41 @@ def _rg_memoize(key: str | None, value: float) -> float:
     return value
 
 
+def _rg_warm_cache(mols: list[Chem.Mol], keys: list[str | None]) -> tuple[np.ndarray, list[int], dict[str, int]]:
+    """Fill ``result`` from the cache, returning remaining indices and dedup map.
+
+    Returns ``(result, unresolved_indices, pending)`` where ``pending`` maps
+    each cache-miss SMILES key to the first index where it was seen.
+    """
+    n = len(mols)
+    result = np.zeros(n, dtype=np.float32)
+    pending: dict[str, int] = {}
+    unresolved: list[int] = []
+    for i, key in enumerate(keys):
+        if key is not None and key in _RG_CACHE:
+            result[i] = _RG_CACHE[key]
+            continue
+        unresolved.append(i)
+        if key is not None and key not in pending:
+            pending[key] = i
+    return result, unresolved, pending
+
+
+def _rg_embed_batch(pending: dict[str, int], mols: list[Chem.Mol]) -> list[float]:
+    """Embed+optimise the R_g for each unique pending SMILES.
+
+    Uses threads for >8 distinct molecules (ETKDG releases the GIL); serial
+    for smaller batches to avoid thread-launch overhead.
+    """
+    todo = list(pending.items())
+    if len(todo) < 8:
+        return [_compute_radius_of_gyration(mols[i]) for _, i in todo]
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=min(8, len(todo))) as pool:
+        return list(pool.map(lambda kv: _compute_radius_of_gyration(mols[kv[1]]), todo))
+
+
 def _compute_radius_of_gyration_batch(mols: list[Chem.Mol]) -> np.ndarray:
     """Compute radius of gyration for a batch of molecules.
 
@@ -417,33 +452,17 @@ def _compute_radius_of_gyration_batch(mols: list[Chem.Mol]) -> np.ndarray:
     Returns a 1-D float32 array of radii of gyration in Angstroms.
     """
     n = len(mols)
-    result = np.zeros(n, dtype=np.float32)
-    keys: list[str | None] = [_rg_cache_key(m) for m in mols]
+    if n == 0:
+        return np.array([], dtype=np.float32)
 
-    # Deduplicate within the batch: identical graphs share one embedding.
-    pending: dict[str, int] = {}
-    unresolved: list[int] = []
-    for i, key in enumerate(keys):
-        if key is not None and key in _RG_CACHE:
-            result[i] = _RG_CACHE[key]
-            continue
-        unresolved.append(i)
-        if key is not None and key not in pending:
-            pending[key] = i
-
+    keys = [_rg_cache_key(m) for m in mols]
+    result, unresolved, pending = _rg_warm_cache(mols, keys)
     if not unresolved:
         return result
 
-    todo = list(pending.items())
-    if len(todo) < 8:
-        values = [_compute_radius_of_gyration(mols[i]) for _, i in todo]
-    else:
-        from concurrent.futures import ThreadPoolExecutor
+    values = _rg_embed_batch(pending, mols)
 
-        with ThreadPoolExecutor(max_workers=min(8, len(todo))) as pool:
-            values = list(pool.map(lambda kv: _compute_radius_of_gyration(mols[kv[1]]), todo))
-
-    for (key, _i), value in zip(todo, values):
+    for (key, _i), value in zip(pending.items(), values):
         if len(_RG_CACHE) < _RG_CACHE_MAX:
             _RG_CACHE[key] = value
 

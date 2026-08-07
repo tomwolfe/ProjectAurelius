@@ -909,36 +909,13 @@ class DiscoveryLoop:
             "  ** ACTIVE LEARNING ESCALATION ** %s: TOM low confidence (conf=%.3f) -> xTB (conf=%.3f)",
             smi, conformal_conf, xtb_conf,
         )
-        # Online update of Δ-correction model with new xTB evaluation data
-        update_successful = False
-        if hasattr(self, "feedback_controller") and self.feedback_controller:
-            delta_correction = self.feedback_controller.get_delta_correction()
-            # Extract original TOM predictions (homo_tom, lumo_tom) from t2
-            homo_tom = t2.get("raw_tom", {}).get("homo_eV", t2.get("homo_eV", homo_tom))
-            lumo_tom = t2.get("raw_tom", {}).get("lumo_eV", t2.get("lumo_eV", lumo_tom))
-            # Extract xTB predictions (treated as DFT reference) from xtb_t2
-            homo_dft = xtb_t2.get("homo_eV", homo_dft)
-            lumo_dft = xtb_t2.get("lumo_eV", lumo_dft)
-            # ADR-2026-08-07-06: accumulate via the feedback controller (full
-            # batch refit on the refit interval) instead of the deprecated
-            # DeltaCorrection.update_online() point-update, which can corrupt
-            # GPR state during long discovery runs.
-            update_successful = False
-            if hasattr(self, "feedback_controller") and self.feedback_controller:
-                try:
-                    self.feedback_controller.accumulate(
-                        smiles=smi,
-                        homo_prediction=homo_tom,
-                        lumo_prediction=lumo_tom,
-                        homo_corrected=homo_dft,
-                        lumo_corrected=lumo_dft,
-                        total_score=xtb_total,
-                        conformal_confidence=xtb_conf,
-                        generation=self.state.generations,
-                    )
-                    update_successful = True
-                except Exception:
-                    update_successful = False
+        # ADR-2026-08-07-06: accumulate via the feedback controller (full
+        # batch refit on the refit interval) instead of the deprecated
+        # DeltaCorrection.update_online() point-update, which can corrupt
+        # GPR state during long discovery runs.
+        update_successful = self._accumulate_xtb_feedback(
+            smi, t2, xtb_t2, xtb_total, xtb_conf,
+        )
 
         if hasattr(self, "feedback_controller") and self.feedback_controller:
             self.feedback_controller.log_active_learning_trigger(
@@ -948,13 +925,8 @@ class DiscoveryLoop:
                 update_successful=update_successful,
             )
 
-        # Dynamically adjust threshold based on success rate
-        if self._xtb_escalation_count > 0:
-            success_rate = self._xtb_escalation_success / self._xtb_escalation_count
-            if success_rate < 0.3:
-                self.active_learning_threshold = min(0.95, self.active_learning_threshold + 0.05)
-            elif success_rate > 0.7:
-                self.active_learning_threshold = max(0.5, self.active_learning_threshold - 0.05)
+        # Dynamically adjust adaptive-learning threshold based on success rate
+        self._adjust_al_threshold()
 
         self._escalation_history.append({
             "smiles": smi,
@@ -965,6 +937,57 @@ class DiscoveryLoop:
         })
 
         return xtb_total, xtb_conf, xtb_score, xtb_score.get("sub_scores", {}), xtb_t2
+
+    def _accumulate_xtb_feedback(
+        self,
+        smi: str,
+        t2: dict[str, Any],
+        xtb_t2: dict[str, Any],
+        xtb_total: float,
+        xtb_conf: float,
+    ) -> bool:
+        """Accumulate an xTB-verified point as experimental feedback.
+
+        Replaces the deprecated ``DeltaCorrection.update_online()`` point
+        update (ADR-2026-08-07-06): rather than mutating the GPR after every
+        escalation, the point is stored for a periodic full refit via
+        ``maybe_refit``.  Returns whether the feedback was accepted.
+        """
+        if not (hasattr(self, "feedback_controller") and self.feedback_controller):
+            return False
+        raw_tom = t2.get("raw_tom", {}) or {}
+        homo_tom = raw_tom.get("homo_eV", t2.get("homo_eV", 0.0))
+        lumo_tom = raw_tom.get("lumo_eV", t2.get("lumo_eV", 0.0))
+        homo_dft = xtb_t2.get("homo_eV", 0.0)
+        lumo_dft = xtb_t2.get("lumo_eV", 0.0)
+        try:
+            self.feedback_controller.accumulate(
+                smiles=smi,
+                homo_prediction=homo_tom,
+                lumo_prediction=lumo_tom,
+                homo_corrected=homo_dft,
+                lumo_corrected=lumo_dft,
+                total_score=xtb_total,
+                conformal_confidence=xtb_conf,
+                generation=self.state.generations,
+            )
+            return True
+        except Exception:
+            return False
+
+    def _adjust_al_threshold(self) -> None:
+        """Dynamically adjust the active-learning threshold from success rate.
+
+        Low success (<30%) raises the bar to avoid chasing unproductive
+        escalations; high success (>70%) lowers it to harvest more signal.
+        """
+        if self._xtb_escalation_count <= 0:
+            return
+        success_rate = self._xtb_escalation_success / self._xtb_escalation_count
+        if success_rate < 0.3:
+            self.active_learning_threshold = min(0.95, self.active_learning_threshold + 0.05)
+        elif success_rate > 0.7:
+            self.active_learning_threshold = max(0.5, self.active_learning_threshold - 0.05)
 
     def _accumulate_feedback(
         self,

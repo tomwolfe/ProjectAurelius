@@ -63,6 +63,19 @@ def _tanimoto_single(fp_a: Any, fp_b: Any) -> float:
     return min(1.0, intersection / total)
 
 
+def _mixture_synergy_boost(
+    base_score: float,
+    synergy_bonus: list[float] | None,
+    is_mixture: list[bool] | None,
+    i: int,
+) -> float:
+    """Apply mixture synergy bonus when the candidate is a mixture with a meaningful boost."""
+    if synergy_bonus and is_mixture and is_mixture[i] and synergy_bonus[i] > 1.0:
+        if base_score < 80.0:
+            return base_score * (1.0 + 0.5 * (synergy_bonus[i] - 1.0))
+    return base_score
+
+
 def _best_in_tournament(
     tournament: list[int],
     scores: list[float],
@@ -81,7 +94,6 @@ def _best_in_tournament(
     primary signal when score differences are small. This ensures the EA discovers
     electrolyte mixtures where combined performance exceeds the sum of parts.
     """
-    # Calculate adjusted scores for all candidates in tournament
     tournament_adjusted_scores = {}
     for i in tournament:
         conf = confidences[i] if confidences and i < len(confidences) else 1.0
@@ -91,15 +103,9 @@ def _best_in_tournament(
             max_sim = max(_tanimoto_single(fps_list[i], sfp) for sfp in selected_fps)
         else:
             max_sim = 0.0
-        
-        # Apply synergy bonus for mixtures as a first-class objective
+
         base_score = scores[i] * conf * (1.0 - diversity_lambda * max_sim)
-        if synergy_bonus and is_mixture and is_mixture[i] and synergy_bonus[i] > 1.0:
-            # For mixtures with meaningful synergy, boost the score significantly
-            # This makes synergy_bonus a primary signal for selection
-            if base_score < 80.0:  # Focus on moderately high-scoring mixtures
-                base_score = base_score * (1.0 + 0.5 * (synergy_bonus[i] - 1.0))
-        
+        base_score = _mixture_synergy_boost(base_score, synergy_bonus, is_mixture, i)
         tournament_adjusted_scores[i] = base_score
 
     best_idx = max(tournament, key=lambda i: tournament_adjusted_scores[i])
@@ -304,6 +310,40 @@ def _compute_dominance_python(adjusted: np.ndarray) -> tuple[list[set[int]], np.
     return dominates, dominated_count
 
 
+def _compute_dominance_mlx(adjusted: np.ndarray, n_pop: int) -> tuple[list[set[int]], np.ndarray]:
+    """Vectorised dominance computation on the MLX backend.
+
+    Returns ``(dominates, dominated_count)`` where ``dominates[i]`` is the
+    set of indices j that i dominates.
+    """
+    import mlx.core as mx
+    from aurelius.utils.device import get_device
+    from aurelius.utils.tensor import to_device
+
+    device = get_device()
+    adjusted_mlx = to_device(adjusted, device)
+
+    expanded1 = mx.expand_dims(adjusted_mlx, axis=1)
+    expanded0 = mx.expand_dims(adjusted_mlx, axis=0)
+    diff_matrix = expanded1 - expanded0
+
+    i_better = mx.all(diff_matrix <= 0, axis=2)
+    i_strictly = mx.any(diff_matrix < 0, axis=2)
+
+    i_final = mx.logical_and(mx.logical_and(i_better, i_strictly), mx.triu(mx.ones((n_pop, n_pop), dtype=bool), k=1))
+
+    i_final_np = np.array(i_final)
+
+    dominated_count = np.zeros(n_pop, dtype=int)
+    dominates: list[set[int]] = [set() for _ in range(n_pop)]
+
+    i_idx, j_idx = np.where(i_final_np)
+    for i, j in zip(i_idx.tolist(), j_idx.tolist()):
+        dominates[i].add(j)
+        dominated_count[j] += 1
+    return dominates, dominated_count
+
+
 def _non_dominated_sort(
     objectives: np.ndarray,
     maximise: np.ndarray,
@@ -330,55 +370,26 @@ def _non_dominated_sort(
     """
     n_pop, n_obj = objectives.shape
 
-    # Convert to minimisation domain: negate columns marked for maximisation.
     adjusted = objectives.copy()
     for j in range(n_obj):
         if maximise[j]:
             adjusted[:, j] = -adjusted[:, j]
 
-    # Use vectorized implementation for better performance on M5 Pro
     try:
-        import mlx.core as mx
-        device = get_device()
-        adjusted_mlx = to_device(adjusted, device)
-
-        # Expand dims for broadcasting: shape (1, n_pop, n_obj) - (n_pop, 1, n_obj) -> (n_pop, n_pop, n_obj)
-        expanded1 = mx.expand_dims(adjusted_mlx, axis=1)  # shape: (1, n_pop, n_obj)
-        expanded0 = mx.expand_dims(adjusted_mlx, axis=0)  # shape: (n_pop, 1, n_obj)
-        diff_matrix = expanded1 - expanded0  # shape: (n_pop, n_pop, n_obj)
-
-        i_better = mx.all(diff_matrix <= 0, axis=2)  # shape: (n_pop, n_pop)
-        i_strictly = mx.any(diff_matrix < 0, axis=2)  # shape: (n_pop, n_pop)
-        j_better = mx.all(-diff_matrix <= 0, axis=2)  # shape: (n_pop, n_pop)
-        j_strictly = mx.any(-diff_matrix < 0, axis=2)  # shape: (n_pop, n_pop)
-
-        i_dominates = mx.logical_and(i_better, i_strictly)  # shape: (n_pop, n_pop)
-        j_dominates = mx.logical_and(j_better, j_strictly)  # shape: (n_pop, n_pop)
-
-        i_mask = mx.triu(mx.ones((n_pop, n_pop), dtype=bool), k=1)
-        j_mask = mx.logical_not(i_mask)
-
-        i_final = mx.logical_and(i_dominates, i_mask)
-        j_final = mx.logical_and(j_dominates, j_mask)
-
-        i_final_np = np.array(i_final)
-        j_final_np = np.array(j_final)
-
-        dominated_count = np.zeros(n_pop, dtype=int)
-        dominates = [set() for _ in range(n_pop)]
-
-        for i in range(n_pop):
-            for j in range(n_pop):
-                if i_final_np[i, j]:
-                    dominates[i].add(j)
-                    dominated_count[j] += 1
-
+        dominates, dominated_count = _compute_dominance_mlx(adjusted, n_pop)
     except Exception:
-        # Fall back to Python implementation
         from aurelius.agent.selection import _compute_dominance_python
         dominates, dominated_count = _compute_dominance_python(adjusted)
 
-    # --- Build fronts via the standard NSGA-II front extraction ---
+    return _build_fronts(dominates, dominated_count, n_pop)
+
+
+def _build_fronts(
+    dominates: list[set[int]],
+    dominated_count: np.ndarray,
+    n_pop: int,
+) -> list[list[int]]:
+    """Extract NSGA-II fronts from precomputed dominance structures."""
     fronts: list[list[int]] = []
     current_front = [i for i in range(n_pop) if dominated_count[i] == 0]
 
