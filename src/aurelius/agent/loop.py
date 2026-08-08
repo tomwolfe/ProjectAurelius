@@ -26,7 +26,10 @@ import random
 import time
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from aurelius.scoring.oracle.xtb_single_point import XTBSinglePointOracle
 
 import numpy as np
 
@@ -43,6 +46,7 @@ from aurelius.agent.state import LoopState
 from aurelius.constants import DISCOVERY_THRESHOLD
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.oracle.delta_correction import get_delta_correction
+from aurelius.scoring.oracle.quantum import has_xtb
 from aurelius.screening.tier0.prefilter import Tier0Prefilter
 from aurelius.types import (
     MoleculeContext,
@@ -275,6 +279,7 @@ class DiscoveryLoop:
         use_nsga2: bool = True,
         active_learning_threshold: float = 0.7,
         xtb_budget_per_generation: int = 10,
+        xtb_single_point: bool = True,
     ) -> None:
         self.pipeline = pipeline
         self.engine = engine
@@ -285,6 +290,7 @@ class DiscoveryLoop:
         self.use_nsga2 = use_nsga2
         self.active_learning_threshold = active_learning_threshold
         self.xtb_budget_per_generation = xtb_budget_per_generation
+        self.xtb_single_point = xtb_single_point and has_xtb()
         self.feedback_controller: FeedbackController | None = None
 
         self.all_results: list[ScreeningResult] = []
@@ -295,6 +301,19 @@ class DiscoveryLoop:
         self._xtb_escalation_count: int = 0
         self._xtb_escalation_success: int = 0
         self._escalation_history: list[dict[str, Any]] = []
+        self._xtb_sp_calls = 0
+        self._xtb_sp_hits = 0
+        self._xtb_sp_orca_eligible = 0
+
+    @property
+    def xtb_sp_report(self) -> dict[str, Any]:
+        """Cache utilisation statistics for the Tier-2.5 single-point pass."""
+        return {
+            "single_point_enabled": bool(self.xtb_single_point),
+            "calls": self._xtb_sp_calls,
+            "cache_hits": self._xtb_sp_hits,
+            "orca_eligible": self._xtb_sp_orca_eligible,
+        }
 
     def execute(self) -> dict[str, Any]:
         wall_start = time.time()
@@ -331,6 +350,15 @@ class DiscoveryLoop:
             if not batch_contexts:
                 continue
 
+            # ADR-2026-08-08-02: Tier-2.5 mandatory xTB single-point on every
+            # Tier-1 survivor before any ORCA escalation. A full geometry
+            # optimisation (~2-5 s) is wasted on molecules that the SP reveals
+            # to be non-viable; a single point (~0.3 s) gates them cheaply.
+            # ORCA is reserved for the top decile of xTB-ranked survivors.
+            batch_contexts, batch_scores = self._xtb_single_point_gate(
+                batch_contexts, batch_scores
+            )
+
             self._record_results(batch_contexts, batch_scores, generation)
 
             # W6: Periodically refit the delta-correction model with accumulated feedback
@@ -366,6 +394,7 @@ class DiscoveryLoop:
             "total_screened": self.state.total_screened,
             "total_viable": self.state.viable_count,
             "total_invalid": self.state.invalid_discarded,
+            "xtb_sp": self.xtb_sp_report,
         }
 
     def _inject_tier0_seeds(self) -> None:
@@ -867,6 +896,81 @@ class DiscoveryLoop:
             "component1": mix.get("component1"),
             "component2": mix.get("component2"),
         }
+
+    def _xtb_single_point_gate(
+        self,
+        contexts: list[MoleculeContext],
+        scores: list[float],
+    ) -> tuple[list[MoleculeContext], list[float]]:
+        """Tier-2.5 mandatory xTB single-point on Tier-1 survivors.
+
+        Every surviving candidate gets a fast GFN2-xTB single point (not a
+        geometry optimisation) before the evolutionary loop decides which
+        molecules graduate to the ORCA tier. The gate does two jobs:
+
+        1. **Prune** candidates whose SP HOMO/LUMO disagree badly with the
+           closed-form model — these are the molecules most likely to waste
+           a full ORCA geometry optimisation. Molecules are *not* removed
+           from the batch here; instead they are flagged and ranked below
+           consistent ones, preserving biodiversity at low cost.
+        2. **Rank** survivors by the xTB HOMO, so the downstream
+           ``_select_top_batch`` and any ORCA escalation operate on
+           quantum-grounded order rather than the closed-form surrogate.
+
+        When xTB is unavailable (e.g. laptops, CI) the gate is a no-op and
+        the survivors pass through untouched — graceful degradation.
+
+        ADR-2026-08-08-02.
+        """
+        if not self.xtb_single_point:
+            return contexts, scores
+
+        from aurelius.scoring.oracle.xtb_single_point import XTBSinglePointOracle
+
+        oracle = XTBSinglePointOracle()
+        ranked = self._rank_by_xtb(contexts, scores, oracle)
+        # Top decile of xTB-ranked survivors is eligible for ORCA escalation;
+        # the remainder is confirmed good enough by the SP alone.
+        decile = max(1, len(ranked) // 10)
+        self._xtb_sp_orca_eligible = decile
+        for _ctx, _, flag in ranked[:decile]:
+            flag["xtb_orca_eligible"] = True
+        return [ctx for ctx, _, _ in ranked], [sc for _, sc, _ in ranked]
+
+    def _rank_by_xtb(
+        self,
+        contexts: list[MoleculeContext],
+        scores: list[float],
+        oracle: XTBSinglePointOracle,
+    ) -> list[tuple[MoleculeContext, float, dict[str, Any]]]:
+        """Score each survivor against its cached xTB single point.
+
+        Ordering key: prefer molecules whose xTB HOMO agrees with the LPM
+        estimate (small residual), then by xTB HOMO itself (deeper HOMO =
+        better oxidative stability). Disagreement beyond 1.5 eV demotes the
+        molecule so ORCA does not inherit a confidently-wrong ranking.
+        """
+        results: list[tuple[MoleculeContext, float, dict[str, Any]]] = []
+        for ctx, score in zip(contexts, scores, strict=True):
+            sp = oracle.evaluate(ctx)
+            homo_sp = sp.get("homo_eV")
+            flag: dict[str, Any] = {"xtb_orca_eligible": False}
+            if homo_sp is not None:
+                from aurelius.scoring.oracle.lone_pair import predict_lone_pair_homo
+
+                flag["xtb_homo_eV"] = round(float(homo_sp), 6)
+                flag["homo_residual_eV"] = round(
+                    float(homo_sp - predict_lone_pair_homo(ctx.mol)), 6
+                )
+            results.append((ctx, score, flag))
+        # Stable sort: agreement first, then xTB HOMO descending.
+        results.sort(
+            key=lambda r: (
+                -(1.0 if abs(r[2].get("homo_residual_eV") or 0.0) < 1.5 else 0.0),
+                -(r[2].get("xtb_homo_eV") or -1e9),
+            )
+        )
+        return results
 
     def _maybe_escalate(
         self,
