@@ -30,7 +30,7 @@ def _load_synthesis_templates() -> list[dict[str, str]]:
         Returns empty list if file not found or invalid.
     """
     try:
-        with open(SYNTHESIS_TEMPLATES_PATH, "r") as f:
+        with open(SYNTHESIS_TEMPLATES_PATH) as f:
             data = json.load(f)
         return data.get("templates", [])
     except (FileNotFoundError, json.JSONDecodeError):
@@ -143,15 +143,15 @@ def _load_precursors():
         tuple[Chem.Mol, ...]: Pre-compiled precursor molecules
     """
     try:
-        with open(COMMERCIAL_PRECURSORS_PATH, "r") as f:
+        with open(COMMERCIAL_PRECURSORS_PATH) as f:
             precursor_data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return tuple()
-    
+
     # Convert SMILES to Mol objects and filter invalid ones
     precursor_mols = []
     invalid_smiles = []
-    
+
     for entry in precursor_data:
         smiles = entry["smiles"]
         mol = Chem.MolFromSmiles(smiles)
@@ -159,11 +159,11 @@ def _load_precursors():
             precursor_mols.append(mol)
         else:
             invalid_smiles.append(smiles)
-    
+
     if invalid_smiles:
         print(f"Warning: {len(invalid_smiles)} invalid SMILES in commercial_precursors.json")
         print(f"Invalid SMILES: {invalid_smiles[:5]}...")  # Show first 5
-    
+
     print(f"Loaded {len(precursor_mols)} valid commercial precursors from {len(precursor_data)} entries")
     return tuple(precursor_mols)
 
@@ -178,17 +178,17 @@ except Exception as e:
 
 def _strip_brics_dummies(frag_smi: str) -> str | None:
     """Strip BRICS dummy-atom labels (e.g. [1*], [2*]) from a fragment SMILES.
-    
+
     Args:
         frag_smi: SMILES string with BRICS dummy atoms
-        
+
     Returns:
         SMILES without BRICS dummy atoms, or None if parsing fails
     """
     frag_mol = Chem.MolFromSmiles(frag_smi)
     if frag_mol is None:
         return None
-    
+
     rw = Chem.RWMol(frag_mol)
     dummy_ids = sorted(
         (a.GetIdx() for a in rw.GetAtoms() if a.GetAtomicNum() == 0),
@@ -196,7 +196,7 @@ def _strip_brics_dummies(frag_smi: str) -> str | None:
     )
     for idx in dummy_ids:
         rw.RemoveAtom(idx)
-    
+
     try:
         rw.UpdatePropertyCache()
         Chem.SanitizeMol(rw)
@@ -249,26 +249,23 @@ def _count_precursor_matches(frag_smiles: list[str]) -> int:
 
 def _is_known_precursor(mol: Chem.Mol) -> bool:
     """Check whether *mol* matches any commercial building-block precursor."""
-    for precursor in _BB_MOLS:
-        if mol.HasSubstructMatch(precursor) or precursor.HasSubstructMatch(mol):
-            return True
-    return False
+    return any(mol.HasSubstructMatch(precursor) or precursor.HasSubstructMatch(mol) for precursor in _BB_MOLS)
 
 
 @lru_cache(maxsize=2048)
 def _cached_retrosynthetic_depth(smiles: str) -> int:
     """Cached retrosynthetic depth calculation by SMILES.
-    
+
     Args:
         smiles: SMILES string of the target molecule
-        
+
     Returns:
         int: Retrosynthetic depth (1 for direct precursor, >1 for multi-step)
     """
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return 5  # Maximum depth for invalid molecules
-    
+
     # Get initial BRICS decomposition
     try:
         fragments = BRICS.BRICSDecompose(mol)
@@ -277,36 +274,36 @@ def _cached_retrosynthetic_depth(smiles: str) -> int:
         fragments = list(fragments)
     except Exception:
         return 5  # Maximum depth for decomposition failures
-    
+
     if not fragments:
         return 5
-    
+
     # Track depth
     current_depth = 0
     current_fragments = fragments
     max_iterations = 5
-    
+
     while current_depth < max_iterations:
         current_depth += 1
         next_fragments = _decompose_fragments(current_fragments)
-        
+
         # If >80% of fragments match precursors, we're at acceptable depth
         matched = _count_precursor_matches(next_fragments)
         if len(next_fragments) > 0 and (matched / len(next_fragments)) >= 0.8:
             return current_depth
-        
+
         # Continue decomposing if depth < max_iterations
         current_fragments = next_fragments
-    
+
     return current_depth  # Return max depth if not converged
 
 
 def brics_retrosynthetic_depth(mol: Chem.Mol) -> int:
     """Calculate BRICS retrosynthetic depth for a molecule.
-    
+
     Args:
         mol: RDKit molecule
-        
+
     Returns:
         int: Retrosynthetic depth (1 = direct precursor, >1 = multi-step)
     """
@@ -316,22 +313,22 @@ def brics_retrosynthetic_depth(mol: Chem.Mol) -> int:
 
 def get_commercial_precursors() -> list[dict]:
     """Get the commercial precursors data with metadata.
-    
+
     Returns:
         list[dict]: List of precursor dictionaries with smiles, name, and category
     """
-    with open(COMMERCIAL_PRECURSORS_PATH, "r") as f:
+    with open(COMMERCIAL_PRECURSORS_PATH) as f:
         return json.load(f)
 
 
 def get_commercial_precursor_count() -> int:
     """Get the number of commercial precursors.
-    
+
     Returns:
         int: Number of commercial precursors
     """
     try:
-        with open(COMMERCIAL_PRECURSORS_PATH, "r") as f:
+        with open(COMMERCIAL_PRECURSORS_PATH) as f:
             data = json.load(f)
         return len(data)
     except Exception:
@@ -342,19 +339,19 @@ if __name__ == "__main__":
     # Test the module
     precursors = get_commercial_precursors()
     print(f"Total precursors: {len(precursors)}")
-    
+
     # Show some examples
     print("\nFirst 5 precursors:")
     for entry in precursors[:5]:
         print(f"  {entry['name']}: {entry['smiles']} ({entry['category']})")
-    
+
     # Test depth calculation
     test_mols = [
         ("DMC", "COC(=O)OC"),
         ("Anisole", "COc1ccccc1"),
         ("tert-butanol", "C(C)(C)(C)O"),
     ]
-    
+
     print("\nRetrosynthetic depth examples:")
     for name, smiles in test_mols:
         mol = Chem.MolFromSmiles(smiles)

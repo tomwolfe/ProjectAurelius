@@ -13,24 +13,22 @@ import time
 from pathlib import Path
 
 import numpy as np
-from rdkit import Chem
-from rdkit.Chem import AllChem
 
-from aurelius.scoring.oracle.oracle import (
-    PropertyOracle,
-    batch_tanimoto_similarity,
-    _fp_batch_to_numpy,
-    _select_batch_backend,
-)
-from aurelius.scoring.oracle.quantum import (
-    predict_tom_orbitals_batch,
-)
 from aurelius.scoring.oracle.gc import (
     _count_fragments_batch,
     predict_dielectric_proxy_batch,
-    predict_viscosity_proxy_batch,
-    predict_li_solvation_proxy_batch,
     predict_ionic_conductivity_proxy_batch,
+    predict_li_solvation_proxy_batch,
+    predict_viscosity_proxy_batch,
+)
+from aurelius.scoring.oracle.oracle import (
+    PropertyOracle,
+    _fp_batch_to_numpy,
+    _select_batch_backend,
+    batch_tanimoto_similarity,
+)
+from aurelius.scoring.oracle.quantum import (
+    predict_tom_orbitals_batch,
 )
 from aurelius.types import MoleculeContext
 
@@ -83,7 +81,7 @@ def benchmark_gc_batch(contexts: list[MoleculeContext]) -> dict[str, float]:
         d = predict_dielectric_proxy_batch(counts, tpsa, contexts)
         v = predict_viscosity_proxy_batch(counts, mw, n_rot, n_branch, n_stereo)
         ls = predict_li_solvation_proxy_batch(counts, mw)
-        c = predict_ionic_conductivity_proxy_batch(d, v, ls)
+        predict_ionic_conductivity_proxy_batch(d, v, ls)
         elapsed = time.perf_counter() - start
         times.append(elapsed)
 

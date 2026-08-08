@@ -313,7 +313,7 @@ def test_ternary_dielectric_matches_weighted_average() -> None:
 
     ds = [8.0, 2.0, 4.0]
     fracs = [0.4, 0.35, 0.25]
-    expected = sum(d * f for d, f in zip(ds, fracs))
+    expected = sum(d * f for d, f in zip(ds, fracs, strict=False))
     assert predict_mixture_dielectric_n(ds, fracs) == pytest.approx(expected, abs=1e-9)
 
 

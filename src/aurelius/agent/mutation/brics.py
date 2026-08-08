@@ -9,8 +9,9 @@ Contains:
 
 from __future__ import annotations
 
-import re
 from functools import lru_cache
+from importlib.resources import files
+from pathlib import Path
 
 from rdkit import Chem
 from rdkit.Chem import BRICS
@@ -22,9 +23,6 @@ from aurelius.types import MoleculeContext
 # Prevents memory bloat and combinatorial explosion over many generations.
 _MAX_HARVESTED_FRAGMENTS = 200
 
-
-from importlib.resources import files
-from pathlib import Path
 
 _COMMERCIAL_PRECURSORS_PATH = Path(files("aurelius.data")) / "commercial_precursors.json"
 
@@ -46,7 +44,7 @@ def _load_all_precursors():
 
     # Load from JSON file
     try:
-        with open(_COMMERCIAL_PRECURSORS_PATH, "r") as f:
+        with open(_COMMERCIAL_PRECURSORS_PATH) as f:
             json_precursors = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         json_precursors = []
@@ -183,10 +181,7 @@ def brics_retrosynthetic_depth(mol: Chem.Mol) -> int:
 
 def _is_known_bb_precursor(mol: Chem.Mol) -> bool:
     """Check whether *mol* matches any commercial building-block precursor."""
-    for bb in BB_MOLS:
-        if mol.HasSubstructMatch(bb) or bb.HasSubstructMatch(mol):
-            return True
-    return False
+    return any(mol.HasSubstructMatch(bb) or bb.HasSubstructMatch(mol) for bb in BB_MOLS)
 
 
 def _decompose_brics_fragments(frag_smiles: list[str]) -> list[str]:

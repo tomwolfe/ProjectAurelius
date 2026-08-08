@@ -15,11 +15,9 @@ from __future__ import annotations
 
 import csv
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
@@ -300,8 +298,8 @@ class ReportingEngine:
         rejection_log: dict[str, int],
     ) -> str:
         """Render the standardized markdown handoff report."""
-        known = _load_known_electrolytes()
-        top_n = sorted(candidates, key=lambda c: -float(c.get("total_score", 0.0)))[:DEFAULT_TOP_N]
+        _load_known_electrolytes()
+        sorted(candidates, key=lambda c: -float(c.get("total_score", 0.0)))[:DEFAULT_TOP_N]
 
         lines: list[str] = []
         lines.append("# Prospective Candidates Report for Wet-Lab Validation\n")
@@ -451,7 +449,7 @@ class ReportingEngine:
         print(f"Running {n_generations}-generation discovery loop...")
         results = self.run_discovery(n_generations=n_generations, batch_size=batch_size)
         all_results = getattr(results, "all_results", results.get("all_results", [])) if isinstance(results, dict) else getattr(results, "all_results", [])
-        discoveries = getattr(results, "discoveries", results.get("discoveries", [])) if isinstance(results, dict) else getattr(results, "discoveries", [])
+        getattr(results, "discoveries", results.get("discoveries", [])) if isinstance(results, dict) else getattr(results, "discoveries", [])
 
         known = _load_known_electrolytes()
         print(f"Loaded {len(known)} known commercial electrolytes for similarity lookup")
@@ -469,10 +467,7 @@ class ReportingEngine:
 
         report = self._render_markdown(candidates, selected, rejection_log)
 
-        if selected:
-            csv_candidates = selected
-        else:
-            csv_candidates = sorted(candidates, key=lambda c: -float(c.get("total_score", 0.0)))[:top_n]
+        csv_candidates = selected or sorted(candidates, key=lambda c: -float(c.get("total_score", 0.0)))[:top_n]
 
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
@@ -497,7 +492,7 @@ class ReportingEngine:
 def _passes_stage(candidate: dict[str, object], key: str, threshold: object) -> bool:
     value = candidate.get(key)
     if key == "is_viable":
-        return bool(value) == True
+        return bool(value)
     if isinstance(threshold, (int, float)) and isinstance(value, (int, float)):
         if key == "synthesis_depth":
             return value <= threshold

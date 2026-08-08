@@ -19,14 +19,13 @@ from __future__ import annotations
 
 import json
 import os
-import warnings
 
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem
+from scipy.stats import spearmanr
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import KFold
-from scipy.stats import spearmanr
 
 # Get the project root directory
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -56,27 +55,27 @@ def _load_benchmark() -> list[dict]:
 
 def _load_oracle_predictions() -> dict:
     """Load oracle predictions for benchmark molecules.
-    
+
     This would normally be computed by running the oracle on all
     benchmark molecules, but for this demonstration, we'll simulate
     by computing them directly.
     """
     benchmark = _load_benchmark()
     valid_entries = [e for e in benchmark if e.get("homo_eV") is not None]
-    
+
     predictions = {}
-    
+
     for entry in valid_entries:
         smiles = entry["smiles"]
         name = entry["name"]
-        
-        from aurelius.types import MoleculeContext
+
         from aurelius.scoring.oracle import (
             QuantumOracle,
             predict_dielectric_proxy,
             predict_li_solvation_proxy,
             predict_viscosity_proxy,
         )
+        from aurelius.types import MoleculeContext
 
         ctx = MoleculeContext.from_smiles(smiles)
         if ctx is None:
@@ -92,7 +91,7 @@ def _load_oracle_predictions() -> dict:
             "viscosity_proxy": predict_viscosity_proxy(ctx),
             "li_solvation_proxy": predict_li_solvation_proxy(ctx),
         }
-    
+
     return predictions
 
 
@@ -100,19 +99,19 @@ def main():
     print("=" * 70)
     print("EXTERNAL VALIDATION — Oracle vs ML Baseline Comparison")
     print("=" * 70)
-    
+
     # Load benchmark data
     benchmark = _load_benchmark()
-    
+
     # Filter to molecules with DFT predictions
     valid_entries = [e for e in benchmark if e.get("homo_eV") is not None]
     print(f"\nBenchmark molecules: {len(benchmark)}")
     print(f"With DFT HOMO/LUMO: {len(valid_entries)}")
-    
+
     if len(valid_entries) < 10:
         print("ERROR: Not enough molecules with DFT data for meaningful analysis")
         return
-    
+
     # Extract data
     molecules = []
     targets = {
@@ -122,13 +121,13 @@ def main():
         "viscosity": [],
         "li_solvation": []
     }
-    
+
     for entry in valid_entries:
         mol = Chem.MolFromSmiles(entry["smiles"])
         if mol is None:
             continue
         molecules.append(mol)
-        
+
         if "homo_eV" in entry:
             targets["homo"].append(entry["homo_eV"])
         if "lumo_eV" in entry:
@@ -139,13 +138,13 @@ def main():
             targets["viscosity"].append(entry["viscosity_cP"])
         if "donor_number" in entry:
             targets["li_solvation"].append(entry["donor_number"])
-    
+
     print(f"\nAnalyzing {len(molecules)} molecules for Oracle vs ML comparison")
-    
+
     # Load oracle predictions
     print("\nLoading oracle predictions...")
     oracle_preds = _load_oracle_predictions()
-    
+
     # Properties to analyze
     properties = [
         ("HOMO", "homo", targets["homo"]),
@@ -154,21 +153,21 @@ def main():
         ("Viscosity", "viscosity", targets["viscosity"]),
         ("Li Solvation", "li_solvation", targets["li_solvation"])
     ]
-    
+
     print("\n" + "=" * 70)
     print("PROPERTY-WISE COMPARISON: Oracle vs ML Baseline")
     print("=" * 70)
-    
+
     all_warnings = []
-    
-    for prop_name, target_key, y_true in properties:
+
+    for prop_name, _target_key, y_true in properties:
         if not y_true or len(y_true) != len(molecules):
             print(f"\nSkipping {prop_name}: insufficient data")
             continue
-        
+
         # Get oracle predictions for this property
         oracle_values = []
-        for mol, entry in zip(molecules, valid_entries):
+        for _mol, entry in zip(molecules, valid_entries, strict=False):
             name = entry["name"]
             if prop_name == "HOMO":
                 oracle_values.append(oracle_preds.get(name, {}).get("homo_eV"))
@@ -180,98 +179,98 @@ def main():
                 oracle_values.append(oracle_preds.get(name, {}).get("viscosity_proxy"))
             elif prop_name == "Li Solvation":
                 oracle_values.append(oracle_preds.get(name, {}).get("li_solvation_proxy"))
-        
+
         # Filter out None values (missing oracle prediction or missing
         # experimental value), keeping molecules aligned with predictions.
         valid_pairs = [
             (o, e, mol)
-            for o, e, mol in zip(oracle_values, y_true, molecules)
+            for o, e, mol in zip(oracle_values, y_true, molecules, strict=False)
             if o is not None and e is not None
         ]
         if len(valid_pairs) < len(molecules) * 0.8:
             print(f"\nSkipping {prop_name}: insufficient oracle predictions")
             continue
 
-        oracle_vals, exp_vals, valid_mols = zip(*valid_pairs)
+        oracle_vals, exp_vals, valid_mols = zip(*valid_pairs, strict=False)
 
         # Generate ECFP4 descriptors for the valid molecules only so the
         # 5-fold split indices align with the prediction/experiment arrays.
         X = np.array([_ecfp4_descriptors(mol) for mol in valid_mols])
-        
+
         # 5-fold cross-validation with RandomForest
         kf = KFold(n_splits=5, shuffle=True, random_state=42)
         cv_scores = []
-        
+
         for train_idx, test_idx in kf.split(X):
             X_train, X_test = X[train_idx], X[test_idx]
             y_train, y_test = np.array(oracle_vals)[train_idx], np.array(oracle_vals)[test_idx]
             exp_test = np.array(exp_vals)[test_idx]
-            
+
             model = RandomForestRegressor(
                 n_estimators=200,
                 random_state=42,
                 n_jobs=1
             )
             model.fit(X_train, y_train)
-            
+
             y_pred = model.predict(X_test)
-            
+
             # Calculate Spearman correlation for this fold
             fold_rho = _spearman(y_pred.tolist(), exp_test.tolist())
             cv_scores.append(fold_rho)
-        
+
         # Overall performance (average across folds)
         avg_rho = np.mean(cv_scores)
         std_rho = np.std(cv_scores)
-        
+
         print(f"\n{prop_name} Energy:")
         print(f"  Oracle ρ = {avg_rho:.3f} ± {std_rho:.3f}")
-        
+
         # Generate ML baseline
         kf2 = KFold(n_splits=5, shuffle=True, random_state=42)
         ml_cv_scores = []
-        
+
         for train_idx, test_idx in kf2.split(X):
             X_train, X_test = X[train_idx], X[test_idx]
             y_train, y_test = np.array(exp_vals)[train_idx], np.array(exp_vals)[test_idx]
-            
+
             model = RandomForestRegressor(
                 n_estimators=200,
                 random_state=42,
                 n_jobs=1
             )
             model.fit(X_train, y_train)
-            
+
             y_pred = model.predict(X_test)
-            
+
             # Calculate Spearman correlation for this fold
             fold_rho = _spearman(y_pred.tolist(), y_test.tolist())
             ml_cv_scores.append(fold_rho)
-        
+
         ml_avg_rho = np.mean(ml_cv_scores)
         ml_std_rho = np.std(ml_cv_scores)
-        
+
         print(f"  ML Baseline (ECFP4+RF): ρ = {ml_avg_rho:.3f} ± {ml_std_rho:.3f}")
-        
+
         # Check if oracle underperforms ML baseline significantly
         if avg_rho < ml_avg_rho - 0.05:
             warning = f"WARNING: Oracle ρ ({avg_rho:.3f}) < ML baseline ρ ({ml_avg_rho:.3f}) - 0.05"
             print(f"  ⚠️  {warning}")
             all_warnings.append(f"{prop_name}: {warning}")
         else:
-            print(f"  ✓ Oracle performs as well as or better than ML baseline")
-    
+            print("  ✓ Oracle performs as well as or better than ML baseline")
+
     print("\n" + "=" * 70)
     print("SUMMARY")
     print("=" * 70)
     print(f"Total properties analyzed: {len(properties)}")
     print(f"Warnings issued: {len(all_warnings)}")
-    
+
     if all_warnings:
         print("\nWarnings (transparency, not gating):")
         for warning in all_warnings:
             print(f"  {warning}")
-    
+
     print("\nNext steps:")
     print("1. If oracle ρ < ML baseline ρ - 0.05 for any property:")
     print("   - Document the finding honestly (transparency)")
@@ -283,7 +282,7 @@ def main():
     print("   - The physics-based approach provides comparable or better")
     print("     predictions than a fingerprint regressor")
     print("   - This supports the project's claim of value")
-    
+
     print("\nNote: This benchmark prioritizes transparency over gating.")
     print("Warnings are logged, but do not constitute test failures.")
 

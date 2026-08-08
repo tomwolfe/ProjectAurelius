@@ -131,9 +131,8 @@ def spearman_correlation(x: list[float], y: list[float]) -> tuple[float, float]:
     with contextlib.suppress(Exception), warnings.catch_warnings():
         warnings.simplefilter("ignore")
         rho, p = spearmanr(x, y)
-        if rho is not None and not isinstance(rho, complex):
-            if rho == rho:  # not NaN
-                return float(rho), float(p)
+        if rho is not None and not isinstance(rho, complex) and rho == rho:  # not NaN
+            return float(rho), float(p)
     return 0.0, 1.0
 
 
@@ -242,7 +241,7 @@ class DFTValidator:
         dft_lumos: list[float] = []
         valid_scores: list[float] = []
 
-        for score, mol in zip(scores, molecules):
+        for score, mol in zip(scores, molecules, strict=False):
             result = self.compute(mol)
             if result is None:
                 continue
@@ -258,7 +257,7 @@ class DFTValidator:
                 "n_validated": len(valid_scores),
             }
 
-        composite = [-(h + l) / 2.0 for h, l in zip(dft_homos, dft_lumos)]
+        composite = [-(h + l_val) / 2.0 for h, l_val in zip(dft_homos, dft_lumos, strict=False)]
         rho_c, p_c = spearman_correlation(valid_scores, composite)
         rho_h, p_h = spearman_correlation(valid_scores, dft_homos)
         rho_l, p_l = spearman_correlation(valid_scores, dft_lumos)

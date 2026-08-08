@@ -10,7 +10,6 @@ compatibility (datetime.UTC was added in 3.11). No behavioral change.
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path

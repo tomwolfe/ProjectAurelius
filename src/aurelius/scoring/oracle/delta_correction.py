@@ -134,7 +134,7 @@ class DeltaCorrection:
 
         # Combine: OOD entries are duplicated for 2× weight
         all_entries = base_entries + ood_entries + ood_entries
-        all_smiles = base_smiles + ood_smiles + ood_smiles
+        base_smiles + ood_smiles + ood_smiles
 
         n = len(all_entries)
         self._X = np.zeros((n, 2048), dtype=np.float64)

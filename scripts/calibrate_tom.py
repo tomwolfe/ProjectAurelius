@@ -11,22 +11,20 @@ Usage: python scripts/calibrate_tom.py
 import json
 import os
 import random
-import time
-from typing import Dict, List, Tuple
 
 import numpy as np
 from rdkit import Chem
 
-from aurelius.types import MoleculeContext
 from aurelius.scoring.oracle.quantum import (
-    _count_heteroatom_perturbations,
-    _count_aromatic_rings,
-    _longest_conjugation_path,
     NITRILE_PATTERN,
     _conjugation_penalty_sigmoid,
+    _count_aromatic_rings,
+    _count_heteroatom_perturbations,
+    _longest_conjugation_path,
     _pi_electron_penalty_sigmoid,
     compute_quantum_domain_penalty,
 )
+from aurelius.types import MoleculeContext
 
 # Grid search configuration
 GRID_CONFIG = {
@@ -41,13 +39,13 @@ GRID_CONFIG = {
 }
 
 
-def load_data(filepath: str) -> List[Dict]:
+def load_data(filepath: str) -> list[dict]:
     """Load orbital calibration data."""
     with open(filepath) as f:
         return json.load(f)
 
 
-def save_params(params: Dict, filepath: str) -> None:
+def save_params(params: dict, filepath: str) -> None:
     """Save parameters to JSON file."""
     with open(filepath, "w") as f:
         json.dump(params, f, indent=2)
@@ -55,8 +53,8 @@ def save_params(params: Dict, filepath: str) -> None:
 
 
 def split_data(
-    data: List[Dict], train_fraction: float = 0.8, random_seed: int = 42
-) -> Tuple[List[Dict], List[Dict]]:
+    data: list[dict], train_fraction: float = 0.8, random_seed: int = 42
+) -> tuple[list[dict], list[dict]]:
     """Split data into train and holdout sets."""
     random.seed(random_seed)
     shuffled_indices = list(range(len(data)))
@@ -72,7 +70,7 @@ def split_data(
     return train_data, holdout_data
 
 
-def predict_with_params(mol: Chem.Mol, params: Dict) -> Tuple[float, float]:
+def predict_with_params(mol: Chem.Mol, params: dict) -> tuple[float, float]:
     """Predict HOMO/LUMO using TOM with given parameters."""
     # Get molecule properties
     L = _longest_conjugation_path(mol)
@@ -126,11 +124,11 @@ def predict_with_params(mol: Chem.Mol, params: Dict) -> Tuple[float, float]:
     return homo, lumo
 
 
-def compute_mae(predicted: List[Tuple[float, float]], 
-                actual: List[Tuple[float, float]]) -> float:
+def compute_mae(predicted: list[tuple[float, float]],
+                actual: list[tuple[float, float]]) -> float:
     """Compute mean absolute error."""
     errors = []
-    for (pred_homo, pred_lumo), (act_homo, act_lumo) in zip(predicted, actual):
+    for (pred_homo, pred_lumo), (act_homo, act_lumo) in zip(predicted, actual, strict=False):
         homo_err = abs(pred_homo - act_homo)
         lumo_err = abs(pred_lumo - act_lumo)
         errors.append((homo_err + lumo_err) / 2.0)
@@ -144,7 +142,7 @@ def main():
 
     # Load data
     data_path = os.path.join(
-        os.path.dirname(__file__), "..", "src", "aurelius", "data", 
+        os.path.dirname(__file__), "..", "src", "aurelius", "data",
         "orbital_calibration.json"
     )
     data = load_data(data_path)
@@ -157,7 +155,6 @@ def main():
 
     # Generate all parameter combinations
     param_names = list(GRID_CONFIG.keys())
-    param_combinations = []
 
     for param_name in param_names:
         config = GRID_CONFIG[param_name]
@@ -184,7 +181,7 @@ def main():
         params = {}
         for param_name in param_names:
             config = GRID_CONFIG[param_name]
-            values = np.linspace(config["range"][0], config["range"][1], 
+            values = np.linspace(config["range"][0], config["range"][1],
                                 int((config["range"][1] - config["range"][0]) / config["step"]) + 1)
             params[param_name] = np.random.choice(values)
 
@@ -237,7 +234,7 @@ def main():
 
     # Save best parameters
     params_path = os.path.join(
-        os.path.dirname(__file__), "..", "src", "aurelius", "data", 
+        os.path.dirname(__file__), "..", "src", "aurelius", "data",
         "tom_params.json"
     )
     save_params(best_params, params_path)

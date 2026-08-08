@@ -14,10 +14,8 @@ import os
 import pytest
 from scipy.stats import spearmanr
 
-from aurelius.scoring.oracle.gc import _load_cross_terms
-from aurelius.scoring.oracle.gc import predict_dielectric_proxy
+from aurelius.scoring.oracle.gc import _load_cross_terms, predict_dielectric_proxy
 from aurelius.types import MoleculeContext
-
 
 _DATA_DIR = os.path.join(
     os.path.dirname(__file__), "..", "src", "aurelius", "data"

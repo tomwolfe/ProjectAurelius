@@ -253,7 +253,7 @@ class PropertyOracle:
         quantum_result = self._quantum.evaluate(ctx.mol)
         homo = quantum_result["homo_eV"]
         lumo = quantum_result["lumo_eV"]
-        gap = lumo - homo
+        lumo - homo
 
         dielectric = predict_dielectric_proxy(ctx)
         viscosity = predict_viscosity_proxy(ctx)

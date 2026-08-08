@@ -72,7 +72,7 @@ def _create_train_test_split(calib_data: list[dict], test_ratio: float = 0.2, ra
         families.setdefault(prefix, []).append(item)
 
     train_items, test_items = [], []
-    for family, family_items in families.items():
+    for _family, family_items in families.items():
         random.shuffle(family_items)
         split_idx = int(len(family_items) * (1 - test_ratio))
         train_items.extend(family_items[:split_idx])

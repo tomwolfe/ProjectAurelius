@@ -22,5 +22,5 @@ def get_ood_molecules():
             - expected_dielectric_rank: "high|medium|low"
             - expected_viscosity_rank: "high|medium|low"
     """
-    with open(_OOD_VALIDATION_PATH, "r") as f:
+    with open(_OOD_VALIDATION_PATH) as f:
         return json.load(f)

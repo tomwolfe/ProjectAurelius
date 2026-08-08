@@ -56,7 +56,6 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Crippen
 
-from aurelius.constants import MAX_DIELECTRIC_PER_TPSA
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
@@ -950,18 +949,18 @@ def predict_mixture_li_solvation(ls1: float, ls2: float, frac1: float = 0.5) -> 
 
 def predict_mixture_dielectric_n(ds: list[float], fracs: list[float]) -> float:
     """Ideal volume-fraction weighted dielectric for an N-component mixture."""
-    return sum(d * f for d, f in zip(ds, fracs))
+    return sum(d * f for d, f in zip(ds, fracs, strict=False))
 
 
 def predict_mixture_viscosity_n(vs: list[float], fracs: list[float]) -> float:
     """Ideal log-linear (Grunberg-Nissan) viscosity for an N-component mixture."""
-    ln_mix = sum(f * math.log(max(v, 0.001)) for v, f in zip(vs, fracs))
+    ln_mix = sum(f * math.log(max(v, 0.001)) for v, f in zip(vs, fracs, strict=False))
     return math.exp(ln_mix)
 
 
 def predict_mixture_li_solvation_n(ls: list[float], fracs: list[float]) -> float:
     """Additive Li+ solvation for an N-component mixture."""
-    return sum(l * f for l, f in zip(ls, fracs))
+    return sum(lu * f for lu, f in zip(ls, fracs, strict=False))
 
 
 def mixture_synergy_bonus_n(
@@ -990,9 +989,9 @@ def mixture_synergy_bonus_n(
     if not has_complementary_pair:
         return 0.0
 
-    d_mix = sum(max(d, 0.0) * f for d, f in zip(ds, fracs))
+    d_mix = sum(max(d, 0.0) * f for d, f in zip(ds, fracs, strict=False))
     v_mix = math.exp(
-        sum(f * math.log(max(v, 0.001)) for v, f in zip(vs, fracs))
+        sum(f * math.log(max(v, 0.001)) for v, f in zip(vs, fracs, strict=False))
     )
 
     score = d_mix / 4.0 + 1.5 / max(v_mix, 0.01)

@@ -26,14 +26,14 @@ from rdkit import Chem
 from rdkit.Chem import BRICS, AllChem
 
 from aurelius.agent.mutation.brics import (
+    combined_grounding_score as _combined_grounding_score,
+)
+from aurelius.agent.mutation.brics import (
     find_complementary_pairs,
     inject_linkers,
 )
 from aurelius.agent.mutation.brics import (
     has_excessive_aliphatic_chain as _has_excessive_aliphatic_chain_fn,
-)
-from aurelius.agent.mutation.brics import (
-    combined_grounding_score as _combined_grounding_score,
 )
 from aurelius.agent.mutation.harvester import FragmentHarvester
 from aurelius.agent.mutation.novelty import NoveltyValidator
@@ -173,8 +173,8 @@ class MutationEngine:
         return self._ctx_cache.get(smiles)
 
     def _load_known_electrolytes(self) -> None:
-        from importlib.resources import files
         import json
+        from importlib.resources import files
 
         json_path = files("aurelius.data") / "known_electrolytes.json"
         try:
@@ -582,8 +582,8 @@ class MutationEngine:
             frac_array = frac_array / frac_sum
 
             # Calculate synergy bonus
+
             from aurelius.scoring.oracle.gc import mixture_synergy_bonus_n
-            from rdkit import Chem
             from aurelius.types import MoleculeContext
 
             contexts = []

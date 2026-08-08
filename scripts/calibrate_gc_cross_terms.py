@@ -13,21 +13,19 @@ Usage: python scripts/calibrate_gc_cross_terms.py
 
 import json
 import os
-import sys
 import warnings
 
-from rdkit import Chem
+import numpy as np
+from sklearn.linear_model import Ridge
 
+from aurelius.constants import MAX_DIELECTRIC_PER_TPSA
 from aurelius.scoring.oracle.gc import (
     _GC_BASE_DIELECTRIC,
     _GC_FRAGMENTS,
     _count_fragments,
     _saturate_contrib,
 )
-from aurelius.constants import MAX_DIELECTRIC_PER_TPSA
 from aurelius.types import MoleculeContext
-from sklearn.linear_model import Ridge
-import numpy as np
 
 warnings.filterwarnings("ignore")
 

@@ -99,7 +99,7 @@ def test_validator_caches_by_smiles(tmp_path, monkeypatch) -> None:
 
 
 def test_validate_ranking_metrics(monkeypatch) -> None:
-    validator = DFTValidator(cache_path=str("/tmp/unused_dft_cache.json"))
+    validator = DFTValidator(cache_path="/tmp/unused_dft_cache.json")
     mols = [Chem.MolFromSmiles(s) for s in
             ["C1COC(=O)O1", "COCCOC", "CS(=O)(=O)C", "CC#N"]]
     mols = [m for m in mols if m is not None]

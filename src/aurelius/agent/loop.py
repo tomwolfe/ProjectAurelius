@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import random
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
@@ -753,7 +753,7 @@ class DiscoveryLoop:
             else:
                 is_mixture.append(False)
                 synergy_bonus.append(0.0)
-        
+
         selected = tournament_select(
             contexts,
             scores,

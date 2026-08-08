@@ -17,7 +17,6 @@ import json
 import os
 import sys
 
-import numpy as np
 from rdkit import Chem
 from scipy.stats import spearmanr
 
@@ -27,7 +26,6 @@ from aurelius.data.ood_validation import get_ood_molecules
 from aurelius.scoring.oracle.delta_correction import (
     DeltaCorrection,
     compute_ood_spearman,
-    get_delta_correction,
 )
 from aurelius.scoring.oracle.quantum import predict_tom_orbitals
 
@@ -99,7 +97,7 @@ def main() -> None:
     baseline_ood_rho = _compute_ood_rho(baseline_model, ood_entries)
     baseline_loo_mae = baseline_model.loo_mae()
 
-    print(f"\nBaseline (no OOD weighting):")
+    print("\nBaseline (no OOD weighting):")
     print(f"  OOD HOMO ρ: {baseline_ood_rho:.4f}")
     print(f"  LOO MAE:    {baseline_loo_mae:.4f} eV")
 
@@ -108,7 +106,7 @@ def main() -> None:
     improved_ood_rho = _compute_ood_rho(improved_model, ood_entries)
     improved_loo_mae = improved_model.loo_mae()
 
-    print(f"\nImproved (OOD weighted 2×):")
+    print("\nImproved (OOD weighted 2×):")
     print(f"  OOD HOMO ρ: {improved_ood_rho:.4f}")
     print(f"  LOO MAE:    {improved_loo_mae:.4f} eV")
 
@@ -116,7 +114,7 @@ def main() -> None:
     in_domain_rho_baseline = compute_ood_spearman(calib[:20], model=baseline_model)
     in_domain_rho_improved = compute_ood_spearman(calib[:20], model=improved_model)
 
-    print(f"\nIn-domain ρ (first 20 calibration molecules):")
+    print("\nIn-domain ρ (first 20 calibration molecules):")
     print(f"  Baseline:  {in_domain_rho_baseline:.4f}")
     print(f"  Improved:  {in_domain_rho_improved:.4f}")
 

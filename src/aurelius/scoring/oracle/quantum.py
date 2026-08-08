@@ -42,12 +42,9 @@ import os
 import re
 import subprocess
 import tempfile
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
-
 from rdkit import Chem
-from rdkit.Chem import BondType
 
 from aurelius.constants import NITRILE_PATTERN
 from aurelius.types import MoleculeContext
@@ -106,7 +103,7 @@ def _generate_xyz(mol: Chem.Mol) -> str:
     return "\n".join(lines)
 
 
-def _load_tom_params() -> Dict:
+def _load_tom_params() -> dict:
     """Load TOM parameters from JSON file, with fallback to defaults."""
     params_path = os.path.join(
         os.path.dirname(__file__), "..", "..", "data", "tom_params.json"
@@ -131,7 +128,7 @@ def _load_tom_params() -> Dict:
         return default_params
 
 
-def _get_tom_params() -> Dict:
+def _get_tom_params() -> dict:
     """Get TOM parameters, loading from JSON file if available."""
     if not hasattr(_get_tom_params, '_cached_params'):
         _get_tom_params._cached_params = _load_tom_params()
@@ -462,7 +459,7 @@ def _compute_radius_of_gyration_batch(mols: list[Chem.Mol]) -> np.ndarray:
 
     values = _rg_embed_batch(pending, mols)
 
-    for (key, _i), value in zip(pending.items(), values):
+    for (key, _i), value in zip(pending.items(), values, strict=False):
         if len(_RG_CACHE) < _RG_CACHE_MAX:
             _RG_CACHE[key] = value
 
@@ -1100,12 +1097,10 @@ def _apply_batch_hyperconjugation(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Apply per-molecule hyperconjugation corrections in batch."""
     for i, mol in enumerate(mols):
-        try:
+        with contextlib.suppress(Exception):
             homo[i], lumo[i] = _apply_hyperconjugation_correction(
                 homo[i], lumo[i], mol
             )
-        except Exception:
-            pass
     return homo, lumo
 
 
@@ -1163,7 +1158,7 @@ def _batch_nitrile_counts(mols: list[Chem.Mol]) -> np.ndarray:
     )
 
 
-def _compute_L_final(L_array: np.ndarray, mols: list[Chem.Mol]) -> tuple[np.ndarray, np.ndarray]:
+def _compute_l_final(L_array: np.ndarray, mols: list[Chem.Mol]) -> tuple[np.ndarray, np.ndarray]:
     """Compute effective conjugation length and 3D compactness.
 
     Applies Wiener compactness adjustment (2D) and radius-of-gyration
@@ -1189,7 +1184,7 @@ def _compute_L_final(L_array: np.ndarray, mols: list[Chem.Mol]) -> tuple[np.ndar
 
     R_g_array = _compute_radius_of_gyration_batch(mols)
     R_g_linear = np.array(
-        [_get_ideal_gyration_for_conjugation_length(int(l)) for l in L_eff],
+        [_get_ideal_gyration_for_conjugation_length(int(length)) for length in L_eff],
         dtype=np.float32,
     )
     R_g_linear = np.maximum(R_g_linear, 1e-6)
@@ -1218,7 +1213,7 @@ def _extract_tom_per_molecule_arrays(mols: list[Chem.Mol]) -> dict[str, np.ndarr
     pass over the molecules, reducing CPU overhead.
     """
     n = len(mols)
-    
+
     # Pre-compute all per-molecule RDKit properties in a single pass
     L_final = np.zeros(n, dtype=np.int32)
     compactness_3d = np.zeros(n, dtype=np.float32)
@@ -1230,7 +1225,7 @@ def _extract_tom_per_molecule_arrays(mols: list[Chem.Mol]) -> dict[str, np.ndarr
     n_nitrile = np.zeros(n, dtype=np.float32)
     n_p = np.zeros(n, dtype=np.float32)
     n_s = np.zeros(n, dtype=np.float32)
-    
+
     # R_g is the dominant cost (86% of batch time); compute it for the whole
     # batch up front so it can be memoised and threaded. See ADR-2026-08-07-04.
     rg_array = _compute_radius_of_gyration_batch(mols)
@@ -1239,7 +1234,7 @@ def _extract_tom_per_molecule_arrays(mols: list[Chem.Mol]) -> dict[str, np.ndarr
         # Longest conjugation path
         L = _longest_conjugation_path(mol)
         L = max(L, 2)
-        
+
         # Compute Wiener index for compactness
         w = _wiener_index(mol)
         n_atoms = mol.GetNumAtoms()
@@ -1249,26 +1244,26 @@ def _extract_tom_per_molecule_arrays(mols: list[Chem.Mol]) -> dict[str, np.ndarr
                 compactness = max(0.0, 1.0 - w / w_linear)
                 L = int(L * (1.0 - 0.3 * compactness))
                 L = max(L, 2)
-        
+
         # Apply topological sanity L (sp3 support)
         L = _topological_sanity_l(mol, L)
         L_final[i] = L
-        
+
         # Compute radius of gyration and compactness_3d
         R_g = float(rg_array[i])
         R_g_linear = _get_ideal_gyration_for_conjugation_length(L)
-        
+
         if R_g_linear > 0:
             compactness_3d[i] = max(0.0, 1.0 - R_g / R_g_linear)
         else:
             compactness_3d[i] = 0.0
-        
+
         # Heteroatom counts
         ew, ed, pi = _count_heteroatom_perturbations(mol)
         n_ew[i] = ew
         n_ed[i] = ed
         n_pi[i] = pi
-        
+
         # Other atom counts
         n_f[i] = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
         n_arom[i] = _count_aromatic_rings(mol)

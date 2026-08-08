@@ -171,11 +171,11 @@ def predict_mixture(
     d_mix = predict_mixture_dielectric_n(ds, fractions)
     v_mix = predict_mixture_viscosity_n(vs, fractions)
     ls_mix = predict_mixture_li_solvation_n(ls, fractions)
-    h_mix = sum(h * f for h, f in zip(hs, fractions))
-    l_mix = sum(l * f for l, f in zip(lums, fractions))
+    h_mix = sum(h * f for h, f in zip(hs, fractions, strict=False))
+    l_mix = sum(lu * f for lu, f in zip(lums, fractions, strict=False))
     synergy = mixture_synergy_bonus_n(ds, vs, fractions)
 
-    weighted_base = sum(s * f for s, f in zip(scores, fractions))
+    weighted_base = sum(s * f for s, f in zip(scores, fractions, strict=False))
     total = min(100.0, weighted_base + synergy)
     is_viable = total >= 50.0
 

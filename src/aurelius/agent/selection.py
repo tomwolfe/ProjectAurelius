@@ -25,8 +25,8 @@ from typing import Any
 
 import numpy as np
 
-from aurelius.utils.device import batch_tanimoto, get_device, to_device
 from aurelius.types import MoleculeContext
+from aurelius.utils.device import batch_tanimoto, get_device, to_device
 
 log = logging.getLogger(__name__)
 
@@ -70,9 +70,8 @@ def _mixture_synergy_boost(
     i: int,
 ) -> float:
     """Apply mixture synergy bonus when the candidate is a mixture with a meaningful boost."""
-    if synergy_bonus and is_mixture and is_mixture[i] and synergy_bonus[i] > 1.0:
-        if base_score < 80.0:
-            return base_score * (1.0 + 0.5 * (synergy_bonus[i] - 1.0))
+    if synergy_bonus and is_mixture and is_mixture[i] and synergy_bonus[i] > 1.0 and base_score < 80.0:
+        return base_score * (1.0 + 0.5 * (synergy_bonus[i] - 1.0))
     return base_score
 
 
@@ -266,7 +265,7 @@ def _compute_dominance_vectorized(adjusted: np.ndarray) -> tuple[list[set[int]],
         j_final = mx.logical_and(j_dominates, j_mask)
 
         i_final_np = np.array(i_final)
-        j_final_np = np.array(j_final)
+        np.array(j_final)
 
         dominates = [set() for _ in range(n_pop)]
         dominated_count = np.zeros(n_pop, dtype=int)
@@ -317,6 +316,7 @@ def _compute_dominance_mlx(adjusted: np.ndarray, n_pop: int) -> tuple[list[set[i
     set of indices j that i dominates.
     """
     import mlx.core as mx
+
     from aurelius.utils.device import get_device
     from aurelius.utils.tensor import to_device
 
@@ -338,7 +338,7 @@ def _compute_dominance_mlx(adjusted: np.ndarray, n_pop: int) -> tuple[list[set[i
     dominates: list[set[int]] = [set() for _ in range(n_pop)]
 
     i_idx, j_idx = np.where(i_final_np)
-    for i, j in zip(i_idx.tolist(), j_idx.tolist()):
+    for i, j in zip(i_idx.tolist(), j_idx.tolist(), strict=False):
         dominates[i].add(j)
         dominated_count[j] += 1
     return dominates, dominated_count
@@ -433,7 +433,7 @@ def _crowding_distance(
 
     n_obj = adjusted.shape[1]
     distances = np.full(n, float("inf"), dtype=np.float32)
-    
+
     # Vectorized crowding distance calculation
     for j in range(n_obj):
         obj_vals = adjusted[:, j]
@@ -441,7 +441,7 @@ def _crowding_distance(
         span = obj_vals[sorted_local[-1]] - obj_vals[sorted_local[0]]
         if span == 0:
             continue
-        
+
         # Interior points: accumulate normalized differences
         for k in range(1, n - 1):
             distances[sorted_local[k]] += (

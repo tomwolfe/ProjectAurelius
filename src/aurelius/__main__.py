@@ -63,7 +63,7 @@ def _check_mps() -> str:
             t = torch.tensor([1.0, 2.0, 3.0])
             t_mps = t.to("mps")
             _ = t_mps @ t_mps.T
-            t_cpu = t_mps.cpu()
+            t_mps.cpu()
             return "active"
         except Exception:
             return "available (verification failed)"
@@ -87,11 +87,11 @@ def _check_accelerate() -> str:
         return "not installed"
 
 
-def _check_vecLib() -> str:
+def _check_vec_lib() -> str:
     """Check if Apple vecLib/Accelerate framework is available for CPU vectorization."""
     try:
         import ctypes
-        lib = ctypes.CDLL("/System/Library/Frameworks/Accelerate.framework/Accelerate")
+        ctypes.CDLL("/System/Library/Frameworks/Accelerate.framework/Accelerate")
         return "active"
     except Exception:
         return "unavailable"
@@ -118,7 +118,7 @@ def doctor(verbose: bool) -> None:
     backends = [
         ("MPS (Metal Performance Shaders)", _check_mps()),
         ("MLX (Apple ML framework)", _check_mlx()),
-        ("vecLib/Accelerate (CPU vectorization)", _check_vecLib()),
+        ("vecLib/Accelerate (CPU vectorization)", _check_vec_lib()),
         ("Accelerate (HuggingFace)", _check_accelerate()),
     ]
 
@@ -130,7 +130,7 @@ def doctor(verbose: bool) -> None:
 
     # Verify at least one GPU backend is actually active
     any_gpu = any(s in ("active", "available") for _, s in backends[:2])
-    vecLib_ok = _check_vecLib() == "active"
+    vecLib_ok = _check_vec_lib() == "active"
 
     click.echo("")
     click.echo("[Summary]")
@@ -229,7 +229,7 @@ def predict_cmd(smiles: str) -> None:
     Shows conformal prediction intervals and domain-of-applicability
     alongside the raw property values.
     """
-    from aurelius.oracle_api import predict_properties, get_domain_applicability
+    from aurelius.oracle_api import get_domain_applicability, predict_properties
 
     try:
         props = predict_properties(smiles)
@@ -302,8 +302,8 @@ def conformal_cmd(smiles: str | None) -> None:
     if a SMILES is provided, the prediction intervals and
     confidence discount for that molecule.
     """
+    from aurelius.oracle_api import get_domain_applicability, predict_properties
     from aurelius.scoring.oracle.conformal import get_conformal_predictor
-    from aurelius.oracle_api import predict_properties
 
     cp = get_conformal_predictor()
     click.echo("Conformal Predictor Status")
@@ -394,7 +394,7 @@ def dft_rerank_cmd(
 
     click.echo(f"Computing DFT single points for {len(mols)} molecules...")
     results = []
-    for i, (smi, mol) in enumerate(zip(valid_smiles, mols)):
+    for i, (smi, mol) in enumerate(zip(valid_smiles, mols, strict=False)):
         if i > 0 and i % 5 == 0:
             click.echo(f"  Progress: {i}/{len(mols)}...")
         dft = validator.compute(mol)
@@ -568,7 +568,8 @@ def report_cmd(top: int, dft: bool, output: str, generations: int, batch_size: i
     engine = ReportingEngine()
     if summary is not None:
         import json as _json
-        from aurelius.agent.loop import ScreeningResult as _SR
+
+        from aurelius.agent.loop import ScreeningResult
 
         with open(summary) as f:
             loaded = _json.load(f)
@@ -576,7 +577,7 @@ def report_cmd(top: int, dft: bool, output: str, generations: int, batch_size: i
         results: list = []
         for e in entries:
             try:
-                results.append(_SR(**{k: e.get(k) for k in _SR.__dataclass_fields__}))
+                results.append(ScreeningResult(**{k: e.get(k) for k in ScreeningResult.__dataclass_fields__}))
             except Exception:
                 continue
         known = _load_known_electrolytes()
@@ -624,6 +625,9 @@ def _reproduce_run(summary_path: str) -> None:
     """
     import hashlib
     import json
+    import os
+
+    from aurelius.agent.loop import AgentConfig, run_screening
 
     with open(summary_path) as f:
         summary = json.load(f)

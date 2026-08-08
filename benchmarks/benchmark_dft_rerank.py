@@ -41,10 +41,10 @@ import numpy as np
 from rdkit import Chem
 from scipy.stats import spearmanr
 
-sys.path.insert(0, SRC_DIR)
-
 from aurelius.pipeline import AureliusPipeline
 from aurelius.types import MoleculeContext
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 _EHT_COULOMB: dict[int, float] = {
     6: -11.4,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 
@@ -249,7 +248,6 @@ class TestExperimentalFeedback:
     def test_experimental_feedback_reduces_loo_mae(self):
         """After loading experimental feedback, LOO MAE should not increase
         by more than 5% when experimental values are available for matching SMILES."""
-        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
 
         feedback_path = os.path.join(
             os.path.dirname(__file__),
@@ -307,7 +305,6 @@ class TestFeedbackControllerSafety:
     """
 
     def test_update_online_is_deprecated_noop(self) -> None:
-        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
         from aurelius.scoring.oracle.delta_correction import get_delta_correction
 
         dc = get_delta_correction()
@@ -323,7 +320,6 @@ class TestFeedbackControllerSafety:
 
     def test_maybe_refit_full_retrain_improves_oro_mae(self) -> None:
         """Full GPR refit from +experimental feedback must not worsen LOO MAE."""
-        from aurelius.scoring.oracle.delta_correction import get_delta_correction
 
         feedback_path = os.path.join(
             os.path.dirname(__file__), "..", "src", "aurelius", "data",

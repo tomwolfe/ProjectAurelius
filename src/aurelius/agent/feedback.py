@@ -78,9 +78,7 @@ def _validate_experimental_entry(entry: dict[str, Any]) -> bool:
         return False
     if not _validate_experimental_lumo(entry.get("experimental_lumo_eV")):
         return False
-    if not _validate_experimental_total_score(entry.get("experimental_total_score")):
-        return False
-    return True
+    return _validate_experimental_total_score(entry.get("experimental_total_score"))
 
 
 @dataclass

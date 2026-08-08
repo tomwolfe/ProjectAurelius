@@ -13,11 +13,11 @@ empirical constraints for viable electrolyte solvents.
 import logging
 from typing import Any
 
-from aurelius.types import MoleculeContext
 from aurelius.scoring.oracle import (
     predict_dielectric_proxy,
     predict_viscosity_proxy,
 )
+from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
 

@@ -92,11 +92,11 @@ def test_predict_mixture_ternary_ideal_mixing() -> None:
     fracs = [0.5, 0.3, 0.2]
     expected_d = sum(
         r["dielectric_proxy"] * f
-        for r, f in zip(mix["component_results"], fracs)
+        for r, f in zip(mix["component_results"], fracs, strict=False)
     )
     expected_ls = sum(
         r["li_solvation_proxy"] * f
-        for r, f in zip(mix["component_results"], fracs)
+        for r, f in zip(mix["component_results"], fracs, strict=False)
     )
     assert mix["mixture_properties"]["dielectric_proxy"] == pytest.approx(expected_d, abs=1e-3)
     assert mix["mixture_properties"]["li_solvation_proxy"] == pytest.approx(expected_ls, abs=1e-3)

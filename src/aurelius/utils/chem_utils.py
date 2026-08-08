@@ -9,7 +9,7 @@ caching with a size-bounded persistent store.
 
 from __future__ import annotations
 
-import os
+import contextlib
 import shelve
 from collections.abc import Callable
 from functools import lru_cache
@@ -90,10 +90,8 @@ def get_canonical_smiles(smiles: str) -> str:
                 return str(cached)
         except Exception:
             pass
-        try:
+        with contextlib.suppress(Exception):
             persistent.close()
-        except Exception:
-            pass
 
     result = _canonical_smiles_lru(smiles)
 
@@ -104,10 +102,8 @@ def get_canonical_smiles(smiles: str) -> str:
             persistent.sync()
         except Exception:
             pass
-        try:
+        with contextlib.suppress(Exception):
             persistent.close()
-        except Exception:
-            pass
 
     return result
 

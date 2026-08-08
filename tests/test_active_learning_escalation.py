@@ -1,31 +1,29 @@
 """Test active learning escalation in Project Aurelius v11.0.
 
-Verifies that when quantum_confidence == "tom_low" AND conformal_confidence < 
+Verifies that when quantum_confidence == "tom_low" AND conformal_confidence <
 active_learning_threshold, xTB evaluation is automatically triggered.
 
-Physical justification: Active learning ensures that low-confidence TOM 
+Physical justification: Active learning ensures that low-confidence TOM
 predictions are immediately re-evaluated with higher-accuracy xTB,
-maximizing information gain per compute dollar and preventing the EA 
+maximizing information gain per compute dollar and preventing the EA
 from exploiting TOM's blind spots.
 """
 
 from __future__ import annotations
 
 import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from aurelius.agent.loop import AgentConfig
 from aurelius.agent.mutation import MutationEngine
-from aurelius.types import MoleculeContext
 
 
 def test_active_learning_escalation():
     """Test that xTB is called when confidence is low (tom_low)."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        agent_cfg = AgentConfig(
+    with tempfile.TemporaryDirectory():
+        AgentConfig(
             max_generations=10,
             batch_size=5,
             use_nsga2=False,

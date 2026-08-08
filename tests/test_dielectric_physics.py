@@ -15,11 +15,11 @@ import pytest
 from scipy.stats import spearmanr
 
 from aurelius.scoring.oracle.gc import (
+    _count_dipole_groups,
     _kirkwood_g_factor,
     _mcgowan_molar_volume,
     _molecular_dipole,
     _optical_dielectric,
-    _count_dipole_groups,
     predict_dielectric_constant,
 )
 from aurelius.types import MoleculeContext

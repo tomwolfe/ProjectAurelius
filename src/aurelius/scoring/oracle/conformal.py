@@ -71,11 +71,11 @@ class ConformalPredictor:
 
     def fit(self) -> None:
         """Compute nonconformity score quantiles from calibration data."""
-        from aurelius.scoring.oracle.quantum import predict_tom_orbitals
         from aurelius.scoring.oracle.gc import (
             predict_dielectric_proxy,
             predict_viscosity_proxy,
         )
+        from aurelius.scoring.oracle.quantum import predict_tom_orbitals
 
         # --- HOMO / LUMO from orbital_calibration.json ---
         calib = _load_orbital_calibration()

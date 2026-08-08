@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from rdkit import Chem
 
 from aurelius.agent.loop import ScreeningResult
 from aurelius.reporting import (
-    CANDIDATE_FIELDS,
     ReportingEngine,
     _confidence_interval,
     _passes_stage,
@@ -27,7 +25,7 @@ def _make_result(
     viable: bool = True,
 ) -> ScreeningResult:
     ctx = MoleculeContext.from_smiles(smiles)
-    mol = ctx.mol if ctx else Chem.MolFromSmiles(smiles)
+    ctx.mol if ctx else Chem.MolFromSmiles(smiles)
     return ScreeningResult(
         smiles=smiles,
         total_score=total_score,

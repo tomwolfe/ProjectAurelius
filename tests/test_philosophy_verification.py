@@ -336,8 +336,8 @@ class TestOracleNonlinear:
         itself (the sp3 structural-support cap is a physical boundary, not
         a numerical artifact)."""
         penalties: list[float] = []
-        for l in range(8, 18):
-            smi = "C=" * l + "C"
+        for length in range(8, 18):
+            smi = "C=" * length + "C"
             ctx = MoleculeContext.from_smiles(smi)
             if ctx is None:
                 continue
@@ -347,7 +347,7 @@ class TestOracleNonlinear:
         for i in range(1, len(penalties)):
             diff = abs(penalties[i] - penalties[i - 1])
             assert diff < 0.15, (
-                f"Discontinuous jump in quantum DoA penalty at L={l}: "
+                f"Discontinuous jump in quantum DoA penalty at L={length}: "
                 f"Δ={diff:.4f} (must be <0.15 for continuous sigmoid; "
                 f"sp3 cap boundary may cause larger jumps)"
             )

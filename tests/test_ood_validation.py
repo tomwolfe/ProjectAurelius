@@ -4,7 +4,6 @@ Validates the oracle's out-of-distribution performance on chemical classes
 not present in the calibration set.
 """
 
-import json
 import math
 
 import pytest
@@ -25,7 +24,7 @@ def test_ood_molecules():
         smiles = mol_data["smiles"]
         name = mol_data["name"]
         expected_dielectric_rank = mol_data["expected_dielectric_rank"]
-        expected_viscosity_rank = mol_data["expected_viscosity_rank"]
+        mol_data["expected_viscosity_rank"]
         oclass = mol_data["class"]
 
         # Parse SMILES
@@ -34,7 +33,6 @@ def test_ood_molecules():
             raise ValueError(f"Invalid SMILES: {smiles}")
 
         # Get oracle predictions
-        from aurelius.types import MoleculeContext
         ctx = MoleculeContext.from_smiles(smiles)
         result = oracle.evaluate(ctx)
 
@@ -107,7 +105,6 @@ def test_ood_viscosity_rank_correlation() -> None:
     """
     from scipy.stats import spearmanr
 
-    from aurelius.types import MoleculeContext
 
     oracle = PropertyOracle(use_xtb=True)
     predicted: list[float] = []
@@ -133,7 +130,6 @@ def test_ood_dielectric_rank_correlation() -> None:
     """
     from scipy.stats import spearmanr
 
-    from aurelius.types import MoleculeContext
 
     order = {"low": 0, "medium": 1, "high": 2}
     oracle = PropertyOracle(use_xtb=True)
@@ -153,13 +149,11 @@ def test_physical_bounds_violations():
     oracle = PropertyOracle(use_xtb=True)
     ood_molecules = get_ood_molecules()
 
-    violations_found = False
 
     for mol_data in ood_molecules:
         smiles = mol_data["smiles"]
         name = mol_data["name"]
 
-        from aurelius.types import MoleculeContext
         ctx = MoleculeContext.from_smiles(smiles)
         result = oracle.evaluate(ctx)
 
@@ -171,7 +165,6 @@ def test_physical_bounds_violations():
             result["lumo_eV"],
         ]):
             print(f"WARNING: {name} produced NaN or None values")
-            violations_found = True
 
         # Check that oracle provides no invalid predictions
         assert "sanity_warning" not in result or len(result["sanity_warning"]) == 0, \

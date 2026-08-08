@@ -14,10 +14,7 @@ know WHEN the oracle is wrong to enable wet-lab decision readiness.
 from __future__ import annotations
 
 import json
-import os
-import sys
 from pathlib import Path
-from typing import Any, Dict, List
 
 import numpy as np
 from rdkit import Chem
@@ -49,8 +46,8 @@ def _predict_gc_properties(mol: Chem.Mol) -> tuple[float, float]:
     """
     if mol is None:
         return 0.0, 0.0
-    from aurelius.types import MoleculeContext
     from aurelius.scoring.oracle.gc import predict_dielectric_proxy, predict_viscosity_proxy
+    from aurelius.types import MoleculeContext
     ctx = MoleculeContext(smiles="", mol=mol)
     return predict_dielectric_proxy(ctx), predict_viscosity_proxy(ctx)
 
@@ -286,7 +283,7 @@ def main() -> None:
     homo_mae = audit_report["properties"]["HOMO"]["mae"]
     lumo_mae = audit_report["properties"]["LUMO"]["mae"]
 
-    print(f"\nValidation:")
+    print("\nValidation:")
     print(f"  HOMO MAE: {homo_mae:.4f} eV {'✓' if homo_mae < 1.5 else '✗'}")
     print(f"  LUMO MAE: {lumo_mae:.4f} eV {'✓' if lumo_mae < 1.5 else '✗'}")
 
