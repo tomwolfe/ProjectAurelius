@@ -604,18 +604,27 @@ def validate_cmd(
         sys.exit(1)
 
 
+
 @cli.command("agent")
 @click.option("--max-generations", type=int, default=50, help="Maximum generations to run")
-@click.option("--batch-size", type=int, default=50, help="Candidates per batch")
-@click.option("--nsga2/--no-nsga2", default=True, help="Use NSGA-II multi-objective selection (default: enabled)")
-@click.option("--active-learning-threshold", type=float, default=0.7, help="Conformal confidence threshold for active learning escalation")
-@click.option("--reproduce", type=click.Path(exists=True), default=None, help="Reproduce a run from run_summary.json")
+@click.option("--batch-size", type=int, default=50, help="Candidates per generation")
+@click.option("--nsga2/--no-nsga2", default=True, help="Use NSGA-II multi-objective selection")
+@click.option("--active-learning-threshold", type=float, default=0.7, help="Conformal confidence threshold for xTB escalation")
+@click.option("--xtb-budget", type=int, default=10, help="xTB escalation budget per generation")
+@click.option("--xtb-single-point/--no-xtb-single-point", default=True, help="Enable Tier-2.5 xTB single-point gate")
+@click.option("--mixture-mutation-rate", type=float, default=0.35, help="Target mixture fraction (0.0 disables)")
+@click.option("--mixture-seed-from-known/--no-mixture-seed-from-known", default=True, help="Seed known electrolyte blends")
+@click.option("--reproduce", type=click.Path(exists=True), default=None, help="Reproduce a previous run from run_summary.json")
 def agent(
     max_generations: int,
     batch_size: int,
     nsga2: bool,
     active_learning_threshold: float,
     reproduce: str | None,
+    xtb_budget: int,
+    xtb_single_point: bool,
+    mixture_mutation_rate: float,
+    mixture_seed_from_known: bool,
 ) -> None:
     """Run the autonomous screening agent."""
     from aurelius.agent.loop import AgentConfig, run_screening
@@ -629,6 +638,10 @@ def agent(
         batch_size=batch_size,
         use_nsga2=nsga2,
         active_learning_threshold=active_learning_threshold,
+        xtb_budget_per_generation=xtb_budget,
+        xtb_single_point=xtb_single_point,
+        mixture_mutation_rate=mixture_mutation_rate,
+        mixture_seed_from_known=mixture_seed_from_known,
     )
     run_screening(cfg)
 

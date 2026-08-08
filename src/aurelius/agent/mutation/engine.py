@@ -75,6 +75,8 @@ class MutationEngine:
         known_fps_hex: list[str] | None = None,
         adaptive_bias: bool = True,
         n_jobs: int = 1,
+        mixture_mutation_rate: float = 0.35,
+        mixture_seed_from_known: bool = True,
     ) -> None:
         self.seed_pool, self.seed_contexts, self.seed_fingerprints = self._init_seeds(seed_smiles)
 
@@ -98,6 +100,8 @@ class MutationEngine:
         self._reaction_scores: dict[str, list[float]] = {}
         self._product_to_reaction: dict[str, str] = {}
         self._n_jobs = n_jobs
+        self.mixture_mutation_rate = max(0.0, min(1.0, mixture_mutation_rate))
+        self.mixture_seed_from_known = mixture_seed_from_known
 
         # Synthesis-aware mutation bias (ADR-2026-08-05)
         # Minimum combined grounding score for BRICS products to survive
@@ -761,16 +765,32 @@ class MutationEngine:
         seed_smiles: list[str],
         n_mixtures: int = 10,
         batch_size: int = 10,
+        seed_from_known: bool = True,
     ) -> list[str]:
         """Generate binary mixture candidates from a list of seed SMILES.
 
         Pairs molecules from the seed pool and creates mixture variants.
         Pairs with component Tanimoto > 0.80 are excluded as trivial.
+
+        When ``seed_from_known`` is True, known binary electrolyte blends
+        from ``known_electrolytes.json`` are injected first so that proven
+        mixtures get evolutionary pressure immediately.
         """
         if len(seed_smiles) < 2:
             return []
         unique_seeds = list(dict.fromkeys(seed_smiles))
         candidates: list[str] = []
+
+        # Seed known binary blends from the literature
+        if seed_from_known:
+            known_blends = self._load_known_binary_blends()
+            for a, b, frac in known_blends:
+                if a in unique_seeds and b in unique_seeds:
+                    tan = self._component_tanimoto(a, b)
+                    if tan <= 0.80:
+                        candidates.append(format_mixture_smiles(a, b, frac))
+
+        # Generate novel pairs from the active seed pool
         n_pairs = min(len(unique_seeds), 5)
         for i in range(n_pairs):
             for j in range(i + 1, n_pairs):
@@ -783,11 +803,48 @@ class MutationEngine:
                 candidates.append(format_mixture_smiles(smi_a, smi_b, frac))
                 mix_variants = self._mutate_mixture(smi_a, smi_b, frac, batch_size=batch_size)
                 candidates.extend(mix_variants)
+
         unique = list(dict.fromkeys(candidates))
         if len(unique) > n_mixtures:
             idx = self._rng.choice(len(unique), size=n_mixtures, replace=False)
             unique = [unique[i] for i in idx]
         return unique
+
+    def _load_known_binary_blends(self) -> list[tuple[str, str, float]]:
+        """Load known binary electrolyte blends from data file.
+
+        Returns a list of (smiles_a, smiles_b, fraction_a) tuples.
+        Fraction_b is 1.0 - fraction_a.
+        """
+        import json
+        from importlib.resources import files
+
+        json_path = files("aurelius.data") / "known_electrolytes.json"
+        try:
+            with open(json_path) as f:
+                entries = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+        blends: list[tuple[str, str, float]] = []
+        for entry in entries:
+            if isinstance(entry, dict):
+                components = entry.get("components") or entry.get("molecules")
+                if components and len(components) == 2:
+                    a = components[0]
+                    b = components[1]
+                    frac = entry.get("fraction", entry.get("ratio", 0.5))
+                    if isinstance(frac, (int, float)):
+                        frac = float(frac)
+                        if 0.0 < frac < 1.0:
+                            # Canonicalise
+                            ctx_a = MoleculeContext.from_smiles(a)
+                            ctx_b = MoleculeContext.from_smiles(b)
+                            if ctx_a and ctx_b:
+                                a_can = Chem.MolToSmiles(ctx_a.mol)
+                                b_can = Chem.MolToSmiles(ctx_b.mol)
+                                blends.append((a_can, b_can, frac))
+        return blends
 
     def propose_ternary_mixture_candidates(
         self,

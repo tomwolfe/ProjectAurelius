@@ -73,14 +73,13 @@ def _mixture_synergy_boost(
 
     Physical justification: The synergy_bonus encodes the non-linear
     complementarity of a mixture (e.g. high-dielectric + low-viscosity).
-    Capping the effective synergy at 3.0 and applying a moderate 0.3 gain
-    ensures synergistic mixtures compete fairly against high-scoring pure
-    components without overwhelming the tournament, which would cause the EA
-    to converge prematurely on mixture space at the expense of scaffold
-    exploration.
+    Capping the effective synergy at 3.0 and applying a 0.5 gain
+    (increased from 0.3 per ADR-2026-08-08-03) ensures synergistic mixtures
+    compete strongly against high-scoring pure components, giving mixtures
+    proper evolutionary pressure as required by Gap 4.
     """
     if synergy_bonus and is_mixture and is_mixture[i] and synergy_bonus[i] > 1.0:
-        return base_score * (1.0 + 0.3 * min(synergy_bonus[i], 3.0))
+        return base_score * (1.0 + 0.5 * min(synergy_bonus[i], 3.0))
     return base_score
 
 

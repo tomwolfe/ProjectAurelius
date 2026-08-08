@@ -121,6 +121,8 @@ class AgentConfig:
     active_learning_threshold: float = 0.7
     xtb_budget_per_generation: int = 10
     seed: int = 42
+    mixture_mutation_rate: float = 0.35
+    mixture_seed_from_known: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +145,8 @@ def _save_run_config(agent_cfg: AgentConfig) -> None:
         "use_nsga2": agent_cfg.use_nsga2,
         "active_learning_threshold": agent_cfg.active_learning_threshold,
         "seed": agent_cfg.seed,
+        "mixture_mutation_rate": agent_cfg.mixture_mutation_rate,
+        "mixture_seed_from_known": agent_cfg.mixture_seed_from_known,
     }
     config_path = "run_config.json"
     with open(config_path, "w") as f:
@@ -192,6 +196,9 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
         use_nsga2=agent_cfg.use_nsga2,
         active_learning_threshold=agent_cfg.active_learning_threshold,
         xtb_budget_per_generation=agent_cfg.xtb_budget_per_generation,
+        xtb_single_point=agent_cfg.xtb_single_point,
+        mixture_mutation_rate=agent_cfg.mixture_mutation_rate,
+        mixture_seed_from_known=agent_cfg.mixture_seed_from_known,
     )
 
     # W6: Initialise experimental feedback controller for on-line oracle refinement
@@ -280,6 +287,8 @@ class DiscoveryLoop:
         active_learning_threshold: float = 0.7,
         xtb_budget_per_generation: int = 10,
         xtb_single_point: bool = True,
+        mixture_mutation_rate: float = 0.35,
+        mixture_seed_from_known: bool = True,
     ) -> None:
         self.pipeline = pipeline
         self.engine = engine
@@ -291,6 +300,8 @@ class DiscoveryLoop:
         self.active_learning_threshold = active_learning_threshold
         self.xtb_budget_per_generation = xtb_budget_per_generation
         self.xtb_single_point = xtb_single_point and has_xtb()
+        self.mixture_mutation_rate = max(0.0, min(1.0, mixture_mutation_rate))
+        self.mixture_seed_from_known = mixture_seed_from_known
         self.feedback_controller: FeedbackController | None = None
 
         self.all_results: list[ScreeningResult] = []
@@ -415,11 +426,36 @@ class DiscoveryLoop:
     def _generate_candidates(self, generation: int, force_exploration: bool = False) -> list[str]:
         top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
         single_candidates = list(self.engine.mutate_batch(top_seeds, self.batch_size * 3, force_exploration=force_exploration))
-        mixture_candidates = list(self.engine.propose_mixture_candidates(
-            top_seeds,
-            n_mixtures=max(2, self.batch_size // 5),
-            batch_size=5,
-        ))
+
+        # ADR-2026-08-08-03: Mixture fraction driven by mixture_mutation_rate.
+        # Target: mixture candidates = rate * single_candidates, clamped to
+        # ensure at least 30% of the total batch are mixtures when rate > 0.
+        # Known electrolyte blends are seeded when mixture_seed_from_known=True.
+        # Both binary and ternary mixtures are generated.
+        if self.mixture_mutation_rate > 0.0:
+            target_mixtures = int(len(single_candidates) * self.mixture_mutation_rate)
+            min_mixtures = max(2, int(len(single_candidates) * 0.30))
+            n_mixtures = max(min_mixtures, target_mixtures)
+        else:
+            n_mixtures = 0
+
+        mixture_candidates = []
+        if n_mixtures > 0:
+            # Split: 2/3 binary, 1/3 ternary (ternary are more expensive to evaluate)
+            n_binary = max(1, int(n_mixtures * 2 / 3))
+            n_ternary = n_mixtures - n_binary
+            mixture_candidates.extend(self.engine.propose_mixture_candidates(
+                top_seeds,
+                n_mixtures=n_binary,
+                batch_size=5,
+                seed_from_known=self.mixture_seed_from_known,
+            ))
+            mixture_candidates.extend(self.engine.propose_ternary_mixture_candidates(
+                top_seeds,
+                n_mixtures=n_ternary,
+                batch_size=5,
+            ))
+
         all_candidates = single_candidates + mixture_candidates
         random.shuffle(all_candidates)
         return all_candidates

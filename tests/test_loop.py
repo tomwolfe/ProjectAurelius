@@ -145,6 +145,7 @@ def _make_mock_engine():
         "C1CCOC(C)O1",
     ]
     mock.propose_mixture_candidates.return_value = []
+    mock.propose_ternary_mixture_candidates.return_value = []
     return mock
 
 
