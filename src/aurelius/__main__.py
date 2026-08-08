@@ -15,6 +15,8 @@ Usage:
     aurelius report                  Generate wet-lab handoff report
                               [from a de-novo or reproduced discovery run]
     aurelius ingest-experiment <f>   Ingest wet-lab measurements and refit
+    aurelius suggest-experiment      Rank the measurements that would most
+                              improve the oracle (closes the wet-lab loop)
 """
 
 from __future__ import annotations
@@ -335,6 +337,87 @@ def conformal_cmd(smiles: str | None) -> None:
 
         penalty, reason = get_domain_applicability(smiles)
         click.echo(f"  Domain penalty: {penalty:.4f} ({reason})")
+
+
+@cli.command("suggest-experiment")
+@click.option("--top", "top_n", type=int, default=10, help="Number of suggestions to return")
+@click.option("--output", type=click.Path(), default=None, help="Write suggestions as JSON")
+@click.option(
+    "--input", "input_file", type=click.Path(exists=True), default=None,
+    help="File of candidate SMILES (one per line). Defaults to the discovery seed pool.",
+)
+@click.option(
+    "--property", "properties", multiple=True,
+    help="Restrict to these properties (homo, lumo, dielectric, viscosity). Repeatable.",
+)
+@click.option(
+    "--feedback", type=click.Path(exists=True), default=None,
+    help="FeedbackController state, enabling the systematic-bias term",
+)
+def suggest_experiment_cmd(
+    top_n: int,
+    output: str | None,
+    input_file: str | None,
+    properties: tuple[str, ...],
+    feedback: str | None,
+) -> None:
+    """Suggest which measurements would most improve the oracle.
+
+    Ranks molecule/property pairs by expected information gain: conformal
+    interval width, distance from the calibration set, proximity to the
+    domain-of-applicability boundary, and any detected systematic bias.
+
+    This ranks by what the oracle does *not* know, so the top suggestion is
+    deliberately not the best-scoring molecule — it is the most informative
+    one to measure.
+    """
+    from aurelius.agent.experiment_suggester import (
+        default_candidate_pool,
+        suggest_experiments,
+        write_suggestions,
+    )
+
+    if input_file:
+        with open(input_file) as f:
+            candidates = [line.strip() for line in f if line.strip()]
+    else:
+        candidates = default_candidate_pool()
+
+    if not candidates:
+        click.echo("No candidate molecules available.", err=True)
+        sys.exit(1)
+
+    controller = None
+    if feedback:
+        from aurelius.agent.feedback import FeedbackController
+
+        controller = FeedbackController.load(feedback)
+
+    suggestions = suggest_experiments(
+        candidates,
+        top_n=top_n,
+        controller=controller,
+        properties=list(properties) or None,
+    )
+
+    if not suggestions:
+        click.echo("No suggestions: every candidate was filtered out.", err=True)
+        sys.exit(1)
+
+    click.echo(f"Top {len(suggestions)} suggested measurements "
+               f"(from {len(candidates)} candidates):\n")
+    for i, s in enumerate(suggestions, 1):
+        click.echo(f"{i:2d}. {s.smiles}")
+        click.echo(f"    measure : {s.property_to_measure} ({s.units})")
+        click.echo(f"    priority: {s.priority_score:.4f}   "
+                   f"predicted {s.predicted_value:.3f} "
+                   f"[{s.prediction_interval[0]:.3f}, {s.prediction_interval[1]:.3f}]")
+        click.echo(f"    why     : {s.rationale}")
+        click.echo("")
+
+    if output:
+        write_suggestions(suggestions, output)
+        click.echo(f"Suggestions written to {output}")
 
 
 @cli.command("dft-rerank")
