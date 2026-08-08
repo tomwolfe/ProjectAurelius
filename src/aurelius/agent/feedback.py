@@ -96,6 +96,10 @@ class FeedbackRecord:
     experimental_homo: float | None = None
     experimental_lumo: float | None = None
     experimental_total_score: float | None = None
+    predicted_dielectric: float | None = None
+    predicted_viscosity: float | None = None
+    experimental_dielectric: float | None = None
+    experimental_viscosity: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -228,6 +232,10 @@ class FeedbackController:
         experimental_homo: float | None = None,
         experimental_lumo: float | None = None,
         experimental_total_score: float | None = None,
+        predicted_dielectric: float | None = None,
+        predicted_viscosity: float | None = None,
+        experimental_dielectric: float | None = None,
+        experimental_viscosity: float | None = None,
     ) -> None:
         """Record a new feedback data point from an evaluated candidate."""
         # Validate experimental values before recording
@@ -262,6 +270,10 @@ class FeedbackController:
             experimental_homo=experimental_homo,
             experimental_lumo=experimental_lumo,
             experimental_total_score=experimental_total_score,
+            predicted_dielectric=predicted_dielectric,
+            predicted_viscosity=predicted_viscosity,
+            experimental_dielectric=experimental_dielectric,
+            experimental_viscosity=experimental_viscosity,
         )
         self._state.records.append(record)
         if len(self._state.records) > self._max_accumulated:
@@ -360,6 +372,106 @@ class FeedbackController:
             "records_accumulated": len(self._state.records),
             "new_calibration_entries": added,
         }
+
+    def detect_systematic_bias(self) -> dict[str, dict[str, Any]]:
+        """Detect systematic deviation between model predictions and experimental data.
+
+        Physical justification: The Kirkwood-Fröhlich and Eyring physical models
+        contain calibration constants (e.g. g-factors, activation-energy
+        fractions) that are derived from a reference set. When wet-lab data is
+        ingested from a different solvent class, the constants can systematically
+        over- or under-predict, and the GPR residual correction alone cannot
+        recover the physical parameter. This method flags when the mean signed
+        error exceeds a physically meaningful threshold, so a human can decide
+        whether to re-optimise the underlying constants.
+
+        Thresholds (absolute, on the prediction scale):
+          - Dielectric: |MSE_signed| > 2.0 ε with ≥10 matched records
+          - Viscosity:  |MSE_signed| > 0.5 cP with ≥10 matched records
+
+        Returns:
+            Dict keyed by ``"dielectric"`` and ``"viscosity"``. Each value is a
+            dict with ``bias_detected``, ``direction``, ``magnitude``, and
+            ``n_records``.
+        """
+        n_min = 10
+        diel_threshold = 2.0
+        visc_threshold = 0.5
+
+        result: dict[str, dict[str, Any]] = {}
+
+        diel_errors: list[float] = []
+        for rec in self._state.records:
+            if rec.predicted_dielectric is not None and rec.experimental_dielectric is not None:
+                diel_errors.append(rec.experimental_dielectric - rec.predicted_dielectric)
+        if len(diel_errors) >= n_min:
+            mse_signed = sum(diel_errors) / len(diel_errors)
+            result["dielectric"] = {
+                "bias_detected": abs(mse_signed) > diel_threshold,
+                "direction": "overpredicted" if mse_signed < 0 else "underpredicted",
+                "magnitude": round(abs(mse_signed), 4),
+                "n_records": len(diel_errors),
+            }
+        else:
+            result["dielectric"] = {
+                "bias_detected": False,
+                "direction": "none",
+                "magnitude": 0.0,
+                "n_records": len(diel_errors),
+            }
+
+        visc_errors: list[float] = []
+        for rec in self._state.records:
+            if rec.predicted_viscosity is not None and rec.experimental_viscosity is not None:
+                visc_errors.append(rec.experimental_viscosity - rec.predicted_viscosity)
+        if len(visc_errors) >= n_min:
+            mse_signed = sum(visc_errors) / len(visc_errors)
+            result["viscosity"] = {
+                "bias_detected": abs(mse_signed) > visc_threshold,
+                "direction": "overpredicted" if mse_signed < 0 else "underpredicted",
+                "magnitude": round(abs(mse_signed), 4),
+                "n_records": len(visc_errors),
+            }
+        else:
+            result["viscosity"] = {
+                "bias_detected": False,
+                "direction": "none",
+                "magnitude": 0.0,
+                "n_records": len(visc_errors),
+            }
+
+        return result
+
+    def log_bias_recommendation(self, bias: dict[str, dict[str, Any]]) -> None:
+        """Log a WARNING with a calibration recommendation for detected bias.
+
+        Does NOT auto-modify physical constants — human review is required.
+        """
+        for prop, info in bias.items():
+            if info.get("bias_detected"):
+                magnitude = info["magnitude"]
+                direction = info["direction"]
+                n = info["n_records"]
+                if prop == "dielectric":
+                    rec = (
+                        f"_G_RING_LOCKED_DIPOLE" if direction == "overpredicted"
+                        else f"_G_HYDROGEN_BONDED"
+                    )
+                    logger.warning(
+                        "Systematic bias detected for %s: model %s by %.2f ε across "
+                        "%d records — consider recalibrating %s",
+                        prop, direction, magnitude, n, rec,
+                    )
+                elif prop == "viscosity":
+                    rec = (
+                        f"_VISCOSITY_ACTIVATION_FRACTION" if direction == "overpredicted"
+                        else f"_VISCOSITY_DISPERSION_COEFF"
+                    )
+                    logger.warning(
+                        "Systematic bias detected for %s: model %s by %.2f cP across "
+                        "%d records — consider recalibrating %s",
+                        prop, direction, magnitude, n, rec,
+                    )
 
     def update_conformal(
         self,

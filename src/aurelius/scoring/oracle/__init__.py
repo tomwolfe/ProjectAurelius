@@ -56,6 +56,15 @@ from aurelius.scoring.oracle.quantum import (
     has_xtb,
     predict_tom_orbitals,
 )
+from aurelius.scoring.oracle.dft_validator import (
+    DFT_GEOMETRY_OPT_THRESHOLD,
+    DFTValidator,
+    dft_geometry_optimize,
+    has_orca,
+    spearman_correlation,
+    _build_orca_input,
+    _parse_orca_output,
+)
 
 __all__ = [
     "PropertyOracle",
@@ -102,4 +111,11 @@ __all__ = [
     "_count_heteroatom_perturbations",
     "_count_aromatic_rings",
     "_wiener_index",
+    "DFTValidator",
+    "DFT_GEOMETRY_OPT_THRESHOLD",
+    "dft_geometry_optimize",
+    "has_orca",
+    "spearman_correlation",
+    "_build_orca_input",
+    "_parse_orca_output",
 ]

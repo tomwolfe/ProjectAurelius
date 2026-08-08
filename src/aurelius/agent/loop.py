@@ -34,6 +34,7 @@ from aurelius.agent.feedback import FeedbackController
 from aurelius.agent.mutation import MutationEngine
 from aurelius.agent.reporting import generate_discoveries_sdf, generate_run_summary
 from aurelius.agent.selection import (
+    build_npga2_composite_objectives,
     compute_pairwise_diversity,
     nsga2_select,
     tournament_select,
@@ -84,6 +85,7 @@ def _collect_obj_scores(
     t2: dict[str, Any],
     score_data: dict[str, Any],
     confidence: float,
+    novelty: float = 0.0,
 ) -> None:
     """Collect per-candidate objective scores into ``obj_scores`` dict.
 
@@ -102,6 +104,7 @@ def _collect_obj_scores(
     obj_scores["combined_grounding_score"].append(
         score_data.get("grounding", 0.0)
     )
+    obj_scores["novelty_to_seed"].append(novelty)
 
 
 @dataclass(frozen=True)
@@ -110,7 +113,7 @@ class AgentConfig:
 
     max_generations: int = 50
     batch_size: int = 50
-    use_nsga2: bool = False
+    use_nsga2: bool = True
     active_learning_threshold: float = 0.7
     xtb_budget_per_generation: int = 10
     seed: int = 42
@@ -269,7 +272,7 @@ class DiscoveryLoop:
         max_generations: int = 50,
         batch_size: int = 50,
         max_wall_time: float = 43200.0,
-        use_nsga2: bool = False,
+        use_nsga2: bool = True,
         active_learning_threshold: float = 0.7,
         xtb_budget_per_generation: int = 10,
     ) -> None:
@@ -590,6 +593,7 @@ class DiscoveryLoop:
             "synthesis_depth": [],
             "confidence": [],
             "combined_grounding_score": [],
+            "novelty_to_seed": [],
         }
         result_map: dict[str, Any] = {}
 
@@ -643,7 +647,7 @@ class DiscoveryLoop:
 
                 # Collect per-candidate objective scores for NSGA-II
                 _collect_obj_scores(
-                    obj_scores, total_score, t2, score_data, conformal_conf
+                    obj_scores, total_score, t2, score_data, conformal_conf, novelty
                 )
 
                 # W6: Accumulate feedback for experimental/oracle refinement
@@ -715,21 +719,18 @@ class DiscoveryLoop:
     ) -> tuple[list[MoleculeContext], list[float]]:
         """Dispatch to NSGA-II or tournament selection."""
         if self.use_nsga2:
-            # Confidence is passed via the confidences parameter, not as
-            # a separate objective — avoids double-counting.
+            # Consolidate 8 individual objectives into 4 composite objectives
+            # for a denser, more physically interpretable Pareto front.
+            composite_scores = build_npga2_composite_objectives(obj_scores)
             objectives = [
-                ("dielectric_proxy", "max"),
-                ("viscosity_proxy", "min"),
-                ("li_solvation_proxy", "max"),
-                ("homo_eV", "max"),
-                ("lumo_eV", "max"),
-                ("sa_score", "min"),
-                ("synthesis_depth", "min"),
-                ("combined_grounding_score", "max"),
+                ("ionic_transport", "max"),
+                ("electronic_stability", "max"),
+                ("synthetic_accessibility", "max"),
+                ("chemical_complexity", "max"),
             ]
             smi_to_score = {ctx.smiles: sc for ctx, sc in zip(contexts, scores, strict=True)}
             selected = nsga2_select(
-                contexts, obj_scores, objectives,
+                contexts, composite_scores, objectives,
                 batch_size=self.batch_size,
                 confidences=confidences,
             )
@@ -1009,6 +1010,8 @@ class DiscoveryLoop:
             total_score=total_score,
             conformal_confidence=conformal_conf,
             generation=self.state.generations,
+            predicted_dielectric=t2.get("dielectric_proxy"),
+            predicted_viscosity=t2.get("viscosity_proxy"),
         )
 
     def _maybe_log_discovery(

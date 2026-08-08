@@ -25,6 +25,7 @@ from aurelius.agent.loop import AgentConfig, run_screening
 from aurelius.agent.mutation.retrosynthetic import compute_synthesis_feasibility
 from aurelius.constants import HYDROLYTICALLY_UNSTABLE_PATTERNS
 from aurelius.pipeline import AureliusPipeline
+from aurelius.scoring.oracle.dft_validator import dft_geometry_optimize
 from aurelius.types import MoleculeContext
 
 try:
@@ -33,6 +34,8 @@ except Exception:  # pragma: no cover - RDKit always present when pipeline runs
     TanimotoSimilarity = None  # type: ignore[assignment]
 
 # Cascade filtering thresholds for wet-lab decision readiness.
+# The DFT geometry-optimization gate (dft_grounding_score >= 0.80) is mandatory
+# unless the caller passes ``skip_dft=True`` to ``generate_report()``.
 CANDIDATE_CASCADE = [
     ("is_viable", True, "Candidate must be viable (is_viable=True)"),
     ("combined_grounding_score", 0.75, "Combined grounding score must be >= 0.75"),
@@ -40,6 +43,10 @@ CANDIDATE_CASCADE = [
     ("domain_penalty", 0.95, "Domain penalty must be >= 0.95"),
     ("novelty_to_seed", 0.3, "Novelty to seed must be >= 0.3"),
 ]
+
+# Default DFT geometry-optimization threshold and cache path.
+DFT_GEOMETRY_OPT_THRESHOLD = 0.80
+DFT_CACHE_PATH = "dft_cache.json"
 
 # Defaults for a de novo discovery run.
 DEFAULT_N_GENERATIONS = 50
@@ -169,6 +176,7 @@ CANDIDATE_FIELDS = [
     "synthesis_hints", "risk_flags", "sa_score", "dielectric_proxy",
     "viscosity_proxy", "diversity_penalty", "combined_grounding_score",
     "domain_penalty", "is_viable", "synthesis_depth",
+    "dft_grounding_score", "dft_final_energy_eV", "dft_method",
 ]
 
 
@@ -190,7 +198,13 @@ class ReportingEngine:
 
     # -- candidate assembly -------------------------------------------------
 
-    def _build_candidate(self, result: object, known: list[str]) -> dict[str, object] | None:
+    def _build_candidate(
+        self,
+        result: object,
+        known: list[str],
+        skip_dft: bool = False,
+        dft_cache_path: str = DFT_CACHE_PATH,
+    ) -> dict[str, object] | None:
         """Convert a single discovery-loop result into a candidate dict."""
         smiles = getattr(result, "smiles", None)
         if not smiles:
@@ -218,6 +232,18 @@ class ReportingEngine:
         homo = getattr(result, "homo_eV", None)
         lumo = getattr(result, "lumo_eV", None)
         ci_low, ci_high = _confidence_interval(homo, lumo, conformal_conf)
+
+        # DFT geometry-optimization gate (mandatory unless --skip-dft).
+        # Runs xTB GFN2-xTB --opt to confirm a realistic 3-D geometry.
+        if skip_dft:
+            dft_grounding_score = 1.0
+            dft_final_energy_eV = float("nan")
+            dft_method = "skipped (--skip-dft)"
+        else:
+            dft_result = dft_geometry_optimize(mol, cache_path=dft_cache_path)
+            dft_grounding_score = float(dft_result.get("dft_grounding_score", 1.0))
+            dft_final_energy_eV = dft_result.get("dft_final_energy_eV", float("nan"))
+            dft_method = dft_result.get("dft_method", "unknown")
 
         risk_flags: list[str] = []
         if _check_al_corrosion_risk(mol):
@@ -255,6 +281,9 @@ class ReportingEngine:
             "is_viable": bool(getattr(result, "is_viable", False)),
             "synthesis_depth": getattr(result, "synthesis_depth", None),
             "adjusted_score": round(float(getattr(result, "total_score", 0.0)), 4),
+            "dft_grounding_score": round(float(dft_grounding_score), 4),
+            "dft_final_energy_eV": dft_final_energy_eV,
+            "dft_method": dft_method,
             "nearest_known_electrolytes": _find_nearest_known(smiles, known, top_n=3),
         }
 
@@ -269,20 +298,37 @@ class ReportingEngine:
         cfg = AgentConfig(
             max_generations=n_generations,
             batch_size=batch_size,
-            use_nsga2=False,
+            use_nsga2=True,
             active_learning_threshold=0.7,
         )
         return run_screening(cfg)
 
     # -- reporting ---------------------------------------------------------
 
-    def _apply_cascade(self, candidates: list[dict[str, object]]) -> tuple[list[dict[str, object]], dict[str, int]]:
-        """Apply the 5-stage wet-lab cascade filter."""
+    def _apply_cascade(
+        self,
+        candidates: list[dict[str, object]],
+        skip_dft: bool = False,
+    ) -> tuple[list[dict[str, object]], dict[str, int]]:
+        """Apply the wet-lab cascade filter.
+
+        When ``skip_dft`` is False (the default), an additional DFT geometry-
+        optimization stage is appended requiring ``dft_grounding_score >= 0.80``.
+        """
+        cascade_stages = list(CANDIDATE_CASCADE)
+        if not skip_dft:
+            cascade_stages.append(
+                (
+                    "dft_grounding_score",
+                    DFT_GEOMETRY_OPT_THRESHOLD,
+                    "DFT geometry optimization must converge (dft_grounding_score >= 0.80)",
+                ),
+            )
         rejection_log: dict[str, int] = {}
         selected: list[dict[str, object]] = []
 
         remaining = list(candidates)
-        for key, threshold, _desc in CANDIDATE_CASCADE:
+        for key, threshold, _desc in cascade_stages:
             passed = [c for c in remaining if _passes_stage(c, key, threshold)]
             rejected = len(remaining) - len(passed)
             rejection_log[key] = rejected
@@ -438,13 +484,20 @@ class ReportingEngine:
         top_n: int = DEFAULT_TOP_N,
         output_dir: str = ".",
         dft: bool = False,
-        dft_cache: str = "dft_cache.json",
+        dft_cache: str = DFT_CACHE_PATH,
+        skip_dft: bool = False,
     ) -> tuple[list[dict[str, object]], str]:
         """Run a discovery loop and emit standardized wet-lab handoff artifacts.
 
         Returns ``(selected_candidates, report_markdown)`` and writes:
           - ``<output_dir>/prospective_candidates.csv``
           - ``<output_dir>/prospective_candidates_report.md``
+
+        Args:
+            skip_dft: If True, the DFT geometry-optimization cascade gate is
+                skipped (all candidates get ``dft_grounding_score=1.0``).
+            dft_cache: Path to the JSON cache file for DFT geometry optimization
+                results, keyed by canonical SMILES.
         """
         print(f"Running {n_generations}-generation discovery loop...")
         results = self.run_discovery(n_generations=n_generations, batch_size=batch_size)
@@ -456,13 +509,13 @@ class ReportingEngine:
 
         candidates = []
         for r in all_results:
-            cand = self._build_candidate(r, known)
+            cand = self._build_candidate(r, known, skip_dft=skip_dft, dft_cache_path=dft_cache)
             if cand is not None:
                 candidates.append(cand)
 
         print(f"Discovery complete: {len(all_results)} evaluated, {len(candidates)} passed pre-filters")
 
-        selected, rejection_log = self._apply_cascade(candidates)
+        selected, rejection_log = self._apply_cascade(candidates, skip_dft=skip_dft)
         print(f"Cascade: {len(selected)}/{len(candidates)} selected")
 
         report = self._render_markdown(candidates, selected, rejection_log)
@@ -515,6 +568,7 @@ def generate_report(
     top_n: int = DEFAULT_TOP_N,
     output_dir: str = ".",
     dft: bool = False,
+    skip_dft: bool = False,
 ) -> tuple[list[dict[str, object]], str]:
     """Module-level convenience entry point for ``aurelius report``."""
     engine = ReportingEngine()
@@ -524,4 +578,5 @@ def generate_report(
         top_n=top_n,
         output_dir=output_dir,
         dft=dft,
+        skip_dft=skip_dft,
     )

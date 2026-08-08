@@ -103,7 +103,7 @@ class MutationEngine:
         # Minimum combined grounding score for BRICS products to survive
         # validation. Molecules below this threshold are only kept when
         # force_exploration=True, biasing the default search toward
-        # synthetically tractable candidates.
+        # synthesizable candidates.
         #
         # ADR-2026-08-07-10: left at 0.3 deliberately. The v11.0 review asked
         # for 0.4 on the grounds that 0.3 "accepts molecules with marginal
@@ -126,6 +126,10 @@ class MutationEngine:
         # scoped. Recorded here so the next reader does not repeat the
         # measurement.
         self._grounding_threshold = 0.3
+
+        # Cache of best-found fractions per component triple, to avoid
+        # re-optimising the same combination during evolution.
+        self._fraction_cache: dict[str, list[float]] = {}
 
         # Delegated components
         self._novelty_validator = NoveltyValidator(
@@ -579,6 +583,14 @@ class MutationEngine:
         synergy-optimal fractions for electrolytes where the synergy_bonus_n
         function is highly non-linear in the 3-dimensional simplex.
 
+        Bounds are tightened to [0.05, 0.95] to keep each component above a
+        5% threshold — physically, a component below 5% volume contributes too
+        little to interact with its partners and is indistinguishable from a
+        binary formulation at the noise level of the GC proxy.
+
+        Previously optimised fractions for the same component triple are cached
+        to avoid re-solving the same optimisation on every mutation call.
+
         Args:
             components: List of component SMILES
             fracs: Current volume fractions (must sum to 1.0)
@@ -586,10 +598,15 @@ class MutationEngine:
         Returns:
             Optimized mixture SMILES with fractions summing to 1.0.
         """
+        cache_key = "|".join(components)
+        if cache_key in self._fraction_cache:
+            cached = self._fraction_cache[cache_key]
+            if all(0.05 <= f <= 0.95 for f in cached):
+                return format_mixture_smiles_n(components, cached)
+
         try:
             from scipy.optimize import minimize
         except ImportError:
-            # Fallback to random perturbation if scipy not available
             return self._perturb_fractions(components, fracs)
 
         n = len(components)
@@ -603,7 +620,6 @@ class MutationEngine:
             frac_array = frac_array / frac_sum
 
             # Calculate synergy bonus
-
             from aurelius.scoring.oracle.gc import mixture_synergy_bonus_n
             from aurelius.types import MoleculeContext
 
@@ -625,8 +641,8 @@ class MutationEngine:
         x0 = np.array(fracs, dtype=float)
         x0 = x0 / np.sum(x0)  # Ensure normalization
 
-        # Bounds: fractions between 0.1 and 0.9
-        bounds = [(0.1, 0.9) for _ in range(n)]
+        # Bounds: fractions between 0.05 and 0.95
+        bounds = [(0.05, 0.95) for _ in range(n)]
 
         # Run optimization
         try:
@@ -643,7 +659,12 @@ class MutationEngine:
                 optimal_fractions = result.x
                 optimal_fractions = np.maximum(optimal_fractions, 0.0)
                 optimal_fractions = optimal_fractions / np.sum(optimal_fractions)
-                return format_mixture_smiles_n(components, optimal_fractions.tolist())
+                # Clip to bounds before caching
+                optimal_fractions = np.clip(optimal_fractions, 0.05, 0.95)
+                optimal_fractions = optimal_fractions / np.sum(optimal_fractions)
+                cached = optimal_fractions.tolist()
+                self._fraction_cache[cache_key] = cached
+                return format_mixture_smiles_n(components, cached)
 
         except Exception:
             pass

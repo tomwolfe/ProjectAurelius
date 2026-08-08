@@ -75,6 +75,31 @@ _REFERENCE_TEMPERATURE_K: float = 298.15
 _TEMPERATURE_TOLERANCE_K: float = 5.0
 
 
+def _predict_property_for_smiles(smiles: str, prop: str) -> float | None:
+    """Get the model's predicted value for a property from GC oracle.
+
+    Used by bias detection to compare model predictions against experimental
+    measurements. Returns None if prediction fails.
+    """
+    try:
+        from aurelius.scoring.oracle.gc import (
+            predict_dielectric_proxy,
+            predict_viscosity_proxy,
+        )
+        from aurelius.types import MoleculeContext
+
+        ctx = MoleculeContext.from_smiles(smiles)
+        if ctx is None:
+            return None
+        if prop == "dielectric":
+            return predict_dielectric_proxy(ctx)
+        if prop == "viscosity":
+            return predict_viscosity_proxy(ctx)
+    except Exception:
+        return None
+    return None
+
+
 @dataclass
 class IngestionReport:
     """Outcome of an ingestion run."""
@@ -219,6 +244,11 @@ def ingest_experimental_results(
     # cannot currently drive a refit, and saying so is better than implying
     # they do.
     orbital = {"homo_eV": {}, "lumo_eV": {}}
+    # Bulk properties tracked for systematic-bias detection (ADR-2026-08-07-09)
+    bulk: dict[str, dict[str, float]] = {
+        "dielectric_constant": {},
+        "viscosity_cP": {},
+    }
 
     for raw in records:
         canonical, reason = validate_record(raw)
@@ -238,6 +268,8 @@ def ingest_experimental_results(
         prop = canonical["measured_property"]
         if prop in orbital:
             orbital[prop][canonical["smiles"]] = canonical["value"]
+        elif prop in bulk:
+            bulk[prop][canonical["smiles"]] = canonical["value"]
         report.accepted.append(canonical)
 
     paired = set(orbital["homo_eV"]) & set(orbital["lumo_eV"])
@@ -255,6 +287,47 @@ def ingest_experimental_results(
             experimental_lumo=orbital["lumo_eV"][smiles],
         )
 
+    # Accumulate bulk properties with model predictions for bias detection.
+    # Physical justification: The Kirkwood-Fröhlich and Eyring models make
+    # scale-dependent predictions. Comparing experimental measurements to
+    # the closed-form model predictions reveals whether the calibration
+    # constants systematically over- or under-predict for the ingested
+    # solvent class.
+    n_new_bulk = 0
+    for smiles, exp_val in bulk["dielectric_constant"].items():
+        pred = _predict_property_for_smiles(smiles, "dielectric")
+        if pred is not None:
+            controller.accumulate(
+                smiles=smiles,
+                homo_prediction=0.0,
+                lumo_prediction=0.0,
+                homo_corrected=0.0,
+                lumo_corrected=0.0,
+                total_score=0.0,
+                conformal_confidence=1.0,
+                generation=generation,
+                predicted_dielectric=pred,
+                experimental_dielectric=exp_val,
+            )
+            n_new_bulk += 1
+
+    for smiles, exp_val in bulk["viscosity_cP"].items():
+        pred = _predict_property_for_smiles(smiles, "viscosity")
+        if pred is not None:
+            controller.accumulate(
+                smiles=smiles,
+                homo_prediction=0.0,
+                lumo_prediction=0.0,
+                homo_corrected=0.0,
+                lumo_corrected=0.0,
+                total_score=0.0,
+                conformal_confidence=1.0,
+                generation=generation,
+                predicted_viscosity=pred,
+                experimental_viscosity=exp_val,
+            )
+            n_new_bulk += 1
+
     unpaired = (set(orbital["homo_eV"]) ^ set(orbital["lumo_eV"]))
     if unpaired:
         report.warnings.append(
@@ -270,6 +343,18 @@ def ingest_experimental_results(
             f"donor number, conductivity) were validated and recorded, but the "
             f"refit path currently consumes orbital energies only, so they do "
             f"not yet change any model"
+        )
+
+    # Systematic bias detection (ADR-2026-08-07-09)
+    total_new_records = len(paired) + n_new_bulk
+    if total_new_records >= 10:
+        bias = controller.detect_systematic_bias()
+        controller.log_bias_recommendation(bias)
+        report.warnings.extend(
+            f"Bias detected for {prop}: {info['direction']} by {info['magnitude']} "
+            f"(n={info['n_records']})"
+            for prop, info in bias.items()
+            if info.get("bias_detected")
         )
 
     if trigger_refit and paired:

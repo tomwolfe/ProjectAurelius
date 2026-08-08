@@ -524,7 +524,7 @@ def validate_cmd(
 @cli.command("agent")
 @click.option("--max-generations", type=int, default=50, help="Maximum generations to run")
 @click.option("--batch-size", type=int, default=50, help="Candidates per batch")
-@click.option("--nsga2", is_flag=True, default=False, help="Use NSGA-II multi-objective selection instead of tournament")
+@click.option("--nsga2/--no-nsga2", default=True, help="Use NSGA-II multi-objective selection (default: enabled)")
 @click.option("--active-learning-threshold", type=float, default=0.7, help="Conformal confidence threshold for active learning escalation")
 @click.option("--reproduce", type=click.Path(exists=True), default=None, help="Reproduce a run from run_summary.json")
 def agent(
@@ -553,11 +553,20 @@ def agent(
 @cli.command("report")
 @click.option("--top", type=int, default=20, help="Number of top candidates to include")
 @click.option("--dft", is_flag=True, default=False, help="Run ORCA DFT re-ranking of top candidates")
+@click.option("--skip-dft", is_flag=True, default=False, help="Skip the mandatory DFT geometry-optimization cascade gate")
 @click.option("--output", type=click.Path(), default=".", help="Output directory for artifacts")
 @click.option("--generations", type=int, default=50, help="Discovery-loop generations (de novo run)")
 @click.option("--batch-size", type=int, default=50, help="Batch size for de-novo run")
 @click.option("--summary", type=click.Path(exists=True), default=None, help="Reuse an existing run_summary.json instead of a de-novo run")
-def report_cmd(top: int, dft: bool, output: str, generations: int, batch_size: int, summary: str | None) -> None:
+def report_cmd(
+    top: int,
+    dft: bool,
+    skip_dft: bool,
+    output: str,
+    generations: int,
+    batch_size: int,
+    summary: str | None,
+) -> None:
     """Generate a standardized wet-lab candidate handoff report.
 
     Runs a de-novo discovery loop (unless --summary is given) and applies
@@ -603,6 +612,7 @@ def report_cmd(top: int, dft: bool, output: str, generations: int, batch_size: i
         top_n=top,
         output_dir=output,
         dft=dft,
+        skip_dft=skip_dft,
     )
     click.echo(f"Selected {len(selected)} candidates -> {output}/prospective_candidates.csv")
     click.echo(f"Report -> {output}/prospective_candidates_report.md")
@@ -697,7 +707,7 @@ def _reproduce_run(summary_path: str) -> None:
     cfg = AgentConfig(
         max_generations=summary.get("search_statistics", {}).get("generations_run", 50),
         batch_size=50,
-        use_nsga2=False,
+        use_nsga2=True,
         active_learning_threshold=0.7,
     )
     click.echo(f"Reproducing run with config: {cfg}")

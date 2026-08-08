@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from aurelius.agent.selection import nsga2_select
+from aurelius.agent.selection import (
+    build_npga2_composite_objectives,
+    nsga2_select,
+    tournament_select as _real_tournament_select,
+)
 from aurelius.types import MoleculeContext
 
 
@@ -91,6 +95,38 @@ class TestTournamentSelection:
 
         assert len(selected_low) == 3
         assert len(selected_high) == 3
+
+    def test_mixture_with_synergy_beats_pure_higher_score(self):
+        """A mixture with synergy=2.0 must beat a pure component with 10% higher base score."""
+        smiles = ["COC(=O)OC", "CCO"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores = [50.0, 55.0]
+        synergy_bonus = [2.0, 0.0]
+        is_mixture = [True, False]
+
+        selected = _real_tournament_select(
+            contexts, scores, batch_size=1, rng_seed=42,
+            synergy_bonus=synergy_bonus, is_mixture=is_mixture,
+        )
+        assert selected[0].smiles == "COC(=O)OC", (
+            "Mixture with synergy=2.0 should beat pure component with 10% higher score"
+        )
+
+    def test_mixture_with_low_synergy_not_boosted(self):
+        """A mixture with synergy=0.5 should NOT receive a boost."""
+        smiles = ["COC(=O)OC", "CCO"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores = [50.0, 80.0]
+        synergy_bonus = [0.5, 0.0]
+        is_mixture = [True, False]
+
+        selected = _real_tournament_select(
+            contexts, scores, batch_size=1, rng_seed=42,
+            synergy_bonus=synergy_bonus, is_mixture=is_mixture,
+        )
+        assert selected[0].smiles == "CCO", (
+            "Pure component with higher score should win when mixture synergy=0.5"
+        )
 
 
 class TestNSGA2Selection:
@@ -226,6 +262,159 @@ class TestNSGA2Selection:
         assert len(selected) == 1
         # Best (lowest viscosity = index 1) should be selected
         assert selected[0] == contexts[1]
+
+
+class TestNSGA2CompositeObjectives:
+    """Tests for the 4-composite objective consolidation (Task 4)."""
+
+    def test_build_composite_has_four_keys(self):
+        """build_npga2_composite_objectives returns exactly 4 composite objectives."""
+        scores_dict = {
+            "dielectric_proxy": [10.0, 20.0],
+            "viscosity_proxy": [2.0, 5.0],
+            "li_solvation_proxy": [1.0, 2.0],
+            "homo_eV": [-8.0, -7.0],
+            "lumo_eV": [0.0, 1.0],
+            "sa_score": [3.0, 4.0],
+            "synthesis_depth": [1, 2],
+            "combined_grounding_score": [0.8, 0.9],
+            "novelty_to_seed": [0.5, 0.6],
+        }
+        composites = build_npga2_composite_objectives(scores_dict)
+        assert set(composites.keys()) == {
+            "ionic_transport", "electronic_stability",
+            "synthetic_accessibility", "chemical_complexity",
+        }
+
+    def test_build_composite_all_same_length(self):
+        """All composite lists must match the input length."""
+        scores_dict = {
+            "dielectric_proxy": [10.0, 20.0, 30.0],
+            "viscosity_proxy": [2.0, 5.0, 8.0],
+            "li_solvation_proxy": [1.0, 2.0, 3.0],
+            "homo_eV": [-8.0, -7.0, -6.0],
+            "lumo_eV": [0.0, 1.0, 2.0],
+            "sa_score": [3.0, 4.0, 5.0],
+            "synthesis_depth": [1, 2, 3],
+            "combined_grounding_score": [0.8, 0.9, 0.7],
+            "novelty_to_seed": [0.5, 0.6, 0.4],
+        }
+        composites = build_npga2_composite_objectives(scores_dict)
+        for key in composites:
+            assert len(composites[key]) == 3
+
+    def test_ionic_transport_high_dielelectric_low_viscosity(self):
+        """High dielectric and low viscosity should yield higher ionic transport."""
+        scores_dict = {
+            "dielectric_proxy": [80.0, 10.0],
+            "viscosity_proxy": [1.0, 50.0],
+            "li_solvation_proxy": [2.0, 2.0],
+            "homo_eV": [-8.0, -8.0],
+            "lumo_eV": [0.0, 0.0],
+            "sa_score": [3.0, 3.0],
+            "synthesis_depth": [1, 1],
+            "combined_grounding_score": [0.9, 0.9],
+            "novelty_to_seed": [0.5, 0.5],
+        }
+        composites = build_npga2_composite_objectives(scores_dict)
+        assert composites["ionic_transport"][0] > composites["ionic_transport"][1]
+
+    def test_electronic_stability_higher_orbitals(self):
+        """Higher HOMO and LUMO should yield higher electronic_stability."""
+        scores_dict = {
+            "dielectric_proxy": [10.0, 10.0],
+            "viscosity_proxy": [2.0, 2.0],
+            "li_solvation_proxy": [1.0, 1.0],
+            "homo_eV": [-7.0, -9.0],
+            "lumo_eV": [2.0, 0.0],
+            "sa_score": [3.0, 3.0],
+            "synthesis_depth": [1, 1],
+            "combined_grounding_score": [0.9, 0.9],
+            "novelty_to_seed": [0.5, 0.5],
+        }
+        composites = build_npga2_composite_objectives(scores_dict)
+        assert composites["electronic_stability"][0] > composites["electronic_stability"][1]
+
+    def test_synthetic_accessibility_shallow_depth_high_grounding(self):
+        """Shallow synthesis depth and high grounding → higher synthetic_accessibility."""
+        scores_dict = {
+            "dielectric_proxy": [10.0, 10.0],
+            "viscosity_proxy": [2.0, 2.0],
+            "li_solvation_proxy": [1.0, 1.0],
+            "homo_eV": [-8.0, -8.0],
+            "lumo_eV": [0.0, 0.0],
+            "sa_score": [3.0, 3.0],
+            "synthesis_depth": [1, 5],
+            "combined_grounding_score": [0.95, 0.5],
+            "novelty_to_seed": [0.5, 0.5],
+        }
+        composites = build_npga2_composite_objectives(scores_dict)
+        assert composites["synthetic_accessibility"][0] > composites["synthetic_accessibility"][1]
+
+    def test_four_objective_denser_front_than_eight(self):
+        """4-objective NSGA-II should produce a denser Pareto front than 8-objective."""
+        smiles = [f"CC{'C'*i}O" for i in range(12)]
+        contexts = [_valid_context(s) for s in smiles]
+        rng = np.random.default_rng(42)
+        scores_dict = {
+            "dielectric_proxy": list(rng.random(12) * 50 + 10),
+            "viscosity_proxy": list(rng.random(12) * 5 + 1),
+            "li_solvation_proxy": list(rng.random(12) * 5 + 1),
+            "homo_eV": list(-rng.random(12) * 4 - 4),
+            "lumo_eV": list(-rng.random(12) * 3 + 0.5),
+            "sa_score": list(rng.random(12) * 5 + 2),
+            "synthesis_depth": [float(rng.integers(1, 4)) for _ in range(12)],
+            "combined_grounding_score": list(rng.random(12) * 0.5 + 0.5),
+            "novelty_to_seed": list(rng.random(12) * 0.8 + 0.1),
+        }
+
+        composite_dict = build_npga2_composite_objectives(scores_dict)
+
+        four_obj = [("ionic_transport", "max"), ("electronic_stability", "max"),
+                     ("synthetic_accessibility", "max"), ("chemical_complexity", "max")]
+        eight_obj = [("dielectric_proxy", "max"), ("viscosity_proxy", "min"),
+                      ("li_solvation_proxy", "max"), ("homo_eV", "max"),
+                      ("lumo_eV", "max"), ("sa_score", "min"),
+                      ("synthesis_depth", "min"), ("combined_grounding_score", "max")]
+
+        front_4 = _count_pareto_front(composite_dict, four_obj, contexts)
+        front_8 = _count_pareto_front(scores_dict, eight_obj, contexts)
+
+        assert front_4 >= front_8, (
+            f"4-objective Pareto front ({front_4}) should be denser than "
+            f"8-objective ({front_8})"
+        )
+
+    def test_transport_composite_weights(self):
+        """Transport composite should weight dielectric, 1/viscosity, and conductivity."""
+        scores_dict = {
+            "dielectric_proxy": [40.0, 5.0],
+            "viscosity_proxy": [2.0, 20.0],
+            "li_solvation_proxy": [5.0, 0.1],
+            "homo_eV": [-8.0, -8.0],
+            "lumo_eV": [0.0, 0.0],
+            "sa_score": [3.0, 3.0],
+            "synthesis_depth": [1, 1],
+            "combined_grounding_score": [0.9, 0.9],
+            "novelty_to_seed": [0.5, 0.5],
+        }
+        composites = build_npga2_composite_objectives(scores_dict)
+        assert composites["ionic_transport"][0] > composites["ionic_transport"][1], (
+            f"High-dielectric/low-viscosity candidate should have higher "
+            f"transport composite ({composites['ionic_transport'][0]:.2f} vs "
+            f"{composites['ionic_transport'][1]:.2f})"
+        )
+
+
+def _count_pareto_front(
+    scores_dict: dict[str, list[float]],
+    objectives: list[tuple[str, str]],
+    contexts: list[MoleculeContext],
+    batch_size: int = 100,
+) -> int:
+    """Count how many candidates survive on the first Pareto front."""
+    selected = nsga2_select(contexts, scores_dict, objectives, batch_size=batch_size)
+    return len(selected)
 
 
 def _valid_context(smiles: str) -> MoleculeContext:

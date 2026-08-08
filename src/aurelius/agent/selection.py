@@ -69,9 +69,18 @@ def _mixture_synergy_boost(
     is_mixture: list[bool] | None,
     i: int,
 ) -> float:
-    """Apply mixture synergy bonus when the candidate is a mixture with a meaningful boost."""
-    if synergy_bonus and is_mixture and is_mixture[i] and synergy_bonus[i] > 1.0 and base_score < 80.0:
-        return base_score * (1.0 + 0.5 * (synergy_bonus[i] - 1.0))
+    """Apply mixture synergy bonus when the candidate is a mixture with synergy > 1.0.
+
+    Physical justification: The synergy_bonus encodes the non-linear
+    complementarity of a mixture (e.g. high-dielectric + low-viscosity).
+    Capping the effective synergy at 3.0 and applying a moderate 0.3 gain
+    ensures synergistic mixtures compete fairly against high-scoring pure
+    components without overwhelming the tournament, which would cause the EA
+    to converge prematurely on mixture space at the expense of scaffold
+    exploration.
+    """
+    if synergy_bonus and is_mixture and is_mixture[i] and synergy_bonus[i] > 1.0:
+        return base_score * (1.0 + 0.3 * min(synergy_bonus[i], 3.0))
     return base_score
 
 
@@ -176,6 +185,7 @@ def tournament_select(
         best_idx, _ = _best_in_tournament(
             tournament, scores, fps_list, selected_fps,
             diversity_lambda, confidences, sim_matrix=sim_matrix,
+            synergy_bonus=synergy_bonus, is_mixture=is_mixture,
         )
 
         used_indices.add(best_idx)
@@ -214,6 +224,133 @@ _NSGAIObjectiveSpec = list[tuple[str, str]]
 direction is ``"max"`` or ``"min"``. NSGA-II treats all objectives as
 minimisation internally; ``"max"`` objectives are negated before comparison.
 """
+
+# Composite objective weighting constants.  Each physical property group is
+# a weighted combination of one or more raw oracle outputs, producing a single
+# scalar that preserves the Pareto trade-off structure while reducing the
+# dimensionality of the search from 8 objectives to 4.
+#
+# Physical groupings (ADR-2026-08-07-05):
+#   1. ionic_transport        = dielectric × 0.4 + (1/viscosity) × 0.4 + li_solvation × 0.2
+#   2. electronic_stability   = homo × 0.3 + lumo × 0.3 + gap × 0.4
+#   3. synthetic_accessibility = synthesis_depth × -0.5 (min) + grounding × 0.5 (max)
+#   4. chemical_complexity    = sa_score × -0.5 (min) + novelty × 0.5 (max)
+_COMPOSITE_WEIGHTS: dict[str, dict[str, float]] = {
+    "ionic_transport": {
+        "dielectric_proxy": 0.4,
+        "viscosity_proxy_inv": 0.4,
+        "li_solvation_proxy": 0.2,
+    },
+    "electronic_stability": {
+        "homo_eV": 0.3,
+        "lumo_eV": 0.3,
+        "gap_eV": 0.4,
+    },
+    "synthetic_accessibility": {
+        "synthesis_depth": 0.5,
+        "combined_grounding_score": 0.5,
+    },
+    "chemical_complexity": {
+        "sa_score": 0.5,
+        "novelty_to_seed": 0.5,
+    },
+}
+
+
+def build_npga2_composite_objectives(
+    scores_dict: dict[str, list[float]],
+) -> dict[str, list[float]]:
+    """Build 4 composite objectives from the 8 individual NSGA-II objectives.
+
+    Consolidates the high-dimensional objective space into four physically
+    meaningful composite scores, each combining related properties:
+
+    1. ``ionic_transport`` — dielectric permittivity (max),
+       inverse viscosity (max), and Li+ solvation energy (max).
+       Physical justification: ionic conductivity σ ∝ ε/η where ε is the
+       dielectric constant and η is the viscosity. Li+ solvation modulates
+       the effective charge-carrier density.
+
+    2. ``electronic_stability`` — HOMO energy (max, reductive stability),
+       LUMO energy (max, oxidative stability), and HOMO-LUMO gap (max).
+       Physical justification: electrolyte stability window = LUMO − HOMO.
+       Maximising both frontier orbital energies widens the electrochemical
+       stability window; the gap captures conjugation strength.
+
+    3. ``synthetic_accessibility`` — synthesis depth (min) and
+       combined grounding score (max).
+       Physical justification: molecules synthesised in fewer steps with
+       better quantum-domain grounding are more reproducible and trustworthy.
+
+    4. ``chemical_complexity`` — synthetic accessibility score (min,
+       easier to make) and novelty to seed (max).
+       Physical justification: balancing synthetic tractability against
+       novelty avoids rediscovering known compounds while remaining
+       experimentally feasible.
+
+    Args:
+        scores_dict: Original per-objective lists (must contain keys
+            ``dielectric_proxy``, ``viscosity_proxy``, ``li_solvation_proxy``,
+            ``homo_eV``, ``lumo_eV``, ``sa_score``, ``synthesis_depth``,
+            ``combined_grounding_score``, and ``novelty_to_seed``).
+
+    Returns:
+        Dict with 4 composite keys, each a list of floats aligned with
+        the input lists.
+    """
+    n = len(scores_dict.get("dielectric_proxy", []))
+    if n == 0:
+        return {
+            "ionic_transport": [],
+            "electronic_stability": [],
+            "synthetic_accessibility": [],
+            "chemical_complexity": [],
+        }
+
+    w = _COMPOSITE_WEIGHTS
+
+    # Ionic transport (maximize all components)
+    di = np.asarray(scores_dict["dielectric_proxy"], dtype=float)
+    vi = np.asarray(scores_dict["viscosity_proxy"], dtype=float)
+    ls = np.asarray(scores_dict["li_solvation_proxy"], dtype=float)
+    ionic_transport = (
+        w["ionic_transport"]["dielectric_proxy"] * di
+        + w["ionic_transport"]["viscosity_proxy_inv"] * np.where(vi > 1e-6, 1.0 / vi, 0.0)
+        + w["ionic_transport"]["li_solvation_proxy"] * ls
+    )
+
+    # Electronic stability (maximize HOMO, LUMO, gap)
+    homo = np.asarray(scores_dict["homo_eV"], dtype=float)
+    lumo = np.asarray(scores_dict["lumo_eV"], dtype=float)
+    gap = lumo - homo
+    electronic_stability = (
+        w["electronic_stability"]["homo_eV"] * homo
+        + w["electronic_stability"]["lumo_eV"] * lumo
+        + w["electronic_stability"]["gap_eV"] * gap
+    )
+
+    # Synthetic accessibility: minimize synthesis_depth (negate), maximize grounding
+    sd = np.asarray(scores_dict["synthesis_depth"], dtype=float)
+    cg = np.asarray(scores_dict["combined_grounding_score"], dtype=float)
+    synthetic_accessibility = (
+        w["synthetic_accessibility"]["synthesis_depth"] * (1.0 / np.maximum(sd, 1e-6))
+        + w["synthetic_accessibility"]["combined_grounding_score"] * cg
+    )
+
+    # Chemical complexity: minimize sa_score (negate), maximize novelty
+    sa = np.asarray(scores_dict["sa_score"], dtype=float)
+    nv = np.asarray(scores_dict.get("novelty_to_seed", [0.0] * n), dtype=float)
+    chemical_complexity = (
+        w["chemical_complexity"]["sa_score"] * (1.0 / np.maximum(sa, 1e-6))
+        + w["chemical_complexity"]["novelty_to_seed"] * nv
+    )
+
+    return {
+        "ionic_transport": ionic_transport.tolist(),
+        "electronic_stability": electronic_stability.tolist(),
+        "synthetic_accessibility": synthetic_accessibility.tolist(),
+        "chemical_complexity": chemical_complexity.tolist(),
+    }
 
 
 def _compute_dominance(adjusted: np.ndarray) -> tuple[list[set[int]], np.ndarray]:

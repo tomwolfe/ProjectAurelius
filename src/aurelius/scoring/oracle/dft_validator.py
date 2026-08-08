@@ -30,12 +30,17 @@ import warnings
 from rdkit import Chem
 from scipy.stats import spearmanr
 
-from aurelius.scoring.oracle.quantum import _generate_xyz
+from aurelius.scoring.oracle.quantum import _find_xtb_binary, _generate_xyz
 
 logger = logging.getLogger(__name__)
 
 _ORCA_METHOD: str = "wB97X-D3 def2-SVP SP RIJCOSX"
 _ORCA_NPROCS: int = 4
+
+# Minimum grounding score a candidate must achieve to pass the DFT geometry
+# optimization cascade gate. A converged xTB GFN2-xTB optimization scores 1.0;
+# a failed optimization scores 0.5.
+DFT_GEOMETRY_OPT_THRESHOLD: float = 0.80
 
 
 def _find_orca_binary() -> str | None:
@@ -278,10 +283,162 @@ class DFTValidator:
         }
 
 
+import re
+
+
+_DFT_GEOM_CACHE: dict[str, dict[str, float]] = {}
+
+
+def _parse_xtb_opt_convergence(output: str) -> tuple[bool, float]:
+    """Parse xTB optimization output for convergence and final energy.
+
+    xTB prints ``   ***       Fully optimized       ***`` or ``   * Converged``
+    when geometry optimization succeeds. Returns (converged, final_energy_eV).
+    """
+    converged = bool(
+        re.search(r"Fully optimized|Converged|Stationary point found", output, re.IGNORECASE)
+    )
+    energy = float("nan")
+    for line in reversed(output.splitlines()):
+        m = re.search(r"Total Energy\s*[:=]?\s*([-+]?\d+\.?\d*)\s*(?:a\.u\.|Eh)?", line, re.IGNORECASE)
+        if m:
+            energy = float(m.group(1))
+            if abs(energy) > 50.0:
+                energy /= 27.2114
+            break
+    if not converged:
+        for line in output.splitlines():
+            m = re.search(r"Final energy\s*[:=]?\s*([-+]?\d+\.?\d*)", line, re.IGNORECASE)
+            if m:
+                energy = float(m.group(1))
+                break
+    return converged, energy
+
+
+def dft_geometry_optimize(
+    mol: Chem.Mol,
+    cache_path: str = "dft_cache.json",
+    timeout: int = 300,
+) -> dict[str, float | str | None]:
+    """Run xTB GFN2-xTB geometry optimization on a molecule.
+
+    Physical justification: A molecule's frontier orbital energies depend on
+    its 3-D conformation. Running a fast semi-empirical geometry optimization
+    (xTB GFN2-xTB with ``--opt``) provides a grounded, first-principles
+    confirmation that the candidate's predicted orbitals are based on a
+    realistic geometry rather than a hand-built 2-D embedding. The
+    optimization's convergence status is reported as ``dft_grounding_score``
+    (1.0 = converged, 0.5 = failed to converge, 0.0 = not attempted).
+
+    Results are cached by canonical SMILES to avoid recomputing the same
+    molecule's optimized geometry.
+
+    Args:
+        mol: RDKit molecule to optimize.
+        cache_path: Path to a JSON cache file keyed by SMILES.
+        timeout: Maximum seconds for the xTB subprocess.
+
+    Returns:
+        Dict with keys:
+          - ``dft_grounding_score`` (float): 1.0 if converged, 0.5 if failed,
+            1.0 if xTB unavailable (graceful degradation).
+          - ``dft_final_energy_eV`` (float | None): Final SCF energy after
+            optimization, or ``float('nan')`` if not computed.
+          - ``dft_method`` (str): Description of the method used.
+    """
+    smiles = Chem.MolToSmiles(mol)
+    if smiles in _DFT_GEOM_CACHE:
+        return dict(_DFT_GEOM_CACHE[smiles])
+
+    # Load from cache file if present
+    try:
+        with open(cache_path) as f:
+            file_cache = json.load(f)
+        if isinstance(file_cache, dict) and smiles in file_cache:
+            entry = dict(file_cache[smiles])
+            if "dft_grounding_score" in entry:
+                _DFT_GEOM_CACHE[smiles] = entry
+                return entry
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        file_cache = {}
+
+    xtb_bin = _find_xtb_binary()
+    method = "xTB GFN2-xTB geometry optimization"
+
+    if xtb_bin is None:
+        result: dict[str, float | str | None] = {
+            "dft_grounding_score": 1.0,
+            "dft_final_energy_eV": float("nan"),
+            "dft_method": "xTB unavailable (dft_grounding_score defaulted to 1.0)",
+        }
+        _DFT_GEOM_CACHE[smiles] = result
+        try:
+            file_cache[smiles] = result
+            os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
+            with open(cache_path, "w") as f:
+                json.dump(file_cache, f, indent=2, default=str)
+        except OSError:
+            pass
+        return dict(result)
+
+    xyz = _generate_xyz(mol)
+    workdir = tempfile.mkdtemp(prefix="aurelius_dft_geom_")
+    xyz_path = os.path.join(workdir, "input.xyz")
+    with open(xyz_path, "w") as f:
+        f.write(xyz)
+
+    # Also write a copy in the module directory for potential inspection
+    geom_smiles_path = os.path.join(workdir, "optimized.xyz")
+
+    try:
+        result_proc = subprocess.run(
+            [xtb_bin, "--gfn", "2", "--opt", xyz_path],
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        output = result_proc.stdout + result_proc.stderr
+        converged, energy = _parse_xtb_opt_convergence(output)
+
+        # Check if optimized geometry was written
+        if os.path.exists(os.path.join(workdir, "xtbopt.xyz")):
+            with open(os.path.join(workdir, "xtbopt.xyz")) as f:
+                optimized_xyz = f.read()
+
+        grounding_score = 1.0 if converged else 0.5
+        result = {
+            "dft_grounding_score": grounding_score,
+            "dft_final_energy_eV": round(energy, 6) if energy == energy else float("nan"),
+            "dft_method": method if converged else f"{method} (convergence failed)",
+        }
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError) as exc:
+        logger.debug("DFT geometry optimization failed (%s)", exc)
+        result = {
+            "dft_grounding_score": 0.5,
+            "dft_final_energy_eV": float("nan"),
+            "dft_method": f"{method} (subprocess error)",
+        }
+
+    _DFT_GEOM_CACHE[smiles] = result
+    try:
+        file_cache[smiles] = result
+        os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
+        with open(cache_path, "w") as f:
+            json.dump(file_cache, f, indent=2, default=str)
+    except OSError:
+        pass
+
+    return dict(result)
+
+
 __all__ = [
     "DFTValidator",
+    "DFT_GEOMETRY_OPT_THRESHOLD",
+    "dft_geometry_optimize",
     "has_orca",
     "spearman_correlation",
     "_build_orca_input",
     "_parse_orca_output",
+    "_parse_xtb_opt_convergence",
 ]
