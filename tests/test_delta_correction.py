@@ -165,43 +165,84 @@ class TestDeltaCorrection:
         assert result["lumo_eV"] == pytest.approx(raw_l)
 
     def test_ood_spearman_improvement(self):
-        """OOD Δ-learning should improve Spearman ρ on out-of-distribution molecules.
+        """Δ-correction must beat raw TOM on molecules it has never seen.
 
-        Weighted GPR training with OOD calibration data (2× weight) should
-        improve OOD HOMO ρ by at least 0.05 over the baseline model without
-        degrading in-domain ρ by more than 0.05.
+        ADR-2026-08-07-09: this test previously added the evaluation
+        molecules to the training set and then scored the model on those same
+        molecules, which measures memorisation rather than transferability.
+        Under that protocol the "improved" model reached ρ = 0.996 and
+        MAE = 0.01 eV — values that are unreachable out of domain and that
+        masked the real behaviour. The reported OOD ρ ≈ 0.51 came from the
+        same leak.
+
+        Here the benchmark molecules that also appear in the calibration set
+        are removed, so the evaluation set is genuinely unseen.
         """
         calib = _load_json(CALIBRATION_PATH)
-        ood_benchmark = _load_json(BENCHMARK_PATH)
+        benchmark = _load_json(BENCHMARK_PATH)
 
-        # Filter OOD entries with valid HOMO values
-        ood_entries = [
-            e for e in ood_benchmark
-            if e.get("homo_eV") is not None and e.get("lumo_eV") is not None
+        def canonical(smiles: str) -> str | None:
+            mol = Chem.MolFromSmiles(smiles)
+            return Chem.MolToSmiles(mol) if mol is not None else None
+
+        calib_smiles = {canonical(e["smiles"]) for e in calib}
+        held_out = [
+            e for e in benchmark
+            if e.get("homo_eV") is not None
+            and canonical(e.get("smiles", "")) is not None
+            and canonical(e["smiles"]) not in calib_smiles
         ]
-        assert len(ood_entries) >= 5, (
-            f"Need at least 5 OOD entries, got {len(ood_entries)}"
+        assert len(held_out) >= 20, (
+            f"need a meaningful held-out set, got {len(held_out)} molecules"
         )
 
-        # Baseline model (no OOD weighting)
-        baseline_model = DeltaCorrection(calib=calib)
-        baseline_ood_rho = compute_ood_spearman(ood_entries, model=baseline_model)
+        model = DeltaCorrection(calib=calib)
+        corrected, raw, reference = [], [], []
+        for entry in held_out:
+            mol = Chem.MolFromSmiles(entry["smiles"])
+            if mol is None:
+                continue
+            raw_h, raw_l = predict_tom_orbitals(mol)
+            corr_h, _ = model.predict_corrected(mol, base=(raw_h, raw_l))
+            corrected.append(corr_h)
+            raw.append(raw_h)
+            reference.append(entry["homo_eV"])
 
-        # Improved model with OOD calibration set (2× weight)
-        improved_model = DeltaCorrection(
-            calib=calib,
-            ood_calibration_set=ood_entries,
+        raw_mae = float(np.mean(np.abs(np.array(raw) - np.array(reference))))
+        corr_mae = float(np.mean(np.abs(np.array(corrected) - np.array(reference))))
+        print(f"\nheld-out (n={len(corrected)}): raw MAE={raw_mae:.3f} "
+              f"corrected MAE={corr_mae:.3f}")
+
+        assert corr_mae < raw_mae, (
+            f"Delta correction must reduce held-out HOMO error: "
+            f"raw {raw_mae:.3f} eV vs corrected {corr_mae:.3f} eV"
         )
-        improved_ood_rho = compute_ood_spearman(ood_entries, model=improved_model)
 
-        ood_improvement = improved_ood_rho - baseline_ood_rho
-        print(f"\nOOD HOMO ρ: baseline={baseline_ood_rho:.4f}, improved={improved_ood_rho:.4f}")
-        print(f"OOD ρ improvement: {ood_improvement:+.4f}")
+    def test_shrinkage_retains_most_of_the_correction_in_domain(self):
+        """The uncertainty damping must not discard the correction wholesale.
 
-        # OOD ρ should improve by at least 0.05
-        assert ood_improvement >= 0.0, (
-            f"OOD ρ should not degrade: baseline={baseline_ood_rho:.4f}, "
-            f"improved={improved_ood_rho:.4f}"
+        Guards the defect ADR-2026-08-07-09 fixed: the previous hand-set
+        cutoff of 0.5 eV left a mean confidence of 0.19 across the reference
+        molecules, so 81% of every correction was thrown away and the
+        Δ-layer barely improved on raw TOM. The Bayesian shrinkage factor
+        sigma_prior^2 / (sigma_prior^2 + sigma_pred^2) retains ~0.79.
+        """
+        calib = _load_json(CALIBRATION_PATH)
+        model = DeltaCorrection(calib=calib)
+
+        confidences = []
+        for entry in calib[:40]:
+            mol = Chem.MolFromSmiles(entry["smiles"])
+            if mol is None:
+                continue
+            _dh, _dl, std_homo, _std_lumo = model.predict_deltas_with_uncertainty(mol)
+            var_prior = model._prior_std_homo ** 2
+            confidences.append(var_prior / (var_prior + std_homo ** 2))
+
+        mean_conf = float(np.mean(confidences))
+        assert mean_conf > 0.5, (
+            f"mean shrinkage confidence {mean_conf:.3f} is too aggressive; the "
+            f"Delta correction is being discarded before it can help"
         )
 
     def test_ood_does_not_degrade_in_domain(self):

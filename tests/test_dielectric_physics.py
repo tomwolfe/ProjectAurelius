@@ -59,35 +59,68 @@ _COMMERCIAL_SOLVENTS: list[tuple[str, str, float]] = [
 def test_commercial_solvent_mae_below_target() -> None:
     """MAE across the ten canonical battery-electrolyte solvents.
 
-    The v11.0 brief set a target of MAE < 3.0. The model reaches 3.01, and
-    the threshold here is 3.2 rather than 3.0 deliberately.
+    The v11.0 brief set a target of MAE < 3.0. The model now reaches 1.80,
+    down from 3.01, via the g-factor recalibration in ADR-2026-08-07-08.
 
-    The entire shortfall is one molecule: excluding EC the MAE is 1.85, and
-    EC alone contributes 1.35 of the 3.01. EC is predicted at 76.3 against an
-    experimental 89.78, because the model uses the gas-phase dipole 4.90 D
-    while condensed-phase estimates for EC run to ~5.35 D. Substituting 5.35
-    would give eps = 90.7 and drop this MAE to ~2.4, clearing the target.
+    That change set each Kirkwood mechanism constant to the median g
+    back-solved from the verified-set molecules exhibiting only that
+    mechanism. It is a recalibration of existing physics under one uniform
+    rule, not a new term: the previous _G_RING_LOCKED_DIPOLE of 1.30 lay
+    below every member of its own class (1.349-1.534), so EC, PC, FEC and
+    sulfolane were all underpredicted together.
 
-    That substitution was rejected: it is a per-molecule adjustment that
-    improves exactly one compound and would convert a first-principles model
-    into a partially fitted one. A physically uniform alternative — the
-    Onsager reaction-field enhancement mu_eff = mu / (1 - f*alpha), which is
-    fully derivable — was also tested and made the 55-molecule verified set
-    worse (MAE 3.89 -> 4.77) by overshooting the strongly polar solvents.
+    Two alternatives were implemented and rejected on evidence:
+      - The brief's cyclic-carbonate boost g*(1 + 0.12*(eps_inf - 1)).
+        eps_inf spans only 1.64-2.33 here (CV 6%), so this is a constant in
+        disguise; and applied to cyclic carbonates alone it fixes EC only by
+        overshooting PC (error 0.26 -> 3.99) and FEC (1.72 -> 2.47).
+      - The uniform Onsager enhancement mu/(1 - f*alpha), which worsened the
+        verified set to MAE 4.77 by overshooting the strongly polar solvents.
 
-    Reporting 3.01 against a 3.0 target is the honest outcome. Closing the
-    gap properly requires condensed-phase dipole moments, not a constant.
+    EC remains the dominant residual at 81.5 against 89.78. That gap is the
+    gas-phase dipole (4.90 D versus ~5.35 D condensed-phase) entering
+    squared, and cannot be closed through g without breaking the rest of the
+    ring-locked class. Closing it properly needs condensed-phase dipole
+    moments.
     """
     errors = [abs(_eps(smiles) - experimental)
               for _, smiles, experimental in _COMMERCIAL_SOLVENTS]
     mae = float(np.mean(errors))
-    assert mae < 3.2, f"commercial solvent dielectric MAE {mae:.2f} regressed"
+    assert mae < 2.8, f"commercial solvent dielectric MAE {mae:.2f} regressed"
 
     without_ec = float(np.mean(errors[1:]))
-    assert without_ec < 2.2, (
+    assert without_ec < 1.5, (
         f"MAE excluding EC is {without_ec:.2f}; the residual error should "
         f"remain concentrated in EC's dipole moment"
     )
+
+
+def test_g_factors_match_backsolved_class_medians() -> None:
+    """Each g mechanism constant must sit within its own class's spread.
+
+    Guards the defect ADR-2026-08-07-08 fixed: a constant that lies outside
+    the range of the molecules it describes underpredicts every member of
+    that class at once. Ranges are the back-solved g values over verified-set
+    molecules exhibiting only the given mechanism.
+    """
+    from aurelius.scoring.oracle.gc import (
+        _G_HYDROGEN_BONDED,
+        _G_NITRILE_ANTIPARALLEL,
+        _G_RING_LOCKED_DIPOLE,
+        _G_SOFT_DIPOLE_ASSOCIATION,
+    )
+
+    for name, value, low, high in (
+        ("ring_locked", _G_RING_LOCKED_DIPOLE, 1.349, 1.534),
+        ("soft_dipole", _G_SOFT_DIPOLE_ASSOCIATION, 1.195, 1.487),
+        ("hydrogen_bonded", _G_HYDROGEN_BONDED, 2.822, 4.723),
+        ("nitrile", _G_NITRILE_ANTIPARALLEL, 0.663, 0.942),
+    ):
+        assert low <= value <= high, (
+            f"_G_{name.upper()} = {value} lies outside the back-solved range "
+            f"[{low}, {high}] of the molecules it describes; every member of "
+            f"the class will be biased in the same direction"
+        )
 
 
 def test_commercial_solvent_rank_correlation() -> None:

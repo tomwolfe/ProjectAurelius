@@ -14,6 +14,7 @@ Usage:
     aurelius agent                   Run the autonomous screening agent
     aurelius report                  Generate wet-lab handoff report
                               [from a de-novo or reproduced discovery run]
+    aurelius ingest-experiment <f>   Ingest wet-lab measurements and refit
 """
 
 from __future__ import annotations
@@ -605,6 +606,54 @@ def report_cmd(top: int, dft: bool, output: str, generations: int, batch_size: i
     )
     click.echo(f"Selected {len(selected)} candidates -> {output}/prospective_candidates.csv")
     click.echo(f"Report -> {output}/prospective_candidates_report.md")
+
+
+@cli.command("ingest-experiment")
+@click.argument("file", type=click.Path(exists=True))
+@click.option("--generation", type=int, default=0, help="Generation number to attribute these measurements to")
+@click.option("--no-refit", is_flag=True, default=False, help="Validate and record only; do not trigger a model refit")
+@click.option("--output", type=click.Path(), default=None, help="Write the full ingestion report as JSON")
+def ingest_experiment_cmd(
+    file: str, generation: int, no_refit: bool, output: str | None
+) -> None:
+    """Ingest wet-lab measurements and refit the oracle.
+
+    FILE is JSON matching data/experimental_results_schema.json, or a CSV
+    with the same column names. Each record needs smiles, measured_property,
+    value, units, temperature_K and method.
+
+    Units are validated, never converted: a record whose units are not the
+    canonical ones for its property is rejected so that a silent 1000x error
+    cannot enter the calibration set.
+    """
+    from aurelius.agent.experimental_ingestion import ingest_experimental_results
+
+    report = ingest_experimental_results(
+        file, generation=generation, trigger_refit=not no_refit
+    )
+
+    click.echo(f"Accepted: {report.n_accepted}    Rejected: {report.n_rejected}")
+    for record, reason in report.rejected:
+        click.echo(f"  REJECTED {str(record.get('smiles', '?'))[:40]}: {reason}")
+    for warning in report.warnings:
+        click.echo(f"  WARNING  {warning}")
+
+    if report.refit:
+        click.echo(
+            f"Refit: LOO MAE {report.refit.get('loo_mae_before', float('nan')):.4f}"
+            f" -> {report.refit.get('loo_mae_after', float('nan')):.4f} eV"
+            f" ({report.refit.get('new_calibration_entries', 0)} entries added)"
+        )
+    elif not no_refit:
+        click.echo("No refit: no molecule had both HOMO and LUMO measured.")
+
+    if output:
+        with open(output, "w") as f:
+            json.dump(report.to_dict(), f, indent=2)
+        click.echo(f"Report written to {output}")
+
+    if report.n_rejected and not report.n_accepted:
+        sys.exit(1)
 
 
 def _reproduce_run(summary_path: str) -> None:

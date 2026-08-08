@@ -359,12 +359,32 @@ _BRICS_LINKER_FRAGMENTS: list[tuple[str, str]] = [
 ]
 
 
+def _load_brics_bond_rules() -> dict[str, frozenset[str]]:
+    """Build the map of which BRICS dummy-atom types may bond to each other.
+
+    Read directly from ``rdkit.Chem.BRICS.reactionDefs`` rather than
+    hard-coded, so the rules cannot drift from the RDKit version in use.
+    Types are kept as strings because BRICS uses '7a' and '7b' alongside
+    the numeric labels.
+    """
+    partners: dict[str, set[str]] = {}
+    for row in BRICS.reactionDefs:
+        for type_a, type_b, _smarts in row:
+            partners.setdefault(type_a, set()).add(type_b)
+            partners.setdefault(type_b, set()).add(type_a)
+    return {k: frozenset(v) for k, v in partners.items()}
+
+
+_BRICS_BOND_RULES: dict[str, frozenset[str]] = _load_brics_bond_rules()
+
+
 def get_brics_types(frag: Chem.Mol) -> set[int]:
     """Extract BRICS dummy-atom isotope types from a fragment.
 
     BRICS decomposition produces fragments with dummy atoms labelled by
-    isotope (1-5).  For two fragments to be joined by BRICSBuild they
-    must share at least one common dummy-atom type.
+    isotope. Note that two fragments are joinable when their types are
+    *complementary* under the BRICS reaction rules, not when they are equal
+    — see :func:`find_complementary_pairs`.
     """
     types: set[int] = set()
     for atom in frag.GetAtoms():
@@ -375,25 +395,57 @@ def get_brics_types(frag: Chem.Mol) -> set[int]:
     return types
 
 
-def find_complementary_pairs(fragments: list[Chem.Mol]) -> list[tuple[int, int]]:
-    """Find fragment pairs with complementary BRICS dummy-atom types.
+def _fragment_bonding_profiles(
+    fragments: list[Chem.Mol],
+) -> tuple[list[frozenset[str]], list[frozenset[str]]]:
+    """Return each fragment's own dummy types and the types it can bond to.
 
-    BRICSBuild connects fragments by matching dummy-atom isotope types.
-    Random pairing almost always fails; this method finds all valid
-    pairs upfront so that every BRICSBuild call has a chance of success.
+    Split out from :func:`find_complementary_pairs` to keep that function
+    within the cyclomatic-complexity budget enforced by
+    ``test_cyclomatic_complexity``.
     """
-    frag_types: list[frozenset[int]] = []
+    own: list[frozenset[str]] = []
+    partners: list[frozenset[str]] = []
     for frag in fragments:
-        types = get_brics_types(frag)
-        frag_types.append(frozenset(types))
+        types = frozenset(str(t) for t in get_brics_types(frag))
+        own.append(types)
+        reachable: set[str] = set()
+        for type_name in types:
+            reachable |= _BRICS_BOND_RULES.get(type_name, frozenset())
+        partners.append(frozenset(reachable))
+    return own, partners
 
-    pairs: list[tuple[int, int]] = []
-    for i in range(len(fragments)):
-        if not frag_types[i]:
-            continue
-        for j in range(i + 1, len(fragments)):
-            if frag_types[i] & frag_types[j]:
-                pairs.append((i, j))
+
+def find_complementary_pairs(fragments: list[Chem.Mol]) -> list[tuple[int, int]]:
+    """Find fragment pairs whose BRICS dummy-atom types can actually bond.
+
+    ADR-2026-08-07-10: this previously paired fragments that shared a dummy
+    type (``frag_types[i] & frag_types[j]``), which is the wrong rule and
+    silently disabled the entire BRICS pathway.
+
+    BRICS bonds join *complementary* types, not identical ones. Reading
+    ``BRICS.reactionDefs`` shows that L3 bonds to {1, 4, 13, 14, 15, 16} and
+    to nothing else; only types 14 and 16 may bond to themselves. So the
+    intersection rule selected pairs that BRICSBuild is definitionally unable
+    to connect: decomposing dimethyl carbonate gives 40 fragments and 61
+    "complementary" pairs, of which every single one produced zero products.
+    Measured over eight seed molecules, the BRICS path yielded 0 candidates
+    while SMARTS yielded 53 — the evolutionary algorithm was running on
+    template reactions alone, and ``force_exploration=True``, which disables
+    SMARTS and relies on BRICS only, produced nothing at all.
+
+    This also explains why the grounding threshold appeared to have no
+    effect: the gate it guards is on the BRICS path, which was never
+    producing anything to reject.
+    """
+    frag_types, partners = _fragment_bonding_profiles(fragments)
+
+    pairs = [
+        (i, j)
+        for i in range(len(fragments))
+        for j in range(i + 1, len(fragments))
+        if partners[i] & frag_types[j]
+    ]
 
     # Fall back to all pairs if nothing matched (e.g. all seed fragments
     # that haven't been BRICS-decomposed yet)

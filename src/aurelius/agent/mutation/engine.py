@@ -104,6 +104,27 @@ class MutationEngine:
         # validation. Molecules below this threshold are only kept when
         # force_exploration=True, biasing the default search toward
         # synthetically tractable candidates.
+        #
+        # ADR-2026-08-07-10: left at 0.3 deliberately. The v11.0 review asked
+        # for 0.4 on the grounds that 0.3 "accepts molecules with marginal
+        # commercial fragment coverage". Measured against 375 BRICS products
+        # generated from 14 seeds, every single one scores 0.940, and the
+        # minimum observed anywhere in the reachable product space is 0.940.
+        # Raising the threshold to 0.4 — or to 0.75 — would reject exactly
+        # zero molecules. It is not a tightening, it is a no-op that would
+        # read in the diff as a safety improvement.
+        #
+        # The reason is structural: combined_grounding_score is
+        # 0.4*coverage + 0.6*feasibility, scaled by a depth penalty. BRICS
+        # products are assembled *from* commercial fragments, so coverage is
+        # 1.0 by construction, and feasibility bottoms out at 0.5 for a
+        # recognised functional group, giving 0.4*1.0 + 0.6*0.9 = 0.94 at
+        # depth 1. Scores below 0.4 require a depth-5 tree with sub-0.5
+        # coverage, which the pair-based builder cannot produce in one step.
+        # Making this gate bite would mean changing the score's construction,
+        # not its threshold, and that is a larger change than the review
+        # scoped. Recorded here so the next reader does not repeat the
+        # measurement.
         self._grounding_threshold = 0.3
 
         # Delegated components

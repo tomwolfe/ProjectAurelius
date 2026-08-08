@@ -396,3 +396,64 @@ def test_ternary_oracle_prediction_via_api() -> None:
     assert mix["mixture_properties"]["viscosity_proxy"] > 0.0
     assert len(mix["component_results"]) == 3
     assert "total_score" in mix["score"]
+
+
+def test_viscosity_batch_matches_scalar() -> None:
+    """The batch viscosity path must reproduce the scalar path bit-for-bit.
+
+    ADR-2026-08-07-07 replaced fragment additivity with the Eyring model and
+    routed the batch path through the same function, mirroring what
+    ADR-2026-08-07-04 did for the dielectric. This guards the class of bug
+    fixed in ADR-2026-08-07-02, where a separately maintained batch branch
+    silently drifted from the reference formulas and made GPU and CPU runs
+    mutually incomparable.
+    """
+    import numpy as np
+
+    from aurelius.scoring.oracle.gc import (
+        _count_branch_points,
+        _count_fragments_batch,
+        _count_stereocenters,
+        predict_viscosity_proxy,
+        predict_viscosity_proxy_batch,
+    )
+
+    smiles = [
+        "C1COC(=O)O1", "COC(=O)OC", "CS(=O)C", "CC#N", "O", "CCCCCC",
+        "C(C(CO)O)O", "CC(C)(C)O", "COCCOC", "O=S1(=O)CCCC1",
+    ]
+    contexts = [MoleculeContext.from_smiles(s) for s in smiles]
+    assert all(c is not None for c in contexts)
+
+    counts = _count_fragments_batch(contexts)
+    mw = np.array([c.mw for c in contexts], dtype=np.float32)
+    n_rot = np.array([c.rotatable_bonds for c in contexts], dtype=np.int32)
+    n_branch = np.array([_count_branch_points(c.mol) for c in contexts], dtype=np.int32)
+    n_stereo = np.array([_count_stereocenters(c.mol) for c in contexts], dtype=np.int32)
+
+    batch = predict_viscosity_proxy_batch(counts, mw, n_rot, n_branch, n_stereo, contexts)
+    scalar = [predict_viscosity_proxy(c) for c in contexts]
+    np.testing.assert_allclose(batch, scalar, rtol=1e-6)
+
+
+def test_viscosity_batch_requires_contexts() -> None:
+    """Calling the batch path without contexts must fail loudly.
+
+    The Eyring model needs molar volume, molar refraction and dipole moment,
+    none of which are recoverable from fragment counts. Returning a silently
+    wrong array would be worse than raising.
+    """
+    import numpy as np
+    import pytest as _pytest
+
+    from aurelius.scoring.oracle.gc import predict_viscosity_proxy_batch
+
+    empty = np.zeros((2, 3), dtype=np.float32)
+    with _pytest.raises(ValueError, match="contexts"):
+        predict_viscosity_proxy_batch(
+            empty,
+            np.zeros(2, dtype=np.float32),
+            np.zeros(2, dtype=np.int32),
+            np.zeros(2, dtype=np.int32),
+            np.zeros(2, dtype=np.int32),
+        )

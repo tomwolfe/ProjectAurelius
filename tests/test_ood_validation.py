@@ -6,7 +6,6 @@ not present in the calibration set.
 
 import math
 
-import pytest
 from rdkit import Chem
 
 from aurelius.data.ood_validation import get_ood_molecules
@@ -83,28 +82,21 @@ def test_ood_molecules():
     print(f"\nAll {len(ood_molecules)} OOD molecules passed validation")
 
 
-@pytest.mark.xfail(
-    reason=(
-        "KNOWN DEFECT (ADR-2026-08-07-06): the group-contribution viscosity "
-        "model has essentially no rank signal out of domain — Spearman rho = "
-        "0.07 against experimental viscosities, MAE 1.51 cP, with errors up "
-        "to 4.4 cP. This is recorded as a failing test rather than a relaxed "
-        "threshold so it stays visible. Viscosity carries "
-        "SCORE_WEIGHT_VISCOSITY in the objective, so candidate ranking is "
-        "affected. Out of scope for the dielectric work; needs the same "
-        "treatment the dielectric received (a real transport model, e.g. "
-        "free-volume / Vogel-Fulcher, rather than fragment additivity)."
-    ),
-    strict=False,
-)
 def test_ood_viscosity_rank_correlation() -> None:
-    """Viscosity should rank OOD molecules correctly even if magnitudes drift.
+    """Viscosity must rank OOD molecules correctly even if magnitudes drift.
 
-    Currently fails: see the xfail reason. The threshold below is the minimum
-    that would indicate any usable signal at all.
+    ADR-2026-08-07-07: this test was previously ``xfail`` at rho = 0.07,
+    recording the fragment-additive viscosity model's total lack of
+    out-of-domain rank signal. Replacing it with the Eyring activated-flow
+    model raised out-of-domain rho to 0.487 and cut MAE from 1.51 to 1.09 cP,
+    so the xfail is removed and a real threshold enforced.
+
+    The threshold is set at 0.30 rather than at the measured 0.487 because the
+    out-of-domain set is only 21 molecules, so the sampling error on rho is
+    large (bootstrap 95% CI roughly +/-0.20). Asserting the achieved value
+    would make the test fragile against innocuous changes elsewhere.
     """
     from scipy.stats import spearmanr
-
 
     oracle = PropertyOracle(use_xtb=True)
     predicted: list[float] = []
@@ -118,7 +110,28 @@ def test_ood_viscosity_rank_correlation() -> None:
 
     assert len(predicted) >= 10, "OOD set must retain experimental viscosities"
     rho = spearmanr(predicted, experimental).statistic
-    assert rho > 0.10, f"OOD viscosity rank correlation collapsed: rho={rho:.3f}"
+    assert rho > 0.30, f"OOD viscosity rank correlation collapsed: rho={rho:.3f}"
+
+
+def test_ood_viscosity_absolute_error() -> None:
+    """Out-of-domain viscosity magnitudes must stay within a usable band.
+
+    Guards the other half of ADR-2026-08-07-07: a model could rank correctly
+    while being badly mis-scaled. The additive model's worst case was
+    perfluoro-tert-butyl methyl ether at 5.00 cP against 0.60 measured; the
+    Eyring model's worst case is 4.28 cP and its MAE is 1.09 cP.
+    """
+    oracle = PropertyOracle(use_xtb=True)
+    errors: list[float] = []
+    for mol_data in get_ood_molecules():
+        if "experimental_viscosity_cP" not in mol_data:
+            continue
+        ctx = MoleculeContext.from_smiles(mol_data["smiles"])
+        predicted = oracle.evaluate(ctx)["viscosity_proxy"]
+        errors.append(abs(predicted - mol_data["experimental_viscosity_cP"]))
+
+    mae = sum(errors) / len(errors)
+    assert mae < 1.40, f"OOD viscosity MAE regressed: {mae:.3f} cP (was 1.09)"
 
 
 def test_ood_dielectric_rank_correlation() -> None:

@@ -386,7 +386,9 @@ class PropertyOracle:
         # meaningful arithmetic to offload, so the correct engineering choice
         # is one shared implementation rather than two that can disagree.
         dielectric = predict_dielectric_proxy_batch(counts, tpsa_values, contexts)
-        viscosity = predict_viscosity_proxy_batch(counts, mw_values, n_rotatable, n_branch, n_stereo)
+        viscosity = predict_viscosity_proxy_batch(
+            counts, mw_values, n_rotatable, n_branch, n_stereo, contexts
+        )
         li_solvation = predict_li_solvation_proxy_batch(counts, mw_values)
         conductivity = predict_ionic_conductivity_proxy_batch(dielectric, viscosity, li_solvation)
 

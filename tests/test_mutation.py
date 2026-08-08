@@ -217,3 +217,88 @@ class TestTernaryMixtureMutation:
             comps, fracs = parse_mixture_smiles_n(smi)
             assert comps is not None and len(comps) == 2
             assert abs(sum(fracs) - 1.0) < 1e-6
+
+
+# ---------------------------------------------------------------------------
+# BRICS pairing correctness (ADR-2026-08-07-10)
+# ---------------------------------------------------------------------------
+
+
+class TestBricsComplementaryPairs:
+    """``find_complementary_pairs`` must return pairs BRICSBuild can join.
+
+    Regression guard for a defect that silently disabled the entire BRICS
+    generation pathway: the function paired fragments that *shared* a dummy
+    isotope, but BRICS joins *complementary* types. Every returned pair was
+    unjoinable, so BRICS contributed zero candidates and
+    ``force_exploration=True`` — which turns SMARTS off and relies on BRICS
+    alone — produced nothing at all.
+    """
+
+    def test_same_type_pair_is_not_reported_as_complementary(self):
+        from rdkit import Chem
+
+        from aurelius.agent.mutation.brics import find_complementary_pairs
+
+        # L3 bonds to {1, 4, 13, 14, 15, 16} and never to another L3. With a
+        # genuinely joinable L3+L4 pair also present, the all-pairs fallback
+        # does not fire, so the L3-L3 pair must be absent from the result.
+        frags = [
+            Chem.MolFromSmiles("[3*]OC"),
+            Chem.MolFromSmiles("[3*]OCC"),
+            Chem.MolFromSmiles("[4*]CC"),
+        ]
+        pairs = find_complementary_pairs(frags)
+        assert (0, 2) in pairs, "L3 + L4 is a valid BRICS bond and must be offered"
+        assert (0, 1) not in pairs, (
+            "two L3 fragments cannot be joined by BRICS and must not be "
+            "reported as a complementary pair"
+        )
+
+    def test_complementary_pair_is_reported(self):
+        from rdkit import Chem
+
+        from aurelius.agent.mutation.brics import find_complementary_pairs
+
+        # L3 + L4 is an allowed BRICS bond.
+        frags = [Chem.MolFromSmiles("[3*]OC"), Chem.MolFromSmiles("[4*]CC")]
+        assert (0, 1) in find_complementary_pairs(frags)
+
+    def test_reported_pairs_actually_build(self):
+        """Pairs returned for a real seed must yield real BRICS products."""
+        from rdkit.Chem import BRICS
+
+        from aurelius.agent.mutation.brics import find_complementary_pairs
+
+        engine = MutationEngine(seed_smiles=["COC(=O)OC"], n_jobs=1)
+        ctx = engine._get_ctx("COC(=O)OC")
+        assert ctx is not None
+        frags = engine._collect_brics_fragments(ctx, False)
+        pairs = find_complementary_pairs(frags)
+        assert pairs, "no complementary pairs found for dimethyl carbonate"
+
+        built = 0
+        for i, j in pairs[:25]:
+            try:
+                for _product in BRICS.BRICSBuild([frags[i], frags[j]]):
+                    built += 1
+                    break
+            except Exception:
+                continue
+        assert built > 0, (
+            "no BRICS pair produced a product; the BRICS generation pathway "
+            "is dead and the EA is running on SMARTS templates alone"
+        )
+
+    def test_brics_pathway_yields_candidates(self):
+        """The BRICS path must contribute candidates on its own."""
+        engine = MutationEngine(seed_smiles=["COC(=O)OC", "C1COCCO1", "CC#N"], n_jobs=1)
+        total = 0
+        for seed in engine.seed_pool[:6]:
+            ctx = engine._get_ctx(seed)
+            if ctx is None:
+                continue
+            total += len(engine._brics_from_pool(ctx, force_exploration=False))
+        assert total > 0, (
+            "BRICS pathway produced no candidates across six seeds"
+        )
