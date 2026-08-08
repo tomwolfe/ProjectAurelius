@@ -1,0 +1,530 @@
+[
+  {
+    "smiles": "O",
+    "name": "Water",
+    "ip_eV": 12.62,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CO",
+    "name": "Methanol",
+    "ip_eV": 10.84,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCO",
+    "name": "Ethanol",
+    "ip_eV": 10.48,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCCO",
+    "name": "1-Propanol",
+    "ip_eV": 10.22,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CC(C)O",
+    "name": "2-Propanol",
+    "ip_eV": 10.17,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "OCCO",
+    "name": "Ethylene glycol",
+    "ip_eV": 10.16,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CC(C)(C)O",
+    "name": "tert-Butanol",
+    "ip_eV": 9.9,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "COC",
+    "name": "Dimethyl ether",
+    "ip_eV": 10.03,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCOCC",
+    "name": "Diethyl ether",
+    "ip_eV": 9.51,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "C1CCOC1",
+    "name": "THF",
+    "ip_eV": 9.38,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "C1CCOCC1",
+    "name": "Tetrahydropyran",
+    "ip_eV": 9.25,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "C1COCCO1",
+    "name": "1,4-Dioxane",
+    "ip_eV": 9.19,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "COCCOC",
+    "name": "DME",
+    "ip_eV": 9.3,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "C1COC1",
+    "name": "Oxetane",
+    "ip_eV": 9.65,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "C1CO1",
+    "name": "Ethylene oxide",
+    "ip_eV": 10.57,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CC1CO1",
+    "name": "Propylene oxide",
+    "ip_eV": 10.22,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CC(C)=O",
+    "name": "Acetone",
+    "ip_eV": 9.7,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CC=O",
+    "name": "Acetaldehyde",
+    "ip_eV": 10.23,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "C=O",
+    "name": "Formaldehyde",
+    "ip_eV": 10.88,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCC(C)=O",
+    "name": "2-Butanone",
+    "ip_eV": 9.52,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "COC(C)=O",
+    "name": "Methyl acetate",
+    "ip_eV": 10.25,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCOC(C)=O",
+    "name": "Ethyl acetate",
+    "ip_eV": 10.01,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "COC=O",
+    "name": "Methyl formate",
+    "ip_eV": 10.82,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CC(O)=O",
+    "name": "Acetic acid",
+    "ip_eV": 10.65,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "OC=O",
+    "name": "Formic acid",
+    "ip_eV": 11.33,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "O=C1CCCO1",
+    "name": "gamma-Butyrolactone",
+    "ip_eV": 10.15,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "C1COC(=O)O1",
+    "name": "Ethylene carbonate",
+    "ip_eV": 10.6,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "COC(=O)OC",
+    "name": "Dimethyl carbonate",
+    "ip_eV": 10.5,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CC#N",
+    "name": "Acetonitrile",
+    "ip_eV": 12.19,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCC#N",
+    "name": "Propionitrile",
+    "ip_eV": 11.84,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "C=CC#N",
+    "name": "Acrylonitrile",
+    "ip_eV": 10.91,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "N#Cc1ccccc1",
+    "name": "Benzonitrile",
+    "ip_eV": 9.62,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "N",
+    "name": "Ammonia",
+    "ip_eV": 10.07,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CN",
+    "name": "Methylamine",
+    "ip_eV": 8.97,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CNC",
+    "name": "Dimethylamine",
+    "ip_eV": 8.23,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CN(C)C",
+    "name": "Trimethylamine",
+    "ip_eV": 7.85,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCN",
+    "name": "Ethylamine",
+    "ip_eV": 8.86,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "Nc1ccccc1",
+    "name": "Aniline",
+    "ip_eV": 7.72,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "c1ccncc1",
+    "name": "Pyridine",
+    "ip_eV": 9.26,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "c1cc[nH]c1",
+    "name": "Pyrrole",
+    "ip_eV": 8.21,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "NC=O",
+    "name": "Formamide",
+    "ip_eV": 10.16,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CN(C)C=O",
+    "name": "DMF",
+    "ip_eV": 9.13,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CC(=O)N(C)C",
+    "name": "DMAc",
+    "ip_eV": 8.81,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CN1CCCC1=O",
+    "name": "NMP",
+    "ip_eV": 9.17,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "C[N+](=O)[O-]",
+    "name": "Nitromethane",
+    "ip_eV": 11.08,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CS(C)=O",
+    "name": "DMSO",
+    "ip_eV": 9.1,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "O=S1(=O)CCCC1",
+    "name": "Sulfolane",
+    "ip_eV": 9.7,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CSC",
+    "name": "Dimethyl sulfide",
+    "ip_eV": 8.69,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCSCC",
+    "name": "Diethyl sulfide",
+    "ip_eV": 8.43,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "C1CCSC1",
+    "name": "Tetrahydrothiophene",
+    "ip_eV": 8.38,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CS",
+    "name": "Methanethiol",
+    "ip_eV": 9.44,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCS",
+    "name": "Ethanethiol",
+    "ip_eV": 9.31,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "S",
+    "name": "Hydrogen sulfide",
+    "ip_eV": 10.46,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CS(C)(=O)=O",
+    "name": "Dimethyl sulfone",
+    "ip_eV": 10.3,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "ClCCl",
+    "name": "Dichloromethane",
+    "ip_eV": 11.32,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "ClC(Cl)Cl",
+    "name": "Chloroform",
+    "ip_eV": 11.37,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "ClC(Cl)(Cl)Cl",
+    "name": "Carbon tetrachloride",
+    "ip_eV": 11.47,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCl",
+    "name": "Chloromethane",
+    "ip_eV": 11.22,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCCl",
+    "name": "Chloroethane",
+    "ip_eV": 10.97,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CBr",
+    "name": "Bromomethane",
+    "ip_eV": 10.54,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCBr",
+    "name": "Bromoethane",
+    "ip_eV": 10.29,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "c1ccccc1",
+    "name": "Benzene",
+    "ip_eV": 9.24,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "Cc1ccccc1",
+    "name": "Toluene",
+    "ip_eV": 8.83,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "Fc1ccccc1",
+    "name": "Fluorobenzene",
+    "ip_eV": 9.2,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "Fc1c(F)c(F)c(F)c(F)c1F",
+    "name": "Hexafluorobenzene",
+    "ip_eV": 9.9,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "Clc1ccccc1",
+    "name": "Chlorobenzene",
+    "ip_eV": 9.07,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "COc1ccccc1",
+    "name": "Anisole",
+    "ip_eV": 8.2,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "Oc1ccccc1",
+    "name": "Phenol",
+    "ip_eV": 8.49,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "COP(=O)(OC)OC",
+    "name": "Trimethyl phosphate",
+    "ip_eV": 10.81,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "COP(OC)OC",
+    "name": "Trimethyl phosphite",
+    "ip_eV": 8.6,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCOP(=O)(OCC)OCC",
+    "name": "Triethyl phosphate",
+    "ip_eV": 10.0,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "C1CCCCC1",
+    "name": "Cyclohexane",
+    "ip_eV": 9.86,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCCCCC",
+    "name": "n-Hexane",
+    "ip_eV": 10.13,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCCCC",
+    "name": "n-Pentane",
+    "ip_eV": 10.28,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CCC",
+    "name": "Propane",
+    "ip_eV": 10.95,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CC",
+    "name": "Ethane",
+    "ip_eV": 11.52,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "C",
+    "name": "Methane",
+    "ip_eV": 12.61,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "FC(F)(F)F",
+    "name": "Carbon tetrafluoride",
+    "ip_eV": 16.2,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CF",
+    "name": "Fluoromethane",
+    "ip_eV": 12.47,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "FCF",
+    "name": "Difluoromethane",
+    "ip_eV": 12.71,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "FC(F)F",
+    "name": "Trifluoromethane",
+    "ip_eV": 13.86,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CC(F)(F)F",
+    "name": "1,1,1-Trifluoroethane",
+    "ip_eV": 13.3,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "OCC(F)(F)F",
+    "name": "2,2,2-Trifluoroethanol",
+    "ip_eV": 11.49,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "OC(=O)C(F)(F)F",
+    "name": "Trifluoroacetic acid",
+    "ip_eV": 11.46,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "N#CC(F)(F)F",
+    "name": "Trifluoroacetonitrile",
+    "ip_eV": 13.93,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CC(=O)OC(C)=O",
+    "name": "Acetic anhydride",
+    "ip_eV": 10.13,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "COCCOCCOC",
+    "name": "Diglyme",
+    "ip_eV": 9.2,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  },
+  {
+    "smiles": "CC1COC(=O)O1",
+    "name": "Propylene carbonate",
+    "ip_eV": 10.5,
+    "reference": "NIST Chemistry WebBook, gas-phase ionisation energy"
+  }
+]

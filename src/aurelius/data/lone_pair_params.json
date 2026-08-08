@@ -1,0 +1,31 @@
+{
+  "_comment": "Lone-Pair Orbital Model parameters. Fitted by scripts/calibrate_lone_pair.py against 88 NIST experimental gas-phase ionisation energies with a Hinze-Jaffe VOIE ridge prior. Do not hand-edit; re-run the script.",
+  "rho_alk": 0.55,
+  "rho_ind": 0.5,
+  "ridge_lambda": 1.0,
+  "weights": {
+    "O_ether": 12.1082,
+    "O_carbonyl": 11.6954,
+    "N_amine": 10.3522,
+    "N_nitrile": 13.9566,
+    "N_arom": 11.6394,
+    "S_sulfide": 10.7091,
+    "S_oxide": 10.7001,
+    "P": 9.6057,
+    "Cl": 12.1864,
+    "Br": 11.6558,
+    "pi": 11.52,
+    "sigma": 12.469,
+    "alk": -0.9166,
+    "ind": -0.7208,
+    "conj": -1.5132,
+    "pi_len": -1.4892,
+    "pi_don": -0.9309
+  },
+  "validation": {
+    "spearman_rho": 0.9142,
+    "mae_eV": 0.3822,
+    "rmse_eV": 0.56,
+    "max_abs_error_eV": 2.3469
+  }
+}

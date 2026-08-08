@@ -26,6 +26,7 @@ import os
 import subprocess
 import tempfile
 import warnings
+from typing import Any
 
 from rdkit import Chem
 from scipy.stats import spearmanr
@@ -350,86 +351,80 @@ def dft_geometry_optimize(
     if smiles in _DFT_GEOM_CACHE:
         return dict(_DFT_GEOM_CACHE[smiles])
 
-    # Load from cache file if present
-    try:
-        with open(cache_path) as f:
-            file_cache = json.load(f)
-        if isinstance(file_cache, dict) and smiles in file_cache:
-            entry = dict(file_cache[smiles])
-            if "dft_grounding_score" in entry:
-                _DFT_GEOM_CACHE[smiles] = entry
-                return entry
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        file_cache = {}
+    file_cache = _read_geom_cache(cache_path)
+    cached = file_cache.get(smiles)
+    if isinstance(cached, dict) and "dft_grounding_score" in cached:
+        _DFT_GEOM_CACHE[smiles] = dict(cached)
+        return dict(cached)
 
     xtb_bin = _find_xtb_binary()
-    method = "xTB GFN2-xTB geometry optimization"
-
     if xtb_bin is None:
         result: dict[str, float | str | None] = {
             "dft_grounding_score": 1.0,
             "dft_final_energy_eV": float("nan"),
             "dft_method": "xTB unavailable (dft_grounding_score defaulted to 1.0)",
         }
-        _DFT_GEOM_CACHE[smiles] = result
-        try:
-            file_cache[smiles] = result
-            os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
-            with open(cache_path, "w") as f:
-                json.dump(file_cache, f, indent=2, default=str)
-        except OSError:
-            pass
-        return dict(result)
-
-    xyz = _generate_xyz(mol)
-    workdir = tempfile.mkdtemp(prefix="aurelius_dft_geom_")
-    xyz_path = os.path.join(workdir, "input.xyz")
-    with open(xyz_path, "w") as f:
-        f.write(xyz)
-
-    # Also write a copy in the module directory for potential inspection
-    geom_smiles_path = os.path.join(workdir, "optimized.xyz")
-
-    try:
-        result_proc = subprocess.run(
-            [xtb_bin, "--gfn", "2", "--opt", xyz_path],
-            cwd=workdir,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        output = result_proc.stdout + result_proc.stderr
-        converged, energy = _parse_xtb_opt_convergence(output)
-
-        # Check if optimized geometry was written
-        if os.path.exists(os.path.join(workdir, "xtbopt.xyz")):
-            with open(os.path.join(workdir, "xtbopt.xyz")) as f:
-                optimized_xyz = f.read()
-
-        grounding_score = 1.0 if converged else 0.5
-        result = {
-            "dft_grounding_score": grounding_score,
-            "dft_final_energy_eV": round(energy, 6) if energy == energy else float("nan"),
-            "dft_method": method if converged else f"{method} (convergence failed)",
-        }
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError) as exc:
-        logger.debug("DFT geometry optimization failed (%s)", exc)
-        result = {
-            "dft_grounding_score": 0.5,
-            "dft_final_energy_eV": float("nan"),
-            "dft_method": f"{method} (subprocess error)",
-        }
+    else:
+        result = _run_xtb_optimization(mol, xtb_bin, timeout)
 
     _DFT_GEOM_CACHE[smiles] = result
+    file_cache[smiles] = result
+    _write_geom_cache(cache_path, file_cache)
+    return dict(result)
+
+
+def _read_geom_cache(cache_path: str) -> dict[str, Any]:
+    """Load the on-disk geometry cache, tolerating a missing or corrupt file."""
     try:
-        file_cache[smiles] = result
+        with open(cache_path) as f:
+            loaded = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _write_geom_cache(cache_path: str, file_cache: dict[str, Any]) -> None:
+    """Persist the geometry cache; caching is best-effort and never fatal."""
+    try:
         os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
         with open(cache_path, "w") as f:
             json.dump(file_cache, f, indent=2, default=str)
     except OSError:
         pass
 
-    return dict(result)
+
+def _run_xtb_optimization(
+    mol: Chem.Mol, xtb_bin: str, timeout: int
+) -> dict[str, float | str | None]:
+    """Run ``xtb --opt`` in a scratch directory and summarise convergence."""
+    method = "xTB GFN2-xTB geometry optimization"
+    workdir = tempfile.mkdtemp(prefix="aurelius_dft_geom_")
+    xyz_path = os.path.join(workdir, "input.xyz")
+    with open(xyz_path, "w") as f:
+        f.write(_generate_xyz(mol))
+
+    try:
+        proc = subprocess.run(
+            [xtb_bin, "--gfn", "2", "--opt", xyz_path],
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError) as exc:
+        logger.debug("DFT geometry optimization failed (%s)", exc)
+        return {
+            "dft_grounding_score": 0.5,
+            "dft_final_energy_eV": float("nan"),
+            "dft_method": f"{method} (subprocess error)",
+        }
+
+    converged, energy = _parse_xtb_opt_convergence(proc.stdout + proc.stderr)
+    return {
+        "dft_grounding_score": 1.0 if converged else 0.5,
+        "dft_final_energy_eV": round(energy, 6) if energy == energy else float("nan"),
+        "dft_method": method if converged else f"{method} (convergence failed)",
+    }
 
 
 __all__ = [

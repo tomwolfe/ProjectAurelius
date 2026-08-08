@@ -213,6 +213,84 @@ def load_records(path: str) -> list[dict[str, Any]]:
     )
 
 
+def _partition_records(
+    records: list[dict[str, Any]],
+    report: IngestionReport,
+    orbital: dict[str, dict[str, float]],
+    bulk: dict[str, dict[str, float]],
+) -> None:
+    """Validate each record and route it to the orbital or bulk bucket.
+
+    Records measured far from the model reference temperature are accepted but
+    flagged: a viscosity at 60 °C is not comparable to a 25 °C prediction, and
+    silently mixing them would masquerade as model error.
+    """
+    for raw in records:
+        canonical, reason = validate_record(raw)
+        if canonical is None:
+            report.rejected.append((raw, reason))
+            continue
+
+        delta_t = abs(canonical["temperature_K"] - _REFERENCE_TEMPERATURE_K)
+        if delta_t > _TEMPERATURE_TOLERANCE_K:
+            report.warnings.append(
+                f"{canonical['smiles']}: {canonical['measured_property']} measured at "
+                f"{canonical['temperature_K']:.1f} K, {delta_t:.1f} K from the "
+                f"{_REFERENCE_TEMPERATURE_K:.2f} K model reference; comparison to "
+                f"predictions will carry a temperature bias"
+            )
+
+        prop = canonical["measured_property"]
+        if prop in orbital:
+            orbital[prop][canonical["smiles"]] = canonical["value"]
+        elif prop in bulk:
+            bulk[prop][canonical["smiles"]] = canonical["value"]
+        report.accepted.append(canonical)
+
+
+# Bulk property key -> the predictor name understood by
+# ``_predict_property_for_smiles`` and the controller kwarg pair it feeds.
+_BULK_PREDICTORS: tuple[tuple[str, str, str, str], ...] = (
+    ("dielectric_constant", "dielectric", "predicted_dielectric", "experimental_dielectric"),
+    ("viscosity_cP", "viscosity", "predicted_viscosity", "experimental_viscosity"),
+)
+
+
+def _accumulate_bulk(
+    controller: Any,
+    bulk: dict[str, dict[str, float]],
+    generation: int,
+) -> int:
+    """Pair bulk measurements with model predictions for bias detection.
+
+    Physical justification: The Kirkwood-Fröhlich and Eyring models make
+    scale-dependent predictions. Comparing experimental measurements to the
+    closed-form predictions reveals whether the calibration constants
+    systematically over- or under-predict for the ingested solvent class.
+
+    Returns the number of records accumulated.
+    """
+    n_new = 0
+    for key, predictor, pred_kwarg, exp_kwarg in _BULK_PREDICTORS:
+        for smiles, exp_val in bulk[key].items():
+            pred = _predict_property_for_smiles(smiles, predictor)
+            if pred is None:
+                continue
+            controller.accumulate(
+                smiles=smiles,
+                homo_prediction=0.0,
+                lumo_prediction=0.0,
+                homo_corrected=0.0,
+                lumo_corrected=0.0,
+                total_score=0.0,
+                conformal_confidence=1.0,
+                generation=generation,
+                **{pred_kwarg: pred, exp_kwarg: exp_val},
+            )
+            n_new += 1
+    return n_new
+
+
 def ingest_experimental_results(
     path: str,
     controller: Any | None = None,
@@ -250,27 +328,7 @@ def ingest_experimental_results(
         "viscosity_cP": {},
     }
 
-    for raw in records:
-        canonical, reason = validate_record(raw)
-        if canonical is None:
-            report.rejected.append((raw, reason))
-            continue
-
-        delta_t = abs(canonical["temperature_K"] - _REFERENCE_TEMPERATURE_K)
-        if delta_t > _TEMPERATURE_TOLERANCE_K:
-            report.warnings.append(
-                f"{canonical['smiles']}: {canonical['measured_property']} measured at "
-                f"{canonical['temperature_K']:.1f} K, {delta_t:.1f} K from the "
-                f"{_REFERENCE_TEMPERATURE_K:.2f} K model reference; comparison to "
-                f"predictions will carry a temperature bias"
-            )
-
-        prop = canonical["measured_property"]
-        if prop in orbital:
-            orbital[prop][canonical["smiles"]] = canonical["value"]
-        elif prop in bulk:
-            bulk[prop][canonical["smiles"]] = canonical["value"]
-        report.accepted.append(canonical)
+    _partition_records(records, report, orbital, bulk)
 
     paired = set(orbital["homo_eV"]) & set(orbital["lumo_eV"])
     for smiles in sorted(paired):
@@ -287,46 +345,7 @@ def ingest_experimental_results(
             experimental_lumo=orbital["lumo_eV"][smiles],
         )
 
-    # Accumulate bulk properties with model predictions for bias detection.
-    # Physical justification: The Kirkwood-Fröhlich and Eyring models make
-    # scale-dependent predictions. Comparing experimental measurements to
-    # the closed-form model predictions reveals whether the calibration
-    # constants systematically over- or under-predict for the ingested
-    # solvent class.
-    n_new_bulk = 0
-    for smiles, exp_val in bulk["dielectric_constant"].items():
-        pred = _predict_property_for_smiles(smiles, "dielectric")
-        if pred is not None:
-            controller.accumulate(
-                smiles=smiles,
-                homo_prediction=0.0,
-                lumo_prediction=0.0,
-                homo_corrected=0.0,
-                lumo_corrected=0.0,
-                total_score=0.0,
-                conformal_confidence=1.0,
-                generation=generation,
-                predicted_dielectric=pred,
-                experimental_dielectric=exp_val,
-            )
-            n_new_bulk += 1
-
-    for smiles, exp_val in bulk["viscosity_cP"].items():
-        pred = _predict_property_for_smiles(smiles, "viscosity")
-        if pred is not None:
-            controller.accumulate(
-                smiles=smiles,
-                homo_prediction=0.0,
-                lumo_prediction=0.0,
-                homo_corrected=0.0,
-                lumo_corrected=0.0,
-                total_score=0.0,
-                conformal_confidence=1.0,
-                generation=generation,
-                predicted_viscosity=pred,
-                experimental_viscosity=exp_val,
-            )
-            n_new_bulk += 1
+    n_new_bulk = _accumulate_bulk(controller, bulk, generation)
 
     unpaired = (set(orbital["homo_eV"]) ^ set(orbital["lumo_eV"]))
     if unpaired:

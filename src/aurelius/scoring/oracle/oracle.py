@@ -36,7 +36,7 @@ from aurelius.scoring.oracle.gc import (
 from aurelius.scoring.oracle.quantum import (
     QuantumOracle,
     compute_quantum_domain_penalty,
-    predict_tom_orbitals_batch,
+    predict_orbitals_batch,
 )
 from aurelius.types import MoleculeContext
 from aurelius.utils.device import get_device
@@ -392,8 +392,8 @@ class PropertyOracle:
         li_solvation = predict_li_solvation_proxy_batch(counts, mw_values)
         conductivity = predict_ionic_conductivity_proxy_batch(dielectric, viscosity, li_solvation)
 
-        # Vectorized TOM batch evaluation for HOMO/LUMO (already optimized)
-        homo_array, lumo_array = predict_tom_orbitals_batch([ctx.mol for ctx in contexts])
+        # Batch frontier orbitals: LPM HOMO + TOM LUMO (ADR-2026-08-08-01)
+        homo_array, lumo_array = predict_orbitals_batch([ctx.mol for ctx in contexts])
         gap_array = lumo_array - homo_array
 
         return {

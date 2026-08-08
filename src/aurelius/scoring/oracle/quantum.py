@@ -851,28 +851,49 @@ def compute_quantum_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
 class QuantumOracle:
     """Quantum-chemical oracle for frontier orbital energies.
 
-    Two-tier evaluation:
+    Three-tier evaluation:
       1. xTB (GFN2-xTB) via subprocess — preferred, real QM
-      2. Topological Orbital Model (TOM) — conjugation-aware fallback
+      2. Lone-Pair Orbital Model (LPM) — HOMO for saturated electrolytes
+      3. Topological Orbital Model (TOM) — LUMO, and HOMO for pi systems
+
+    ADR-2026-08-08-01: When xTB is unavailable the HOMO now comes from the
+    LPM (``lone_pair.py``) rather than TOM. TOM models the HOMO as a
+    particle-in-a-box pi orbital, which is the wrong physics for the
+    saturated carbonates/ethers/nitriles this project searches — their HOMO
+    is a heteroatom lone pair. Against 88 experimental gas-phase ionisation
+    energies TOM scores Spearman ρ = 0.10 (MAE 3.72 eV) and the LPM scores
+    ρ = 0.91 (MAE 0.38 eV). TOM is retained for the LUMO, which Koopmans'
+    theorem cannot address, and its conjugation machinery still feeds the
+    domain-of-applicability penalty.
 
     Results are cached by SMILES to avoid redundant computation.
     """
 
-    def __init__(self, use_xtb: bool = True, use_delta_correction: bool = True) -> None:
+    def __init__(
+        self,
+        use_xtb: bool = True,
+        use_delta_correction: bool = True,
+        use_lone_pair: bool = True,
+    ) -> None:
         self._use_xtb = use_xtb and _HAS_XTB
+        self._use_lone_pair = use_lone_pair
         self._cache: dict[str, dict[str, float]] = {}
         self._n_xtb_calls = 0
         self._n_tom_calls = 0
         self._use_delta_correction = use_delta_correction
 
         if use_xtb and not _HAS_XTB:
-            logger.info("QuantumOracle: xTB binary not found — using TOM fallback.")
+            logger.info("QuantumOracle: xTB binary not found — using LPM/TOM fallback.")
         elif self._use_xtb:
             logger.info("QuantumOracle: xTB backend ENABLED.")
 
     @property
     def method(self) -> str:
-        return "xTB (GFN2-xTB)" if self._use_xtb else "TOM (Topological Orbital Model)"
+        if self._use_xtb:
+            return "xTB (GFN2-xTB)"
+        if self._use_lone_pair:
+            return "LPM HOMO + TOM LUMO"
+        return "TOM (Topological Orbital Model)"
 
     @property
     def n_quantum_calls(self) -> int:
@@ -895,26 +916,7 @@ class QuantumOracle:
                 logger.warning("QuantumOracle: xTB calculation failed — falling back to TOM.")
 
         if result is None:
-            homo, lumo = predict_tom_orbitals(mol)
-            if self._use_delta_correction:
-                try:
-                    from aurelius.scoring.oracle.delta_correction import get_delta_correction
-
-                    homo, lumo = get_delta_correction().predict_corrected(mol, base=(homo, lumo))
-                    result = {
-                        "homo_eV": homo,
-                        "lumo_eV": lumo,
-                        "dipole_D": 0.0,
-                        "correction_applied": True,  # type: ignore[dict-item]
-                    }
-                except Exception as exc:
-                    logger.warning("Delta correction failed (%s) — using raw TOM.", exc)
-            if result is None:
-                result = {
-                    "homo_eV": homo,
-                    "lumo_eV": lumo,
-                    "dipole_D": 0.0,
-                }
+            result = self._evaluate_closed_form(mol)
             self._n_tom_calls += 1
 
         if used_xtb:
@@ -928,6 +930,38 @@ class QuantumOracle:
 
         self._cache[smiles] = result
         return dict(result)
+
+    def _evaluate_closed_form(self, mol: Chem.Mol) -> dict[str, float]:
+        """Closed-form orbital estimate used when xTB is unavailable or fails.
+
+        HOMO from the Lone-Pair Orbital Model (ADR-2026-08-08-01), LUMO from
+        TOM — Koopmans' theorem addresses occupied orbitals only, so the
+        virtual orbital stays with the particle-in-a-box treatment.
+        """
+        homo, lumo = predict_tom_orbitals(mol)
+        if self._use_lone_pair:
+            try:
+                from aurelius.scoring.oracle.lone_pair import predict_lone_pair_homo
+
+                homo = predict_lone_pair_homo(mol)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("LPM failed (%s) — using TOM HOMO.", exc)
+
+        if self._use_delta_correction:
+            try:
+                from aurelius.scoring.oracle.delta_correction import get_delta_correction
+
+                homo, lumo = get_delta_correction().predict_corrected(mol, base=(homo, lumo))
+                return {
+                    "homo_eV": homo,
+                    "lumo_eV": lumo,
+                    "dipole_D": 0.0,
+                    "correction_applied": True,  # type: ignore[dict-item]
+                }
+            except Exception as exc:
+                logger.warning("Delta correction failed (%s) — using raw estimate.", exc)
+
+        return {"homo_eV": homo, "lumo_eV": lumo, "dipole_D": 0.0}
 
     def clear_cache(self) -> None:
         self._cache.clear()
@@ -1101,6 +1135,32 @@ def _apply_batch_hyperconjugation(
             homo[i], lumo[i] = _apply_hyperconjugation_correction(
                 homo[i], lumo[i], mol
             )
+    return homo, lumo
+
+
+def predict_orbitals_batch(mols: list[Chem.Mol]) -> tuple[np.ndarray, np.ndarray]:
+    """Predict HOMO/LUMO for a batch using the best available closed-form models.
+
+    ADR-2026-08-08-01: HOMO comes from the Lone-Pair Orbital Model, LUMO from
+    TOM. This is the batch counterpart of ``QuantumOracle.evaluate``'s
+    non-xTB path, and exists so that the evolutionary loop (which only ever
+    calls the batch path) and the single-molecule API agree. Before this,
+    the batch path used TOM for both, so the loop optimised against physics
+    the reported single-molecule numbers did not use.
+
+    Falls back to TOM for the HOMO if the LPM raises.
+    """
+    homo, lumo = predict_tom_orbitals_batch(mols)
+    if not mols:
+        return homo, lumo
+    try:
+        from aurelius.scoring.oracle.lone_pair import predict_lone_pair_homo
+
+        homo = np.asarray(
+            [predict_lone_pair_homo(m) for m in mols], dtype=homo.dtype
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("LPM batch failed (%s) — using TOM HOMO.", exc)
     return homo, lumo
 
 

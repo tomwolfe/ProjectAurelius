@@ -22,6 +22,7 @@ from aurelius.scoring.oracle.delta_correction import (
     compute_ood_spearman,
     get_delta_correction,
 )
+from aurelius.scoring.oracle.lone_pair import predict_lone_pair_homo
 from aurelius.scoring.oracle.quantum import QuantumOracle, predict_tom_orbitals
 
 DATA_DIR = os.path.join(
@@ -155,11 +156,26 @@ class TestDeltaCorrection:
         assert result["lumo_eV"] != pytest.approx(raw_l, abs=1e-6)
         assert -5.0 <= result["lumo_eV"] <= 5.0
 
-    def test_quantum_oracle_raw_tom_bypass(self):
+    def test_quantum_oracle_raw_bypass(self):
+        """With corrections off, the oracle returns the raw closed-form values.
+
+        ADR-2026-08-08-01: the HOMO now comes from the Lone-Pair Orbital Model
+        and only the LUMO from TOM, so this asserts against each model's own
+        output rather than assuming TOM supplies both.
+        """
         qc = QuantumOracle(use_xtb=False, use_delta_correction=False)
         mol = Chem.MolFromSmiles("COC(=O)OC")
         result = qc.evaluate(mol)
         assert "correction_applied" not in result
+        _, raw_l = predict_tom_orbitals(mol)
+        assert result["homo_eV"] == pytest.approx(predict_lone_pair_homo(mol))
+        assert result["lumo_eV"] == pytest.approx(raw_l)
+
+    def test_lone_pair_can_be_disabled(self):
+        """``use_lone_pair=False`` recovers the pre-v12 pure-TOM behaviour."""
+        qc = QuantumOracle(use_xtb=False, use_delta_correction=False, use_lone_pair=False)
+        mol = Chem.MolFromSmiles("COC(=O)OC")
+        result = qc.evaluate(mol)
         raw_h, raw_l = predict_tom_orbitals(mol)
         assert result["homo_eV"] == pytest.approx(raw_h)
         assert result["lumo_eV"] == pytest.approx(raw_l)
