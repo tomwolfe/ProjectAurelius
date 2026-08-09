@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
 import pytest
 from rdkit import Chem
 
@@ -24,6 +25,7 @@ from aurelius.agent.experiment_suggester import (
     write_suggestions,
 )
 from aurelius.scoring.oracle.conformal import ConformalPredictor
+from aurelius.types import MoleculeContext
 
 # Chemically varied, all synthesizable; a mix of well-covered solvents
 # (EC, DMC) and less-covered scaffolds.
@@ -109,13 +111,26 @@ class TestInformationGainRanking:
         assert len(values) > 1, "uncertainty term carries no information"
 
     def test_uncertainty_ordering_follows_interval_width(self):
+        """A wider conformal interval must mean a higher uncertainty term.
+
+        ``components["uncertainty"]`` is rounded to 4 dp, so several
+        candidates legitimately tie (four share 0.4214 here) and their
+        relative order is arbitrary. Only strictly-different uncertainty
+        values carry an ordering claim; comparing tied entries tests the
+        sort's tie-breaking, not the physics.
+        """
         out = suggest_experiments(CANDIDATES, top_n=40, properties=["homo"])
-        for s in out:
-            width = s.prediction_interval[1] - s.prediction_interval[0]
-            s.components["_width"] = width
-        ranked = sorted(out, key=lambda s: -s.components["uncertainty"])
-        widths = [s.components["_width"] for s in ranked]
-        assert widths == sorted(widths, reverse=True)
+        pairs = [
+            (s.components["uncertainty"], s.prediction_interval[1] - s.prediction_interval[0])
+            for s in out
+        ]
+        for u_a, w_a in pairs:
+            for u_b, w_b in pairs:
+                if u_a > u_b:
+                    assert w_a >= w_b, (
+                        f"uncertainty {u_a} > {u_b} but interval width "
+                        f"{w_a:.4f} < {w_b:.4f}"
+                    )
 
     def test_does_not_simply_rank_by_predicted_quality(self):
         """The top suggestion must not be the best-scoring molecule.
@@ -209,6 +224,60 @@ class TestBatchDiversity:
         ]
         out = _diversify(ranked, top_n=2)
         assert out[1].smiles == "CCC"
+
+    def test_diversify_penalises_structurally_similar_molecules(self):
+        """Distinct-but-near-identical scaffolds must not both lead the batch.
+
+        Regression guard for ADR-2026-08-08-06. The molecule/property
+        repetition discount treats two different SMILES as fully independent,
+        so a batch could fill with one homologous family. The suggester's
+        ``novelty`` term cannot separate them either: it measures distance to
+        the *calibration set*, which is near-identical across such a family.
+        """
+        homologues = ["CCCCCCO", "CCCCCCCO", "CCCCCCCCO"]
+        distinct = "O=S1(=O)CCCC1"
+        ranked = [
+            ExperimentSuggestion(homologues[0], "homo_eV", 0.90, "r", 0.0, (0.0, 1.0)),
+            ExperimentSuggestion(homologues[1], "homo_eV", 0.88, "r", 0.0, (0.0, 1.0)),
+            ExperimentSuggestion(homologues[2], "homo_eV", 0.86, "r", 0.0, (0.0, 1.0)),
+            ExperimentSuggestion(distinct, "homo_eV", 0.60, "r", 0.0, (0.0, 1.0)),
+        ]
+        fingerprints = {
+            smi: MoleculeContext.from_smiles(smi).get_ecfp4()
+            for smi in [*homologues, distinct]
+        }
+
+        out = _diversify(list(ranked), top_n=2, fingerprints=fingerprints)
+
+        assert out[1].smiles == distinct, (
+            "The structurally distinct molecule must outrank a near-duplicate "
+            f"despite a lower standalone score; got {[s.smiles for s in out]}"
+        )
+
+    def test_diversify_without_fingerprints_is_unchanged(self):
+        """The structural penalty must be optional, not a hard requirement."""
+        ranked = [
+            ExperimentSuggestion("CCO", "homo_eV", 0.9, "r", 0.0, (0.0, 1.0)),
+            ExperimentSuggestion("CCC", "homo_eV", 0.7, "r", 0.0, (0.0, 1.0)),
+        ]
+        out = _diversify(list(ranked), top_n=2)
+        assert [s.smiles for s in out] == ["CCO", "CCC"]
+
+    def test_batch_is_structurally_diverse_end_to_end(self):
+        """The full suggester must produce a batch of unrelated scaffolds."""
+        from aurelius.utils.device import batch_tanimoto
+
+        out = suggest_experiments(CANDIDATES, top_n=4, properties=["homo"])
+        fps = [
+            MoleculeContext.from_smiles(s.smiles).get_ecfp4() for s in out
+        ]
+        sim = batch_tanimoto(fps)
+        upper = sim[np.triu_indices(sim.shape[0], k=1)]
+
+        assert float(upper.mean()) < 0.30, (
+            f"Suggested batch is structurally redundant (mean pairwise "
+            f"Tanimoto {upper.mean():.3f}): {[s.smiles for s in out]}"
+        )
 
     def test_diversify_never_invents_suggestions(self):
         ranked = [

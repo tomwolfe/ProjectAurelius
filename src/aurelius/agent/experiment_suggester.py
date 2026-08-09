@@ -329,6 +329,7 @@ def suggest_experiments(
     biases = _bias_magnitudes(controller)
 
     suggestions: list[ExperimentSuggestion] = []
+    fingerprints: dict[str, Any] = {}
     for smiles in candidates:
         ctx = MoleculeContext.from_smiles(smiles)
         if ctx is None:
@@ -337,6 +338,7 @@ def suggest_experiments(
         if electrolyte_synthetic_accessibility(ctx) > max_sa_score:
             continue
 
+        fingerprints[Chem.MolToSmiles(ctx.mol)] = ctx.get_ecfp4()
         novelty = 1.0 - _max_tanimoto_to_calibration(ctx.get_ecfp4(), calibration_fps)
         doa_penalty, doa_reason = compute_quantum_domain_penalty(ctx)
         doa = _doa_proximity_score(doa_penalty)
@@ -371,7 +373,7 @@ def suggest_experiments(
             )
 
     suggestions.sort(key=lambda s: (-s.priority_score, s.smiles, s.property_to_measure))
-    return _diversify(suggestions, top_n)
+    return _diversify(suggestions, top_n, fingerprints=fingerprints)
 
 
 # Each additional suggestion for an already-chosen molecule or property is
@@ -379,8 +381,33 @@ def suggest_experiments(
 # properties without ever letting a weak suggestion outrank a much stronger one.
 _REDUNDANCY_DISCOUNT = 0.6
 
+# Weight of the structural-redundancy penalty (ADR-2026-08-08-06). A candidate
+# whose scaffold is identical to one already in the batch keeps only
+# (1 - _SIMILARITY_LAMBDA) of its score. Matches the diversity_lambda
+# convention used by ``selection.tournament_select``.
+_SIMILARITY_LAMBDA = 0.7
 
-def _diversify(ranked: list[ExperimentSuggestion], top_n: int) -> list[ExperimentSuggestion]:
+
+def _structural_penalty(fp: Any, chosen_fps: list[Any]) -> float:
+    """Discount a candidate by its similarity to molecules already in the batch.
+
+    Returns ``1 - _SIMILARITY_LAMBDA * max_tanimoto`` against the batch, so an
+    exact structural duplicate keeps 0.3 of its score and a wholly unrelated
+    scaffold keeps all of it.
+    """
+    if not chosen_fps or fp is None:
+        return 1.0
+    from rdkit import DataStructs
+
+    max_sim = float(max(DataStructs.BulkTanimotoSimilarity(fp, chosen_fps)))
+    return 1.0 - _SIMILARITY_LAMBDA * max_sim
+
+
+def _diversify(
+    ranked: list[ExperimentSuggestion],
+    top_n: int,
+    fingerprints: dict[str, Any] | None = None,
+) -> list[ExperimentSuggestion]:
     """Greedily pick a worklist that is not four copies of the same experiment.
 
     Ranking each (molecule, property) pair independently produces a list whose
@@ -391,15 +418,31 @@ def _diversify(ranked: list[ExperimentSuggestion], top_n: int) -> list[Experimen
     marginal value of the second one is much lower than its standalone score
     suggests.
 
-    This applies a compounding redundancy discount to molecules and properties
-    already represented in the batch — the standard greedy approximation to
-    batch-mode active learning. It is a re-ordering only: nothing new enters
-    the list, and the discount is reported so the effect is auditable.
+    Two redundancy signals are combined, both standard greedy approximations
+    to batch-mode active learning:
+
+    1. **Exact repetition** — a compounding discount for molecules and
+       properties already represented in the batch.
+    2. **Structural redundancy** (ADR-2026-08-08-06) — a Tanimoto penalty
+       against the scaffolds already chosen, when ``fingerprints`` is
+       supplied.
+
+    Signal 1 alone is insufficient and was the measured defect: it treats two
+    distinct-but-near-identical homologues as fully independent, so the batch
+    filled up with one scaffold family. The suggester's ``novelty`` term does
+    not help, because it measures distance to the *calibration set*, which is
+    identical for every member of such a family and therefore cannot separate
+    them. Empirically the batch was more redundant than random sampling
+    (mean pairwise Tanimoto 0.132 vs 0.077 at k=10).
+
+    This is a re-ordering only: nothing new enters the list, and the adjusted
+    score is recorded on each suggestion so the effect is auditable.
     """
     selected: list[ExperimentSuggestion] = []
     remaining = list(ranked)
     seen_molecules: dict[str, int] = {}
     seen_properties: dict[str, int] = {}
+    chosen_fps: list[Any] = []
 
     while remaining and len(selected) < top_n:
         best_index, best_value = 0, -1.0
@@ -409,6 +452,10 @@ def _diversify(ranked: list[ExperimentSuggestion], top_n: int) -> list[Experimen
                 + seen_properties.get(candidate.property_to_measure, 0)
             )
             value = candidate.priority_score * penalty
+            if fingerprints is not None:
+                value *= _structural_penalty(
+                    fingerprints.get(candidate.smiles), chosen_fps
+                )
             if value > best_value:
                 best_index, best_value = i, value
         chosen = remaining.pop(best_index)
@@ -416,6 +463,12 @@ def _diversify(ranked: list[ExperimentSuggestion], top_n: int) -> list[Experimen
         seen_properties[chosen.property_to_measure] = (
             seen_properties.get(chosen.property_to_measure, 0) + 1
         )
+        if fingerprints is not None and chosen.smiles not in {
+            s.smiles for s in selected
+        }:
+            fp = fingerprints.get(chosen.smiles)
+            if fp is not None:
+                chosen_fps.append(fp)
         chosen.components["batch_adjusted_score"] = round(best_value, 6)
         selected.append(chosen)
 
