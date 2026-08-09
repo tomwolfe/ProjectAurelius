@@ -313,3 +313,59 @@ def test_batch_matches_scalar() -> None:
     batch = predict_dielectric_proxy_batch(None, tpsa, contexts)
     scalar = [predict_dielectric_constant(c) for c in contexts]
     np.testing.assert_allclose(batch, scalar, rtol=1e-6)
+
+
+def test_ring_and_soft_association_are_mutually_exclusive() -> None:
+    """A cyclic amide must not receive both g multipliers (ADR-2026-08-08-08).
+
+    Ring-locking and soft dipole association describe the same dipole's
+    orientational freedom from two directions. Applying both multiplies one
+    molecule's environment twice, which is what made 2-pyrrolidone (54.49 vs
+    28.20) and NMP (45.33 vs 32.20) the worst predictions in the verified set.
+
+    Only cyclic amides and cyclic sulfoxides can trigger both, so this cannot
+    be checked on the commercial solvents — none of them is either.
+    """
+    from aurelius.scoring.oracle.gc import (
+        _G_RING_LOCKED_DIPOLE,
+        _G_SOFT_DIPOLE_ASSOCIATION,
+        _count_dipole_groups,
+        _kirkwood_g_factor,
+    )
+
+    for smiles in ("O=C1CCCN1", "O=C1CCCN1C"):  # 2-pyrrolidone, NMP
+        ctx = MoleculeContext.from_smiles(smiles)
+        assert ctx is not None
+        groups = _count_dipole_groups(ctx.mol)
+        assert groups.get("amide_group", 0) > 0, "probe must be an amide"
+
+        g = _kirkwood_g_factor(ctx.mol, groups)
+        double = _G_RING_LOCKED_DIPOLE * _G_SOFT_DIPOLE_ASSOCIATION
+        assert g == pytest.approx(_G_RING_LOCKED_DIPOLE), (
+            f"cyclic amide g={g:.3f} should be the ring term alone "
+            f"({_G_RING_LOCKED_DIPOLE}), not the product {double:.3f}"
+        )
+
+
+def test_verified_set_mae_does_not_regress() -> None:
+    """Whole-set accuracy on the 55 formula-checked literature values.
+
+    The verified set is the honest target: ``audit_label_confound.py`` reports
+    0.03% between-source variance for it, versus 53% for the dielectric column
+    of ``external_property_benchmark.json``.
+    """
+    path = (
+        Path(__file__).resolve().parent.parent
+        / "benchmarks" / "data" / "dielectric_verified.json"
+    )
+    entries = json.loads(path.read_text())["entries"]
+
+    errors = []
+    for entry in entries:
+        ctx = MoleculeContext.from_smiles(entry["smiles"])
+        if ctx is None:
+            continue
+        errors.append(abs(predict_dielectric_constant(ctx) - entry["dielectric_constant"]))
+
+    mae = float(np.mean(errors))
+    assert mae < 3.4, f"verified-set dielectric MAE {mae:.3f} regressed (was 3.258)"

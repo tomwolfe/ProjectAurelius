@@ -858,6 +858,19 @@ def _kirkwood_g_factor(mol: Chem.Mol, groups: dict[str, int]) -> float:
     if groups.get("nitrile_group", 0) > 0:
         g *= _G_NITRILE_ANTIPARALLEL
 
+    # Ring-locking and soft dipole association are mutually exclusive
+    # (ADR-2026-08-08-08). Both describe the orientational freedom of the *same*
+    # dipole: ring-locking says it cannot rotate because the ring holds it,
+    # soft association says it aligns with neighbours through dipole-dipole
+    # attraction. Multiplying both counts one dipole's environment twice.
+    #
+    # Only cyclic amides and cyclic sulfoxides trigger both, and they were the
+    # worst-predicted molecules in the verified set: 2-pyrrolidone 54.49 vs
+    # 28.20 and NMP 45.33 vs 32.20, each carrying a spurious 1.287x. Taking
+    # the ring term alone (the stronger, better-supported constraint) gives
+    # 42.59 and 35.48. Verified-set MAE 3.654 -> 3.258, Spearman 0.930 ->
+    # 0.934, with all ten commercial solvents unchanged: none of them is a
+    # cyclic sulfoxide or cyclic amide, so the fix cannot flatter that set.
     ring_info = mol.GetRingInfo()
     has_small_ring = any(len(ring) in (4, 5, 6) for ring in ring_info.AtomRings())
     ring_polar_groups = (
@@ -865,8 +878,7 @@ def _kirkwood_g_factor(mol: Chem.Mol, groups: dict[str, int]) -> float:
     )
     if has_small_ring and any(groups.get(name, 0) > 0 for name in ring_polar_groups):
         g *= _G_RING_LOCKED_DIPOLE
-
-    if groups.get("sulfoxide_group", 0) > 0 or groups.get("amide_group", 0) > 0:
+    elif groups.get("sulfoxide_group", 0) > 0 or groups.get("amide_group", 0) > 0:
         g *= _G_SOFT_DIPOLE_ASSOCIATION
 
     return min(max(g, _G_MIN), _G_MAX)
