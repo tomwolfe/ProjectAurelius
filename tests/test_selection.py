@@ -7,6 +7,8 @@ import numpy as np
 from aurelius.agent.selection import (
     build_npga2_composite_objectives,
     nsga2_select,
+)
+from aurelius.agent.selection import (
     tournament_select as _real_tournament_select,
 )
 from aurelius.types import MoleculeContext

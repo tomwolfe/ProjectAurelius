@@ -208,8 +208,9 @@ class TestDFTCascadeGate:
 
     def test_dft_geometry_optimize_returns_grounding_score(self) -> None:
         """dft_geometry_optimize returns a dict with dft_grounding_score."""
-        from aurelius.scoring.oracle.dft_validator import dft_geometry_optimize
         from rdkit import Chem
+
+        from aurelius.scoring.oracle.dft_validator import dft_geometry_optimize
 
         mol = Chem.MolFromSmiles("C1COC(=O)O1")
         assert mol is not None
@@ -222,8 +223,9 @@ class TestDFTCascadeGate:
 
     def test_dft_geometry_optimize_cached(self, monkeypatch, tmp_path) -> None:
         """dft_geometry_optimize caches results by SMILES and does not recompute."""
-        from aurelius.scoring.oracle.dft_validator import dft_geometry_optimize
         from rdkit import Chem
+
+        from aurelius.scoring.oracle.dft_validator import dft_geometry_optimize
 
         cache_file = str(tmp_path / "dft_cache.json")
         # Clear any in-memory cache
@@ -235,7 +237,7 @@ class TestDFTCascadeGate:
 
         calls = {"n": 0}
 
-        original = dft_geometry_optimize.__globals__.get("_find_xtb_binary", lambda: None)
+        dft_geometry_optimize.__globals__.get("_find_xtb_binary", lambda: None)
 
         def counting_optimize(m, cache_path=cache_file, timeout=300):
             calls["n"] += 1

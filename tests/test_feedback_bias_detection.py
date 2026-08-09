@@ -23,10 +23,7 @@ def _make_controller_with_dielectric_records(
     fc = FeedbackController()
     for i in range(n):
         pred = 5.0 + i * 0.1
-        if noise:
-            exp_val = pred + py_random.uniform(-1.0, 1.0)
-        else:
-            exp_val = pred + offset
+        exp_val = pred + py_random.uniform(-1.0, 1.0) if noise else pred + offset
         fc.accumulate(
             smiles=f"CC{'C' * i}O",
             homo_prediction=-8.0,
