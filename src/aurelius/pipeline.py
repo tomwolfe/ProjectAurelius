@@ -430,19 +430,33 @@ class AureliusPipeline:
         return 1.0
 
     @staticmethod
-    def _check_building_block_grounding(mol: Chem.Mol) -> float:
-        """Penalty for molecules with BRICS fragments not matching commercial precursors.
+    def _grounding_score(ctx: MoleculeContext) -> float:
+        """Raw synthesizability grounding in [0, 1] for a pre-parsed context.
+
+        Thin wrapper over ``combined_grounding_score`` that never raises, so a
+        BRICS decomposition failure degrades to 0.0 (maximally penalised) rather
+        than aborting the score. Computed exactly once per molecule and threaded
+        through ``_compute_score`` so both the penalty multiplier and the
+        selection objective read the same value.
+        """
+        from aurelius.agent.mutation.brics import combined_grounding_score
+        try:
+            return float(combined_grounding_score(ctx.mol))
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _check_building_block_grounding(grounding: float) -> float:
+        """Penalty for molecules whose fragments do not match commercial precursors.
 
         Uses combined BRICS + functional-group grounding so that molecules with
         novel scaffolds but commercial functional groups are not over-penalised.
 
-        Returns a multiplier in [0.7, 1.0] where 0% fragment coverage → 0.7x
+        Returns a multiplier in [0.7, 1.0] where 0% grounding → 0.7x
         (softened from 0.5x to avoid strangling novel scaffold discovery)
-        and 100% coverage → 1.0x.
+        and 100% grounding → 1.0x.
         """
-        from aurelius.agent.mutation.brics import combined_grounding_score
-        coverage = combined_grounding_score(mol)
-        return 0.7 + 0.3 * coverage
+        return 0.7 + 0.3 * float(np.clip(grounding, 0.0, 1.0))
 
     def _compute_score(
         self,
@@ -498,6 +512,7 @@ class AureliusPipeline:
         # Compute custom SA score once
         sa_score: float = 5.0
         synthesis_depth: int = 3  # Default moderate depth
+        grounding: float = 0.0
         if ctx is not None:
             try:
                 sa_score = electrolyte_synthetic_accessibility(ctx)
@@ -507,6 +522,7 @@ class AureliusPipeline:
                 synthesis_depth = brics_retrosynthetic_depth(ctx.mol)
             except Exception:
                 synthesis_depth = 3
+            grounding = self._grounding_score(ctx)
         raw_values["sa_score"] = sa_score
 
         for obj in _OBJECTIVES:
@@ -516,7 +532,7 @@ class AureliusPipeline:
 
         total_score *= 100.0
 
-        total_score = self._apply_penalties(total_score, lumo_eV, ctx)
+        total_score = self._apply_penalties(total_score, lumo_eV, ctx, grounding)
         total_score = float(np.clip(total_score, 0.0, 100.0))
 
         if quantum_confidence == "tom_low":
@@ -535,6 +551,7 @@ class AureliusPipeline:
             "sub_scores": sub_scores,
             "sa_score": round(sa_score, 4),
             "synthesis_depth": synthesis_depth,
+            "grounding": round(grounding, 4),
             "rejection_reasons": rejection_reasons,
         }
 
@@ -556,13 +573,17 @@ class AureliusPipeline:
 
     @staticmethod
     def _apply_penalties(
-        total_score: float, lumo_eV: float, ctx: MoleculeContext | None
+        total_score: float,
+        lumo_eV: float,
+        ctx: MoleculeContext | None,
+        grounding: float = 1.0,
     ) -> float:
         al_corrosion_penalty = 1.0
         if ctx is None:
             return total_score
         total_score *= AureliusPipeline._check_hydrolytic_instability(ctx.mol)
         total_score *= AureliusPipeline._check_hypofluorite_instability(ctx.mol)
+        total_score *= AureliusPipeline._check_building_block_grounding(grounding)
         if lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
             al_corrosion_penalty = AureliusPipeline._check_al_corrosion_risk(ctx.mol)
         total_score *= al_corrosion_penalty

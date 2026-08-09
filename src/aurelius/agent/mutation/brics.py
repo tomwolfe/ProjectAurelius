@@ -94,10 +94,8 @@ def _cached_coverage(smiles: str) -> float:
         core_mol = Chem.MolFromSmiles(core_smi)
         if core_mol is None:
             continue
-        for bb in BB_MOLS:
-            if core_mol.HasSubstructMatch(bb) or bb.HasSubstructMatch(core_mol):
-                matched += 1
-                break
+        if _is_known_bb_precursor(core_mol):
+            matched += 1
     return matched / len(frags)
 
 
@@ -179,9 +177,41 @@ def brics_retrosynthetic_depth(mol: Chem.Mol) -> int:
     return _cached_retrosynthetic_depth(smiles)
 
 
+_BB_SIZE_COVERAGE_MIN = 0.5
+"""Minimum fraction of a fragment's heavy atoms that a commercial precursor
+must account for when the precursor is contained *within* the fragment."""
+
+
 def _is_known_bb_precursor(mol: Chem.Mol) -> bool:
-    """Check whether *mol* matches any commercial building-block precursor."""
-    return any(mol.HasSubstructMatch(bb) or bb.HasSubstructMatch(mol) for bb in BB_MOLS)
+    """Check whether *mol* matches any commercial building-block precursor.
+
+    Two directions count as a match:
+
+    1. The fragment is a substructure of a commercial precursor
+       (``bb.HasSubstructMatch(mol)``) — the fragment is a piece of something
+       purchasable, so it is trivially available.
+    2. The fragment *contains* a commercial precursor, but only when that
+       precursor accounts for at least ``_BB_SIZE_COVERAGE_MIN`` of the
+       fragment's heavy atoms.
+
+    Physical justification (ADR-2026-08-08-04): the unguarded reverse match
+    made every fragment "grounded" because trivial precursors such as C=O or
+    C-O are substructures of essentially any organic molecule. A 40-heavy-atom
+    silyl-quinone therefore scored identical coverage to dimethyl carbonate,
+    collapsing both ``brics_building_block_coverage`` and
+    ``brics_retrosynthetic_depth`` to constants. Requiring the precursor to
+    cover half the fragment restores the intended meaning — "this fragment is
+    substantially a purchasable compound" — while keeping genuinely commercial
+    solvents (EC, FEC, DME, sulfolane) at full coverage.
+    """
+    n_heavy = mol.GetNumHeavyAtoms()
+    min_heavy = _BB_SIZE_COVERAGE_MIN * n_heavy
+    for bb in BB_MOLS:
+        if bb.HasSubstructMatch(mol):
+            return True
+        if bb.GetNumHeavyAtoms() >= min_heavy and mol.HasSubstructMatch(bb):
+            return True
+    return False
 
 
 def _decompose_brics_fragments(frag_smiles: list[str]) -> list[str]:

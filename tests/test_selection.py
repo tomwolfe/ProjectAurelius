@@ -267,8 +267,9 @@ class TestNSGA2Selection:
 class TestNSGA2CompositeObjectives:
     """Tests for the 4-composite objective consolidation (Task 4)."""
 
-    def test_build_composite_has_four_keys(self):
-        """build_npga2_composite_objectives returns exactly 4 composite objectives."""
+    def test_build_composite_has_expected_keys(self):
+        """build_npga2_composite_objectives returns the 4 composites plus
+        the standalone ``synthesizability`` objective (ADR-2026-08-08-04)."""
         scores_dict = {
             "dielectric_proxy": [10.0, 20.0],
             "viscosity_proxy": [2.0, 5.0],
@@ -284,7 +285,9 @@ class TestNSGA2CompositeObjectives:
         assert set(composites.keys()) == {
             "ionic_transport", "electronic_stability",
             "synthetic_accessibility", "chemical_complexity",
+            "synthesizability",
         }
+        assert composites["synthesizability"] == scores_dict["combined_grounding_score"]
 
     def test_build_composite_all_same_length(self):
         """All composite lists must match the input length."""

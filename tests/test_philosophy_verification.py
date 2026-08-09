@@ -821,29 +821,88 @@ class TestBuildingBlockGrounding:
         score = result.get("score", {})
         assert "total_score" in score, "Pipeline must compute total_score"
 
-    def test_novelty_vs_reality_pareto(self):
-        """Over 80% of top EA discoveries must have at least one commercial-BRICS fragment.
+    def test_grounding_discriminates_unmakeable_molecules(self):
+        """Grounding must separate real solvents from 'Frankenstein' assemblies.
 
-        Runs the mutation engine, generates candidates, and checks building-block
-        grounding to ensure the EA is discovering realizable molecules.
+        Regression guard for ADR-2026-08-08-04. ``_is_known_bb_precursor``
+        previously matched bidirectionally without a size guard, so a trivial
+        precursor such as C=O made *any* molecule containing a carbonyl look
+        fully grounded. Commercial solvents and absurd molecules both scored
+        1.000 coverage, rendering the metric — and the depth penalty built on
+        it — constant and therefore useless for selection.
         """
-        from aurelius.agent.mutation.brics import brics_building_block_coverage
+        from aurelius.agent.mutation.brics import combined_grounding_score
 
-        engine = MutationEngine(seed_smiles=["COC(=O)OC", "C1COCCO1", "CS(=O)(=O)C", "CC#N"])
-        candidates = engine.propose_candidates(n_candidates=100, batch_size=25)
+        real = ["COC(=O)OC", "C1COC(=O)O1", "COCCOC", "C1CCS(=O)(=O)C1"]
+        unmakeable = [
+            "C1=CC(=C(C=C1)[Si](C)(C)C)C2=C(C(=O)C(=C(C2=O)O)O)O",
+            "N(=O)(=O)C1=C(N=[N+]=[N-])C(=C(C(=C1F)[Se]C)[Te]C)P(=S)(F)F",
+        ]
 
-        covered_count = 0
-        for smi in candidates:
-            mol = Chem.MolFromSmiles(smi)
-            if mol is not None:
-                cov = brics_building_block_coverage(mol)
-                if cov > 0.0:
-                    covered_count += 1
+        real_scores = [combined_grounding_score(Chem.MolFromSmiles(s)) for s in real]
+        junk_scores = [combined_grounding_score(Chem.MolFromSmiles(s)) for s in unmakeable]
 
-        ratio = covered_count / max(len(candidates), 1)
-        assert ratio > 0.80, (
-            f"Only {ratio:.1%} of top discoveries have commercial-BRICS grounding "
-            f"({covered_count}/{len(candidates)}). Target >80%."
+        assert min(real_scores) > 0.7, (
+            f"Commercial solvents must stay well grounded, got {real_scores}"
+        )
+        assert max(junk_scores) < 0.5, (
+            f"Unmakeable molecules must be penalised, got {junk_scores}"
+        )
+        assert min(real_scores) > max(junk_scores), (
+            "Grounding must rank every real solvent above every Frankenstein "
+            f"molecule: real={real_scores}, junk={junk_scores}"
+        )
+
+    def test_grounding_drives_selection(self):
+        """Grounding must be a first-class selection signal, not a post-hoc filter.
+
+        With identical composite scores, ``tournament_select`` must prefer
+        makeable candidates. Guards against regression to the state where
+        grounding was computed but never reached the selection layer.
+        """
+        from aurelius.agent.selection import tournament_select
+
+        smiles = ["CCO", "CCC", "CCN", "CCF", "CCCl", "CCBr"]
+        contexts = [MoleculeContext.from_smiles(s) for s in smiles]
+        scores = [80.0] * len(smiles)
+        grounding = [0.97, 0.90, 0.70, 0.50, 0.20, 0.09]
+
+        selected = tournament_select(
+            contexts, scores, batch_size=3, grounding=grounding, rng_seed=7,
+        )
+        chosen = {c.smiles for c in selected}
+        mean_grounding = sum(
+            grounding[smiles.index(s)] for s in chosen
+        ) / len(chosen)
+
+        assert mean_grounding > 0.8, (
+            f"Selection ignored grounding: chose {chosen} with mean grounding "
+            f"{mean_grounding:.3f} despite identical scores."
+        )
+
+    def test_pipeline_emits_and_applies_grounding(self):
+        """The pipeline must expose grounding and let it move total_score.
+
+        Regression guard: ``_compute_score`` previously never returned a
+        ``grounding`` key, so ``loop.py``'s ``score_data.get("grounding", 0.0)``
+        silently defaulted to zero for every candidate and the
+        ``_check_building_block_grounding`` penalty had no call sites at all.
+        """
+        from aurelius.pipeline import AureliusPipeline
+
+        pipeline = AureliusPipeline()
+        pipeline.initialize()
+
+        ctx = MoleculeContext.from_smiles("COC(=O)OC")
+        score = pipeline.screen_molecule(ctx).get("score", {})
+
+        assert "grounding" in score, "Pipeline must emit a 'grounding' score"
+        assert score["grounding"] > 0.0, "Grounding must be a live, non-zero signal"
+
+        penalty = AureliusPipeline._check_building_block_grounding(0.0)
+        assert penalty < 1.0, "Zero grounding must reduce the score"
+        assert AureliusPipeline._check_building_block_grounding(1.0) > penalty, (
+            "Grounding penalty must be monotonic in grounding"
         )
 
 

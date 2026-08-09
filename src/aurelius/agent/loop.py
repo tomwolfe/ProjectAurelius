@@ -111,6 +111,23 @@ def _collect_obj_scores(
     obj_scores["novelty_to_seed"].append(novelty)
 
 
+def _mixture_pad_value(key: str, mix_score: float) -> float:
+    """Placeholder objective value for a mixture candidate.
+
+    Mixtures inherit makeability from their already-screened components, so
+    ``combined_grounding_score`` pads to a neutral 1.0 rather than 0.0, which
+    would otherwise impose the maximum synthesizability penalty on every
+    mixture and eliminate them from selection (ADR-2026-08-08-04).
+    """
+    if key == "total_score":
+        return mix_score
+    if key == "synthesis_depth":
+        return 3.0
+    if key == "combined_grounding_score":
+        return 1.0
+    return 0.0
+
+
 @dataclass(frozen=True)
 class AgentConfig:
     """Parameters for the autonomous screening agent."""
@@ -728,15 +745,15 @@ class DiscoveryLoop:
         all_scores.extend(mix_scores)
         # Pad objective scores and confidences for mixture candidates so
         # NSGA-II arrays align with the full candidate list.
+        #
+        # Mixtures are blends of components that were themselves screened, so
+        # they are as makeable as their constituents. Padding grounding with
+        # 0.0 would apply the maximum synthesizability penalty to every
+        # mixture and silently suppress them; use a neutral 1.0 instead.
         for mix_score in mix_scores:
             all_confidences.append(1.0)
             for key in obj_scores:
-                val = (
-                    mix_score if key == "total_score"
-                    else (3.0 if key == "synthesis_depth" else 0.0
-                    )
-                )
-                obj_scores[key].append(val)
+                obj_scores[key].append(_mixture_pad_value(key, mix_score))
 
         if not result_contexts:
             return [], []
@@ -792,6 +809,7 @@ class DiscoveryLoop:
                 ("electronic_stability", "max"),
                 ("synthetic_accessibility", "max"),
                 ("chemical_complexity", "max"),
+                ("synthesizability", "max"),
             ]
             smi_to_score = {ctx.smiles: sc for ctx, sc in zip(contexts, scores, strict=True)}
             selected = nsga2_select(
@@ -827,6 +845,7 @@ class DiscoveryLoop:
             confidences=confidences,
             synergy_bonus=synergy_bonus,
             is_mixture=is_mixture,
+            grounding=obj_scores.get("combined_grounding_score"),
         )
         smi_to_score = {ctx.smiles: sc for ctx, sc in zip(contexts, scores, strict=True)}
         selected_scores = [smi_to_score[c.smiles] for c in selected]

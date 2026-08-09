@@ -30,6 +30,11 @@ from aurelius.utils.device import batch_tanimoto, get_device, to_device
 
 log = logging.getLogger(__name__)
 
+GROUNDING_SELECTION_LAMBDA = 0.5
+"""Maximum tournament-score reduction applied to a completely ungrounded
+candidate (grounding = 0). A fully grounded candidate (grounding = 1) is
+unpenalised. See ``_grounding_weight``."""
+
 
 def _fp_to_numpy(fp: Any, n_bits: int = 2048) -> np.ndarray:
     """Convert a single RDKit fingerprint to a 1D numpy array."""
@@ -83,6 +88,28 @@ def _mixture_synergy_boost(
     return base_score
 
 
+def _grounding_weight(grounding: list[float] | None, i: int) -> float:
+    """Selection weight from the synthesizability grounding score.
+
+    Maps grounding ``g`` in [0, 1] onto a multiplier in
+    ``[1 - GROUNDING_SELECTION_LAMBDA, 1.0]``:
+
+        w = 1 - GROUNDING_SELECTION_LAMBDA * (1 - g)
+
+    Physical justification (ADR-2026-08-08-04): a molecule that cannot be made
+    has zero discovery value regardless of its predicted transport or orbital
+    properties, so grounding must apply selection pressure during evolution
+    rather than only filtering survivors afterwards. A linear multiplier keeps
+    the signal interpretable and monotonic, and the 0.5 ceiling means a
+    completely ungrounded candidate is halved but never hard-rejected — a
+    genuinely novel scaffold can still win on outstanding physics.
+    """
+    if not grounding or i >= len(grounding):
+        return 1.0
+    g = float(np.clip(grounding[i], 0.0, 1.0))
+    return 1.0 - GROUNDING_SELECTION_LAMBDA * (1.0 - g)
+
+
 def _best_in_tournament(
     tournament: list[int],
     scores: list[float],
@@ -93,6 +120,7 @@ def _best_in_tournament(
     sim_matrix: np.ndarray | None = None,
     synergy_bonus: list[float] | None = None,
     is_mixture: list[bool] | None = None,
+    grounding: list[float] | None = None,
 ) -> tuple[int, float]:
     """Find the best candidate in a tournament, adjusted for diversity and optionally confidence.
 
@@ -100,6 +128,10 @@ def _best_in_tournament(
     algorithm to prioritize synergistic formulations by treating synergy_bonus as a
     primary signal when score differences are small. This ensures the EA discovers
     electrolyte mixtures where combined performance exceeds the sum of parts.
+
+    Synthesizability grounding is applied as a first-class multiplicative signal
+    alongside conformal confidence, so unmakeable candidates lose tournaments
+    outright instead of being filtered downstream (ADR-2026-08-08-04).
     """
     tournament_adjusted_scores = {}
     for i in tournament:
@@ -112,6 +144,7 @@ def _best_in_tournament(
             max_sim = 0.0
 
         base_score = scores[i] * conf * (1.0 - diversity_lambda * max_sim)
+        base_score *= _grounding_weight(grounding, i)
         base_score = _mixture_synergy_boost(base_score, synergy_bonus, is_mixture, i)
         tournament_adjusted_scores[i] = base_score
 
@@ -129,6 +162,7 @@ def tournament_select(
     confidences: list[float] | None = None,
     synergy_bonus: list[float] | None = None,
     is_mixture: list[bool] | None = None,
+    grounding: list[float] | None = None,
 ) -> list[MoleculeContext]:
     """Select a diverse batch of candidates using tournament selection.
 
@@ -155,6 +189,8 @@ def tournament_select(
         confidences: Optional conformal-confidence multipliers.
         synergy_bonus: Optional synergy bonus for mixture candidates.
         is_mixture: Optional boolean list indicating which candidates are mixtures.
+        grounding: Optional synthesizability grounding scores in [0, 1], applied
+            as a first-class multiplicative selection signal.
 
     Returns:
         Selected candidates, ordered by selection order.
@@ -185,6 +221,7 @@ def tournament_select(
             tournament, scores, fps_list, selected_fps,
             diversity_lambda, confidences, sim_matrix=sim_matrix,
             synergy_bonus=synergy_bonus, is_mixture=is_mixture,
+            grounding=grounding,
         )
 
         used_indices.add(best_idx)
@@ -304,6 +341,7 @@ def build_npga2_composite_objectives(
             "electronic_stability": [],
             "synthetic_accessibility": [],
             "chemical_complexity": [],
+            "synthesizability": [],
         }
 
     w = _COMPOSITE_WEIGHTS
@@ -336,6 +374,12 @@ def build_npga2_composite_objectives(
         + w["synthetic_accessibility"]["combined_grounding_score"] * cg
     )
 
+    # Grounding is additionally exposed as a standalone objective so that
+    # synthesizability can express genuine Pareto trade-offs against transport
+    # and stability, instead of being averaged away against synthesis depth
+    # (which is near-constant for typical electrolyte candidates).
+    synthesizability = cg
+
     # Chemical complexity: minimize sa_score (negate), maximize novelty
     sa = np.asarray(scores_dict["sa_score"], dtype=float)
     nv = np.asarray(scores_dict.get("novelty_to_seed", [0.0] * n), dtype=float)
@@ -349,6 +393,7 @@ def build_npga2_composite_objectives(
         "electronic_stability": electronic_stability.tolist(),
         "synthetic_accessibility": synthetic_accessibility.tolist(),
         "chemical_complexity": chemical_complexity.tolist(),
+        "synthesizability": synthesizability.tolist(),
     }
 
 
