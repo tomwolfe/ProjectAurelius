@@ -255,6 +255,10 @@ class PropertyOracle:
         lumo = quantum_result["lumo_eV"]
         lumo - homo
 
+        # ADR-2026-08-09: Reduction stability proxy (Δ-learning on LUMO).
+        # MAE-only — ranking is provenance-confounded (ρ ≈ 0.06 unseen).
+        reduction_proxy = self._predict_reduction_proxy(ctx.mol)
+
         dielectric = predict_dielectric_proxy(ctx)
         viscosity = predict_viscosity_proxy(ctx)
         li_solvation = predict_li_solvation_proxy(ctx)
@@ -296,6 +300,7 @@ class PropertyOracle:
             "homo_eV": round(clamped_values["homo_eV"], 4),
             "lumo_eV": round(clamped_values["lumo_eV"], 4),
             "gap_eV": round(clamped_values["lumo_eV"] - clamped_values["homo_eV"], 4),
+            "reduction_stability_proxy": reduction_proxy,
             "dielectric_proxy": round(clamped_values["dielectric_proxy"], 4),
             "viscosity_proxy": round(clamped_values["viscosity_proxy"], 4),
             "li_solvation_proxy": round(li_solvation, 4),
@@ -315,6 +320,31 @@ class PropertyOracle:
 
         self._cache[smiles] = result
         return result
+
+    def _predict_reduction_proxy(self, mol: Any) -> dict[str, float]:
+        """Δ-learning LUMO proxy for reduction stability (ADR-2026-08-09).
+
+        Returns a dict with lumo_eV and confidence. The correction is shrunk
+        toward the TOM baseline for OOD molecules. This is an MAE-only proxy —
+        the output must NOT be used for ranking claims.
+        """
+        try:
+            from aurelius.scoring.oracle.lumo_proxy import get_lumo_proxy
+
+            proxy = get_lumo_proxy()
+            lumo, conf = proxy.predict_corrected(mol)
+            return {
+                "lumo_eV": round(lumo, 4),
+                "confidence": conf,
+                "metric": "MAE-only (ranking confounded)",
+            }
+        except Exception as exc:
+            logger.debug("LUMO proxy failed (%s); omitting reduction_stability_proxy.", exc)
+            return {
+                "lumo_eV": None,
+                "confidence": 0.0,
+                "metric": "unavailable",
+            }
 
     def predict_batch_properties(self, contexts: list[MoleculeContext]) -> dict[str, np.ndarray[Any, np.dtype[np.float32]]]:
         """Batch-predict properties for a list of molecules.

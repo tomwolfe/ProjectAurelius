@@ -179,14 +179,40 @@ def benchmark_tom_batch(contexts: list[MoleculeContext]) -> dict[str, float]:
     }
 
 
+def benchmark_single_evaluate(contexts: list[MoleculeContext]) -> dict[str, float]:
+    """Benchmark single-molecule PropertyOracle.evaluate() (warm, no cache).
+
+    Measures the realistic per-molecule cost when processing a stream of
+    novel candidates (no cache hits). Includes Δ-correction GPR prediction.
+    """
+    from aurelius.scoring.oracle.quantum import QuantumOracle
+
+    oracle = PropertyOracle(use_xtb=False)
+    oracle._quantum.warmup()
+
+    n_single = min(200, len(contexts))
+    start = time.perf_counter()
+    for ctx in contexts[:n_single]:
+        oracle._cache.clear()
+        oracle.evaluate(ctx)
+    elapsed = time.perf_counter() - start
+
+    return {
+        "n_molecules": n_single,
+        "total_time_ms": elapsed * 1000,
+        "throughput_mols_per_sec": n_single / elapsed,
+    }
+
+
 def main() -> None:
     print("=" * 60)
-    print("Project Aurelius v11.0 — GPU Throughput Benchmark")
+    print("Project Aurelius v12.0 — GPU Throughput Benchmark")
     print("=" * 60)
 
     contexts = _generate_test_molecules(N_MOLECULES)
     print(f"Test molecules: {len(contexts)}")
     print(f"MPS available: {__import__('torch').backends.mps.is_available()}")
+    print(f"MLX available: {__import__('importlib').util.find_spec('mlx') is not None}")
     print(f"Selected backend: {_select_batch_backend()}")
     print()
 
@@ -224,6 +250,13 @@ def main() -> None:
     print(f"  Backend: {tom_result['backend']}")
     print(f"  Throughput: {tom_result['throughput_mols_per_sec']:.0f} molecules/sec")
     print(f"  HOMO mean: {tom_result['homo_mean']:.4f}, LUMO mean: {tom_result['lumo_mean']:.4f}")
+    print()
+
+    print("--- Single-Molecule evaluate() (warm, no cache) ---")
+    single_result = benchmark_single_evaluate(contexts)
+    results["single_evaluate"] = single_result
+    print(f"  Throughput: {single_result['throughput_mols_per_sec']:.0f} molecules/sec")
+    print(f"  Per-molecule: {single_result['total_time_ms']/single_result['n_molecules']:.2f} ms/mol")
     print()
 
     # Save results

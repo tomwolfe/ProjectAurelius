@@ -946,11 +946,26 @@ class QuantumOracle:
         self._n_xtb_calls = 0
         self._n_tom_calls = 0
         self._use_delta_correction = use_delta_correction
+        self._delta_warmed_up = False
 
         if use_xtb and not _HAS_XTB:
             logger.info("QuantumOracle: xTB binary not found — using LPM/TOM fallback.")
         elif self._use_xtb:
             logger.info("QuantumOracle: xTB backend ENABLED.")
+
+    def warmup(self) -> None:
+        """Pre-fit the Δ-correction GPR to avoid first-call latency.
+
+        The Δ-correction model fits two GPR kernels on the 115-molecule
+        calibration set on first use (~1.8s). Calling this once at startup
+        moves that cost out of the critical path so the first production
+        evaluate() is fast.
+        """
+        if self._use_delta_correction and not self._delta_warmed_up:
+            from aurelius.scoring.oracle.delta_correction import get_delta_correction
+
+            get_delta_correction()
+            self._delta_warmed_up = True
 
     @property
     def method(self) -> str:

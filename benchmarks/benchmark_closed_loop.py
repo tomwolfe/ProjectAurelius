@@ -133,6 +133,71 @@ def _noisy(entry: dict[str, float], noise_eV: float, rng: random.Random) -> dict
     }
 
 
+def _drift_noise(
+    entry: dict[str, float],
+    noise_eV: float,
+    index: int,
+    total: int,
+    rng: random.Random,
+) -> dict[str, float]:
+    """Simulate measurement with systematic drift (instrument calibration shift).
+
+    A linear drift accumulates across the ingestion sequence: early measurements
+    are accurate, later ones are systematically offset. Models an instrument
+    whose calibration drifts over a long experiment (temperature aging,
+    electrode fouling). The drift magnitude at the last measurement is
+    approximately ``drift_slope * total``.
+    """
+    drift_slope = 0.02
+    drift = drift_slope * index
+    return {
+        **entry,
+        "homo_eV": entry["homo_eV"] + drift + rng.gauss(0.0, noise_eV),
+        "lumo_eV": entry["lumo_eV"] + drift + rng.gauss(0.0, noise_eV),
+    }
+
+
+def _maybe_fail(
+    entry: dict[str, float] | None,
+    failure_rate: float,
+    rng: random.Random,
+) -> dict[str, float] | None:
+    """Simulate a failed measurement.
+
+    With probability ``failure_rate``, the measurement returns None (synthesis
+    failed, instrument timeout, sample contaminated). The caller must skip
+    None entries. Models the realistic scenario where 10-30% of requested
+    experiments do not yield a usable measurement.
+    """
+    if entry is None:
+        return None
+    if rng.random() < failure_rate:
+        return None
+    return entry
+
+
+def _maybe_mislabel(
+    entry: dict[str, float],
+    mislabel_rate: float,
+    pool: list[dict[str, float]],
+    rng: random.Random,
+) -> dict[str, float]:
+    """Simulate a mislabeled entry (sample mix-up).
+
+    With probability ``mislabel_rate``, the entry's homo/lumo values are
+    swapped with a random molecule from the pool. Models the realistic
+    scenario where a sample vial is mislabeled or a data entry error occurs.
+    """
+    if rng.random() >= mislabel_rate:
+        return entry
+    swap_source = rng.choice(pool)
+    return {
+        **entry,
+        "homo_eV": swap_source["homo_eV"],
+        "lumo_eV": swap_source["lumo_eV"],
+    }
+
+
 def _acquire_suggester(
     unmeasured: list[dict[str, float]], k: int
 ) -> list[dict[str, float]]:
@@ -197,6 +262,82 @@ def _run_curve(
         "points": points,
         "delta_rho": points[-1]["spearman_rho"] - baseline["spearman_rho"],
         "delta_mae": points[-1]["mae_eV"] - baseline["mae_eV"],
+    }
+
+
+def _run_sabotage_curve(
+    holdout: list[dict[str, float]],
+    seed_calib: list[dict[str, float]],
+    unmeasured: list[dict[str, float]],
+    strategy: str,
+    noise_eV: float,
+    failure_rate: float,
+    mislabel_rate: float,
+    drift: bool,
+    steps: tuple[int, ...],
+) -> dict[str, object]:
+    """Closed-loop curve under realistic lab sabotage.
+
+    Simulates a wet-lab campaign with three failure modes combined:
+      - Gaussian instrument noise (always present)
+      - Systematic drift (instrument calibration shift over time)
+      - Failed measurements (synthesis/instrument failure)
+      - Mislabeled entries (sample mix-up)
+
+    The suggester must adapt its acquisition strategy despite noise and
+    missing data. Metric: information gain per *successful* measurement.
+    """
+    rng = random.Random(RANDOM_SEED)
+    baseline = _evaluate(_fit(seed_calib), holdout)
+    points = [{"ingested": 0, "successful": 0, **baseline}]
+
+    cumulative_calib = list(seed_calib)
+    total_attempted = 0
+
+    for k in steps:
+        if strategy == "random":
+            picked = random.Random(RANDOM_SEED + k).sample(
+                unmeasured, min(k, len(unmeasured))
+            )
+        else:
+            picked = _acquire_suggester(unmeasured, k)
+
+        measured: list[dict[str, float]] = []
+        for i, e in enumerate(picked):
+            total_attempted += 1
+            # Apply drift if enabled
+            if drift:
+                entry = _drift_noise(e, noise_eV, total_attempted, len(unmeasured), rng)
+            else:
+                entry = _noisy(e, noise_eV, rng)
+            # Apply mislabeling
+            entry = _maybe_mislabel(entry, mislabel_rate, unmeasured, rng)
+            # Apply failure
+            entry = _maybe_fail(entry, failure_rate, rng)
+            if entry is not None:
+                measured.append(entry)
+
+        cumulative_calib.extend(measured)
+        metrics = _evaluate(_fit(cumulative_calib), holdout)
+        points.append({
+            "ingested": len(measured),
+            "successful": len(measured),
+            "attempted": len(picked),
+            **metrics,
+        })
+
+    return {
+        "strategy": strategy,
+        "noise_eV": noise_eV,
+        "failure_rate": failure_rate,
+        "mislabel_rate": mislabel_rate,
+        "drift": drift,
+        "baseline": baseline,
+        "points": points,
+        "delta_rho": points[-1]["spearman_rho"] - baseline["spearman_rho"],
+        "delta_mae": points[-1]["mae_eV"] - baseline["mae_eV"],
+        "total_successful": points[-1]["successful"],
+        "total_attempted": total_attempted,
     }
 
 
@@ -335,6 +476,11 @@ def main() -> int:
     parser.add_argument(
         "--quick", action="store_true", help="Single noise level, fewer steps"
     )
+    parser.add_argument(
+        "--sabotage",
+        action="store_true",
+        help="Run sabotage mode: drift + failed measurements + mislabels",
+    )
     args = parser.parse_args()
 
     entries = _load_calibration()
@@ -434,6 +580,41 @@ def main() -> int:
                 else "indistinguishable from random at this budget "
                 "(sign of the edge flips across splits)."
             )
+        )
+
+    sabotage: dict[str, object] | None = None
+    if args.sabotage:
+        print("\n" + "=" * 74)
+        print("  SABOTAGE MODE — realistic lab noise")
+        print("=" * 74)
+        print("  Simulating: instrument drift + 20% failure rate + 10% mislabels")
+        sabotage_steps = (10, 20, 40)
+        sabotage_curves: list[dict[str, object]] = []
+        for strategy in ("suggester", "random"):
+            sc = _run_sabotage_curve(
+                holdout, seed_calib, unmeasured,
+                strategy,
+                noise_eV=0.2,
+                failure_rate=0.20,
+                mislabel_rate=0.10,
+                drift=True,
+                steps=sabotage_steps,
+            )
+            sabotage_curves.append(sc)
+            print(f"\n  Strategy: {strategy}")
+            print(f"    {'attempted':>10s} {'successful':>11s} {'MAE':>10s} {'dMAE':>10s}")
+            for p in sc["points"]:
+                print(
+                    f"    {p.get('attempted', p['ingested']):>10d} "
+                    f"    {p['ingested']:>10d} "
+                    f"{p['mae_eV']:>10.4f} "
+                    f"{p['mae_eV'] - sc['baseline']['mae_eV']:>+10.4f}"
+                )
+        sabotage = {"curves": sabotage_curves}
+        sab_improved = [c for c in sabotage_curves if c["delta_mae"] < 0]
+        print(
+            f"\n  Sabotage curves with MAE reduction: "
+            f"{len(sab_improved)}/{len(sabotage_curves)}"
         )
 
     ok = len(improved) > 0 and (perm is None or perm["significant"])

@@ -232,9 +232,107 @@ def _decompose_fragments(frag_smiles: list[str]) -> list[str]:
     return next_fragments
 
 
-def _count_precursor_matches(frag_smiles: list[str]) -> int:
-    """Count how many fragment cores match a known commercial precursor."""
-    matched = 0
+def _precursor_match_score(mol: Chem.Mol) -> float:
+    """Compute the best precursor coverage score for a fragment.
+
+    Returns a float in [0, 1] representing the maximum fraction of the
+    fragment's heavy atoms accounted for by a single commercial precursor.
+
+    Two directions are considered:
+      1. The fragment *contains* a precursor (precursor is a substructure of
+         the fragment): coverage = precursor_atoms / fragment_atoms.
+      2. The fragment *is contained in* a precursor (fragment is a substructure
+         of the precursor): coverage = fragment_atoms / precursor_atoms.
+
+    A trivial single-atom match (e.g., one C or O) yields a low score, so
+    fragments are only "known" when a substantial portion is purchasable.
+    This prevents the constant-depth pathology where every BRICS fragment
+    matched something via a one-atom substructure.
+
+    Returns:
+        float: best coverage in [0, 1]. 0.0 means no meaningful match.
+    """
+    if mol is None or not _BB_MOLS:
+        return 0.0
+
+    n_heavy = mol.GetNumHeavyAtoms()
+    if n_heavy == 0:
+        return 0.0
+
+    best_coverage = 0.0
+    for precursor in _BB_MOLS:
+        p_heavy = precursor.GetNumHeavyAtoms()
+        if p_heavy == 0:
+            continue
+
+        # Direction 1: precursor is a substructure of the fragment
+        if mol.HasSubstructMatch(precursor):
+            coverage = p_heavy / n_heavy
+            best_coverage = max(best_coverage, coverage)
+
+        # Direction 2: fragment is a substructure of the precursor
+        elif precursor.HasSubstructMatch(mol):
+            coverage = n_heavy / p_heavy
+            best_coverage = max(best_coverage, coverage)
+
+    return min(best_coverage, 1.0)
+
+
+def _is_known_precursor(mol: Chem.Mol) -> bool:
+    """Check whether *mol* matches any commercial building-block precursor.
+
+    A fragment is "known" only when a commercial precursor accounts for at
+    least 50% of its heavy atoms. This is stricter than pure substructure
+    matching (where one C or O would count) and prevents every BRICS fragment
+    from being trivially grounded.
+    """
+    return _precursor_match_score(mol) >= 0.5
+
+
+def _fragment_rarity_penalty(mol: Chem.Mol) -> float:
+    """Penalize fragments containing exotic/rare functional groups.
+
+    Returns a multiplier in [0.3, 1.0]:
+      - 1.0 for fragments with only common atoms (C, H, O, N, S, F, P)
+      - 0.3 for fragments containing exotic atoms (Se, Te, Si, B, etc.)
+      - 0.6 for fragments with halogens beyond F (Cl, Br, I)
+
+    Physical justification: even if an exotic fragment is technically
+    "purchasable", the precursor is expensive, unstable, or requires
+    air-free handling that makes synthesis impractical for a discovery
+    campaign.
+    """
+    if mol is None:
+        return 0.3
+
+    exotic_atoms = {32, 34, 50, 52, 33, 14, 5, 31, 35, 53}  # Ge, Ge, Sn, Te, As, Si, B, P, Br, I
+    heavy_halogens = {17, 35, 53}  # Cl, Br, I
+
+    atoms = {a.GetAtomicNum() for a in mol.GetAtoms()}
+    if atoms & exotic_atoms:
+        return 0.3
+    if atoms & heavy_halogens:
+        return 0.6
+    return 1.0
+
+
+def _precursor_coverage(frag_smiles: list[str]) -> float:
+    """Compute weighted precursor coverage for a list of BRICS fragments.
+
+    For each fragment, computes precursor_match_score × rarity_penalty,
+    weighted by fragment size (larger fragments matter more). Returns the
+    weighted average coverage in [0, 1].
+
+    This replaces the binary _count_precursor_matches with a continuous
+    signal that differentiates "most fragments are purchasable" from
+    "fragments are only trivially grounded".
+    """
+    if not frag_smiles:
+        return 0.0
+
+    total_weight = 0.0
+    weighted_coverage = 0.0
+
     for frag_smi in frag_smiles:
         core_smi = _strip_brics_dummies(frag_smi)
         if core_smi is None:
@@ -242,29 +340,62 @@ def _count_precursor_matches(frag_smiles: list[str]) -> int:
         core_mol = Chem.MolFromSmiles(core_smi)
         if core_mol is None:
             continue
-        if _is_known_precursor(core_mol):
-            matched += 1
-    return matched
 
+        n_heavy = core_mol.GetNumHeavyAtoms()
+        if n_heavy == 0:
+            continue
 
-def _is_known_precursor(mol: Chem.Mol) -> bool:
-    """Check whether *mol* matches any commercial building-block precursor."""
-    return any(mol.HasSubstructMatch(precursor) or precursor.HasSubstructMatch(mol) for precursor in _BB_MOLS)
+        match_score = _precursor_match_score(core_mol)
+        rarity = _fragment_rarity_penalty(core_mol)
+        coverage = match_score * rarity
+
+        weighted_coverage += coverage * n_heavy
+        total_weight += n_heavy
+
+    if total_weight == 0:
+        return 0.0
+    return weighted_coverage / total_weight
 
 
 @lru_cache(maxsize=2048)
 def _cached_retrosynthetic_depth(smiles: str) -> int:
     """Cached retrosynthetic depth calculation by SMILES.
 
+    Uses continuous precursor coverage (weighted by fragment size and rarity)
+    instead of binary fragment counting. Depth semantics:
+
+      depth 1 = the molecule itself is directly purchasable (exact or
+                near-exact match to a commercial precursor)
+      depth 2 = one BRICS disconnection yields purchasable fragments
+      depth 3+ = multiple disconnections required
+      depth 5 = exotic/unsynthesizable (fails all decomposition levels)
+
     Args:
         smiles: SMILES string of the target molecule
 
     Returns:
-        int: Retrosynthetic depth (1 for direct precursor, >1 for multi-step)
+        int: Retrosynthetic depth (1 = direct precursor, >1 for multi-step)
     """
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return 5  # Maximum depth for invalid molecules
+
+    # Depth 1: check if the molecule itself is directly purchasable.
+    # Only count direction 1 (a commercial precursor is a substructure of
+    # the molecule, covering ≥85% of its atoms). Direction 2 (molecule is
+    # a substructure of a larger precursor) does NOT count — being a piece
+    # of something purchasable does not make the fragment itself purchasable.
+    # This prevents benzene (substructure of biphenyl) from scoring depth 1.
+    n_heavy = mol.GetNumHeavyAtoms()
+    if n_heavy > 0:
+        for precursor in _BB_MOLS:
+            p_heavy = precursor.GetNumHeavyAtoms()
+            if p_heavy == 0:
+                continue
+            if mol.HasSubstructMatch(precursor):
+                coverage = p_heavy / n_heavy
+                if coverage >= 0.85:
+                    return 1
 
     # Get initial BRICS decomposition
     try:
@@ -278,8 +409,8 @@ def _cached_retrosynthetic_depth(smiles: str) -> int:
     if not fragments:
         return 5
 
-    # Track depth
-    current_depth = 0
+    # Depth 2+: check if BRICS fragments are purchasable
+    current_depth = 1
     current_fragments = fragments
     max_iterations = 5
 
@@ -287,9 +418,9 @@ def _cached_retrosynthetic_depth(smiles: str) -> int:
         current_depth += 1
         next_fragments = _decompose_fragments(current_fragments)
 
-        # If >80% of fragments match precursors, we're at acceptable depth
-        matched = _count_precursor_matches(next_fragments)
-        if len(next_fragments) > 0 and (matched / len(next_fragments)) >= 0.8:
+        # Continuous coverage: weighted by fragment size × rarity penalty
+        coverage = _precursor_coverage(next_fragments)
+        if coverage >= 0.6:
             return current_depth
 
         # Continue decomposing if depth < max_iterations

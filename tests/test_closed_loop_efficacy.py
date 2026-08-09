@@ -159,6 +159,69 @@ class TestClosedLoopImprovesHeldOutAccuracy:
         )
 
 
+class TestSabotageRobustness:
+    """Closed loop must survive realistic lab failures.
+
+    Sabotage mode: instrument drift + failed measurements + mislabels.
+    The suggester should still improve held-out MAE despite these failures.
+    """
+
+    def test_sabotage_helpers_exist(self):
+        """The sabotage helper functions must be importable and functional."""
+        from benchmarks.benchmark_closed_loop import (
+            _drift_noise,
+            _maybe_fail,
+            _maybe_mislabel,
+        )
+        import random as rng_module
+
+        rng = rng_module.Random(42)
+        entry = {"smiles": "COC(=O)OC", "homo_eV": -7.8, "lumo_eV": -0.5}
+
+        # Drift noise
+        drifted = _drift_noise(entry, 0.1, index=10, total=40, rng=rng)
+        assert "homo_eV" in drifted
+        assert drifted["homo_eV"] != entry["homo_eV"]  # should have drift + noise
+
+        # Maybe fail (with rate=1.0 always fails)
+        assert _maybe_fail(entry, 1.0, rng) is None
+        # Maybe fail (with rate=0.0 never fails)
+        assert _maybe_fail(entry, 0.0, rng) == entry
+
+        # Mislabel (with rate=1.0 always swaps)
+        pool = [
+            {"smiles": "X", "homo_eV": -10.0, "lumo_eV": 1.0},
+            {"smiles": "Y", "homo_eV": -5.0, "lumo_eV": 0.0},
+        ]
+        mislabeled = _maybe_mislabel(entry, 1.0, pool, rng)
+        assert mislabeled["homo_eV"] != entry["homo_eV"]  # swapped
+
+    def test_sabotage_curve_improves_mae(self):
+        """Closed loop must improve MAE even under sabotage conditions."""
+        from benchmarks.benchmark_closed_loop import _run_sabotage_curve
+
+        entries = _load_entries()
+        holdout, seed_calib, unmeasured = _split(entries)
+
+        curve = _run_sabotage_curve(
+            holdout, seed_calib, unmeasured,
+            strategy="random",
+            noise_eV=0.2,
+            failure_rate=0.20,
+            mislabel_rate=0.10,
+            drift=True,
+            steps=(20, 40),
+        )
+
+        assert curve["delta_mae"] < 0, (
+            f"Sabotage curve must reduce MAE, got dMAE={curve['delta_mae']:+.4f}"
+        )
+        # Some measurements should have failed
+        assert curve["total_successful"] < curve["total_attempted"], (
+            "With 20% failure rate, some measurements should fail"
+        )
+
+
 class TestAcquisitionIsNotRedundant:
     """The suggester must propose a structurally diverse batch.
 

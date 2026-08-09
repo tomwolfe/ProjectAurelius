@@ -158,3 +158,79 @@ def test_combined_grounding_score_improved():
         f"Known electrolyte (score={known_score:.2f}) should score higher "
         f"than Frankenstein molecule (score={frankenstein_score:.2f})"
     )
+
+
+def test_depth_score_has_variance():
+    """Retrosynthetic depth must differentiate easy from hard syntheses.
+
+    Previously brics_retrosynthetic_depth returned 1 for 100% of candidates.
+    After the fix, real electrolytes (DMC, EC, DMSO) should score depth 1-2
+    while exotic junk (cyclohexane, nitromethane) should score depth >= 4.
+    """
+    easy_smiles = ["COC(=O)OC", "C1COC(=O)O1", "CS(=O)(=O)C", "CC#N"]
+    hard_smiles = ["C1CCCCC1", "C[N+](=O)[O-]", "c1ccc(I)cc1"]
+
+    easy_depths = [brics_retrosynthetic_depth(Chem.MolFromSmiles(s)) for s in easy_smiles]
+    hard_depths = [brics_retrosynthetic_depth(Chem.MolFromSmiles(s)) for s in hard_smiles]
+
+    assert all(d is not None for d in easy_depths + hard_depths)
+
+    mean_easy = sum(easy_depths) / len(easy_depths)
+    mean_hard = sum(hard_depths) / len(hard_depths)
+
+    assert mean_easy < mean_hard, (
+        f"Easy syntheses (mean depth={mean_easy:.1f}) should have lower "
+        f"depth than hard syntheses (mean depth={mean_hard:.1f})"
+    )
+
+
+def test_adversarial_junk_down_ranked():
+    """Adversarial test: junk molecules with higher surrogate score must be
+    down-ranked by grounding.
+
+    Simulates the scenario where a junk molecule (e.g., cyclohexane) might
+    get a high surrogate property score. The grounding score must penalize
+    it below real electrolytes.
+    """
+    real_solvents = [
+        Chem.MolFromSmiles("COC(=O)OC"),   # DMC
+        Chem.MolFromSmiles("C1COC(=O)O1"),  # EC
+        Chem.MolFromSmiles("CS(=O)(=O)C"),  # DMSO
+    ]
+    junk_molecules = [
+        Chem.MolFromSmiles("C1CCCCC1"),          # cyclohexane
+        Chem.MolFromSmiles("C[N+](=O)[O-]"),     # nitromethane
+        Chem.MolFromSmiles("c1ccc(I)cc1"),       # iodobenzene
+    ]
+
+    real_scores = [combined_grounding_score(m) for m in real_solvents]
+    junk_scores = [combined_grounding_score(m) for m in junk_molecules]
+
+    min_real = min(real_scores)
+    max_junk = max(junk_scores)
+
+    assert min_real > max_junk, (
+        f"Worst real solvent score ({min_real:.3f}) must beat best junk "
+        f"score ({max_junk:.3f}). Real: {real_scores}, Junk: {junk_scores}"
+    )
+
+
+def test_depth1_requires_direct_precursor_not_substructure():
+    """Depth 1 (directly purchasable) must require the molecule to contain
+    a commercial precursor covering ≥85% of its atoms (direction 1).
+
+    Molecules that are merely substructures of larger precursors (direction 2)
+    should NOT get depth 1. This prevents benzene (substructure of biphenyl)
+    from scoring the same as DMC (exact match in DB).
+    """
+    benzene = Chem.MolFromSmiles("c1ccccc1")
+    dmc = Chem.MolFromSmiles("COC(=O)OC")
+
+    depth_benzene = brics_retrosynthetic_depth(benzene)
+    depth_dmc = brics_retrosynthetic_depth(dmc)
+
+    assert depth_dmc == 1, f"DMC should be depth 1, got {depth_dmc}"
+    assert depth_benzene > 1, (
+        f"Benzene should NOT be depth 1 (not directly purchasable), "
+        f"got depth {depth_benzene}"
+    )
