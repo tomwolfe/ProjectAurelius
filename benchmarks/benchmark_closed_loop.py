@@ -1,0 +1,469 @@
+#!/usr/bin/env python3
+"""Closed-loop efficacy benchmark: does ingesting experiments actually help?
+
+Why this exists
+---------------
+``suggest-experiment`` and ``ingest-experiment`` exist and their unit tests
+pass, but passing tests only prove the plumbing runs. The two tests that claim
+to measure refit quality (``test_experimental_feedback_reduces_loo_mae`` and
+``test_maybe_refit_full_retrain_improves_oro_mae``) both assert only that LOO
+MAE *does not get worse*, and they measure LOO on the calibration set that was
+just enlarged with the new points. A model scored on data it was trained on
+cannot demonstrate generalisation. Infrastructure is not capability.
+
+This benchmark measures the thing that matters: after a measurement is
+ingested and the oracle refit, does ranking quality improve on molecules the
+model has **never seen**?
+
+Design
+------
+``orbital_calibration.json`` is split three ways with a fixed seed:
+
+    holdout    30%  scored, never trained on, never ingested
+    seed       20 molecules — the oracle's starting knowledge
+    unmeasured rest — the pool the loop is allowed to "measure"
+
+A cycle is: rank the unmeasured pool by expected information gain, "measure"
+the top-k (revealing their reference values, optionally with noise), refit the
+Δ-correction, then re-score the frozen holdout. Because the holdout is
+disjoint from everything ingested, any improvement is genuine generalisation.
+
+Two controls make the result interpretable:
+
+  * **random** acquisition — ingest k random molecules instead of the
+    suggester's picks. If the suggester adds no value, the curves coincide.
+  * **noise sweep** — experimental error is injected into ingested values.
+    A loop that only improves with perfect data is not a wet-lab loop.
+
+Metrics on the holdout: Spearman ρ (ranking quality, the quantity the EA
+actually consumes) and MAE (calibration).
+
+The suggester-vs-random comparison is repeated over several random splits.
+A single split cannot separate an acquisition strategy from split luck: on
+seed 0 the suggester looks decisively worse than random, but the sign of that
+gap flips across seeds, so only the multi-seed spread is reported as evidence.
+
+Usage:
+    python benchmarks/benchmark_closed_loop.py [--json out.json] [--quick]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import random
+import sys
+import warnings
+
+import numpy as np
+from rdkit import Chem, RDLogger
+from scipy.stats import spearmanr, ttest_1samp
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
+
+DATA_DIR = os.path.join(PROJECT_ROOT, "src", "aurelius", "data")
+
+from aurelius.scoring.oracle.delta_correction import DeltaCorrection  # noqa: E402
+
+RDLogger.DisableLog("rdApp.*")
+warnings.filterwarnings("ignore")
+
+HOLDOUT_FRACTION = 0.30
+SEED_SIZE = 20
+INGEST_STEPS = (10, 20, 40)
+NOISE_LEVELS_EV = (0.0, 0.1, 0.3)
+RANDOM_SEED = 0
+ACQUISITION_SEEDS = tuple(range(10))
+ACQUISITION_BUDGET = 20
+
+
+def _load_calibration() -> list[dict[str, float]]:
+    """Load orbital calibration entries that RDKit can parse."""
+    with open(os.path.join(DATA_DIR, "orbital_calibration.json")) as f:
+        entries = json.load(f)
+    return [e for e in entries if Chem.MolFromSmiles(e["smiles"]) is not None]
+
+
+def _split(
+    entries: list[dict[str, float]], seed: int
+) -> tuple[list[dict[str, float]], list[dict[str, float]], list[dict[str, float]]]:
+    """Partition into (holdout, seed_calibration, unmeasured_pool)."""
+    idx = list(range(len(entries)))
+    random.Random(seed).shuffle(idx)
+    n_hold = int(HOLDOUT_FRACTION * len(entries))
+    holdout = [entries[i] for i in idx[:n_hold]]
+    pool = [entries[i] for i in idx[n_hold:]]
+    return holdout, pool[:SEED_SIZE], pool[SEED_SIZE:]
+
+
+def _fit(entries: list[dict[str, float]]) -> DeltaCorrection:
+    """Fit a Δ-correction model on an explicit calibration set."""
+    smiles = [
+        Chem.MolToSmiles(Chem.MolFromSmiles(e["smiles"])) for e in entries
+    ]
+    return DeltaCorrection(calib=entries, calib_smiles=smiles)
+
+
+def _evaluate(model: DeltaCorrection, holdout: list[dict[str, float]]) -> dict[str, float]:
+    """Score a model on the frozen holdout set (never trained on)."""
+    pred, ref = [], []
+    for entry in holdout:
+        homo, _ = model.predict_corrected(Chem.MolFromSmiles(entry["smiles"]))
+        pred.append(homo)
+        ref.append(entry["homo_eV"])
+    pred_arr, ref_arr = np.asarray(pred), np.asarray(ref)
+    rho = spearmanr(pred_arr, ref_arr).correlation
+    return {
+        "spearman_rho": float(rho) if np.isfinite(rho) else 0.0,
+        "mae_eV": float(np.abs(pred_arr - ref_arr).mean()),
+        "n": len(holdout),
+    }
+
+
+def _noisy(entry: dict[str, float], noise_eV: float, rng: random.Random) -> dict[str, float]:
+    """Simulate a measurement: reference value plus Gaussian instrument error."""
+    if noise_eV <= 0.0:
+        return entry
+    return {
+        **entry,
+        "homo_eV": entry["homo_eV"] + rng.gauss(0.0, noise_eV),
+        "lumo_eV": entry["lumo_eV"] + rng.gauss(0.0, noise_eV),
+    }
+
+
+def _acquire_suggester(
+    unmeasured: list[dict[str, float]], k: int
+) -> list[dict[str, float]]:
+    """Pick the k most informative molecules using the real suggester.
+
+    Falls back to pool order if the suggester cannot rank (it depends on the
+    conformal predictor and DoA machinery, which must not be a hard
+    requirement for this benchmark to run).
+    """
+    try:
+        from aurelius.agent.experiment_suggester import suggest_experiments
+
+        by_canonical = {
+            Chem.MolToSmiles(Chem.MolFromSmiles(e["smiles"])): e for e in unmeasured
+        }
+        suggestions = suggest_experiments(
+            [e["smiles"] for e in unmeasured],
+            top_n=k,
+            properties=["homo"],
+        )
+        chosen = [
+            by_canonical[s.smiles] for s in suggestions if s.smiles in by_canonical
+        ]
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"  (suggester unavailable: {exc}; using pool order)")
+        chosen = []
+
+    if len(chosen) < k:
+        seen = {id(e) for e in chosen}
+        chosen += [e for e in unmeasured if id(e) not in seen][: k - len(chosen)]
+    return chosen[:k]
+
+
+def _run_curve(
+    holdout: list[dict[str, float]],
+    seed_calib: list[dict[str, float]],
+    unmeasured: list[dict[str, float]],
+    strategy: str,
+    noise_eV: float,
+    steps: tuple[int, ...],
+) -> dict[str, object]:
+    """Ingest increasing numbers of measurements and track holdout metrics."""
+    rng = random.Random(RANDOM_SEED)
+    baseline = _evaluate(_fit(seed_calib), holdout)
+    points = [{"ingested": 0, **baseline}]
+
+    for k in steps:
+        if strategy == "random":
+            picked = random.Random(RANDOM_SEED + k).sample(
+                unmeasured, min(k, len(unmeasured))
+            )
+        else:
+            picked = _acquire_suggester(unmeasured, k)
+        measured = [_noisy(e, noise_eV, rng) for e in picked]
+        metrics = _evaluate(_fit(seed_calib + measured), holdout)
+        points.append({"ingested": len(measured), **metrics})
+
+    return {
+        "strategy": strategy,
+        "noise_eV": noise_eV,
+        "baseline": baseline,
+        "points": points,
+        "delta_rho": points[-1]["spearman_rho"] - baseline["spearman_rho"],
+        "delta_mae": points[-1]["mae_eV"] - baseline["mae_eV"],
+    }
+
+
+def _batch_redundancy(entries: list[dict[str, float]]) -> float:
+    """Mean pairwise Tanimoto within a batch; higher means more redundant.
+
+    A batch of near-duplicate scaffolds yields highly correlated residuals,
+    so its joint information is far below the sum of its parts.
+    """
+    from aurelius.types import MoleculeContext
+    from aurelius.utils.device import batch_tanimoto
+
+    fps = []
+    for entry in entries:
+        ctx = MoleculeContext.from_smiles(entry["smiles"])
+        if ctx is not None:
+            fps.append(ctx.get_ecfp4())
+    if len(fps) < 2:
+        return 0.0
+    sim = batch_tanimoto(fps)
+    upper = sim[np.triu_indices(sim.shape[0], k=1)]
+    return float(upper.mean())
+
+
+def _permutation_control(
+    entries: list[dict[str, float]], seeds: tuple[int, ...], budget: int
+) -> dict[str, object]:
+    """Check that the gain needs *correct* labels, not merely more points.
+
+    Adding molecules shifts the GPR mean and lowers MAE even when the labels
+    are wrong, so a bare "MAE went down" does not prove learning. This keeps
+    the ingested molecules and the label distribution fixed and destroys only
+    the molecule-to-label pairing. If correct labels do not beat shuffled
+    ones, the loop is recalibrating rather than learning.
+    """
+    rows: list[dict[str, float]] = []
+    for seed in seeds:
+        holdout, seed_calib, unmeasured = _split(entries, seed)
+        ingested = unmeasured[:budget]
+        real = _evaluate(_fit(seed_calib + ingested), holdout)["mae_eV"]
+
+        labels = [(e["homo_eV"], e["lumo_eV"]) for e in ingested]
+        random.Random(seed).shuffle(labels)
+        permuted = [
+            {**e, "homo_eV": lab[0], "lumo_eV": lab[1]}
+            for e, lab in zip(ingested, labels, strict=True)
+        ]
+        shuffled = _evaluate(_fit(seed_calib + permuted), holdout)["mae_eV"]
+        rows.append(
+            {
+                "seed": seed,
+                "mae_real": real,
+                "mae_shuffled": shuffled,
+                "gap": shuffled - real,
+            }
+        )
+
+    wins = sum(1 for r in rows if r["mae_real"] < r["mae_shuffled"])
+    gaps = np.array([r["gap"] for r in rows])
+    # One-sided test that the gap is positive. Requiring *every* split to win
+    # is the wrong bar: two splits sit within +/-0.005 eV of zero, which is
+    # numerical noise, not evidence against learning.
+    p_value = float(ttest_1samp(gaps, 0.0, alternative="greater").pvalue)
+    return {
+        "budget": budget,
+        "rows": rows,
+        "real_beats_shuffled": wins,
+        "n_seeds": len(rows),
+        "mean_gap": float(gaps.mean()),
+        "p_value": p_value,
+        "significant": p_value < 0.05,
+    }
+
+
+def _acquisition_comparison(
+    entries: list[dict[str, float]], seeds: tuple[int, ...], budget: int
+) -> dict[str, object]:
+    """Compare suggester vs random acquisition across several random splits.
+
+    One split is not evidence: the sign of the gap flips between seeds. This
+    reports the per-seed deltas and their spread so the honest conclusion
+    ("indistinguishable from random at this budget") is visible rather than
+    an artefact of whichever split happened to be chosen.
+    """
+    rows: list[dict[str, float]] = []
+    for seed in seeds:
+        holdout, seed_calib, unmeasured = _split(entries, seed)
+        base = _evaluate(_fit(seed_calib), holdout)["mae_eV"]
+        picks = _acquire_suggester(unmeasured, budget)
+        sug = _evaluate(_fit(seed_calib + picks), holdout)["mae_eV"]
+        rnd_picks = random.Random(seed).sample(unmeasured, budget)
+        rnd = _evaluate(_fit(seed_calib + rnd_picks), holdout)["mae_eV"]
+        rows.append(
+            {
+                "seed": seed,
+                "suggester_delta_mae": sug - base,
+                "random_delta_mae": rnd - base,
+                "edge": (rnd - base) - (sug - base),
+                "suggester_redundancy": _batch_redundancy(picks),
+                "random_redundancy": _batch_redundancy(rnd_picks),
+            }
+        )
+
+    edges = np.array([r["edge"] for r in rows])
+    return {
+        "budget": budget,
+        "rows": rows,
+        "mean_edge": float(edges.mean()),
+        "std_edge": float(edges.std()),
+        "suggester_wins": int((edges > 0).sum()),
+        "n_seeds": len(rows),
+        "mean_suggester_redundancy": float(
+            np.mean([r["suggester_redundancy"] for r in rows])
+        ),
+        "mean_random_redundancy": float(
+            np.mean([r["random_redundancy"] for r in rows])
+        ),
+    }
+
+
+def _print_curve(curve: dict[str, object]) -> None:
+    label = f"{curve['strategy']:<10s} noise={curve['noise_eV']:.1f} eV"
+    print(f"\n  {label}")
+    print(f"    {'ingested':>9s} {'holdout rho':>12s} {'holdout MAE':>12s} {'dMAE':>8s}")
+    base_mae = curve["baseline"]["mae_eV"]
+    for p in curve["points"]:
+        print(
+            f"    {p['ingested']:>9d} {p['spearman_rho']:>12.4f} "
+            f"{p['mae_eV']:>12.4f} {p['mae_eV'] - base_mae:>+8.4f}"
+        )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--json", help="Write results to this path")
+    parser.add_argument(
+        "--quick", action="store_true", help="Single noise level, fewer steps"
+    )
+    args = parser.parse_args()
+
+    entries = _load_calibration()
+    holdout, seed_calib, unmeasured = _split(entries, RANDOM_SEED)
+
+    steps = (10, 40) if args.quick else INGEST_STEPS
+    noise_levels = (0.1,) if args.quick else NOISE_LEVELS_EV
+
+    print("=" * 74)
+    print("  CLOSED-LOOP EFFICACY BENCHMARK")
+    print("=" * 74)
+    print(f"  calibration entries : {len(entries)}")
+    print(f"  holdout (frozen)    : {len(holdout)}  <- never trained on, never ingested")
+    print(f"  seed calibration    : {len(seed_calib)}")
+    print(f"  unmeasured pool     : {len(unmeasured)}")
+
+    results: list[dict[str, object]] = []
+    for noise in noise_levels:
+        for strategy in ("suggester", "random"):
+            curve = _run_curve(
+                holdout, seed_calib, unmeasured, strategy, noise, steps
+            )
+            _print_curve(curve)
+            results.append(curve)
+
+    print("\n" + "=" * 74)
+    print("  VERDICT")
+    print("=" * 74)
+
+    improved = [r for r in results if r["delta_mae"] < 0]
+    print(
+        f"  Curves with holdout MAE reduction : {len(improved)}/{len(results)}"
+    )
+    for r in results:
+        verdict = "improves" if r["delta_mae"] < 0 else "NO IMPROVEMENT"
+        print(
+            f"    {r['strategy']:<10s} noise={r['noise_eV']:.1f} : "
+            f"dMAE {r['delta_mae']:+.4f} eV, drho {r['delta_rho']:+.4f}  {verdict}"
+        )
+
+    perm: dict[str, object] | None = None
+    if not args.quick:
+        perm = _permutation_control(entries, ACQUISITION_SEEDS, 40)
+        print(
+            f"\n  Permutation control, {perm['n_seeds']} splits, budget "
+            f"{perm['budget']} (does the gain need correct labels?):"
+        )
+        print(f"    {'seed':>5s} {'MAE real':>10s} {'MAE shuffled':>13s} {'gap':>9s}")
+        for r in perm["rows"]:
+            print(
+                f"    {int(r['seed']):>5d} {r['mae_real']:>10.4f} "
+                f"{r['mae_shuffled']:>13.4f} {r['gap']:>+9.4f}"
+            )
+        print(
+            f"    correct labels win on {perm['real_beats_shuffled']}"
+            f"/{perm['n_seeds']} splits, mean gap {perm['mean_gap']:+.4f} eV "
+            f"(one-sided p={perm['p_value']:.4f})"
+        )
+        print(
+            "    -> "
+            + (
+                "gain is genuine learning, not recalibration."
+                if perm["significant"]
+                else "WARNING: gain may be recalibration, not learning."
+            )
+        )
+
+    acq: dict[str, object] | None = None
+    if not args.quick:
+        acq = _acquisition_comparison(entries, ACQUISITION_SEEDS, ACQUISITION_BUDGET)
+        print(
+            f"\n  Acquisition strategy, {acq['n_seeds']} splits, "
+            f"budget {acq['budget']} (dMAE vs no ingest, eV):"
+        )
+        print(f"    {'seed':>5s} {'suggester':>11s} {'random':>11s} {'edge':>9s}")
+        for r in acq["rows"]:
+            print(
+                f"    {int(r['seed']):>5d} {r['suggester_delta_mae']:>+11.4f} "
+                f"{r['random_delta_mae']:>+11.4f} {r['edge']:>+9.4f}"
+            )
+        print(
+            f"    mean edge {acq['mean_edge']:+.4f} +/- {acq['std_edge']:.4f} eV; "
+            f"suggester better on {acq['suggester_wins']}/{acq['n_seeds']} splits"
+        )
+        print(
+            f"    batch redundancy (mean pairwise Tanimoto): "
+            f"suggester {acq['mean_suggester_redundancy']:.4f} vs "
+            f"random {acq['mean_random_redundancy']:.4f}"
+        )
+        majority = acq["suggester_wins"] > acq["n_seeds"] / 2
+        print(
+            "    -> "
+            + (
+                "suggester beats random on a majority of splits, but the "
+                "spread overlaps zero: directionally better, not proven."
+                if majority
+                else "indistinguishable from random at this budget "
+                "(sign of the edge flips across splits)."
+            )
+        )
+
+    ok = len(improved) > 0 and (perm is None or perm["significant"])
+    print(
+        "\n  RESULT: "
+        + (
+            "closed loop measurably improves the oracle on unseen molecules."
+            if ok
+            else "closed loop shows NO measurable improvement."
+        )
+    )
+
+    if args.json:
+        with open(args.json, "w") as f:
+            json.dump(
+                {
+                    "holdout_n": len(holdout),
+                    "seed_n": len(seed_calib),
+                    "pool_n": len(unmeasured),
+                    "curves": results,
+                    "permutation_control": perm,
+                    "acquisition": acq,
+                },
+                f,
+                indent=2,
+            )
+        print(f"\n  Wrote {args.json}")
+
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

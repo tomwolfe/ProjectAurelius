@@ -1,0 +1,390 @@
+{
+  "holdout_n": 34,
+  "seed_n": 20,
+  "pool_n": 61,
+  "curves": [
+    {
+      "strategy": "suggester",
+      "noise_eV": 0.0,
+      "baseline": {
+        "spearman_rho": 0.526920894943462,
+        "mae_eV": 0.7786170585491983,
+        "n": 34
+      },
+      "points": [
+        {
+          "ingested": 0,
+          "spearman_rho": 0.526920894943462,
+          "mae_eV": 0.7786170585491983,
+          "n": 34
+        },
+        {
+          "ingested": 10,
+          "spearman_rho": 0.5189349181037475,
+          "mae_eV": 0.7147022170701303,
+          "n": 34
+        },
+        {
+          "ingested": 20,
+          "spearman_rho": 0.5587112258246326,
+          "mae_eV": 0.6618113638780238,
+          "n": 34
+        },
+        {
+          "ingested": 40,
+          "spearman_rho": 0.629663558515941,
+          "mae_eV": 0.6329356564773024,
+          "n": 34
+        }
+      ],
+      "delta_rho": 0.10274266357247908,
+      "delta_mae": -0.14568140207189584
+    },
+    {
+      "strategy": "random",
+      "noise_eV": 0.0,
+      "baseline": {
+        "spearman_rho": 0.526920894943462,
+        "mae_eV": 0.7786170585491983,
+        "n": 34
+      },
+      "points": [
+        {
+          "ingested": 0,
+          "spearman_rho": 0.526920894943462,
+          "mae_eV": 0.7786170585491983,
+          "n": 34
+        },
+        {
+          "ingested": 10,
+          "spearman_rho": 0.5673115085750942,
+          "mae_eV": 0.7168808593591891,
+          "n": 34
+        },
+        {
+          "ingested": 20,
+          "spearman_rho": 0.6302778644266883,
+          "mae_eV": 0.6986182458922697,
+          "n": 34
+        },
+        {
+          "ingested": 40,
+          "spearman_rho": 0.6024805219653747,
+          "mae_eV": 0.6363957343138417,
+          "n": 34
+        }
+      ],
+      "delta_rho": 0.07555962702191277,
+      "delta_mae": -0.1422213242353566
+    },
+    {
+      "strategy": "suggester",
+      "noise_eV": 0.1,
+      "baseline": {
+        "spearman_rho": 0.526920894943462,
+        "mae_eV": 0.7786170585491983,
+        "n": 34
+      },
+      "points": [
+        {
+          "ingested": 0,
+          "spearman_rho": 0.526920894943462,
+          "mae_eV": 0.7786170585491983,
+          "n": 34
+        },
+        {
+          "ingested": 10,
+          "spearman_rho": 0.5124847060409013,
+          "mae_eV": 0.7201274134866034,
+          "n": 34
+        },
+        {
+          "ingested": 20,
+          "spearman_rho": 0.572379532338759,
+          "mae_eV": 0.6534176489479735,
+          "n": 34
+        },
+        {
+          "ingested": 40,
+          "spearman_rho": 0.6391853001325236,
+          "mae_eV": 0.6263392200867696,
+          "n": 34
+        }
+      ],
+      "delta_rho": 0.11226440518906167,
+      "delta_mae": -0.1522778384624287
+    },
+    {
+      "strategy": "random",
+      "noise_eV": 0.1,
+      "baseline": {
+        "spearman_rho": 0.526920894943462,
+        "mae_eV": 0.7786170585491983,
+        "n": 34
+      },
+      "points": [
+        {
+          "ingested": 0,
+          "spearman_rho": 0.526920894943462,
+          "mae_eV": 0.7786170585491983,
+          "n": 34
+        },
+        {
+          "ingested": 10,
+          "spearman_rho": 0.5553325433155226,
+          "mae_eV": 0.7204367840930617,
+          "n": 34
+        },
+        {
+          "ingested": 20,
+          "spearman_rho": 0.6249026877076498,
+          "mae_eV": 0.7029396144596781,
+          "n": 34
+        },
+        {
+          "ingested": 40,
+          "spearman_rho": 0.6156880990464408,
+          "mae_eV": 0.6316503273367836,
+          "n": 34
+        }
+      ],
+      "delta_rho": 0.08876720410297889,
+      "delta_mae": -0.14696673121241466
+    },
+    {
+      "strategy": "suggester",
+      "noise_eV": 0.3,
+      "baseline": {
+        "spearman_rho": 0.526920894943462,
+        "mae_eV": 0.7786170585491983,
+        "n": 34
+      },
+      "points": [
+        {
+          "ingested": 0,
+          "spearman_rho": 0.526920894943462,
+          "mae_eV": 0.7786170585491983,
+          "n": 34
+        },
+        {
+          "ingested": 10,
+          "spearman_rho": 0.5041915762458132,
+          "mae_eV": 0.7328984607417159,
+          "n": 34
+        },
+        {
+          "ingested": 20,
+          "spearman_rho": 0.5828227328214625,
+          "mae_eV": 0.6426728628812208,
+          "n": 34
+        },
+        {
+          "ingested": 40,
+          "spearman_rho": 0.641335370820139,
+          "mae_eV": 0.6234150609149015,
+          "n": 34
+        }
+      ],
+      "delta_rho": 0.11441447587667708,
+      "delta_mae": -0.15520199763429676
+    },
+    {
+      "strategy": "random",
+      "noise_eV": 0.3,
+      "baseline": {
+        "spearman_rho": 0.526920894943462,
+        "mae_eV": 0.7786170585491983,
+        "n": 34
+      },
+      "points": [
+        {
+          "ingested": 0,
+          "spearman_rho": 0.526920894943462,
+          "mae_eV": 0.7786170585491983,
+          "n": 34
+        },
+        {
+          "ingested": 10,
+          "spearman_rho": 0.5537967785386546,
+          "mae_eV": 0.7287070137444467,
+          "n": 34
+        },
+        {
+          "ingested": 20,
+          "spearman_rho": 0.6158416755241277,
+          "mae_eV": 0.7235079527418725,
+          "n": 34
+        },
+        {
+          "ingested": 40,
+          "spearman_rho": 0.5872764506743801,
+          "mae_eV": 0.6335277865638907,
+          "n": 34
+        }
+      ],
+      "delta_rho": 0.06035555573091811,
+      "delta_mae": -0.14508927198530752
+    }
+  ],
+  "permutation_control": {
+    "budget": 40,
+    "rows": [
+      {
+        "seed": 0,
+        "mae_real": 0.5610662891288554,
+        "mae_shuffled": 0.6409583901225708,
+        "gap": 0.07989210099371546
+      },
+      {
+        "seed": 1,
+        "mae_real": 0.3733528827918758,
+        "mae_shuffled": 0.40453876512088865,
+        "gap": 0.03118588232901287
+      },
+      {
+        "seed": 2,
+        "mae_real": 0.4295643457565571,
+        "mae_shuffled": 0.4991913103087754,
+        "gap": 0.06962696455221828
+      },
+      {
+        "seed": 3,
+        "mae_real": 0.441788011223297,
+        "mae_shuffled": 0.512343671653488,
+        "gap": 0.07055566043019107
+      },
+      {
+        "seed": 4,
+        "mae_real": 0.4137885888343676,
+        "mae_shuffled": 0.46050132706399916,
+        "gap": 0.04671273822963157
+      },
+      {
+        "seed": 5,
+        "mae_real": 0.6121483759116096,
+        "mae_shuffled": 0.6679674523177868,
+        "gap": 0.055819076406177115
+      },
+      {
+        "seed": 6,
+        "mae_real": 0.5145582264794129,
+        "mae_shuffled": 0.5129419779615534,
+        "gap": -0.0016162485178594643
+      },
+      {
+        "seed": 7,
+        "mae_real": 0.34724304208192885,
+        "mae_shuffled": 0.3513840117590268,
+        "gap": 0.004140969677097928
+      },
+      {
+        "seed": 8,
+        "mae_real": 0.4194239976262626,
+        "mae_shuffled": 0.509426921129563,
+        "gap": 0.09000292350330041
+      },
+      {
+        "seed": 9,
+        "mae_real": 0.5910667697405597,
+        "mae_shuffled": 0.5920724265243638,
+        "gap": 0.0010056567838040431
+      }
+    ],
+    "real_beats_shuffled": 9,
+    "n_seeds": 10,
+    "mean_gap": 0.044732572438728926,
+    "p_value": 0.0012918016424093852,
+    "significant": true
+  },
+  "acquisition": {
+    "budget": 20,
+    "rows": [
+      {
+        "seed": 0,
+        "suggester_delta_mae": -0.11680569467117452,
+        "random_delta_mae": -0.018120420840379348,
+        "edge": 0.09868527383079517,
+        "suggester_redundancy": 0.055063396692276,
+        "random_redundancy": 0.09546209871768951
+      },
+      {
+        "seed": 1,
+        "suggester_delta_mae": -0.21390250114296933,
+        "random_delta_mae": -0.1678214725258106,
+        "edge": 0.04608102861715874,
+        "suggester_redundancy": 0.06105784326791763,
+        "random_redundancy": 0.07480626553297043
+      },
+      {
+        "seed": 2,
+        "suggester_delta_mae": -0.1891703788638468,
+        "random_delta_mae": -0.15725266190048437,
+        "edge": 0.03191771696336243,
+        "suggester_redundancy": 0.04585903510451317,
+        "random_redundancy": 0.06319013983011246
+      },
+      {
+        "seed": 3,
+        "suggester_delta_mae": -0.23862931342484484,
+        "random_delta_mae": -0.18659308626310467,
+        "edge": 0.05203622716174017,
+        "suggester_redundancy": 0.050903771072626114,
+        "random_redundancy": 0.07989443838596344
+      },
+      {
+        "seed": 4,
+        "suggester_delta_mae": -0.2489074237208384,
+        "random_delta_mae": -0.2637736062814835,
+        "edge": -0.014866182560645091,
+        "suggester_redundancy": 0.04291822016239166,
+        "random_redundancy": 0.0602860264480114
+      },
+      {
+        "seed": 5,
+        "suggester_delta_mae": -0.11528284556315149,
+        "random_delta_mae": -0.1984882945256239,
+        "edge": -0.0832054489624724,
+        "suggester_redundancy": 0.057006217539310455,
+        "random_redundancy": 0.07582279294729233
+      },
+      {
+        "seed": 6,
+        "suggester_delta_mae": -0.05794537045156645,
+        "random_delta_mae": -0.07642085988232117,
+        "edge": -0.01847548943075472,
+        "suggester_redundancy": 0.04996035620570183,
+        "random_redundancy": 0.08027313649654388
+      },
+      {
+        "seed": 7,
+        "suggester_delta_mae": -0.08549434427880054,
+        "random_delta_mae": -0.11044402231167588,
+        "edge": -0.024949678032875344,
+        "suggester_redundancy": 0.04747777804732323,
+        "random_redundancy": 0.05166041851043701
+      },
+      {
+        "seed": 8,
+        "suggester_delta_mae": -0.16222669951412833,
+        "random_delta_mae": -0.11469153996063852,
+        "edge": 0.0475351595534898,
+        "suggester_redundancy": 0.04694465920329094,
+        "random_redundancy": 0.07495229691267014
+      },
+      {
+        "seed": 9,
+        "suggester_delta_mae": -0.23218882935220886,
+        "random_delta_mae": -0.18629560326225092,
+        "edge": 0.04589322608995794,
+        "suggester_redundancy": 0.053822796791791916,
+        "random_redundancy": 0.08077870309352875
+      }
+    ],
+    "mean_edge": 0.01806518332297567,
+    "std_edge": 0.04979859981693423,
+    "suggester_wins": 6,
+    "n_seeds": 10,
+    "mean_suggester_redundancy": 0.05110140740871429,
+    "mean_random_redundancy": 0.07371263168752193
+  }
+}
