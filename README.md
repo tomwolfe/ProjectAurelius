@@ -25,17 +25,47 @@ Against 55 formula-checked, literature-cited dielectric constants
 | Model | MAE | Spearman ρ |
 |---|---|---|
 | Previous fragment-additive + TPSA cap | 10.62 | 0.444 |
-| **Kirkwood-Fröhlich** | **3.89** | **0.925** |
+| **Kirkwood-Fröhlich** | **3.26** | **0.934** |
 | ECFP4 + RandomForest (5-fold CV) | 18.09 | 0.116 |
 
-On the ten canonical commercial solvents: MAE 3.01, ρ 1.00. EC 76.3 (exp
-89.78), PC 61.5 (64.92), DMC 3.13 (3.11), DEC 2.81 (2.82) — cyclic carbonates
-corrected without perturbing linear ones, and with no cyclic-specific term.
+On the ten canonical commercial solvents: **MAE 1.67** (target < 2.5, met).
+EC 81.5 (exp 89.78), PC 65.7 (64.92), DMC 3.13 (3.11), DEC 2.81 (2.82) —
+cyclic carbonates corrected without perturbing linear ones, and with no
+cyclic-specific term.
 
-**Known limitation.** EC carries essentially all remaining commercial-solvent
-error (MAE excluding EC is 1.85). The model uses the gas-phase dipole 4.90 D;
-condensed-phase estimates reach ~5.35 D, which would give ε = 90.7. This was
-not applied because it is a per-molecule adjustment rather than physics.
+This target is trustworthy: `audit_label_confound.py` reports 0.03%
+between-source variance for `dielectric_verified.json`, versus 53% for the
+dielectric column of `external_property_benchmark.json`. Accuracy claims are
+made against the verified file only.
+
+**Onsager reaction field: tested and rejected (ADR-2026-08-08-08).** Adding
+the condensed-phase enhancement μ_eff = μ_gas/(1 − αf) as a new term raises
+verified-set MAE 3.26 → 14.08. The enhancement factors it produces are
+physically correct (1.16–1.35, matching the literature 1.2–1.4), so this is
+not an implementation error — it is double counting. Back-solving g with the
+Onsager term included divides every required g by a near-constant 0.642
+(σ 0.107 across all 55 molecules), which shows the fitted g-factors already
+absorb the reaction field. Re-deriving the class constants under Onsager and
+comparing fairly gives MAE 3.27 versus 3.08 without it: one extra term, no
+accuracy gain. Reported because a negative result on a plausible mechanism is
+worth more than a silent omission.
+
+**Double-counted g mechanism, fixed (ADR-2026-08-08-08).** Ring-locking and
+soft dipole association were applied multiplicatively, but both describe the
+orientational freedom of the *same* dipole. Only cyclic amides and cyclic
+sulfoxides trigger both, and they were the worst residuals in the set. Making
+the two exclusive gives 2-pyrrolidone 54.49 → 42.59 (exp 28.20) and NMP
+45.33 → 35.48 (exp 32.20); verified-set MAE 3.654 → 3.258, ρ 0.930 → 0.934.
+All ten commercial solvents are unchanged — none is a cyclic amide or
+sulfoxide, so the fix cannot flatter the headline set.
+
+**Known limitations.** EC is the largest commercial residual at 81.5 vs 89.78:
+the model uses the gas-phase dipole 4.90 D, while condensed-phase estimates
+reach ~5.35 D. That is a per-molecule adjustment rather than physics, so it is
+not applied. The remaining whole-set error is concentrated in two classes the
+model does not claim to describe — carboxylic acids (MAE 21.6, n=2; formic
+acid forms open chains rather than the closed dimer the mechanism assumes) and
+H-bonded liquids (MAE 4.7, n=6).
 
 **Note on the ML baseline.** Earlier audits reported the oracle losing to a
 fingerprint regressor. That comparison ran against benchmark entries with
@@ -66,10 +96,206 @@ to literature chemistry rather than extrapolating.
 | **LPM** | **Experimental gas-phase IPs (NIST)** | **88** | **0.91** | **0.38** |
 | LPM | DFT labels (unseen) | 45 | 0.43 | 0.47 |
 
+*The DFT-label rows are provenance-confounded (see below); treat their ρ as
+an upper bound contaminated by source clustering, and the NIST row as the
+trustworthy figure.*
+
 *Leakage-aware split: 27/72 molecules in `external_property_benchmark.json`
 also appear in the calibration set `orbital_calibration.json`. The
 leakage-aware benchmark (`benchmarks/benchmark_orbital_leakage.py`)
 reports SEEN and UNSEEN splits separately.*
+
+### The xTB path had never executed (ADR-2026-08-08-09)
+
+xTB is documented as the *preferred* orbital backend, with TOM/LPM as
+fallbacks. Installing xTB 6.7.1 (`conda install -c conda-forge xtb`) revealed
+that the preferred path had never once run end to end.
+
+`_parse_xtb_output` matched `HOMO : -11.88 eV`. xTB prints
+
+```
+    18        2.0000           -0.4366081             -11.8807 (HOMO)
+    19                         -0.2475871              -6.7372 (LUMO)
+```
+
+— the value *precedes* a parenthesised label. Every parse returned `None`,
+the oracle logged a debug line and fell back to TOM. Because the fallback is
+silent and TOM always succeeds, the failure was invisible: `has_xtb()`
+returned `True`, xTB ran, consumed CPU, and its output was discarded.
+
+Fixing the parser exposed a second issue. Raw GFN2-xTB eigenvalues are not on
+the DFT scale the scoring function is calibrated against — measured over the
+115 calibration molecules the offset is −4.09 eV (HOMO) and −5.96 eV (LUMO).
+Feeding them in unmapped drove every molecule into the `_PHYSICAL_BOUNDS`
+clamp and *collapsed* the score (EC 89.1 → 67.3). An affine map onto the
+reference scale (OLS on those 115 molecules; rank-preserving by construction)
+fixes it.
+
+Result on the 45 unseen external molecules:
+
+| | ρ | MAE (eV) |
+|---|---|---|
+| TOM LUMO | +0.086 | 0.863 |
+| **xTB LUMO (calibrated)** | **+0.114** | **0.366** |
+| TOM HOMO | +0.170 | 1.791 |
+| **xTB HOMO (calibrated)** | **+0.327** | **0.539** |
+
+xTB is better on every axis — LUMO MAE improves 2.4×. This is the closest
+thing to an Objective-3 win available: not by re-modelling the confounded
+ranking target, but by making the real QM backend function.
+
+Two tests encoded the broken behaviour as an invariant and were corrected:
+`test_quantum_oracle_method_is_tom` asserted TOM unconditionally, and
+`test_external_validation_lumo` scored the *pooled* set, which rewards
+leakage — the Δ-corrected model scores ρ 0.944 on molecules whose labels it
+memorised and 0.061 on new ones, so pooling actively penalised enabling xTB.
+It now scores the unseen split.
+
+**Note.** The LPM still beats real semi-empirical QM on the clean
+experimental target: over 88 NIST gas-phase IPs, LPM ρ = 0.940 / MAE 0.314 eV
+versus xTB-Koopmans ρ = 0.875 / MAE 1.075 eV (0.437 after linear rescaling).
+The fallback is not a poor substitute for xTB on ranking oxidative stability.
+
+### LUMO: why there is no ranking claim (ADR-2026-08-08-07)
+
+LUMO is the weakest orbital prediction, and a planned upgrade targeting
+unseen Spearman ρ > 0.70 was **halted after measurement showed the target
+metric is not measuring chemistry**.
+
+Measured on the same leakage-aware split used for HOMO:
+
+| split | n | TOM ρ | Δ-corrected ρ |
+|---|---|---|---|
+| all | 72 | +0.212 | +0.526 |
+| seen | 27 | +0.359 | +0.944 |
+| **unseen** | **45** | **+0.086** | **+0.061** |
+
+The frequently-quoted "LUMO ρ ≈ 0.5" is the pooled figure. True unseen ρ is
+**0.06**. The seen/unseen gap is not generalisation: 26 of the 27 shared
+molecules carry byte-identical labels in both files, so ρ = 0.944 is recall
+of duplicated numbers.
+
+Four independent models were tried against the true unseen set — raw TOM
+(0.086), Δ-corrected TOM (0.061), ridge on physics descriptors (0.020), RF on
+physics descriptors (0.061), and RF on ECFP4 (0.088). An unconstrained ML
+model that reaches ρ = 0.73 in-distribution also fails here, which locates
+the ceiling in the data rather than the model.
+
+The cause: the 45 unseen labels come from ~12 papers using different DFT
+functionals and basis sets, and **69% of their variance is between-source**
+rather than between-molecule. Consequently:
+
+> A predictor given **only the citation string** — no molecular structure —
+> scores **ρ = 0.837, MAE = 0.122** on unseen LUMO, beating every real model
+> by roughly 10×.
+
+Optimising toward ρ > 0.70 would mean learning to infer the journal.
+`benchmarks/audit_label_confound.py` now detects this class of defect
+automatically; `tests/test_label_confound.py` pins the finding so it cannot
+silently reappear. The audit flags six shipped targets, and confirms the NIST
+IP set the LPM was validated against is clean (single measurement method,
+citation ρ = 0) — which is exactly why the LPM's ρ = 0.91 is trustworthy.
+
+**What is still claimable.** The Δ-layer genuinely improves LUMO *calibration*:
+MAE 0.863 → 0.797 on unseen, and 0.719 → 0.448 under scaffold-disjoint CV.
+MAE is comparatively robust to a constant per-source offset; rank correlation
+is not. LUMO is therefore reported as an MAE-only result, and reduction
+stability should be treated as the oracle's weakest axis until an
+experimental electron-affinity or reduction-potential dataset exists (none is
+currently in the repo, and xTB is not installed in this environment).
+
+### Synthesizability grounding (ADR-2026-08-08-04)
+
+Grounding was previously inert. `_compute_score` never returned a `grounding`
+key, so `loop.py`'s `score_data.get("grounding", 0.0)` fed NSGA-II a constant
+zero; `_check_building_block_grounding` was never called; and
+`_is_known_bb_precursor` accepted any fragment merely *containing* a commercial
+precursor, so trivial matches such as C=O grounded arbitrary molecules. The
+`synthetic_accessibility` Pareto objective was therefore mathematically
+constant (variance 0.0) and contributed no domination pressure.
+
+Grounding now (i) penalises the score via a 0.7–1.0 multiplier, (ii) multiplies
+tournament fitness by `1 − 0.5(1 − g)`, and (iii) forms its own NSGA-II
+objective. Reverse precursor matches must cover ≥50% of the fragment's heavy
+atoms.
+
+| Molecule | Grounding before | Grounding after |
+|---|---|---|
+| DMC / EC / DME / sulfolane | 0.970 | 0.970 |
+| Silyl-quinone "Frankenstein" | 0.675 | **0.090** |
+| Se/Te/azide/nitro assembly | 0.675 | **0.090** |
+| C18 dicarbonate | 0.337 | 0.337 |
+
+Adversarial selection test — unmakeable molecules given a *higher* surrogate
+score (90) than real solvents (70):
+
+| Selector | Junk selected (before) | Junk selected (after) |
+|---|---|---|
+| Tournament | 4/5 | **1/5** |
+| NSGA-II | n/a (objective constant) | **0/5** |
+
+Score ranking is preserved (Spearman ρ = 0.992 before vs after on a fixed
+35-molecule set); absolute scores shift down ~7.6% because the dormant penalty
+is now live. Net Progress 0.373 → 0.371; the −0.002 is the top-k enrichment
+term reacting to the compressed absolute scale, not a ranking regression.
+
+### Closed-loop efficacy (ADR-2026-08-08-05)
+
+`suggest-experiment` and `ingest-experiment` existed with passing tests, but
+those tests only asserted that LOO MAE *does not get worse*, and measured LOO
+on the calibration set that had just been enlarged with the new points — a
+model scored on its own training data. `benchmarks/benchmark_closed_loop.py`
+instead freezes a 30% holdout (34 molecules) that is never trained on and
+never ingested, seeds the oracle with 20 molecules, and ingests from a
+disjoint pool.
+
+| Ingested | Holdout ρ | Holdout MAE (eV) | ΔMAE |
+|---|---|---|---|
+| 0 (seed only) | 0.527 | 0.779 | — |
+| 10 | 0.567 | 0.717 | −0.062 |
+| 20 | 0.630 | 0.699 | −0.080 |
+| 40 | 0.603 | 0.636 | −0.142 |
+
+The loop improves on unseen molecules at every noise level tested (0.0, 0.1,
+0.3 eV), so it is not an artefact of perfect data.
+
+**Permutation control.** "MAE went down" is not sufficient evidence: adding
+*any* 40 molecules shifts the GPR mean and lowers MAE even with wrong labels
+(sabotage test: 0.779 → 0.624). The control keeps the ingested molecules and
+label distribution fixed and destroys only the molecule→label pairing.
+Correct labels beat shuffled labels on **9/10 splits**, mean gap +0.045 eV,
+one-sided p = 0.0013 — the gain is genuine learning, not recalibration. (The
+two non-winning splits sit within ±0.005 eV of zero, i.e. numerical noise;
+the criterion is significance, not a clean sweep.)
+
+**Batch diversity (ADR-2026-08-08-06).** The acquisition strategy was
+initially *worse* than random (mean edge −0.017 ± 0.046 eV over 5 splits,
+winning 3/5). The cause was measurable: its picks were more redundant than
+random sampling (mean pairwise Tanimoto 0.138 vs 0.071). The `novelty` term
+measures distance to the *calibration set*, which is near-identical across a
+homologous family and so cannot separate its members, and `_diversify`
+discounted only repeated molecules and properties — never structural
+similarity. `_diversify` now also applies a Tanimoto penalty against
+scaffolds already in the batch.
+
+| | before | after |
+|---|---|---|
+| Batch redundancy (Tanimoto, k=10) | 0.138 | **0.036** (random 0.071) |
+| Mean edge vs random, 5 splits | −0.017 | **+0.043** |
+| Mean edge vs random, 10 splits | — | +0.018 ± 0.050, wins 6/10 |
+
+The redundancy reduction is unambiguous (below random on 5/5 splits) and the
+λ-sweep shows any λ>0 flips the sign of the edge (λ=0: −0.030; λ∈[0.3,0.9]:
++0.019 to +0.027), so the gain comes from the mechanism rather than a tuned
+constant. **The accuracy edge itself remains unproven**: over 10 splits the
+spread still overlaps zero. Directionally better, not established.
+
+**Known limitation.** `brics_retrosynthetic_depth` still returns 1 for every
+molecule in a live EA population (variance 0.0); it only spreads on extreme
+inputs. Retrosynthetic depth was therefore *not* promoted to a Pareto objective —
+doing so would add a second constant column and pure complexity cost. The depth
+penalty inside `combined_grounding_score` remains effectively inactive for
+typical candidates.
 
 ## Architecture
 
@@ -212,6 +438,42 @@ vs LPM ρ = 0.43.
 ## Changelog
 
 ### v12.0 (2026-08-08)
+- **Synthesizability as a first-class objective** (ADR-2026-08-08-04): grounding now
+  drives selection instead of being computed and discarded. Three defects fixed —
+  `_compute_score` never emitted the `grounding` key (so `loop.py` read a constant
+  0.0), `_check_building_block_grounding` had zero call sites, and
+  `_is_known_bb_precursor` matched bidirectionally without a size guard, making
+  every molecule containing a C=O look fully grounded. Grounding is now a
+  multiplicative tournament signal, a standalone NSGA-II objective, and a live
+  score penalty. On an adversarial pool (unmakeable molecules scored *higher*
+  than real solvents), junk selected drops 4/5 → 1/5 (tournament) and 0/5 (NSGA-II).
+- **Closed-loop efficacy proven** (ADR-2026-08-08-05): `benchmarks/benchmark_closed_loop.py`
+  measures ingest→refit on a frozen 30% holdout. Held-out MAE 0.779 → 0.636 eV
+  after 40 ingested measurements, robust to 0.3 eV noise. A permutation control
+  shows correct labels beat shuffled labels 9/10 splits (p=0.0013), so the gain
+  is learning rather than recalibration.
+- **Batch-diverse acquisition** (ADR-2026-08-08-06): `_diversify` now penalises
+  structural similarity within the proposed batch, not just repeated molecules
+  and properties. Batch redundancy 0.138 → 0.036 Tanimoto (random 0.071),
+  flipping the suggester from worse-than-random to better on 6/10 splits. The
+  accuracy edge still overlaps zero and is reported as unproven.
+- **xTB path repaired** (ADR-2026-08-08-09): the preferred quantum backend had
+  never executed — the output parser did not match xTB's real format, so the
+  oracle silently fell back to TOM. Fixed, plus an affine calibration onto the
+  DFT scale. Unseen LUMO MAE 0.863 → 0.366 eV, HOMO 1.791 → 0.539.
+  Measured throughput on M5 Pro: TOM 302 mol/s, xTB 15 mol/s serial,
+  **42 mol/s at 8 threads** (2.5× speedup; 15 cores available).
+- **Dielectric** (ADR-2026-08-08-08): fixed a double-counted Kirkwood g mechanism
+  (ring-locking and soft association applied to the same dipole). Verified-set
+  MAE 3.654 → 3.258, ρ 0.930 → 0.934; commercial MAE 1.67, already inside the
+  <2.5 target. The proposed Onsager reaction-field term was implemented and
+  rejected on evidence: it double counts what g already absorbs (MAE → 14.08).
+- **LUMO upgrade halted, with evidence** (ADR-2026-08-08-07): a planned Δ-learning
+  layer targeting unseen ρ>0.70 was cancelled after measurement showed the target
+  is provenance-confounded — a citation-only predictor scores ρ=0.84 where no
+  physics or ML model exceeds 0.09. `benchmarks/audit_label_confound.py` detects
+  this defect class across all datasets; the leakage benchmark now reports LUMO
+  explicitly instead of hiding it behind a pooled figure.
 - **LPM**: Lone-Pair Orbital Model replaces TOM for HOMO (ADR-2026-08-08-01)
 - **Active loop**: `aurelius suggest-experiment` with adaptive conformal, DoA, novelty, bias (ADR-2026-08-08-02)
 - **Tier-2.5**: Mandatory xTB single-point on Tier-1 survivors, ORCA for top decile (ADR-2026-08-08-02)
