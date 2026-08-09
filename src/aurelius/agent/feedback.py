@@ -454,8 +454,8 @@ class FeedbackController:
                 n = info["n_records"]
                 if prop == "dielectric":
                     rec = (
-                        f"_G_RING_LOCKED_DIPOLE" if direction == "overpredicted"
-                        else f"_G_HYDROGEN_BONDED"
+                        "_G_RING_LOCKED_DIPOLE" if direction == "overpredicted"
+                        else "_G_HYDROGEN_BONDED"
                     )
                     logger.warning(
                         "Systematic bias detected for %s: model %s by %.2f ε across "
@@ -464,8 +464,8 @@ class FeedbackController:
                     )
                 elif prop == "viscosity":
                     rec = (
-                        f"_VISCOSITY_ACTIVATION_FRACTION" if direction == "overpredicted"
-                        else f"_VISCOSITY_DISPERSION_COEFF"
+                        "_VISCOSITY_ACTIVATION_FRACTION" if direction == "overpredicted"
+                        else "_VISCOSITY_DISPERSION_COEFF"
                     )
                     logger.warning(
                         "Systematic bias detected for %s: model %s by %.2f cP across "

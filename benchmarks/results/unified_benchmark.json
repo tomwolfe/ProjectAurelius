@@ -1,0 +1,195 @@
+{
+  "orbital": {
+    "all": {
+      "tom": {
+        "n": 72,
+        "spearman_rho": 0.20438154762722485,
+        "mae": 1.3132134013705783
+      },
+      "lpm": {
+        "n": 72,
+        "spearman_rho": 0.5561061997466832,
+        "mae": 0.38546086292966564
+      }
+    },
+    "seen": {
+      "tom": {
+        "n": 27,
+        "spearman_rho": 0.5421606223316706,
+        "mae": 0.5163257704840766
+      },
+      "lpm": {
+        "n": 27,
+        "spearman_rho": 0.8486833403109245,
+        "mae": 0.24830967415547991
+      }
+    },
+    "unseen": {
+      "tom": {
+        "n": 45,
+        "spearman_rho": 0.17004700180008686,
+        "mae": 1.7913459799024793
+      },
+      "lpm": {
+        "n": 45,
+        "spearman_rho": 0.4319189473363715,
+        "mae": 0.46775157619417695
+      }
+    },
+    "experimental_ip": {
+      "lpm": {
+        "n": 88,
+        "spearman_rho": 0.93991951111468,
+        "mae": 0.31350594119269815,
+        "seconds": 0.0095
+      },
+      "tom": {
+        "n": 88,
+        "spearman_rho": 0.2555759990788422,
+        "mae": 3.7846883658929302,
+        "seconds": 0.0521
+      },
+      "n": 88,
+      "span_eV": 8.48,
+      "distinct_values": 81
+    }
+  },
+  "dielectric": {
+    "verified": {
+      "n": 55,
+      "spearman_rho": 0.9298508271863896,
+      "mae": 3.6538308960242647,
+      "seconds": 0.0196
+    },
+    "commercial": {
+      "n": 10,
+      "spearman_rho": 0.9878787878787878,
+      "mae": 1.8016356925763126
+    }
+  },
+  "bulk_properties": {
+    "dielectric": {
+      "n": 99,
+      "spearman_rho": 0.6641627217420779,
+      "mae": 7.186427453950568
+    },
+    "viscosity": {
+      "n": 98,
+      "spearman_rho": 0.5513395679775673,
+      "mae": 1.413897150411706
+    },
+    "donor_number": {
+      "n": 33,
+      "spearman_rho": 0.1885404131090909,
+      "mae": 18.625919135904297
+    }
+  },
+  "discovery": {},
+  "ml_baseline": {
+    "HOMO": {
+      "oracle_rho": 0.1096,
+      "oracle_p": 0.3596,
+      "rf_rho": 0.3872,
+      "rf_std": 0.3172,
+      "gap": -0.2776,
+      "n_valid": 72,
+      "oracle_wins": false
+    },
+    "LUMO": {
+      "oracle_rho": 0.5256,
+      "oracle_p": 0.0,
+      "rf_rho": 0.2947,
+      "rf_std": 0.2352,
+      "gap": 0.2309,
+      "n_valid": 72,
+      "oracle_wins": true
+    },
+    "Dielectric": {
+      "oracle_rho": 0.6395,
+      "oracle_p": 0.0,
+      "rf_rho": 0.6331,
+      "rf_std": 0.1392,
+      "gap": 0.0064,
+      "n_valid": 69,
+      "oracle_wins": true
+    },
+    "Viscosity": {
+      "oracle_rho": 0.633,
+      "oracle_p": 0.0,
+      "rf_rho": 0.4207,
+      "rf_std": 0.2293,
+      "gap": 0.2123,
+      "n_valid": 69,
+      "oracle_wins": true
+    },
+    "Donor Number": {
+      "oracle_rho": 0.2993,
+      "oracle_p": 0.1294,
+      "rf_rho": 0.3726,
+      "rf_std": 0.3684,
+      "gap": -0.0733,
+      "n_valid": 27,
+      "oracle_wins": false
+    }
+  },
+  "mixtures": {
+    "tested": 7,
+    "valid": 7,
+    "properties": {
+      "dielectric_proxy": [
+        42.3271,
+        42.1671,
+        81.522,
+        79.5088,
+        20.0014,
+        60.0899,
+        66.8027
+      ],
+      "viscosity_proxy": [
+        0.8593,
+        0.9336,
+        1.9531,
+        2.2921,
+        1.1033,
+        1.9462,
+        1.6139
+      ],
+      "li_solvation_proxy": [
+        2.5778,
+        2.6059,
+        2.8758,
+        2.6438,
+        2.096,
+        2.8818,
+        2.5172
+      ],
+      "homo_eV": [
+        -7.8094,
+        -7.7174,
+        -7.711,
+        -7.604,
+        -8.322,
+        -7.5384,
+        -8.2012
+      ],
+      "lumo_eV": [
+        -0.6287,
+        -0.6339,
+        -0.7841,
+        -0.8354,
+        0.199,
+        -0.1119,
+        -0.2608
+      ],
+      "synergy_bonus": [
+        6.0,
+        6.0,
+        0.0,
+        0.0,
+        6.0,
+        0.0,
+        6.0
+      ]
+    }
+  }
+}

@@ -1304,3 +1304,114 @@ def mixture_synergy_bonus(
     score += non_ideal
 
     return min(max(0.0, score), 6.0)
+
+
+# ---------------------------------------------------------------------------
+# Miscibility Gate — Regular-Solution Theory (Hildebrand/Scatchard-Hildebrand)
+# ---------------------------------------------------------------------------
+# Lightweight miscibility check for electrolyte mixtures. Uses estimated
+# Hildebrand solubility parameters from structure (GC fragments + molar volume).
+# Immiscible pairs lose synergy or are rejected. No UNIFAC/COSMO-RS needed.
+
+
+def _estimate_solubility_parameter(ctx: MoleculeContext) -> float:
+    """Estimate Hildebrand solubility parameter δ (MPa^0.5) from GC fragments.
+
+    δ ≈ sqrt(cohesive energy density). We approximate using fragment
+    contributions to δ and molecular properties from the MoleculeContext.
+
+    Typical values for electrolytes:
+    - Carbonates (EC, PC): δ ~ 22-24 MPa^0.5
+    - Linear carbonates: δ ~ 18-20 MPa^0.5
+    - Ethers (DME, THF): δ ~ 17-19 MPa^0.5
+    - Nitriles (ACN): δ ~ 24 MPa^0.5
+    - Sulfones: δ ~ 22 MPa^0.5
+    - Hydrocarbons: δ ~ 15-17 MPa^0.5
+    """
+    mol = ctx.mol
+    mw = ctx.mw
+    n_atoms = mol.GetNumAtoms()
+
+    base_delta = 17.0 + 3.0 * (n_atoms / max(mw, 1.0))
+
+    delta_corr = 0.0
+    if ctx.has_fragment("carbonate"):
+        if ctx.has_fragment("cyclic_carbonate"):
+            delta_corr += 5.0
+        else:
+            delta_corr += 2.0
+    if ctx.has_fragment("ether"):
+        delta_corr += 1.5
+    if ctx.has_fragment("nitrile"):
+        delta_corr += 4.0
+    if ctx.has_fragment("sulfone"):
+        delta_corr += 3.0
+    if ctx.has_fragment("sulfoxide"):
+        delta_corr += 2.5
+    if ctx.has_fragment("fluorinated"):
+        delta_corr += 1.0
+    if ctx.has_fragment("phosphate"):
+        delta_corr += 3.0
+
+    return min(max(base_delta + delta_corr, 14.0), 28.0)
+
+
+def check_mixture_miscibility(
+    components: list[MoleculeContext],
+    fracs: list[float],
+    threshold: float = 4.0,
+) -> tuple[bool, float, str]:
+    """Check miscibility of a mixture using regular-solution theory.
+
+    Two components i,j are miscible if |δ_i - δ_j| < threshold.
+    For multi-component mixtures, check all pairs.
+
+    Physical justification: The regular-solution model predicts
+    miscibility when the exchange energy is small compared to RT.
+    The Flory-Huggins χ parameter ≈ V_m * (δ_i - δ_j)^2 / RT.
+    For small molecules, |δ_i - δ_j| < 3-4 MPa^0.5 typically means
+    full miscibility; >7 means phase separation.
+    """
+    n = len(components)
+    if n < 2:
+        return True, 0.0, "single component"
+
+    deltas = [_estimate_solubility_parameter(c) for c in components]
+
+    max_diff = 0.0
+    worst_pair = None
+    for i in range(n):
+        for j in range(i + 1, n):
+            diff = abs(deltas[i] - deltas[j])
+            if diff > max_diff:
+                max_diff = diff
+                worst_pair = (i, j)
+
+    if max_diff <= threshold:
+        return True, max_diff, f"miscible (max Δδ={max_diff:.1f} < {threshold})"
+    else:
+        i, j = worst_pair
+        return False, max_diff, f"immiscible: components {i},{j} Δδ={max_diff:.1f} > {threshold}"
+
+
+def apply_miscibility_gate(
+    score: float,
+    synergy_bonus: float,
+    is_miscible: bool,
+    max_delta_diff: float,
+    threshold: float = 4.0,
+) -> tuple[float, float, str]:
+    """Apply miscibility gate to mixture score and synergy.
+
+    Immiscible mixtures lose synergy bonus and suffer score penalty.
+    """
+    if is_miscible:
+        return score, synergy_bonus, "miscible"
+
+    excess = max_delta_diff - threshold
+    penalty_factor = max(0.2, 1.0 - excess / 5.0)
+
+    adjusted_synergy = synergy_bonus * 0.1
+    adjusted_score = score * penalty_factor
+
+    return adjusted_score, adjusted_synergy, f"immiscible penalty (Δδ={max_delta_diff:.1f})"

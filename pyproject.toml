@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aurelius"
-version = "11.0.0"
+version = "12.0.0"
 description = "Project Aurelius - Evolutionary Algorithm screening pipeline with hybrid quantum/GC oracle and Gaussian penalty objective."
 readme = "README.md"
 license = {text = "MIT"}

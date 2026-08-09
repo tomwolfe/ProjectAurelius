@@ -1,4 +1,4 @@
-"""Project Aurelius v11.0 - Evolutionary Algorithm Discovery CLI.
+"""Project Aurelius v12.0 - Evolutionary Algorithm Discovery CLI.
 
 Usage:
     aurelius init                    Initialize pipeline
@@ -39,9 +39,9 @@ def _make_pipeline() -> AureliusPipeline:
 
 
 @click.group()
-@click.version_option(version="11.0.0", prog_name="Aurelius")
+@click.version_option(version="12.0.0", prog_name="Aurelius")
 def cli() -> None:
-    """Project Aurelius v11.0 - Evolutionary Algorithm Discovery Release.
+    """Project Aurelius v12.0 - Evolutionary Algorithm Discovery Release.
 
     Computational chemistry screening pipeline for battery electrolyte discovery.
     Hybrid quantum + fragment-additivity oracle for physically valid screening.
@@ -51,7 +51,7 @@ def cli() -> None:
 
 @cli.command()
 def init() -> None:
-    """Initialize the Aurelius v10.0 pipeline."""
+    """Initialize the Aurelius v12.0 pipeline."""
     _make_pipeline()
     click.echo("\nPipeline initialized successfully.")
 
@@ -215,13 +215,13 @@ def batch(
 def score(
     smiles: str,
 ) -> None:
-    """Compute the Aurelius v10.0 score for a molecule (quick mode)."""
+    """Compute the Aurelius v12.0 score for a molecule (quick mode)."""
     pipeline = _make_pipeline()
     results = pipeline.screen_smiles(smiles)
 
     score = results.get("score", {})
     if score:
-        click.echo(f"\nAurelius Score v10.0: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
+        click.echo(f"\nAurelius Score v12.0: {score.get('total_score', 0.0):.1f}/100 {'VIABLE' if score.get('is_viable', False) else 'REJECTED'}")
 
 
 @cli.command("predict")
@@ -528,7 +528,7 @@ def evaluate_cmd(
         score = results.get("score", {})
         total = score.get("total_score", 0.0)
         viable = score.get("is_viable", False)
-        click.echo(f"\nAurelius Score v10.0: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}")
+        click.echo(f"\nAurelius Score v12.0: {total:.1f}/100 {'VIABLE' if viable else 'REJECTED'}")
     except Exception as e:
         click.echo(f"[Aurelius Pipeline] Evaluation failed: {e}", err=True)
         sys.exit(1)
@@ -552,7 +552,7 @@ def validate_cmd(
     sub_scores = score.get("sub_scores", {})
 
     click.echo(f"\n{'=' * 56}")
-    click.echo("  Project Aurelius v11.0 — Validate")
+    click.echo("  Project Aurelius v12.0 — Validate")
     click.echo(f"  SMILES: {smiles}")
     click.echo(f"{'=' * 56}")
     click.echo(f"  {'Objective':<28} {'Raw':>8} {'Weight':>8} {'SubScore':>8}")

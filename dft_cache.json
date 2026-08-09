@@ -1,0 +1,7 @@
+{
+  "COC(=O)OC": {
+    "dft_grounding_score": 1.0,
+    "dft_final_energy_eV": NaN,
+    "dft_method": "xTB unavailable (dft_grounding_score defaulted to 1.0)"
+  }
+}

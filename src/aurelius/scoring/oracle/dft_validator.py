@@ -23,6 +23,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import subprocess
 import tempfile
 import warnings
@@ -282,9 +283,6 @@ class DFTValidator:
             "p_lumo": round(p_l, 4),
             "n_validated": len(valid_scores),
         }
-
-
-import re
 
 
 _DFT_GEOM_CACHE: dict[str, dict[str, float]] = {}

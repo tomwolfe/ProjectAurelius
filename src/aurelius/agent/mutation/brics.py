@@ -254,29 +254,90 @@ def _cached_retrosynthetic_depth(smiles: str) -> int:
     return current_depth  # Return max depth if not converged
 
 
+def _direct_precursor_match(mol: Chem.Mol) -> tuple[bool, float]:
+    """Check if molecule directly matches any commercial precursor.
+
+    Returns:
+        (matched, confidence) where confidence ∈ [0, 1] reflects the
+        quality of the best substructure/superset match.
+    """
+    if mol is None or not BB_MOLS:
+        return False, 0.0
+
+    best_confidence = 0.0
+    n_atoms = mol.GetNumHeavyAtoms()
+
+    for bb in BB_MOLS:
+        bb_atoms = bb.GetNumHeavyAtoms()
+        if n_atoms == 0:
+            continue
+
+        if mol.HasSubstructMatch(bb):
+            overlap = len(bb.GetSubstructMatch(mol)) if mol.HasSubstructMatch(bb) else bb_atoms
+            confidence = overlap / max(n_atoms, 1)
+            best_confidence = max(best_confidence, confidence)
+            if confidence >= 0.95:
+                return True, confidence
+
+        elif bb.HasSubstructMatch(mol):
+            overlap = len(mol.GetSubstructMatch(bb))
+            confidence = overlap / max(bb_atoms, 1)
+            best_confidence = max(best_confidence, confidence)
+            if confidence >= 0.95:
+                return True, confidence
+
+    return best_confidence > 0.3, best_confidence
+
+
+def _compute_route_confidence(mol: Chem.Mol) -> float:
+    """Compute route confidence from precursor availability and template depth.
+
+    Combines:
+      - Direct precursor match quality (substructure overlap)
+      - Retrosynthetic depth (shallower = more confident)
+      - BRICS fragment precursor coverage
+
+    Returns confidence in [0, 1].
+    """
+    from aurelius.agent.mutation.retrosynthetic import (
+        _cached_retrosynthetic_depth,
+    )
+
+    smiles = Chem.MolToSmiles(mol)
+    depth = _cached_retrosynthetic_depth(smiles)
+    _, direct_conf = _direct_precursor_match(mol)
+    brics_cov = brics_building_block_coverage(mol)
+
+    # Depth confidence: depth 1 → 1.0, depth 5 → 0.5, linear in between
+    depth_conf = max(0.5, 1.0 - 0.125 * (depth - 1))
+
+    # Blend: equal weight to direct match and depth-adjusted BRICS coverage
+    route_conf = 0.5 * direct_conf + 0.5 * depth_conf * brics_cov
+
+    return min(max(route_conf, 0.0), 1.0)
+
+
 def combined_grounding_score(mol: Chem.Mol) -> float:
-    """Combined grounding score: weighted blend of BRICS coverage and template-based synthesis feasibility.
+    """Combined grounding score: weighted blend of BRICS coverage, template feasibility,
+    and route confidence.
 
-    Uses a weighted combination of BRICS building-block coverage
-    and template-based synthesis feasibility:
-      0.4 × BRICS_coverage + 0.6 × template_feasibility
+    Uses a weighted combination:
+      0.35 × BRICS_coverage + 0.30 × template_feasibility + 0.35 × route_confidence
 
-    The template feasibility component checks the molecule's
-    BRICS fragments against known reaction SMARTS templates for
-    core electrolyte transformations (carbonate formation, ether
-    alkylation, nitrile substitution, sulfone coupling,
-    fluorination, etc.).
+    Route confidence blends direct commercial precursor matching quality,
+    retrosynthetic depth (shallower = more confident), and BRICS fragment
+    coverage into a single [0, 1] score.
 
     Physical justification: BRICS fragment matching alone
     overestimates synthesizability for molecules whose fragments
     are not commercially available but whose synthetic routes are
     well-precedented. Template-based feasibility captures this
     by checking whether the molecule's disconnections match
-    known reaction templates. The 0.4/0.6 weighting prioritizes
-    template feasibility because a molecule with a novel BRICS
-    scaffold but well-known synthetic routes is more likely to be
-    practically synthesizable than one with commercial fragments
-    but no clear route.
+    known reaction templates. Route confidence adds a direct
+    check against the commercial precursor database and rewards
+    shallow retrosynthetic trees. The 0.35/0.30/0.35 weighting
+    keeps all three grounded in distinct physical signals while
+    prioritising the two precursor-based signals equally.
 
     ADR-2026-08-07-05: Depth-dependent penalty now follows the
     safe synthesibility form mandated by the Net Progress simplicity gate:
@@ -287,16 +348,24 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
     replaced by this closed form, halving the per-call branch count and
     reducing architectural surface for the Net Progress test.
 
+    ADR-2026-08-08-01: Added route confidence component (0.35 weight).
+    This captures the direct alignment between the candidate structure and
+    commercially available building blocks, independent of BRICS fragment
+    decomposition. Molecules with high direct precursor overlap are more
+    likely to be real, synthesizable compounds rather than Frankenstein
+    assemblies.
+
     Returns: score in [0, 1] where 1.0 = perfect synthesizability.
     """
     brics_cov = brics_building_block_coverage(mol)
     from aurelius.agent.mutation.retrosynthetic import compute_synthesis_feasibility
     template_feas = compute_synthesis_feasibility(mol)
     depth = brics_retrosynthetic_depth(mol)
+    route_conf = _compute_route_confidence(mol)
 
     depth_penalty_factor = max(0.5, 1.0 - 0.1 * (depth - 1))
 
-    return (0.4 * brics_cov + 0.6 * template_feas) * depth_penalty_factor
+    return (0.35 * brics_cov + 0.30 * template_feas + 0.35 * route_conf) * depth_penalty_factor
 
 
 # ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from rdkit import Chem
@@ -215,6 +215,44 @@ class MoleculeContext:
             if z in counts:
                 counts[z] += 1
         return counts
+
+    _FRAGMENT_SMARTS: ClassVar[dict[str, str]] = {
+        "carbonate": "[CX3](=[OX1])[OX2][CX3](=[OX1])",
+        "cyclic_carbonate": "[CX3;R](=[OX1])[OX2;R][CX3;R](=[OX1])",
+        "ether": "[OD2;!r]([!#1;!#6])[!#1;!#6]",
+        "nitrile": "[NX1]#[CX2]",
+        "sulfone": "[SD4](=O)(=O)",
+        "sulfoxide": "[SD3]=O",
+        "fluorinated": "[F]",
+        "phosphate": "[PX4](=O)([O-])[O-]",
+        "alcohol": "[OX2H]",
+        "amide": "[CX3](=N)[OX2]",
+        "sulfonyl": "[SD3+2](=O)[O-]",
+    }
+
+    @cached_property
+    def _fragment_patterns(self) -> dict[str, Chem.Mol]:
+        return {
+            name: Chem.MolFromSmarts(smarts)
+            for name, smarts in self._FRAGMENT_SMARTS.items()
+            if Chem.MolFromSmarts(smarts) is not None
+        }
+
+    def has_fragment(self, fragment_name: str) -> bool:
+        """Check if this molecule contains a given functional group fragment.
+
+        Args:
+            fragment_name: Key into _FRAGMENT_SMARTS (e.g. "carbonate",
+                           "ether", "nitrile", "sulfone", "sulfoxide",
+                           "fluorinated", "phosphate", "cyclic_carbonate")
+
+        Returns:
+            True if the fragment is present, False if absent or unknown.
+        """
+        pattern = self._fragment_patterns.get(fragment_name)
+        if pattern is None:
+            return False
+        return self.mol.HasSubstructMatch(pattern)
 
 
 # ---------------------------------------------------------------------------
