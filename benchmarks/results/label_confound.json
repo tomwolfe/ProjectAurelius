@@ -1,0 +1,96 @@
+{
+  "results": [
+    {
+      "target": "homo_eV",
+      "n": 72,
+      "n_sources": 22,
+      "label_std": 0.41880700275372135,
+      "citation_rho": 0.6671,
+      "citation_mae": 0.2277,
+      "within_source_var": 0.11979,
+      "between_source_var": 0.07895,
+      "between_source_fraction": 0.3973,
+      "confounded": true,
+      "file": "external_property_benchmark.json"
+    },
+    {
+      "target": "lumo_eV",
+      "n": 72,
+      "n_sources": 22,
+      "label_std": 0.6180723312330059,
+      "citation_rho": 0.7719,
+      "citation_mae": 0.2408,
+      "within_source_var": 0.08964,
+      "between_source_var": 0.20305,
+      "between_source_fraction": 0.6937,
+      "confounded": true,
+      "file": "external_property_benchmark.json"
+    },
+    {
+      "target": "dielectric_constant",
+      "n": 99,
+      "n_sources": 25,
+      "label_std": 14.971669658022247,
+      "citation_rho": 0.737,
+      "citation_mae": 5.9271,
+      "within_source_var": 67.59819,
+      "between_source_var": 77.27109,
+      "between_source_fraction": 0.5334,
+      "confounded": true,
+      "file": "external_property_benchmark.json"
+    },
+    {
+      "target": "viscosity_cP",
+      "n": 98,
+      "n_sources": 25,
+      "label_std": 3.1677376695270145,
+      "citation_rho": 0.5794,
+      "citation_mae": 0.5994,
+      "within_source_var": 1.06471,
+      "between_source_var": 0.74416,
+      "between_source_fraction": 0.4114,
+      "confounded": true,
+      "file": "external_property_benchmark.json"
+    },
+    {
+      "target": "homo_eV",
+      "n": 115,
+      "n_sources": 53,
+      "label_std": 0.44173228341150195,
+      "citation_rho": 0.7138,
+      "citation_mae": 0.1608,
+      "within_source_var": 0.09301,
+      "between_source_var": 0.07468,
+      "between_source_fraction": 0.4454,
+      "confounded": true,
+      "file": "orbital_calibration.json"
+    },
+    {
+      "target": "lumo_eV",
+      "n": 115,
+      "n_sources": 53,
+      "label_std": 0.6923869019039617,
+      "citation_rho": 0.6798,
+      "citation_mae": 0.2648,
+      "within_source_var": 0.21835,
+      "between_source_var": 0.19811,
+      "between_source_fraction": 0.4757,
+      "confounded": true,
+      "file": "orbital_calibration.json"
+    },
+    {
+      "target": "ip_eV",
+      "n": 88,
+      "n_sources": 1,
+      "label_std": 1.4288265102107365,
+      "citation_rho": 0.0,
+      "citation_mae": 1.0462,
+      "within_source_var": 2.04155,
+      "between_source_var": 0.0,
+      "between_source_fraction": 0.0,
+      "confounded": false,
+      "note": "single measurement source (1); provenance carries no signal",
+      "file": "experimental_ionization.json"
+    }
+  ]
+}
