@@ -103,6 +103,49 @@ def orbital_label_benchmark() -> dict:
     return out
 
 
+def lumo_label_benchmark() -> dict:
+    """Score raw and Δ-corrected TOM LUMO, split by calibration overlap.
+
+    LUMO was previously absent from this report, so the pooled "rho ~ 0.5"
+    figure went unchallenged. Split honestly it is 0.94 on molecules whose
+    labels are duplicated between the two files and 0.06 on everything else.
+
+    Note the ranking numbers here are not trustworthy in either direction:
+    ``audit_label_confound.py`` shows 69% of the unseen LUMO variance is
+    between-source, and a citation-only predictor scores rho = 0.84. MAE is
+    the defensible metric for this target (ADR-2026-08-08-07).
+    """
+    from aurelius.scoring.oracle.delta_correction import get_delta_correction
+
+    calibration = {_canonical(e["smiles"]) for e in _load("orbital_calibration.json")}
+    rows = []
+    for entry in _load("external_property_benchmark.json"):
+        if entry.get("lumo_eV") is None:
+            continue
+        canonical = _canonical(entry["smiles"])
+        if canonical is None:
+            continue
+        rows.append((canonical, entry["lumo_eV"], canonical in calibration))
+
+    mols = [Chem.MolFromSmiles(s) for s, _, _ in rows]
+    ref = np.array([v for _, v, _ in rows])
+    seen = np.array([s for _, _, s in rows])
+
+    _, tom_lumo = predict_tom_orbitals_batch(mols)
+    delta = get_delta_correction()
+    corrected = np.array([delta.predict_corrected(m)[1] for m in mols])
+
+    out: dict = {}
+    for label, mask in (("all", np.ones(len(ref), bool)), ("seen", seen), ("unseen", ~seen)):
+        if mask.sum() < 5:
+            continue
+        out[label] = {
+            "tom": _metrics(tom_lumo[mask], ref[mask]),
+            "delta": _metrics(corrected[mask], ref[mask]),
+        }
+    return out
+
+
 def experimental_ip_benchmark() -> dict:
     """Score both models against experimental gas-phase ionisation energies."""
     entries = _load("experimental_ionization.json")
@@ -131,13 +174,15 @@ def experimental_ip_benchmark() -> dict:
     }
 
 
-def _print_pair(title: str, block: dict) -> None:
+def _print_pair(title: str, block: dict, second: str = "lpm") -> None:
+    name = second.upper()
     print(f"\n{title}")
-    print(f"  {'split':10s} {'n':>4s}  {'TOM rho':>9s} {'TOM MAE':>9s}  {'LPM rho':>9s} {'LPM MAE':>9s}")
+    print(f"  {'split':10s} {'n':>4s}  {'TOM rho':>9s} {'TOM MAE':>9s}  "
+          f"{name + ' rho':>9s} {name + ' MAE':>9s}")
     for split, models in block.items():
-        tom, lpm = models["tom"], models["lpm"]
+        tom, other = models["tom"], models[second]
         print(f"  {split:10s} {tom['n']:4d}  {tom['spearman_rho']:+9.3f} {tom['mae_eV']:9.3f}"
-              f"  {lpm['spearman_rho']:+9.3f} {lpm['mae_eV']:9.3f}")
+              f"  {other['spearman_rho']:+9.3f} {other['mae_eV']:9.3f}")
 
 
 def main() -> int:
@@ -156,6 +201,19 @@ def main() -> int:
         print(f"\n  TOM leakage gap (seen - unseen): {gap:+.3f}")
         print("  Any headline computed over 'all' is inflated by this gap.")
 
+    lumo = lumo_label_benchmark()
+    _print_pair("DFT LUMO labels (raw TOM vs delta-corrected)", lumo, second="delta")
+    if "seen" in lumo and "unseen" in lumo:
+        print(
+            f"\n  Delta-corrected LUMO: seen rho "
+            f"{lumo['seen']['delta']['spearman_rho']:+.3f} vs unseen "
+            f"{lumo['unseen']['delta']['spearman_rho']:+.3f}"
+        )
+        print("  26/27 'seen' molecules have byte-identical labels in both files,")
+        print("  so the seen figure is recall of duplicated numbers, not skill.")
+        print("  Unseen LUMO rho is provenance-confounded (citation-only rho = 0.84);")
+        print("  see audit_label_confound.py. Use MAE, not rho, for this target.")
+
     ips = experimental_ip_benchmark()
     print("\nExperimental gas-phase ionisation energies (NIST, no leakage)")
     print(f"  n = {ips['lpm']['n']}, span {ips['label_span_eV']} eV, "
@@ -165,7 +223,7 @@ def main() -> int:
         m = ips[name]
         print(f"  {name.upper():6s} {m['spearman_rho']:+9.3f} {m['mae_eV']:10.3f} {m['seconds']:9.4f}")
 
-    results = {"orbital_labels": labels, "experimental_ip": ips}
+    results = {"orbital_labels": labels, "lumo_labels": lumo, "experimental_ip": ips}
     if args.json:
         with open(args.json, "w") as fh:
             json.dump(results, fh, indent=2)

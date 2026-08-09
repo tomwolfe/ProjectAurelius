@@ -35,6 +35,12 @@ dependencies:
   # RDKit (from conda-forge for Apple Silicon compatibility)
   - rdkit=2024.09.6
 
+  # Semi-empirical QM. Optional at runtime -- the oracle degrades to the
+  # Lone-Pair / Topological orbital models when absent -- but preferred when
+  # present. Invoked via subprocess, so it is Python-version independent:
+  #   conda install -c conda-forge xtb
+  - xtb>=6.7
+
   # Development / testing
   - pytest=8.0.0
   - pytest-cov=4.1.0

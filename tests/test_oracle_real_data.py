@@ -185,10 +185,25 @@ def test_tpsa_capped_dielectric_prevents_stacking(oracle: PropertyOracle) -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_quantum_oracle_method_is_tom() -> None:
-    """Without xTB binary, QuantumOracle should use TOM fallback."""
+def test_quantum_oracle_method_matches_environment() -> None:
+    """The reported method must reflect what is actually installed.
+
+    Previously this asserted TOM unconditionally, which silently encoded
+    "xTB is never available" as an invariant. That assumption held only
+    because the xTB output parser never matched real xTB output
+    (ADR-2026-08-08-09), so the oracle fell back even when the binary was
+    present. With the parser fixed, the correct assertion is that the
+    method tracks the environment.
+    """
+    from aurelius.scoring.oracle.quantum import has_xtb
+
     qc = QuantumOracle(use_xtb=True)
-    assert "TOM" in qc.method
+    if has_xtb():
+        assert "xTB" in qc.method, (
+            f"xTB is installed but oracle reports {qc.method!r}"
+        )
+    else:
+        assert "TOM" in qc.method
 
 
 def test_quantum_oracle_tom_is_deterministic() -> None:
@@ -457,3 +472,78 @@ def test_viscosity_batch_requires_contexts() -> None:
             np.zeros(2, dtype=np.int32),
             np.zeros(2, dtype=np.int32),
         )
+
+
+# ---------------------------------------------------------------------------
+# xTB output parsing (ADR-2026-08-08-09)
+# ---------------------------------------------------------------------------
+
+
+def test_parses_real_xtb_orbital_table() -> None:
+    """The parser must read the format xTB actually emits.
+
+    Regression guard for a silent failure: the patterns expected
+    ``HOMO : -11.88 eV``, but xTB prints the eV value *before* a
+    parenthesised label. Every parse therefore returned None and the oracle
+    fell back to TOM even where xTB was installed and had run successfully —
+    the "preferred" quantum path had never once executed end to end.
+    """
+    from aurelius.scoring.oracle.quantum import _parse_xtb_output
+
+    real_output = """
+          -------------------------------------------------
+         #    Occupation            Energy/Eh            Energy/eV
+      -------------------------------------------------------------
+        18        2.0000           -0.4366081             -11.8807 (HOMO)
+        19                         -0.2475871              -6.7372 (LUMO)
+      -------------------------------------------------------------
+molecular dipole:
+                 x           y           z       tot (Debye)
+ q only:       -0.200       1.579      -0.515
+   full:       -0.164       1.622      -0.960       4.809
+"""
+    parsed = _parse_xtb_output(real_output)
+    assert parsed is not None, "parser must handle real xTB output"
+    assert parsed["homo_eV"] == pytest.approx(-11.8807)
+    assert parsed["lumo_eV"] == pytest.approx(-6.7372)
+    assert parsed["dipole_D"] == pytest.approx(4.809), (
+        "dipole must be the total magnitude, not a signed component"
+    )
+
+
+def test_xtb_calibration_maps_onto_dft_scale() -> None:
+    """Raw GFN2-xTB eigenvalues must be mapped onto the DFT reference scale.
+
+    Tight-binding orbital energies sit ~4 eV (HOMO) and ~6 eV (LUMO) below
+    the B3LYP-style labels the scoring function is tuned against. Feeding raw
+    values in drives every molecule into the physical-bounds clamp and
+    collapses the score (EC fell 89.1 -> 67.3).
+    """
+    from aurelius.scoring.oracle.quantum import _calibrate_xtb_orbitals
+
+    raw = {"homo_eV": -11.8807, "lumo_eV": -6.7372, "dipole_D": 4.809}
+    out = _calibrate_xtb_orbitals(raw)
+
+    assert -12.0 < out["homo_eV"] < -3.0, (
+        f"calibrated HOMO {out['homo_eV']:.3f} outside physical bounds"
+    )
+    assert -5.0 < out["lumo_eV"] < 5.0, (
+        f"calibrated LUMO {out['lumo_eV']:.3f} outside physical bounds"
+    )
+    assert out["dipole_D"] == raw["dipole_D"], "calibration must not touch the dipole"
+
+
+def test_xtb_calibration_is_rank_preserving() -> None:
+    """The map is affine, so it cannot alter rank order.
+
+    Guards against someone replacing it with a non-monotone "correction"
+    that would silently change which molecules the EA prefers.
+    """
+    from aurelius.scoring.oracle.quantum import _calibrate_xtb_orbitals
+
+    raw_values = [-13.5, -11.9, -10.2, -9.4]
+    calibrated = [
+        _calibrate_xtb_orbitals({"homo_eV": v, "lumo_eV": v})["homo_eV"]
+        for v in raw_values
+    ]
+    assert calibrated == sorted(calibrated), "calibration must be monotone increasing"

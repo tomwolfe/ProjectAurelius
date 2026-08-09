@@ -193,27 +193,92 @@ def _run_xtb(xyz_content: str, workdir: str | None = None) -> dict[str, float] |
     return _parse_xtb_output(output)
 
 
-_XTB_HOMO_RE = re.compile(r"HOMO\s*:\s*([-+]?\d+\.?\d*)\s*eV")
-_XTB_LUMO_RE = re.compile(r"LUMO\s*:\s*([-+]?\d+\.?\d*)\s*eV")
+# xTB prints frontier orbitals in its orbital-energy table as
+#
+#         18        2.0000           -0.4366081             -11.8807 (HOMO)
+#         19                         -0.2475871              -6.7372 (LUMO)
+#
+# i.e. the eV value precedes a parenthesised label. The previous patterns
+# expected ``HOMO : -11.88 eV``, a format xTB does not emit, so every parse
+# failed and the oracle silently fell back to TOM even where xTB was
+# installed and had run successfully (ADR-2026-08-08-09).
+_XTB_HOMO_RE = re.compile(r"([-+]?\d+\.\d+)\s*\(HOMO\)")
+_XTB_LUMO_RE = re.compile(r"([-+]?\d+\.\d+)\s*\(LUMO\)")
+
+# Legacy/alternate form, kept so a future xTB release that adopts the
+# ``HOMO: x eV`` style still parses.
+_XTB_HOMO_LABELLED_RE = re.compile(r"HOMO\s*:\s*([-+]?\d+\.?\d*)\s*eV")
+_XTB_LUMO_LABELLED_RE = re.compile(r"LUMO\s*:\s*([-+]?\d+\.?\d*)\s*eV")
+
+# "   full:       -0.164       1.622      -0.960       4.809"
+# The first three columns are the x/y/z components (signed); the fourth is the
+# total magnitude in Debye, which is what we want. Anchored to the end of the
+# line so a signed component can never be captured instead.
+_XTB_DIPOLE_RE = re.compile(
+    r"^\s*full:\s+\S+\s+\S+\s+\S+\s+([-+]?\d+\.\d+)\s*$", re.MULTILINE
+)
+
+
+def _search_float(patterns: tuple[re.Pattern[str], ...], output: str) -> float | None:
+    """Return the last match of the first pattern that hits, as a float.
+
+    The last match is taken because xTB prints the orbital table twice (once
+    during the SCF and once in the final summary); both carry the same value,
+    and the summary is authoritative.
+    """
+    for pattern in patterns:
+        matches = pattern.findall(output)
+        if matches:
+            return float(matches[-1])
+    return None
+
+
+# Affine map from raw GFN2-xTB orbital energies onto the DFT reference scale
+# the rest of the pipeline is calibrated against (ADR-2026-08-08-09).
+#
+# GFN2-xTB is a tight-binding method: its orbital eigenvalues are internally
+# consistent and rank molecules well, but they are not on the same absolute
+# scale as the B3LYP-style labels in ``orbital_calibration.json``. Measured
+# over those 115 molecules the offset is -4.09 eV (HOMO) and -5.96 eV (LUMO).
+# Feeding raw values into a scoring function tuned for the DFT scale drives
+# every molecule into the ``_PHYSICAL_BOUNDS`` clamp
+# (HOMO >= -12, LUMO >= -5) and collapses the score: EC fell 89.1 -> 67.3.
+#
+# Coefficients are ordinary least squares on those 115 molecules. Under
+# 5-fold CV the calibrated values give HOMO MAE 0.246 eV (raw TOM: 0.948) and
+# LUMO MAE 0.483 (TOM: 0.719), with rank preserved -- an affine map cannot
+# change Spearman rho, so this is purely a change of units, not a fit to
+# ranking.
+_XTB_HOMO_CALIBRATION: tuple[float, float] = (0.331, -3.640)
+_XTB_LUMO_CALIBRATION: tuple[float, float] = (0.152, 0.843)
+
+
+def _calibrate_xtb_orbitals(result: dict[str, float]) -> dict[str, float]:
+    """Map raw GFN2-xTB orbital energies onto the DFT reference scale."""
+    homo_a, homo_b = _XTB_HOMO_CALIBRATION
+    lumo_a, lumo_b = _XTB_LUMO_CALIBRATION
+    calibrated = dict(result)
+    calibrated["homo_eV"] = homo_a * result["homo_eV"] + homo_b
+    calibrated["lumo_eV"] = lumo_a * result["lumo_eV"] + lumo_b
+    return calibrated
 
 
 def _parse_xtb_output(output: str) -> dict[str, float] | None:
     """Parse xTB output text for HOMO, LUMO, and dipole moment."""
-    homo_match = _XTB_HOMO_RE.search(output)
-    lumo_match = _XTB_LUMO_RE.search(output)
+    homo = _search_float((_XTB_HOMO_RE, _XTB_HOMO_LABELLED_RE), output)
+    lumo = _search_float((_XTB_LUMO_RE, _XTB_LUMO_LABELLED_RE), output)
 
-    if homo_match and lumo_match:
-        homo = float(homo_match.group(1))
-        lumo = float(lumo_match.group(1))
-        logger.info("QuantumOracle (xTB): HOMO=%.3f eV, LUMO=%.3f eV", homo, lumo)
-        return {
-            "homo_eV": homo,
-            "lumo_eV": lumo,
-            "dipole_D": 0.0,
-        }
+    if homo is None or lumo is None:
+        logger.debug("Could not parse HOMO/LUMO from xTB output")
+        return None
 
-    logger.debug("Could not parse HOMO/LUMO from xTB output")
-    return None
+    dipole = _search_float((_XTB_DIPOLE_RE,), output)
+    logger.info("QuantumOracle (xTB): HOMO=%.3f eV, LUMO=%.3f eV", homo, lumo)
+    return {
+        "homo_eV": homo,
+        "lumo_eV": lumo,
+        "dipole_D": dipole if dipole is not None else 0.0,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -912,6 +977,7 @@ class QuantumOracle:
             if result is not None:
                 self._n_xtb_calls += 1
                 used_xtb = True
+                result = _calibrate_xtb_orbitals(result)
             else:
                 logger.warning("QuantumOracle: xTB calculation failed — falling back to TOM.")
 
