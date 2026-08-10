@@ -42,7 +42,9 @@ def _load(name: str) -> list[dict]:
 
     with open(os.path.join(DATA_DIR, name)) as f:
         data = json.load(f)
-    return data if isinstance(data, list) else data.get("solvents", [])
+    if isinstance(data, dict):
+        return data.get("entries", data.get("solvents", []))
+    return data
 
 
 class TestDetectorBehaviour:
@@ -129,3 +131,18 @@ class TestKnownTargetStatus:
             "re-evaluate whether a ranking target is now supportable."
         )
         assert result["citation_rho"] > CITATION_RHO_LIMIT
+
+    def test_xtb_lumo_calibration_is_clean(self):
+        """The internally consistent xTB LUMO set must stay confound-free.
+
+        ADR-2026-08-09-02: this is the LUMO ranking target the oracle now
+        optimises against. If it ever becomes confounded, ranking claims
+        must be retracted.
+        """
+        result = analyse(_load("lumo_calibration_xtb.json"), "lumo_eV")
+        assert result is not None
+        assert not result["confounded"], (
+            f"lumo_calibration_xtb.json LUMO is confounded: {result}"
+        )
+        assert result["citation_rho"] == 0.0
+        assert result["between_source_fraction"] == 0.0

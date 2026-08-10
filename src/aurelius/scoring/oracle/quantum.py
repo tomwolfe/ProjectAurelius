@@ -53,10 +53,25 @@ from aurelius.utils.device import get_device
 logger = logging.getLogger(__name__)
 
 
+_XTB_CANDIDATE_PATHS: list[str] = [
+    "xtb",
+    "xtb_opt",
+    "/opt/homebrew/Caskroom/miniforge/base/envs/xtbtools/bin/xtb",
+    "/opt/homebrew/Caskroom/miniconda3/base/envs/xtbtools/bin/xtb",
+    os.path.expanduser("~/miniforge3/envs/xtbtools/bin/xtb"),
+    os.path.expanduser("~/miniconda3/envs/xtbtools/bin/xtb"),
+]
+
+
 def _find_xtb_binary() -> str | None:
-    """Locate the xTB binary on the system PATH."""
-    for candidate in ["xtb", "xtb_opt"]:
-        with contextlib.suppress(Exception):
+    """Locate the xTB binary on PATH or in known conda environments.
+
+    Searches the system PATH first, then falls back to well-known conda
+    environment locations (e.g. an ``xtbtools`` env) where xTB is frequently
+    installed as a standalone binary without the supporting Python stack.
+    """
+    for candidate in _XTB_CANDIDATE_PATHS:
+        with contextlib.suppress(Exception, OSError):
             result = subprocess.run(
                 [candidate, "--version"],
                 capture_output=True, text=True, timeout=5,
@@ -956,10 +971,11 @@ class QuantumOracle:
     def warmup(self) -> None:
         """Pre-fit the Δ-correction GPR to avoid first-call latency.
 
-        The Δ-correction model fits two GPR kernels on the 115-molecule
-        calibration set on first use (~1.8s). Calling this once at startup
-        moves that cost out of the critical path so the first production
-        evaluate() is fast.
+        The Δ-correction model fits two GPR kernels: HOMO on the 115-molecule
+        DFT calibration set, LUMO on the 231-molecule internally consistent
+        xTB calibration set. Combined first-use cost is ~1.8s. Calling this once
+        at startup moves that cost out of the critical path so the first
+        production evaluate() is fast.
         """
         if self._use_delta_correction and not self._delta_warmed_up:
             from aurelius.scoring.oracle.delta_correction import get_delta_correction

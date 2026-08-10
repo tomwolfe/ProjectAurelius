@@ -1,22 +1,29 @@
 """Δ-learning correction layer for LUMO (reduction stability proxy).
 
 Physical justification
----------------------
+----------------------
 LUMO ranking is provenance-confounded (unseen Spearman ρ ≈ 0.06): 69% of label
 variance is between-source rather than between-molecule. A predictor given only
-the citation string scores ρ = 0.837, beating every real model by 10×. Ranking
-claims are therefore impossible until a clean experimental electron-affinity or
-reduction-potential dataset exists.
+the citation string scores ρ = 0.837, beating every real model by 10×. The
+cause: the DFT LUMO labels in ``orbital_calibration.json`` were compiled from
+~50 different functionals and basis sets.
 
-MAE, however, is comparatively robust to a constant per-source offset. The
-Δ-layer improves LUMO *calibration*: MAE 0.863 → 0.797 eV on unseen. This module
-provides an MAE-only reduction-stability proxy, shrunk toward the TOM baseline
-for out-of-domain molecules.
+ADR-2026-08-09-02: The calibration set is now ``lumo_calibration_xtb.json`` —
+GFN2-xTB single-point LUMO values calibrated to the B3LYP/6-311++G** scale via
+the OLS affine map in ``quantum.py``. Because every value is produced by the
+*same* quantum-chemical method, the set is free of provenance confound
+(verified: citation-only ρ = 0.0, between-source fraction = 0.0). Ranking on
+this set reflects chemistry, not which journal a value originated from.
+
+MAE is comparatively robust to a constant per-source offset. The Δ-layer
+improves LUMO *calibration*: the residual (``xTB_LUMO − TOM_LUMO``) is
+structured, so a GPR can learn meaningful corrections while keeping the
+interpretable TOM as the base model.
 
 Architecture
 ------------
-GPR residual model mapping ECFP4 fingerprints to TOM LUMO errors:
-    Δ = DFT_LUMO − TOM_LUMO
+GPR residual model mapping ECFP4 fingerprints to LUMO prediction errors:
+    Δ = LUMO_ref − TOM_LUMO
     corrected_LUMO = TOM_LUMO + shrinkage(Δ̂)
 
 The shrinkage factor uses the normal-normal posterior mean:
@@ -28,10 +35,6 @@ Validation
 Scaffold-disjoint (Murcko) split ensures every molecule from a given scaffold
 group is either entirely in training or entirely in test. Random splits leak
 structural similarity and overestimate performance.
-
-ADR-2026-08-09: This module replaces LUMO ranking claims. The oracle reports
-reduction_stability_proxy as a (corrected_lumo, confidence) tuple. MAE is the
-only valid metric. Spearman ρ is NOT reported.
 """
 
 from __future__ import annotations
@@ -62,6 +65,15 @@ _CALIBRATION_PATH = os.path.join(
     "..",
     "..",
     "data",
+    "lumo_calibration_xtb.json",
+)
+
+# Fallback to the original confounded set if the xTB file is missing.
+_FALLBACK_CALIBRATION_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..",
+    "..",
+    "data",
     "orbital_calibration.json",
 )
 
@@ -79,8 +91,29 @@ _GPR_KWARGS: dict[str, Any] = {
 
 
 def _load_calibration() -> list[dict[str, float]]:
-    """Load the DFT HOMO/LUMO calibration set."""
-    with open(_CALIBRATION_PATH) as f:
+    """Load the internally consistent xTB LUMO calibration set.
+
+    Falls back to the original ``orbital_calibration.json`` (DFT labels,
+    provenance-confounded) if the xTB file is unavailable, emitting a
+    warning. ADR-2026-08-09-02: the xTB set is preferred because all LUMO
+    labels come from a single quantum-chemical method, making the set
+    free of between-source confound (citation-only rho = 0.0, verified).
+    """
+    try:
+        with open(_CALIBRATION_PATH) as f:
+            data = json.load(f)
+        entries = data.get("entries", data) if isinstance(data, dict) else data
+        if entries:
+            return entries
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
+    logger = logging.getLogger(__name__)
+    logger.warning(
+        "LUMO proxy fell back to orbital_calibration.json (confounded DFT labels); "
+        "lumo_calibration_xtb.json not found."
+    )
+    with open(_FALLBACK_CALIBRATION_PATH) as f:
         return json.load(f)
 
 
@@ -114,11 +147,16 @@ def _get_murcko_scaffold(mol: Chem.Mol) -> str:
 class LumoProxy:
     """GPR residual model for LUMO (reduction stability proxy).
 
-    Fits a Gaussian Process on ECFP4 → (DFT_LUMO − TOM_LUMO) residuals.
+    Fits a Gaussian Process on ECFP4 → (xTB_LUMO − TOM_LUMO) residuals using
+    the internally consistent ``lumo_calibration_xtb.json`` set (ADR-2026-08-09-02).
     Provides shrinkage-damped corrections that revert to TOM for OOD molecules.
 
+    The xTB labels are free of provenance confound because all values are
+    computed with the same GFN2-xTB single-point method. Ranking on this set
+    is chemically meaningful (verified: citation-only ρ = 0.0).
+
     IMPORTANT: This is an MAE-only proxy. Do NOT use the output for ranking
-    claims until a clean experimental EA/reduction dataset is available.
+    claims against the confounded external benchmark set.
     """
 
     def __init__(

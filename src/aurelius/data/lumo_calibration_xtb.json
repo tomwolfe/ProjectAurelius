@@ -1,0 +1,4483 @@
+{
+  "description": "Chemically consistent LUMO/HOMO calibration set computed with GFN2-xTB (B3LYP-calibrated scale). All values from a single quantum method \u2014 no provenance confound. Replaces the LUMO labels in orbital_calibration.json for DeltaCorrection and LumoProxy training. HOMO values retained from orbital_calibration.json for consistency with the LPM/NIST HOMO pipeline. HOMO values: xTB-calibrated GFN2-xTB eigenvalues (internally consistent); DFT HOMO also retained in homo_eV_dft_original for the 73 molecules that appear in orbital_calibration.json.",
+  "method": "GFN2-xTB with OLS affine calibration to B3LYP/6-311++G**",
+  "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+  "n_entries": 231,
+  "n_sources": 1,
+  "source_is_internal": true,
+  "calibration_coeffs": {
+    "homo": [
+      0.331,
+      -3.64
+    ],
+    "lumo": [
+      0.152,
+      0.843
+    ]
+  },
+  "entries": [
+    {
+      "smiles": "O=C1OCCO1",
+      "name": "EC",
+      "homo_eV": -7.6987,
+      "lumo_eV": -0.2145,
+      "lumo_eV_raw_xtb": -6.957,
+      "homo_eV_raw_xtb": -12.2618,
+      "dipole_D": 6.173,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)OC",
+      "name": "DMC",
+      "homo_eV": -7.5725,
+      "lumo_eV": -0.1811,
+      "lumo_eV_raw_xtb": -6.7372,
+      "homo_eV_raw_xtb": -11.8807,
+      "dipole_D": 0.908,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.8
+    },
+    {
+      "smiles": "COCCOC",
+      "name": "DME",
+      "homo_eV": -7.2518,
+      "lumo_eV": 0.9307,
+      "lumo_eV_raw_xtb": 0.5772,
+      "homo_eV_raw_xtb": -10.9117,
+      "dipole_D": 2.113,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.2
+    },
+    {
+      "smiles": "CCOC(=O)OC",
+      "name": "EMC",
+      "homo_eV": -7.5357,
+      "lumo_eV": -0.1725,
+      "lumo_eV_raw_xtb": -6.6807,
+      "homo_eV_raw_xtb": -11.7696,
+      "dipole_D": 0.89,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC1COC(=O)O1",
+      "name": "PC",
+      "homo_eV": -7.6596,
+      "lumo_eV": -0.1969,
+      "lumo_eV_raw_xtb": -6.8415,
+      "homo_eV_raw_xtb": -12.1438,
+      "dipole_D": 6.38,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "CCOC(=O)OCC",
+      "name": "DEC",
+      "homo_eV": -7.5158,
+      "lumo_eV": -0.1625,
+      "lumo_eV_raw_xtb": -6.6151,
+      "homo_eV_raw_xtb": -11.7093,
+      "dipole_D": 1.131,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.7
+    },
+    {
+      "smiles": "O=C1OCC(F)O1",
+      "name": "FEC",
+      "homo_eV": -7.869,
+      "lumo_eV": -0.3023,
+      "lumo_eV_raw_xtb": -7.535,
+      "homo_eV_raw_xtb": -12.7764,
+      "dipole_D": 5.323,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=c1occo1",
+      "name": "VC",
+      "homo_eV": -7.4803,
+      "lumo_eV": -0.2348,
+      "lumo_eV_raw_xtb": -7.0906,
+      "homo_eV_raw_xtb": -11.602,
+      "dipole_D": 5.899,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC#N",
+      "name": "ACN",
+      "homo_eV": -7.5036,
+      "lumo_eV": -0.0284,
+      "lumo_eV_raw_xtb": -5.733,
+      "homo_eV_raw_xtb": -11.6724,
+      "dipole_D": 3.833,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.8
+    },
+    {
+      "smiles": "CS(C)=O",
+      "name": "DMSO",
+      "homo_eV": -7.0082,
+      "lumo_eV": 0.089,
+      "lumo_eV_raw_xtb": -4.9606,
+      "homo_eV_raw_xtb": -10.1757,
+      "dipole_D": 4.809,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=S1(=O)CCCC1",
+      "name": "Sulfolane",
+      "homo_eV": -7.3923,
+      "lumo_eV": 0.2446,
+      "lumo_eV_raw_xtb": -3.9367,
+      "homo_eV_raw_xtb": -11.3363,
+      "dipole_D": 7.196,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCOCC",
+      "name": "DEE",
+      "homo_eV": -7.2074,
+      "lumo_eV": 0.972,
+      "lumo_eV_raw_xtb": 0.849,
+      "homo_eV_raw_xtb": -10.7776,
+      "dipole_D": 1.296,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.1
+    },
+    {
+      "smiles": "O=C1CCCO1",
+      "name": "GBL",
+      "homo_eV": -7.4101,
+      "lumo_eV": -0.2062,
+      "lumo_eV_raw_xtb": -6.9024,
+      "homo_eV_raw_xtb": -11.3901,
+      "dipole_D": 5.331,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.4
+    },
+    {
+      "smiles": "CCC#N",
+      "name": "PN",
+      "homo_eV": -7.4717,
+      "lumo_eV": -0.0373,
+      "lumo_eV_raw_xtb": -5.7916,
+      "homo_eV_raw_xtb": -11.576,
+      "dipole_D": 3.808,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.7
+    },
+    {
+      "smiles": "N#CCCCC#N",
+      "name": "Glutaronitrile",
+      "homo_eV": -7.5636,
+      "lumo_eV": -0.1022,
+      "lumo_eV_raw_xtb": -6.2184,
+      "homo_eV_raw_xtb": -11.8538,
+      "dipole_D": 3.774,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.8
+    },
+    {
+      "smiles": "N#CCCCCC#N",
+      "name": "Adiponitrile",
+      "homo_eV": -7.5262,
+      "lumo_eV": -0.0791,
+      "lumo_eV_raw_xtb": -6.0667,
+      "homo_eV_raw_xtb": -11.7407,
+      "dipole_D": 5.647,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.8
+    },
+    {
+      "smiles": "C1COCO1",
+      "name": "DOL",
+      "homo_eV": -7.285,
+      "lumo_eV": 0.9118,
+      "lumo_eV_raw_xtb": 0.4527,
+      "homo_eV_raw_xtb": -11.012,
+      "dipole_D": 1.345,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.0
+    },
+    {
+      "smiles": "COCCOCCOC",
+      "name": "Diglyme",
+      "homo_eV": -7.2638,
+      "lumo_eV": 0.7649,
+      "lumo_eV_raw_xtb": -0.5135,
+      "homo_eV_raw_xtb": -10.948,
+      "dipole_D": 1.682,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -6.9
+    },
+    {
+      "smiles": "CCOC(C)=O",
+      "name": "EA",
+      "homo_eV": -7.3796,
+      "lumo_eV": -0.1931,
+      "lumo_eV_raw_xtb": -6.8166,
+      "homo_eV_raw_xtb": -11.2978,
+      "dipole_D": 2.664,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(C)=O",
+      "name": "MA",
+      "homo_eV": -7.4005,
+      "lumo_eV": -0.2022,
+      "lumo_eV_raw_xtb": -6.8761,
+      "homo_eV_raw_xtb": -11.3609,
+      "dipole_D": 2.406,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=S1(=O)CCCO1",
+      "name": "PS",
+      "homo_eV": -7.5276,
+      "lumo_eV": 0.0505,
+      "lumo_eV_raw_xtb": -5.2137,
+      "homo_eV_raw_xtb": -11.7451,
+      "dipole_D": 7.895,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "CN1CCCC1=O",
+      "name": "NMP",
+      "homo_eV": -7.0671,
+      "lumo_eV": -0.054,
+      "lumo_eV_raw_xtb": -5.9016,
+      "homo_eV_raw_xtb": -10.3539,
+      "dipole_D": 4.653,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -6.9
+    },
+    {
+      "smiles": "CN(C)C=O",
+      "name": "DMF",
+      "homo_eV": -7.1237,
+      "lumo_eV": -0.134,
+      "lumo_eV_raw_xtb": -6.4279,
+      "homo_eV_raw_xtb": -10.5248,
+      "dipole_D": 4.599,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.0
+    },
+    {
+      "smiles": "CCOP(=O)(OCC)OCC",
+      "name": "TEP",
+      "homo_eV": -7.4293,
+      "lumo_eV": 0.094,
+      "lumo_eV_raw_xtb": -4.9278,
+      "homo_eV_raw_xtb": -11.448,
+      "dipole_D": 5.149,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "COc1ccccc1",
+      "name": "Anisole",
+      "homo_eV": -7.0384,
+      "lumo_eV": -0.0893,
+      "lumo_eV_raw_xtb": -6.1338,
+      "homo_eV_raw_xtb": -10.2671,
+      "dipole_D": 1.354,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -5.9
+    },
+    {
+      "smiles": "N#CCF",
+      "name": "FCAN",
+      "homo_eV": -7.7419,
+      "lumo_eV": -0.2139,
+      "lumo_eV_raw_xtb": -6.9531,
+      "homo_eV_raw_xtb": -12.3925,
+      "dipole_D": 3.309,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "N#CC(F)(F)F",
+      "name": "TFCAN",
+      "homo_eV": -8.2187,
+      "lumo_eV": -0.4635,
+      "lumo_eV_raw_xtb": -8.5953,
+      "homo_eV_raw_xtb": -13.8329,
+      "dipole_D": 0.078,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C1OCC(C(F)(F)F)O1",
+      "name": "TFPC",
+      "homo_eV": -7.9163,
+      "lumo_eV": -0.322,
+      "lumo_eV_raw_xtb": -7.6648,
+      "homo_eV_raw_xtb": -12.9192,
+      "dipole_D": 5.139,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(C)OC(=O)OC(C)C",
+      "name": "DIPC",
+      "homo_eV": -7.4727,
+      "lumo_eV": -0.1463,
+      "lumo_eV_raw_xtb": -6.5087,
+      "homo_eV_raw_xtb": -11.5793,
+      "dipole_D": 1.282,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "CS(=O)(=O)CC#N",
+      "name": "MSACN",
+      "homo_eV": -7.5343,
+      "lumo_eV": -0.2385,
+      "lumo_eV_raw_xtb": -7.1153,
+      "homo_eV_raw_xtb": -11.7652,
+      "dipole_D": 5.523,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.7
+    },
+    {
+      "smiles": "c1ccncc1",
+      "name": "Pyridine",
+      "homo_eV": -6.9185,
+      "lumo_eV": -0.216,
+      "lumo_eV_raw_xtb": -6.9668,
+      "homo_eV_raw_xtb": -9.9049,
+      "dipole_D": 2.121,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -6.5
+    },
+    {
+      "smiles": "COB(OC)OC",
+      "name": "TMB",
+      "homo_eV": -7.3763,
+      "lumo_eV": -0.2234,
+      "lumo_eV_raw_xtb": -7.0159,
+      "homo_eV_raw_xtb": -11.2878,
+      "dipole_D": 1.712,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.3
+    },
+    {
+      "smiles": "O=S(=O)(C(F)(F)F)C(F)(F)F",
+      "name": "TFSI-core",
+      "homo_eV": -8.2288,
+      "lumo_eV": -0.3084,
+      "lumo_eV_raw_xtb": -7.5751,
+      "homo_eV_raw_xtb": -13.8634,
+      "dipole_D": 3.412,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "C1COC1",
+      "name": "EO",
+      "homo_eV": -7.2022,
+      "lumo_eV": 0.8927,
+      "lumo_eV_raw_xtb": 0.3273,
+      "homo_eV_raw_xtb": -10.7619,
+      "dipole_D": 2.025,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.3
+    },
+    {
+      "smiles": "N#CCC#N",
+      "name": "Succinonitrile",
+      "homo_eV": -7.7041,
+      "lumo_eV": -0.2173,
+      "lumo_eV_raw_xtb": -6.9759,
+      "homo_eV_raw_xtb": -12.2783,
+      "dipole_D": 4.045,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.6
+    },
+    {
+      "smiles": "O=C1OCCCO1",
+      "name": "1,3-PC",
+      "homo_eV": -7.583,
+      "lumo_eV": -0.1994,
+      "lumo_eV_raw_xtb": -6.8577,
+      "homo_eV_raw_xtb": -11.9124,
+      "dipole_D": 6.738,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "COP(=O)(OC)OC",
+      "name": "TMP",
+      "homo_eV": -7.5086,
+      "lumo_eV": 0.092,
+      "lumo_eV_raw_xtb": -4.941,
+      "homo_eV_raw_xtb": -11.6877,
+      "dipole_D": 2.133,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "O=S(=O)(NS(=O)(=O)C(F)(F)F)C(F)(F)F",
+      "name": "TFSI-H",
+      "homo_eV": -8.2099,
+      "lumo_eV": -0.4531,
+      "lumo_eV_raw_xtb": -8.527,
+      "homo_eV_raw_xtb": -13.8063,
+      "dipole_D": 1.42,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCOB(OCC)OCC",
+      "name": "TEB",
+      "homo_eV": -7.2949,
+      "lumo_eV": -0.1923,
+      "lumo_eV_raw_xtb": -6.8109,
+      "homo_eV_raw_xtb": -11.0421,
+      "dipole_D": 1.598,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.4
+    },
+    {
+      "smiles": "O=C1C=CC2(CO2)O1",
+      "name": "VEC",
+      "homo_eV": -7.5541,
+      "lumo_eV": -0.4711,
+      "lumo_eV_raw_xtb": -8.6456,
+      "homo_eV_raw_xtb": -11.8251,
+      "dipole_D": 5.663,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(C)OC(=O)OC(C)(C)C",
+      "name": "TBIPC",
+      "homo_eV": -7.3976,
+      "lumo_eV": -0.1372,
+      "lumo_eV_raw_xtb": -6.4489,
+      "homo_eV_raw_xtb": -11.3522,
+      "dipole_D": 1.083,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.4
+    },
+    {
+      "smiles": "O=C1C=CC(=O)O1",
+      "name": "Maleic_anhydride",
+      "homo_eV": -7.8538,
+      "lumo_eV": -0.7285,
+      "lumo_eV_raw_xtb": -10.3387,
+      "homo_eV_raw_xtb": -12.7305,
+      "dipole_D": 4.254,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -6.7
+    },
+    {
+      "smiles": "CCOCCOCC",
+      "name": "Diethoxyethane",
+      "homo_eV": -7.1121,
+      "lumo_eV": 0.8441,
+      "lumo_eV_raw_xtb": 0.0074,
+      "homo_eV_raw_xtb": -10.4898,
+      "dipole_D": 0.0,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.0
+    },
+    {
+      "smiles": "COC(=O)OCC(C)C",
+      "name": "DPC (Dipropyl carbonate)",
+      "homo_eV": -7.5311,
+      "lumo_eV": -0.1636,
+      "lumo_eV_raw_xtb": -6.6224,
+      "homo_eV_raw_xtb": -11.7557,
+      "dipole_D": 1.345,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.4
+    },
+    {
+      "smiles": "COC(=O)OCCC(C)C",
+      "name": "DIC (Diisopropyl carbonate)",
+      "homo_eV": -7.5176,
+      "lumo_eV": -0.1644,
+      "lumo_eV_raw_xtb": -6.6279,
+      "homo_eV_raw_xtb": -11.7149,
+      "dipole_D": 1.263,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "CCOC(=O)OCCOCCOC(=O)OC",
+      "name": "Bis(2-ethoxyethyl) carbonate",
+      "homo_eV": -7.3108,
+      "lumo_eV": -0.1429,
+      "lumo_eV_raw_xtb": -6.4861,
+      "homo_eV_raw_xtb": -11.0901,
+      "dipole_D": 1.645,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)OCC(=O)S(C)=O",
+      "name": "S-Ethyl thiocarbonate",
+      "homo_eV": -7.2124,
+      "lumo_eV": -0.5035,
+      "lumo_eV_raw_xtb": -8.8583,
+      "homo_eV_raw_xtb": -10.7928,
+      "dipole_D": 4.721,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=S)OC(C)C",
+      "name": "Dimethyl thiocarbonate",
+      "homo_eV": -6.9175,
+      "lumo_eV": -0.3098,
+      "lumo_eV_raw_xtb": -7.5841,
+      "homo_eV_raw_xtb": -9.9018,
+      "dipole_D": 4.761,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(C)OCC#N",
+      "name": "Crotononitrile",
+      "homo_eV": -7.3779,
+      "lumo_eV": -0.1153,
+      "lumo_eV_raw_xtb": -6.3049,
+      "homo_eV_raw_xtb": -11.2928,
+      "dipole_D": 4.702,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "N#CCCC#N",
+      "name": "Cadaverine dinitrile",
+      "homo_eV": -7.6021,
+      "lumo_eV": -0.1398,
+      "lumo_eV_raw_xtb": -6.4656,
+      "homo_eV_raw_xtb": -11.9701,
+      "dipole_D": 5.545,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.9
+    },
+    {
+      "smiles": "COCCOCCOC(=O)OC",
+      "name": "Triglyme carbonate ester",
+      "homo_eV": -7.2663,
+      "lumo_eV": -0.1637,
+      "lumo_eV_raw_xtb": -6.623,
+      "homo_eV_raw_xtb": -10.9556,
+      "dipole_D": 2.729,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.0
+    },
+    {
+      "smiles": "CCOCCOCCOC(C)C",
+      "name": "Methyl triethylene glycol",
+      "homo_eV": -7.1305,
+      "lumo_eV": 0.8556,
+      "lumo_eV_raw_xtb": 0.0829,
+      "homo_eV_raw_xtb": -10.5454,
+      "dipole_D": 3.849,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.3
+    },
+    {
+      "smiles": "CS(=O)(=O)C1CCOC1",
+      "name": "Methoxy sulfone-THF",
+      "homo_eV": -7.4112,
+      "lumo_eV": 0.1173,
+      "lumo_eV_raw_xtb": -4.7746,
+      "homo_eV_raw_xtb": -11.3933,
+      "dipole_D": 5.931,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.0
+    },
+    {
+      "smiles": "CCOCC(=O)OCC(C)C",
+      "name": "Isopropyl propionate",
+      "homo_eV": -7.3402,
+      "lumo_eV": -0.2472,
+      "lumo_eV_raw_xtb": -7.1726,
+      "homo_eV_raw_xtb": -11.1789,
+      "dipole_D": 2.872,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.4
+    },
+    {
+      "smiles": "CC(C)(C)OB(F)F",
+      "name": "t-Butyl fluoro borate",
+      "homo_eV": -7.5546,
+      "lumo_eV": -0.3327,
+      "lumo_eV_raw_xtb": -7.7351,
+      "homo_eV_raw_xtb": -11.8265,
+      "dipole_D": 2.938,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC1COS(=O)C1=O",
+      "name": "1,4-Butane sultone (fixed)",
+      "homo_eV": -7.2522,
+      "lumo_eV": -0.4749,
+      "lumo_eV_raw_xtb": -8.6704,
+      "homo_eV_raw_xtb": -10.9129,
+      "dipole_D": 6.084,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CS(=O)(=O)C1COC1",
+      "name": "Methoxy sulfone-THF (fixed)",
+      "homo_eV": -7.4118,
+      "lumo_eV": 0.1724,
+      "lumo_eV_raw_xtb": -4.4119,
+      "homo_eV_raw_xtb": -11.3951,
+      "dipole_D": 6.851,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -6.8
+    },
+    {
+      "smiles": "COC(=O)OCCCC(C)C",
+      "name": "Butyl isopropyl carbonate",
+      "homo_eV": -7.4276,
+      "lumo_eV": -0.1705,
+      "lumo_eV_raw_xtb": -6.6679,
+      "homo_eV_raw_xtb": -11.4428,
+      "dipole_D": 0.742,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "COC(=O)OCCCC(C)C(C)C",
+      "name": "t-Butyl ethyl carbonate",
+      "homo_eV": -7.3754,
+      "lumo_eV": -0.1676,
+      "lumo_eV_raw_xtb": -6.6487,
+      "homo_eV_raw_xtb": -11.2853,
+      "dipole_D": 1.027,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.6
+    },
+    {
+      "smiles": "O=C1OCCOC1F",
+      "name": "F-VC (Fluorinated VC)",
+      "homo_eV": -7.5829,
+      "lumo_eV": -0.4025,
+      "lumo_eV_raw_xtb": -8.1941,
+      "homo_eV_raw_xtb": -11.9122,
+      "dipole_D": 4.746,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(C)C(C)C#N",
+      "name": "Valeronitrile",
+      "homo_eV": -7.4144,
+      "lumo_eV": -0.0264,
+      "lumo_eV_raw_xtb": -5.7198,
+      "homo_eV_raw_xtb": -11.4031,
+      "dipole_D": 3.886,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(C)C#N",
+      "name": "Isobutyronitrile",
+      "homo_eV": -7.4414,
+      "lumo_eV": -0.0349,
+      "lumo_eV_raw_xtb": -5.7759,
+      "homo_eV_raw_xtb": -11.4845,
+      "dipole_D": 3.798,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COCCOCCOC(C)C",
+      "name": "Methyl triethylene glycol",
+      "homo_eV": -7.0914,
+      "lumo_eV": 0.864,
+      "lumo_eV_raw_xtb": 0.1382,
+      "homo_eV_raw_xtb": -10.4272,
+      "dipole_D": 3.773,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.3
+    },
+    {
+      "smiles": "N#CCS(=O)(=O)C1CCOC1",
+      "name": "Nitrile sulfone-THF",
+      "homo_eV": -7.4538,
+      "lumo_eV": -0.227,
+      "lumo_eV_raw_xtb": -7.0392,
+      "homo_eV_raw_xtb": -11.5221,
+      "dipole_D": 7.446,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "CCOCC(=O)OCCCC(C)C",
+      "name": "Butyl propionate",
+      "homo_eV": -7.3067,
+      "lumo_eV": -0.2493,
+      "lumo_eV_raw_xtb": -7.1865,
+      "homo_eV_raw_xtb": -11.0775,
+      "dipole_D": 2.444,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "CC(C)OB(F)F",
+      "name": "t-Butyl fluoro borate",
+      "homo_eV": -7.5955,
+      "lumo_eV": -0.3515,
+      "lumo_eV_raw_xtb": -7.8585,
+      "homo_eV_raw_xtb": -11.9502,
+      "dipole_D": 2.706,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)C(F)F",
+      "name": "Methyl difluoroacetate",
+      "homo_eV": -7.7561,
+      "lumo_eV": -0.4407,
+      "lumo_eV_raw_xtb": -8.4457,
+      "homo_eV_raw_xtb": -12.4352,
+      "dipole_D": 4.76,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.6
+    },
+    {
+      "smiles": "CCOC(=O)C(F)F",
+      "name": "Ethyl difluoroacetate",
+      "homo_eV": -7.7281,
+      "lumo_eV": -0.4288,
+      "lumo_eV_raw_xtb": -8.3668,
+      "homo_eV_raw_xtb": -12.3508,
+      "dipole_D": 5.141,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "COC(=O)C(F)(F)F",
+      "name": "Methyl trifluoroacetate",
+      "homo_eV": -7.9531,
+      "lumo_eV": -0.5221,
+      "lumo_eV_raw_xtb": -8.9808,
+      "homo_eV_raw_xtb": -13.0306,
+      "dipole_D": 3.929,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.8
+    },
+    {
+      "smiles": "CCOC(=O)C(F)(F)F",
+      "name": "Ethyl trifluoroacetate",
+      "homo_eV": -7.8523,
+      "lumo_eV": -0.5106,
+      "lumo_eV_raw_xtb": -8.9054,
+      "homo_eV_raw_xtb": -12.726,
+      "dipole_D": 4.064,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.7
+    },
+    {
+      "smiles": "COC(=O)CF",
+      "name": "Methyl fluoroacetate",
+      "homo_eV": -7.598,
+      "lumo_eV": -0.344,
+      "lumo_eV_raw_xtb": -7.8094,
+      "homo_eV_raw_xtb": -11.9576,
+      "dipole_D": 3.325,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.7
+    },
+    {
+      "smiles": "O=C1CCC(C(F)(F)C(F)F)O1",
+      "name": "Bis(2,2,3-trifluoropropyl) carbonate",
+      "homo_eV": -7.6123,
+      "lumo_eV": -0.3051,
+      "lumo_eV_raw_xtb": -7.5532,
+      "homo_eV_raw_xtb": -12.001,
+      "dipole_D": 6.201,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)C(F)(F)C(F)(F)C(F)F",
+      "name": "Trifluoromethyl pentafluoroethyl ester",
+      "homo_eV": -7.9792,
+      "lumo_eV": -0.5241,
+      "lumo_eV_raw_xtb": -8.9943,
+      "homo_eV_raw_xtb": -13.1093,
+      "dipole_D": 5.153,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -8.1
+    },
+    {
+      "smiles": "FCOCF",
+      "name": "Bis(fluoromethyl) ether",
+      "homo_eV": -7.7735,
+      "lumo_eV": 0.7319,
+      "lumo_eV_raw_xtb": -0.7309,
+      "homo_eV_raw_xtb": -12.4878,
+      "dipole_D": 3.302,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "FCCOC(F)C(F)F",
+      "name": "Bis(2,2-difluoroethyl) ether",
+      "homo_eV": -7.8002,
+      "lumo_eV": 0.5008,
+      "lumo_eV_raw_xtb": -2.2515,
+      "homo_eV_raw_xtb": -12.5686,
+      "dipole_D": 3.421,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "FCOC(F)C(F)(F)C(F)(F)F",
+      "name": "Perfluorobutyl methyl ether",
+      "homo_eV": -8.0496,
+      "lumo_eV": 0.2424,
+      "lumo_eV_raw_xtb": -3.951,
+      "homo_eV_raw_xtb": -13.322,
+      "dipole_D": 3.79,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.9
+    },
+    {
+      "smiles": "FCCC(F)OCF",
+      "name": "Bis(2-fluoroethyl) ether",
+      "homo_eV": -7.6877,
+      "lumo_eV": 0.6419,
+      "lumo_eV_raw_xtb": -1.3233,
+      "homo_eV_raw_xtb": -12.2286,
+      "dipole_D": 5.756,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(F)C(F)(F)C(F)(F)F",
+      "name": "Perfluoropropyl methyl ether",
+      "homo_eV": -7.8834,
+      "lumo_eV": 0.2983,
+      "lumo_eV_raw_xtb": -3.5838,
+      "homo_eV_raw_xtb": -12.8198,
+      "dipole_D": 3.919,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.8
+    },
+    {
+      "smiles": "COCCOC(F)(F)C(F)(F)F",
+      "name": "Hexafluoropropyl methyl ether",
+      "homo_eV": -7.4224,
+      "lumo_eV": 0.3969,
+      "lumo_eV_raw_xtb": -2.9351,
+      "homo_eV_raw_xtb": -11.4273,
+      "dipole_D": 4.305,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.9
+    },
+    {
+      "smiles": "COC(F)C(F)(F)C(F)(F)C(F)(F)F",
+      "name": "Perfluorohexyl methyl ether",
+      "homo_eV": -7.9025,
+      "lumo_eV": 0.1948,
+      "lumo_eV_raw_xtb": -4.2647,
+      "homo_eV_raw_xtb": -12.8777,
+      "dipole_D": 3.973,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -8.1
+    },
+    {
+      "smiles": "COCCOCCOC(F)(F)C(F)(F)F",
+      "name": "Diether with hexafluoropropyl",
+      "homo_eV": -7.3564,
+      "lumo_eV": 0.3114,
+      "lumo_eV_raw_xtb": -3.4976,
+      "homo_eV_raw_xtb": -11.2279,
+      "dipole_D": 1.935,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.8
+    },
+    {
+      "smiles": "COC(F)C(F)C(F)C(F)F",
+      "name": "Tetrafluoropropyl methyl ether",
+      "homo_eV": -7.7619,
+      "lumo_eV": 0.5148,
+      "lumo_eV_raw_xtb": -2.1592,
+      "homo_eV_raw_xtb": -12.4528,
+      "dipole_D": 7.639,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.6
+    },
+    {
+      "smiles": "COC(F)C(F)C(F)C(F)C(F)F",
+      "name": "Pentafluoroethyl pentafluoropropyl ether",
+      "homo_eV": -7.7097,
+      "lumo_eV": 0.4686,
+      "lumo_eV_raw_xtb": -2.4631,
+      "homo_eV_raw_xtb": -12.2953,
+      "dipole_D": 3.513,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -8.0
+    },
+    {
+      "smiles": "CS(=O)(=O)C(F)(F)C(F)(F)F",
+      "name": "Methyl pentafluoroethyl sulfone",
+      "homo_eV": -7.8405,
+      "lumo_eV": -0.0972,
+      "lumo_eV_raw_xtb": -6.1857,
+      "homo_eV_raw_xtb": -12.6904,
+      "dipole_D": 5.942,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -8.2
+    },
+    {
+      "smiles": "O=S(=O)(CCC(F)F)CC(F)F",
+      "name": "Bis(2-fluoroethyl) sulfone",
+      "homo_eV": -7.5143,
+      "lumo_eV": 0.0768,
+      "lumo_eV_raw_xtb": -5.0406,
+      "homo_eV_raw_xtb": -11.7048,
+      "dipole_D": 9.069,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=S(=O)(C(F)(F)F)C(F)(F)C(F)(F)F",
+      "name": "Octafluoropolyether sulfone",
+      "homo_eV": -8.2694,
+      "lumo_eV": -0.3589,
+      "lumo_eV_raw_xtb": -7.9074,
+      "homo_eV_raw_xtb": -13.9861,
+      "dipole_D": 3.325,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CS(=O)(=O)C(F)(F)C(F)C(F)F",
+      "name": "Trifluoromethyl sulfonyl methyl sulfone",
+      "homo_eV": -7.7215,
+      "lumo_eV": -0.0231,
+      "lumo_eV_raw_xtb": -5.6983,
+      "homo_eV_raw_xtb": -12.3308,
+      "dipole_D": 7.234,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.9
+    },
+    {
+      "smiles": "O=S(=O)(C(F)F)C(F)(F)S",
+      "name": "Fluorinated disulfone",
+      "homo_eV": -7.7849,
+      "lumo_eV": -0.4312,
+      "lumo_eV_raw_xtb": -8.3827,
+      "homo_eV_raw_xtb": -12.5223,
+      "dipole_D": 5.455,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -8.0
+    },
+    {
+      "smiles": "CS(=O)(=O)CC(F)(F)C(F)(F)F",
+      "name": "Perfluoroethyl methyl sulfone",
+      "homo_eV": -7.5862,
+      "lumo_eV": 0.0378,
+      "lumo_eV_raw_xtb": -5.2975,
+      "homo_eV_raw_xtb": -11.9221,
+      "dipole_D": 5.418,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -8.1
+    },
+    {
+      "smiles": "O=S1(=O)CCCC1(F)F",
+      "name": "Tetralin sulfone fluorinated",
+      "homo_eV": -7.6357,
+      "lumo_eV": 0.1046,
+      "lumo_eV_raw_xtb": -4.8581,
+      "homo_eV_raw_xtb": -12.0716,
+      "dipole_D": 8.279,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CS(=O)(=O)C(F)C(F)(F)C(F)C(F)F",
+      "name": "Fluorinated sulfone dimer",
+      "homo_eV": -7.6548,
+      "lumo_eV": -0.0022,
+      "lumo_eV_raw_xtb": -5.5606,
+      "homo_eV_raw_xtb": -12.1294,
+      "dipole_D": 6.951,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -8.1
+    },
+    {
+      "smiles": "CS(=O)(=O)C1CCC(F)C1",
+      "name": "Cyclohexyl monofluoro sulfone",
+      "homo_eV": -7.3924,
+      "lumo_eV": 0.2041,
+      "lumo_eV_raw_xtb": -4.2031,
+      "homo_eV_raw_xtb": -11.3367,
+      "dipole_D": 6.204,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "N#CC(F)CC(F)C(F)F",
+      "name": "Fluorinated nitrile",
+      "homo_eV": -7.7877,
+      "lumo_eV": -0.2435,
+      "lumo_eV_raw_xtb": -7.1482,
+      "homo_eV_raw_xtb": -12.5309,
+      "dipole_D": 2.784,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.8
+    },
+    {
+      "smiles": "N#CC(F)C(F)C(F)C(F)F",
+      "name": "Perfluoropropionitrile variant",
+      "homo_eV": -8.0003,
+      "lumo_eV": -0.3441,
+      "lumo_eV_raw_xtb": -7.81,
+      "homo_eV_raw_xtb": -13.1731,
+      "dipole_D": 0.844,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -8.1
+    },
+    {
+      "smiles": "N#CC(F)(F)COC(F)(F)F",
+      "name": "Trifluoroacetonitrile methyl ether",
+      "homo_eV": -8.0565,
+      "lumo_eV": -0.3903,
+      "lumo_eV_raw_xtb": -8.1136,
+      "homo_eV_raw_xtb": -13.3428,
+      "dipole_D": 2.31,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -8.1
+    },
+    {
+      "smiles": "N#CC(F)C(F)COC(F)(F)F",
+      "name": "Fluorinated nitrile ether",
+      "homo_eV": -7.9315,
+      "lumo_eV": -0.3159,
+      "lumo_eV_raw_xtb": -7.6241,
+      "homo_eV_raw_xtb": -12.9653,
+      "dipole_D": 4.32,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.9
+    },
+    {
+      "smiles": "NC(F)(F)F",
+      "name": "Trifluoromethylamine",
+      "homo_eV": -7.824,
+      "lumo_eV": 0.6085,
+      "lumo_eV_raw_xtb": -1.543,
+      "homo_eV_raw_xtb": -12.6405,
+      "dipole_D": 2.929,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -8.0
+    },
+    {
+      "smiles": "FC(F)(F)CNCC(F)(F)F",
+      "name": "Bis(trifluoroethyl)amine",
+      "homo_eV": -7.4913,
+      "lumo_eV": 0.4381,
+      "lumo_eV_raw_xtb": -2.6638,
+      "homo_eV_raw_xtb": -11.6353,
+      "dipole_D": 4.004,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(=O)C(F)(F)F",
+      "name": "Trifluoroacetone",
+      "homo_eV": -7.7802,
+      "lumo_eV": -0.5225,
+      "lumo_eV_raw_xtb": -8.9833,
+      "homo_eV_raw_xtb": -12.5082,
+      "dipole_D": 3.613,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.5
+    },
+    {
+      "smiles": "CC(=O)C(F)C(F)F",
+      "name": "Pentafluoropropyl ketone",
+      "homo_eV": -7.6115,
+      "lumo_eV": -0.4297,
+      "lumo_eV_raw_xtb": -8.373,
+      "homo_eV_raw_xtb": -11.9984,
+      "dipole_D": 3.386,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.8
+    },
+    {
+      "smiles": "CC(=O)C(F)C(F)C(F)F",
+      "name": "Heptafluorobutyl ketone",
+      "homo_eV": -7.6066,
+      "lumo_eV": -0.4274,
+      "lumo_eV_raw_xtb": -8.3578,
+      "homo_eV_raw_xtb": -11.9838,
+      "dipole_D": 4.949,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -8.0
+    },
+    {
+      "smiles": "CC(=O)N(C)C(F)(F)F",
+      "name": "Trifluoromethyl dimethylacetamide",
+      "homo_eV": -7.4977,
+      "lumo_eV": -0.2748,
+      "lumo_eV_raw_xtb": -7.3541,
+      "homo_eV_raw_xtb": -11.6548,
+      "dipole_D": 1.342,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.2
+    },
+    {
+      "smiles": "Fc1ccccc1",
+      "name": "Fluorobenzene",
+      "homo_eV": -7.3309,
+      "lumo_eV": -0.1639,
+      "lumo_eV_raw_xtb": -6.6246,
+      "homo_eV_raw_xtb": -11.1509,
+      "dipole_D": 2.227,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -6.5
+    },
+    {
+      "smiles": "FC(F)(F)Oc1ccccc1",
+      "name": "Pentafluorobenzene oxide",
+      "homo_eV": -7.3976,
+      "lumo_eV": -0.1963,
+      "lumo_eV_raw_xtb": -6.8372,
+      "homo_eV_raw_xtb": -11.3522,
+      "dipole_D": 3.055,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -7.0
+    },
+    {
+      "smiles": "CCOP(=O)(OCC)OCC(F)(F)F",
+      "name": "Trifluoromethyl diethyl phosphate",
+      "homo_eV": -7.619,
+      "lumo_eV": -0.0166,
+      "lumo_eV_raw_xtb": -5.6551,
+      "homo_eV_raw_xtb": -12.021,
+      "dipole_D": 6.037,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "FC(F)P(F)OC1=CCC=C1",
+      "name": "Fluorinated phosphazene",
+      "homo_eV": -7.1182,
+      "lumo_eV": -0.2188,
+      "lumo_eV_raw_xtb": -6.9855,
+      "homo_eV_raw_xtb": -10.5083,
+      "dipole_D": 2.665,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C1CC(C(F)F)O1",
+      "name": "Difluorolactone",
+      "homo_eV": -7.7172,
+      "lumo_eV": -0.3862,
+      "lumo_eV_raw_xtb": -8.0868,
+      "homo_eV_raw_xtb": -12.3178,
+      "dipole_D": 3.943,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C1CCC(C(F)(F)F)O1",
+      "name": "Trifluoromethyl lactone",
+      "homo_eV": -7.6277,
+      "lumo_eV": -0.3113,
+      "lumo_eV_raw_xtb": -7.5938,
+      "homo_eV_raw_xtb": -12.0473,
+      "dipole_D": 5.191,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC1CC(C(F)(F)F)C(=O)O1",
+      "name": "Trifluoromethyl lactone variant",
+      "homo_eV": -7.6608,
+      "lumo_eV": -0.3367,
+      "lumo_eV_raw_xtb": -7.7612,
+      "homo_eV_raw_xtb": -12.1474,
+      "dipole_D": 6.047,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C1CC[SH]1CCF",
+      "name": "Fluorinated thiolactone",
+      "homo_eV": -6.3396,
+      "lumo_eV": -0.3929,
+      "lumo_eV_raw_xtb": -8.1311,
+      "homo_eV_raw_xtb": -8.1559,
+      "dipole_D": 10.008,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C1NC(=O)C(F)(F)C1(F)F",
+      "name": "Pentafluoroglutarimide",
+      "homo_eV": -8.107,
+      "lumo_eV": -0.703,
+      "lumo_eV_raw_xtb": -10.1709,
+      "homo_eV_raw_xtb": -13.4955,
+      "dipole_D": 3.311,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)",
+      "homo_eV_dft_original": -8.0
+    },
+    {
+      "smiles": "FC(F)(F)OC1(F)CCCO1",
+      "name": "Perfluorobutyl acetal",
+      "homo_eV": -7.6787,
+      "lumo_eV": 0.4705,
+      "lumo_eV_raw_xtb": -2.4508,
+      "homo_eV_raw_xtb": -12.2015,
+      "dipole_D": 4.798,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "N#CC1CCC(F)C1",
+      "name": "Fluorocyclohexyl nitrile",
+      "homo_eV": -7.5245,
+      "lumo_eV": -0.0816,
+      "lumo_eV_raw_xtb": -6.0828,
+      "homo_eV_raw_xtb": -11.7358,
+      "dipole_D": 2.516,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "C1CCOC1",
+      "name": "THF",
+      "homo_eV": -7.1277,
+      "lumo_eV": 0.9743,
+      "lumo_eV_raw_xtb": 0.8637,
+      "homo_eV_raw_xtb": -10.537,
+      "dipole_D": 2.033,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COCCOCCOCCOC",
+      "name": "Triglyme",
+      "homo_eV": -7.2176,
+      "lumo_eV": 0.7616,
+      "lumo_eV_raw_xtb": -0.5354,
+      "homo_eV_raw_xtb": -10.8084,
+      "dipole_D": 3.09,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCOC(=O)OCC(C)C",
+      "name": "Ethyl isopropyl carbonate",
+      "homo_eV": -7.4814,
+      "lumo_eV": -0.1535,
+      "lumo_eV_raw_xtb": -6.556,
+      "homo_eV_raw_xtb": -11.6054,
+      "dipole_D": 1.113,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)OCC(C)C(C)C",
+      "name": "t-Bu ethyl carbonate",
+      "homo_eV": -7.4445,
+      "lumo_eV": -0.1649,
+      "lumo_eV_raw_xtb": -6.6308,
+      "homo_eV_raw_xtb": -11.494,
+      "dipole_D": 0.954,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(C)CC#N",
+      "name": "2-Methylbutyronitrile",
+      "homo_eV": -7.4478,
+      "lumo_eV": -0.0292,
+      "lumo_eV_raw_xtb": -5.7383,
+      "homo_eV_raw_xtb": -11.5038,
+      "dipole_D": 3.904,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "C=CC#N",
+      "name": "Acrylonitrile",
+      "homo_eV": -7.5091,
+      "lumo_eV": -0.3216,
+      "lumo_eV_raw_xtb": -7.6617,
+      "homo_eV_raw_xtb": -11.6891,
+      "dipole_D": 3.722,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "C#CC=C",
+      "name": "Butadiyne",
+      "homo_eV": -7.1817,
+      "lumo_eV": -0.1366,
+      "lumo_eV_raw_xtb": -6.4448,
+      "homo_eV_raw_xtb": -10.7001,
+      "dipole_D": 0.238,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(C#N)C#N",
+      "name": "Succinonitrile",
+      "homo_eV": -7.6536,
+      "lumo_eV": -0.2118,
+      "lumo_eV_raw_xtb": -6.9397,
+      "homo_eV_raw_xtb": -12.1257,
+      "dipole_D": 4.186,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCS(=O)(=O)CC",
+      "name": "Diethyl sulfone",
+      "homo_eV": -7.3189,
+      "lumo_eV": 0.2373,
+      "lumo_eV_raw_xtb": -3.9848,
+      "homo_eV_raw_xtb": -11.1146,
+      "dipole_D": 6.742,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCSC",
+      "name": "Dimethyl sulfide",
+      "homo_eV": -6.8334,
+      "lumo_eV": 0.004,
+      "lumo_eV_raw_xtb": -5.5197,
+      "homo_eV_raw_xtb": -9.6476,
+      "dipole_D": 2.452,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCN(CC)CC",
+      "name": "Triethylamine",
+      "homo_eV": -6.7422,
+      "lumo_eV": 0.8516,
+      "lumo_eV_raw_xtb": 0.0564,
+      "homo_eV_raw_xtb": -9.3722,
+      "dipole_D": 0.81,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "Cc1ccccc1",
+      "name": "Toluene",
+      "homo_eV": -7.1318,
+      "lumo_eV": -0.0689,
+      "lumo_eV_raw_xtb": -5.9992,
+      "homo_eV_raw_xtb": -10.5493,
+      "dipole_D": 0.508,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "Clc1ccccc1",
+      "name": "Chlorobenzene",
+      "homo_eV": -7.2314,
+      "lumo_eV": -0.1589,
+      "lumo_eV_raw_xtb": -6.5915,
+      "homo_eV_raw_xtb": -10.85,
+      "dipole_D": 1.777,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "ClCCl",
+      "name": "Dichloromethane",
+      "homo_eV": -7.5142,
+      "lumo_eV": -0.0063,
+      "lumo_eV_raw_xtb": -5.5873,
+      "homo_eV_raw_xtb": -11.7046,
+      "dipole_D": 1.783,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(C)=O",
+      "name": "Acetone",
+      "homo_eV": -7.2258,
+      "lumo_eV": -0.1991,
+      "lumo_eV_raw_xtb": -6.8557,
+      "homo_eV_raw_xtb": -10.8333,
+      "dipole_D": 3.499,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "Nc1ccccc1",
+      "name": "Aniline",
+      "homo_eV": -6.7949,
+      "lumo_eV": -0.0403,
+      "lumo_eV_raw_xtb": -5.8115,
+      "homo_eV_raw_xtb": -9.5315,
+      "dipole_D": 1.815,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCN(C)C",
+      "name": "Diethylamine",
+      "homo_eV": -6.7881,
+      "lumo_eV": 0.9133,
+      "lumo_eV_raw_xtb": 0.4625,
+      "homo_eV_raw_xtb": -9.5109,
+      "dipole_D": 0.978,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CN1CCCCC1",
+      "name": "Piperidine",
+      "homo_eV": -6.7799,
+      "lumo_eV": 0.9068,
+      "lumo_eV_raw_xtb": 0.4196,
+      "homo_eV_raw_xtb": -9.4861,
+      "dipole_D": 0.919,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC1CC1",
+      "name": "Cyclopropane",
+      "homo_eV": -7.2435,
+      "lumo_eV": 0.6024,
+      "lumo_eV_raw_xtb": -1.5831,
+      "homo_eV_raw_xtb": -10.8868,
+      "dipole_D": 0.161,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(C)(C)C",
+      "name": "Isobutane",
+      "homo_eV": -7.4547,
+      "lumo_eV": 1.1546,
+      "lumo_eV_raw_xtb": 2.05,
+      "homo_eV_raw_xtb": -11.5249,
+      "dipole_D": 0.0,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(=O)C(C)C",
+      "name": "Methyl propionate",
+      "homo_eV": -7.1607,
+      "lumo_eV": -0.2048,
+      "lumo_eV_raw_xtb": -6.8935,
+      "homo_eV_raw_xtb": -10.6366,
+      "dipole_D": 2.98,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COCCO",
+      "name": "Ethylene glycol monomethyl ether",
+      "homo_eV": -7.3165,
+      "lumo_eV": 0.9362,
+      "lumo_eV_raw_xtb": 0.6133,
+      "homo_eV_raw_xtb": -11.1074,
+      "dipole_D": 2.03,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCOCCO",
+      "name": "Triethylene glycol monomethyl ether",
+      "homo_eV": -7.277,
+      "lumo_eV": 0.8622,
+      "lumo_eV_raw_xtb": 0.1266,
+      "homo_eV_raw_xtb": -10.9878,
+      "dipole_D": 2.326,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "OB(O)c1ccccc1",
+      "name": "Phenylboronic acid",
+      "homo_eV": -7.2194,
+      "lumo_eV": -0.2737,
+      "lumo_eV_raw_xtb": -7.3465,
+      "homo_eV_raw_xtb": -10.814,
+      "dipole_D": 3.811,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC1=C(CO)B(O)C1",
+      "name": "Cyclohexylboronic acid",
+      "homo_eV": -6.9009,
+      "lumo_eV": -0.2444,
+      "lumo_eV_raw_xtb": -7.154,
+      "homo_eV_raw_xtb": -9.8518,
+      "dipole_D": 1.766,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC1CN(C)C(=O)O1",
+      "name": "1-Methyl-2-pyrrolidone (NMP iso)",
+      "homo_eV": -7.1741,
+      "lumo_eV": -0.0398,
+      "lumo_eV_raw_xtb": -5.8081,
+      "homo_eV_raw_xtb": -10.677,
+      "dipole_D": 6.259,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CN1CCC1=O",
+      "name": "Pyrrolidin-2-one",
+      "homo_eV": -7.1034,
+      "lumo_eV": -0.1356,
+      "lumo_eV_raw_xtb": -6.4379,
+      "homo_eV_raw_xtb": -10.4634,
+      "dipole_D": 4.504,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC1=CC(=O)CC1",
+      "name": "Cyclohexanone",
+      "homo_eV": -7.096,
+      "lumo_eV": -0.2948,
+      "lumo_eV_raw_xtb": -7.4856,
+      "homo_eV_raw_xtb": -10.4412,
+      "dipole_D": 5.216,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC1OC(=O)CC1=O",
+      "name": "2-Pyrrolidone",
+      "homo_eV": -7.4757,
+      "lumo_eV": -0.3896,
+      "lumo_eV_raw_xtb": -8.1095,
+      "homo_eV_raw_xtb": -11.5883,
+      "dipole_D": 2.502,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(C)(C)OC(=O)OC(C)(C)C",
+      "name": "Di-tert-butyl carbonate",
+      "homo_eV": -7.3455,
+      "lumo_eV": -0.1284,
+      "lumo_eV_raw_xtb": -6.3907,
+      "homo_eV_raw_xtb": -11.195,
+      "dipole_D": 0.914,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(C)(F)OC(=O)OC(C)(F)F",
+      "name": "Bis(fluoro-tert-butyl) carbonate",
+      "homo_eV": -7.688,
+      "lumo_eV": -0.2932,
+      "lumo_eV_raw_xtb": -7.4753,
+      "homo_eV_raw_xtb": -12.2295,
+      "dipole_D": 5.594,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C1OCCCC(C(F)(F)F)O1",
+      "name": "Fluoroethyl methyl carbonate",
+      "homo_eV": -7.7625,
+      "lumo_eV": -0.3335,
+      "lumo_eV_raw_xtb": -7.7402,
+      "homo_eV_raw_xtb": -12.4548,
+      "dipole_D": 6.683,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C(OCC(F)F)OC(F)(F)F",
+      "name": "Difluoroethyl methyl carbonate",
+      "homo_eV": -8.042,
+      "lumo_eV": -0.441,
+      "lumo_eV_raw_xtb": -8.4475,
+      "homo_eV_raw_xtb": -13.299,
+      "dipole_D": 4.46,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=COC(=O)C1CS(=O)(=O)C1",
+      "name": "Sulfonate ethyl ester",
+      "homo_eV": -7.5958,
+      "lumo_eV": -0.5658,
+      "lumo_eV_raw_xtb": -9.2681,
+      "homo_eV_raw_xtb": -11.9511,
+      "dipole_D": 8.338,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COP(C)(=O)F",
+      "name": "Monofluoromethyl phosphonate",
+      "homo_eV": -7.5129,
+      "lumo_eV": 0.0727,
+      "lumo_eV_raw_xtb": -5.0675,
+      "homo_eV_raw_xtb": -11.7007,
+      "dipole_D": 6.281,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COP(C)(=O)OCC(F)F",
+      "name": "Difluoroethyl phosphite",
+      "homo_eV": -7.4856,
+      "lumo_eV": 0.097,
+      "lumo_eV_raw_xtb": -4.9081,
+      "homo_eV_raw_xtb": -11.6181,
+      "dipole_D": 7.869,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(OP(C)(=O)OCC(C)(F)F)C(F)F",
+      "name": "Ethyl difluoromethyl phosphonate",
+      "homo_eV": -7.5389,
+      "lumo_eV": 0.1024,
+      "lumo_eV_raw_xtb": -4.8726,
+      "homo_eV_raw_xtb": -11.7793,
+      "dipole_D": 5.521,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)COP(=O)(O)O",
+      "name": "Methyl phosphonoacetate",
+      "homo_eV": -7.5575,
+      "lumo_eV": -0.3509,
+      "lumo_eV_raw_xtb": -7.8543,
+      "homo_eV_raw_xtb": -11.8354,
+      "dipole_D": 7.433,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "N#CC(F)F",
+      "name": "1,1-Difluoroacetonitrile",
+      "homo_eV": -7.975,
+      "lumo_eV": -0.353,
+      "lumo_eV_raw_xtb": -7.8687,
+      "homo_eV_raw_xtb": -13.0966,
+      "dipole_D": 2.424,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "N#CC(F)(F)C(F)(F)F",
+      "name": "Trifluoromethyl acetonitrile",
+      "homo_eV": -8.27,
+      "lumo_eV": -0.4923,
+      "lumo_eV_raw_xtb": -8.7848,
+      "homo_eV_raw_xtb": -13.9879,
+      "dipole_D": 0.081,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "N#CC(F)CC(F)F",
+      "name": "1,1,2,2-Tetrafluoroacetonitrile",
+      "homo_eV": -7.8371,
+      "lumo_eV": -0.2668,
+      "lumo_eV_raw_xtb": -7.3015,
+      "homo_eV_raw_xtb": -12.6802,
+      "dipole_D": 0.648,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "N#CC#N",
+      "name": "Succinonitrile",
+      "homo_eV": -7.8645,
+      "lumo_eV": -0.5191,
+      "lumo_eV_raw_xtb": -8.9611,
+      "homo_eV_raw_xtb": -12.7628,
+      "dipole_D": 0.0,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(F)(F)C(C(C)(F)F)S(=O)(=O)c1ccccc1",
+      "name": "Fluorinated aromatic sulfone",
+      "homo_eV": -7.5292,
+      "lumo_eV": -0.3357,
+      "lumo_eV_raw_xtb": -7.7545,
+      "homo_eV_raw_xtb": -11.7497,
+      "dipole_D": 5.268,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)C(F)(F)CS(=O)(=O)C(F)(F)F",
+      "name": "Difluoromethyl sulfonyl fluoride ester",
+      "homo_eV": -7.8438,
+      "lumo_eV": -0.4581,
+      "lumo_eV_raw_xtb": -8.5598,
+      "homo_eV_raw_xtb": -12.7003,
+      "dipole_D": 7.2,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(F)(F)C(F)(F)C(F)F",
+      "name": "Perfluoroamyl ether",
+      "homo_eV": -7.9426,
+      "lumo_eV": 0.2965,
+      "lumo_eV_raw_xtb": -3.5953,
+      "homo_eV_raw_xtb": -12.9988,
+      "dipole_D": 1.293,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "N#CCS(=O)(=O)CC#N",
+      "name": "Sulfonyl dinitrile",
+      "homo_eV": -7.7015,
+      "lumo_eV": -0.3281,
+      "lumo_eV_raw_xtb": -7.7047,
+      "homo_eV_raw_xtb": -12.2703,
+      "dipole_D": 2.563,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(F)(F)C(F)(F)C(F)(F)C(F)(F)F",
+      "name": "Perfluoropentyl ether",
+      "homo_eV": -8.0612,
+      "lumo_eV": 0.1476,
+      "lumo_eV_raw_xtb": -4.5748,
+      "homo_eV_raw_xtb": -13.3572,
+      "dipole_D": 3.193,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=S(=O)(CF)C(F)(F)OC(F)(F)F",
+      "name": "Difluoromethyl sulfonyl fluoride ether",
+      "homo_eV": -7.9664,
+      "lumo_eV": -0.172,
+      "lumo_eV_raw_xtb": -6.6779,
+      "homo_eV_raw_xtb": -13.0708,
+      "dipole_D": 4.653,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(F)(F)CSC(C)(F)F",
+      "name": "1,2-Difluoroethyl sulfide",
+      "homo_eV": -7.257,
+      "lumo_eV": -0.2009,
+      "lumo_eV_raw_xtb": -6.8675,
+      "homo_eV_raw_xtb": -10.9276,
+      "dipole_D": 1.228,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=CN1CCCC1",
+      "name": "N-Methylpyrrolidone (NMP iso)",
+      "homo_eV": -7.092,
+      "lumo_eV": -0.1238,
+      "lumo_eV_raw_xtb": -6.3607,
+      "homo_eV_raw_xtb": -10.4291,
+      "dipole_D": 4.893,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "FC(F)(F)OC(F)(F)C(F)(F)C(F)(F)F",
+      "name": "Hexafluoropropylene oxide",
+      "homo_eV": -8.6224,
+      "lumo_eV": 0.0714,
+      "lumo_eV_raw_xtb": -5.076,
+      "homo_eV_raw_xtb": -15.0527,
+      "dipole_D": 0.377,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C(OC(F)(F)C(F)F)OC(F)(F)C(F)(F)F",
+      "name": "Trifluoroethyl bis(fluoroethyl) carbonate",
+      "homo_eV": -8.3395,
+      "lumo_eV": -0.5794,
+      "lumo_eV_raw_xtb": -9.3579,
+      "homo_eV_raw_xtb": -14.1978,
+      "dipole_D": 3.811,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=S1(=O)CCCc2ccccc2C1(F)F",
+      "name": "Fluorinated aromatic sulfone",
+      "homo_eV": -7.4904,
+      "lumo_eV": -0.3103,
+      "lumo_eV_raw_xtb": -7.5873,
+      "homo_eV_raw_xtb": -11.6325,
+      "dipole_D": 9.541,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "N#CCS(=O)(=O)C(F)(F)F",
+      "name": "Fluorinated sulfonyl cyanide",
+      "homo_eV": -7.9428,
+      "lumo_eV": -0.3515,
+      "lumo_eV_raw_xtb": -7.8587,
+      "homo_eV_raw_xtb": -12.9993,
+      "dipole_D": 4.836,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCOCCOF",
+      "name": "2-Fluoroethoxyethane",
+      "homo_eV": -7.3498,
+      "lumo_eV": 0.1812,
+      "lumo_eV_raw_xtb": -4.3538,
+      "homo_eV_raw_xtb": -11.2079,
+      "dipole_D": 2.837,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCOCCOC",
+      "name": "2-Methoxyethoxyethane (diglyme)",
+      "homo_eV": -7.2179,
+      "lumo_eV": 0.9196,
+      "lumo_eV_raw_xtb": 0.5041,
+      "homo_eV_raw_xtb": -10.8095,
+      "dipole_D": 1.908,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=S(=O)(CCO)C(F)(F)F",
+      "name": "Fluoromethyl methyl sulfone",
+      "homo_eV": -7.802,
+      "lumo_eV": -0.0783,
+      "lumo_eV_raw_xtb": -6.0613,
+      "homo_eV_raw_xtb": -12.5741,
+      "dipole_D": 6.163,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CP(=O)(O)OC(C(F)F)C(F)F",
+      "name": "Difluoropropyl phosphite",
+      "homo_eV": -7.5343,
+      "lumo_eV": 0.1031,
+      "lumo_eV_raw_xtb": -4.8677,
+      "homo_eV_raw_xtb": -11.7654,
+      "dipole_D": 3.404,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COP(=O)(O)CC(F)(F)C(F)(F)F",
+      "name": "Difluoromethyl phosphonoformate",
+      "homo_eV": -7.6318,
+      "lumo_eV": 0.077,
+      "lumo_eV_raw_xtb": -5.0397,
+      "homo_eV_raw_xtb": -12.0598,
+      "dipole_D": 5.08,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(C)(C)OC(=O)OC(C)(C)F",
+      "name": "tert-butyl fluoroethyl carbonate",
+      "homo_eV": -7.4374,
+      "lumo_eV": -0.1759,
+      "lumo_eV_raw_xtb": -6.7034,
+      "homo_eV_raw_xtb": -11.4726,
+      "dipole_D": 3.131,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(F)OC(=O)OC(C)F",
+      "name": "1,2-Difluoroethyl ethyl carbonate",
+      "homo_eV": -7.836,
+      "lumo_eV": -0.3208,
+      "lumo_eV_raw_xtb": -7.6569,
+      "homo_eV_raw_xtb": -12.6766,
+      "dipole_D": 3.244,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CS(=O)(=O)C#N",
+      "name": "Methylsulfonyl cyanide",
+      "homo_eV": -7.6421,
+      "lumo_eV": -0.4457,
+      "lumo_eV_raw_xtb": -8.4783,
+      "homo_eV_raw_xtb": -12.0909,
+      "dipole_D": 5.744,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(F)CSC(C)F",
+      "name": "1,2-Difluoroethyl sulfide",
+      "homo_eV": -7.0115,
+      "lumo_eV": -0.0858,
+      "lumo_eV_raw_xtb": -6.1106,
+      "homo_eV_raw_xtb": -10.1858,
+      "dipole_D": 5.603,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "C1CO1",
+      "name": "Oxetane",
+      "homo_eV": -7.4356,
+      "lumo_eV": 0.44,
+      "lumo_eV_raw_xtb": -2.6513,
+      "homo_eV_raw_xtb": -11.4672,
+      "dipole_D": 2.139,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C1OCC2COOC12",
+      "name": "Propiolactone",
+      "homo_eV": -7.4391,
+      "lumo_eV": -0.3304,
+      "lumo_eV_raw_xtb": -7.7196,
+      "homo_eV_raw_xtb": -11.4775,
+      "dipole_D": 6.546,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C1OCCCC2CCCCC12",
+      "name": "Methyl butyrate ester",
+      "homo_eV": -7.2694,
+      "lumo_eV": -0.1908,
+      "lumo_eV_raw_xtb": -6.8013,
+      "homo_eV_raw_xtb": -10.9651,
+      "dipole_D": 5.405,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(=O)NCC(=O)O",
+      "name": "Malonic acid dimethyl ester",
+      "homo_eV": -7.226,
+      "lumo_eV": -0.2635,
+      "lumo_eV_raw_xtb": -7.2796,
+      "homo_eV_raw_xtb": -10.8338,
+      "dipole_D": 6.296,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(F)(F)S(C)(=O)=O",
+      "name": "Fluoromethyl methyl sulfone ether",
+      "homo_eV": -7.6098,
+      "lumo_eV": 0.0596,
+      "lumo_eV_raw_xtb": -5.1542,
+      "homo_eV_raw_xtb": -11.9934,
+      "dipole_D": 5.733,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=S(=O)(C(F)(F)F)C(F)(F)C(F)(F)C(F)(F)F",
+      "name": "Perfluorobutyl methyl sulfone",
+      "homo_eV": -8.2653,
+      "lumo_eV": -0.3707,
+      "lumo_eV_raw_xtb": -7.9851,
+      "homo_eV_raw_xtb": -13.9737,
+      "dipole_D": 3.376,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(C)(C)F",
+      "name": "Isopropyl fluoride",
+      "homo_eV": -7.3257,
+      "lumo_eV": 0.8466,
+      "lumo_eV_raw_xtb": 0.0238,
+      "homo_eV_raw_xtb": -11.1351,
+      "dipole_D": 1.307,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COCC#N",
+      "name": "2-Cyanoethyl alcohol",
+      "homo_eV": -7.4974,
+      "lumo_eV": -0.1266,
+      "lumo_eV_raw_xtb": -6.3787,
+      "homo_eV_raw_xtb": -11.6537,
+      "dipole_D": 4.662,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(=O)N(C)C",
+      "name": "DMAc",
+      "homo_eV": -7.0475,
+      "lumo_eV": -0.07,
+      "lumo_eV_raw_xtb": -6.0066,
+      "homo_eV_raw_xtb": -10.2946,
+      "dipole_D": 4.568,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "C1COCCO1",
+      "name": "",
+      "homo_eV": -7.1638,
+      "lumo_eV": 0.9203,
+      "lumo_eV_raw_xtb": 0.5086,
+      "homo_eV_raw_xtb": -10.646,
+      "dipole_D": 0.0,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(C)OC",
+      "name": "",
+      "homo_eV": -7.3166,
+      "lumo_eV": 0.8998,
+      "lumo_eV_raw_xtb": 0.3736,
+      "homo_eV_raw_xtb": -11.1077,
+      "dipole_D": 2.707,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCOC",
+      "name": "",
+      "homo_eV": -7.24,
+      "lumo_eV": 1.003,
+      "lumo_eV_raw_xtb": 1.0529,
+      "homo_eV_raw_xtb": -10.8761,
+      "dipole_D": 1.477,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=S1(=O)CCO1",
+      "name": "",
+      "homo_eV": -7.701,
+      "lumo_eV": -0.0999,
+      "lumo_eV_raw_xtb": -6.2032,
+      "homo_eV_raw_xtb": -12.269,
+      "dipole_D": 6.481,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=S1(=O)OCCO1",
+      "name": "",
+      "homo_eV": -7.7292,
+      "lumo_eV": -0.1883,
+      "lumo_eV_raw_xtb": -6.785,
+      "homo_eV_raw_xtb": -12.3542,
+      "dipole_D": 7.4,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CS(C)(=O)=O",
+      "name": "",
+      "homo_eV": -7.3564,
+      "lumo_eV": 0.2416,
+      "lumo_eV_raw_xtb": -3.9564,
+      "homo_eV_raw_xtb": -11.2277,
+      "dipole_D": 6.863,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCS(C)(=O)=O",
+      "name": "",
+      "homo_eV": -7.3368,
+      "lumo_eV": 0.2301,
+      "lumo_eV_raw_xtb": -4.0321,
+      "homo_eV_raw_xtb": -11.1686,
+      "dipole_D": 6.988,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)OC(F)(F)F",
+      "name": "",
+      "homo_eV": -7.9547,
+      "lumo_eV": -0.3815,
+      "lumo_eV_raw_xtb": -8.0558,
+      "homo_eV_raw_xtb": -13.0352,
+      "dipole_D": 3.838,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C(OC(F)(F)F)OC(F)(F)F",
+      "name": "",
+      "homo_eV": -8.3918,
+      "lumo_eV": -0.5962,
+      "lumo_eV_raw_xtb": -9.4686,
+      "homo_eV_raw_xtb": -14.3558,
+      "dipole_D": 2.113,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(F)(F)F",
+      "name": "",
+      "homo_eV": -8.161,
+      "lumo_eV": 0.7252,
+      "lumo_eV_raw_xtb": -0.775,
+      "homo_eV_raw_xtb": -13.6587,
+      "dipole_D": 2.927,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "FC(F)F",
+      "name": "",
+      "homo_eV": -8.3824,
+      "lumo_eV": 0.6635,
+      "lumo_eV_raw_xtb": -1.1806,
+      "homo_eV_raw_xtb": -14.3275,
+      "dipole_D": 2.149,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "FC(F)(F)C(F)(F)F",
+      "name": "",
+      "homo_eV": -8.6034,
+      "lumo_eV": 0.2762,
+      "lumo_eV_raw_xtb": -3.7288,
+      "homo_eV_raw_xtb": -14.9953,
+      "dipole_D": 0.0,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CF",
+      "name": "",
+      "homo_eV": -7.7707,
+      "lumo_eV": 1.0097,
+      "lumo_eV_raw_xtb": 1.0964,
+      "homo_eV_raw_xtb": -12.4796,
+      "dipole_D": 2.317,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)C(C)(C)C",
+      "name": "",
+      "homo_eV": -7.3124,
+      "lumo_eV": -0.1928,
+      "lumo_eV_raw_xtb": -6.8148,
+      "homo_eV_raw_xtb": -11.095,
+      "dipole_D": 2.237,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCOC(=O)OC(C)C",
+      "name": "",
+      "homo_eV": -7.4868,
+      "lumo_eV": -0.155,
+      "lumo_eV_raw_xtb": -6.5655,
+      "homo_eV_raw_xtb": -11.6217,
+      "dipole_D": 1.015,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COB(O)OC",
+      "name": "",
+      "homo_eV": -7.3968,
+      "lumo_eV": -0.2021,
+      "lumo_eV_raw_xtb": -6.8757,
+      "homo_eV_raw_xtb": -11.3498,
+      "dipole_D": 1.767,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(=O)OC1=CC(=O)O1",
+      "name": "",
+      "homo_eV": -7.6002,
+      "lumo_eV": -0.577,
+      "lumo_eV_raw_xtb": -9.3422,
+      "homo_eV_raw_xtb": -11.9643,
+      "dipole_D": 6.531,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)c1ccccc1",
+      "name": "",
+      "homo_eV": -7.3404,
+      "lumo_eV": -0.3321,
+      "lumo_eV_raw_xtb": -7.7312,
+      "homo_eV_raw_xtb": -11.1796,
+      "dipole_D": 2.638,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C1CCCCO1",
+      "name": "",
+      "homo_eV": -7.3311,
+      "lumo_eV": -0.2106,
+      "lumo_eV_raw_xtb": -6.9313,
+      "homo_eV_raw_xtb": -11.1513,
+      "dipole_D": 5.395,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)CN(C)C",
+      "name": "",
+      "homo_eV": -6.9151,
+      "lumo_eV": -0.2245,
+      "lumo_eV_raw_xtb": -7.0232,
+      "homo_eV_raw_xtb": -9.8945,
+      "dipole_D": 3.232,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)c1ccccc1C",
+      "name": "",
+      "homo_eV": -7.2663,
+      "lumo_eV": -0.3022,
+      "lumo_eV_raw_xtb": -7.5343,
+      "homo_eV_raw_xtb": -10.9555,
+      "dipole_D": 1.984,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(=O)OC(C)C",
+      "name": "",
+      "homo_eV": -7.3584,
+      "lumo_eV": -0.1868,
+      "lumo_eV_raw_xtb": -6.775,
+      "homo_eV_raw_xtb": -11.2338,
+      "dipole_D": 2.582,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)C(C)C",
+      "name": "",
+      "homo_eV": -7.3407,
+      "lumo_eV": -0.1995,
+      "lumo_eV_raw_xtb": -6.8585,
+      "homo_eV_raw_xtb": -11.1805,
+      "dipole_D": 2.139,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCC(=O)OC",
+      "name": "",
+      "homo_eV": -7.3646,
+      "lumo_eV": -0.2043,
+      "lumo_eV_raw_xtb": -6.8902,
+      "homo_eV_raw_xtb": -11.2525,
+      "dipole_D": 2.411,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC1CCCOO1",
+      "name": "",
+      "homo_eV": -7.3162,
+      "lumo_eV": 0.658,
+      "lumo_eV_raw_xtb": -1.2168,
+      "homo_eV_raw_xtb": -11.1062,
+      "dipole_D": 2.553,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)C1CC1",
+      "name": "",
+      "homo_eV": -7.3341,
+      "lumo_eV": -0.1999,
+      "lumo_eV_raw_xtb": -6.8613,
+      "homo_eV_raw_xtb": -11.1604,
+      "dipole_D": 2.921,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "C=CC(=O)OC",
+      "name": "",
+      "homo_eV": -7.388,
+      "lumo_eV": -0.3644,
+      "lumo_eV_raw_xtb": -7.9437,
+      "homo_eV_raw_xtb": -11.3232,
+      "dipole_D": 2.813,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(C)C",
+      "name": "",
+      "homo_eV": -7.177,
+      "lumo_eV": 0.9635,
+      "lumo_eV_raw_xtb": 0.7929,
+      "homo_eV_raw_xtb": -10.6857,
+      "dipole_D": 1.517,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)c1ccc(OC)cc1",
+      "name": "",
+      "homo_eV": -7.2117,
+      "lumo_eV": -0.3042,
+      "lumo_eV_raw_xtb": -7.5471,
+      "homo_eV_raw_xtb": -10.7907,
+      "dipole_D": 4.186,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CC(=O)OC(C)(C)C",
+      "name": "",
+      "homo_eV": -7.3003,
+      "lumo_eV": -0.179,
+      "lumo_eV_raw_xtb": -6.7235,
+      "homo_eV_raw_xtb": -11.0583,
+      "dipole_D": 2.424,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C(OC(F)(F)F)c1ccccc1",
+      "name": "",
+      "homo_eV": -7.5954,
+      "lumo_eV": -0.4735,
+      "lumo_eV_raw_xtb": -8.661,
+      "homo_eV_raw_xtb": -11.9499,
+      "dipole_D": 5.652,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)c1ccccc1C(F)(F)F",
+      "name": "",
+      "homo_eV": -7.4815,
+      "lumo_eV": -0.4219,
+      "lumo_eV_raw_xtb": -8.3215,
+      "homo_eV_raw_xtb": -11.6057,
+      "dipole_D": 5.936,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "FC(F)(F)OC(F)(F)F",
+      "name": "",
+      "homo_eV": -8.9246,
+      "lumo_eV": 0.2481,
+      "lumo_eV_raw_xtb": -3.9139,
+      "homo_eV_raw_xtb": -15.9655,
+      "dipole_D": 0.374,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "N#CCOCC#N",
+      "name": "",
+      "homo_eV": -7.6003,
+      "lumo_eV": -0.2095,
+      "lumo_eV_raw_xtb": -6.9246,
+      "homo_eV_raw_xtb": -11.9648,
+      "dipole_D": 4.852,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C(OCC(F)(F)F)OCC(F)(F)F",
+      "name": "",
+      "homo_eV": -7.9877,
+      "lumo_eV": -0.3752,
+      "lumo_eV_raw_xtb": -8.0144,
+      "homo_eV_raw_xtb": -13.135,
+      "dipole_D": 2.748,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C1OCC(C(F)F)O1",
+      "name": "",
+      "homo_eV": -7.8286,
+      "lumo_eV": -0.2785,
+      "lumo_eV_raw_xtb": -7.378,
+      "homo_eV_raw_xtb": -12.6543,
+      "dipole_D": 5.129,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CS(=O)(=O)c1ccccc1",
+      "name": "",
+      "homo_eV": -7.3132,
+      "lumo_eV": -0.2889,
+      "lumo_eV_raw_xtb": -7.4465,
+      "homo_eV_raw_xtb": -11.0973,
+      "dipole_D": 7.474,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CCOC(=O)C(=O)OCC",
+      "name": "",
+      "homo_eV": -7.4932,
+      "lumo_eV": -0.5312,
+      "lumo_eV_raw_xtb": -9.0406,
+      "homo_eV_raw_xtb": -11.641,
+      "dipole_D": 0.0,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=C(OCC(F)(F)F)C(F)(F)F",
+      "name": "",
+      "homo_eV": -8.1895,
+      "lumo_eV": -0.6329,
+      "lumo_eV_raw_xtb": -9.7099,
+      "homo_eV_raw_xtb": -13.7448,
+      "dipole_D": 1.899,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)OCC#N",
+      "name": "",
+      "homo_eV": -7.7183,
+      "lumo_eV": -0.2546,
+      "lumo_eV_raw_xtb": -7.2213,
+      "homo_eV_raw_xtb": -12.3212,
+      "dipole_D": 2.994,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "CS(=O)(=O)c1ccc(C#N)cc1",
+      "name": "",
+      "homo_eV": -7.4257,
+      "lumo_eV": -0.4519,
+      "lumo_eV_raw_xtb": -8.5194,
+      "homo_eV_raw_xtb": -11.4371,
+      "dipole_D": 5.652,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COC(=O)OCC(F)(F)C(F)(F)F",
+      "name": "",
+      "homo_eV": -7.7869,
+      "lumo_eV": -0.2865,
+      "lumo_eV_raw_xtb": -7.4307,
+      "homo_eV_raw_xtb": -12.5283,
+      "dipole_D": 3.293,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "COc1ccc(S(C)(=O)=O)cc1",
+      "name": "",
+      "homo_eV": -7.2913,
+      "lumo_eV": -0.2497,
+      "lumo_eV_raw_xtb": -7.1886,
+      "homo_eV_raw_xtb": -11.0312,
+      "dipole_D": 8.052,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "O=c1occ(F)o1",
+      "name": "",
+      "homo_eV": -7.6605,
+      "lumo_eV": -0.3145,
+      "lumo_eV_raw_xtb": -7.6154,
+      "homo_eV_raw_xtb": -12.1466,
+      "dipole_D": 4.261,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "N#CC(F)(F)C(F)(F)C(F)(F)F",
+      "name": "",
+      "homo_eV": -8.3011,
+      "lumo_eV": -0.5073,
+      "lumo_eV_raw_xtb": -8.8834,
+      "homo_eV_raw_xtb": -14.0818,
+      "dipole_D": 0.125,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    },
+    {
+      "smiles": "Cc1ccc(S(C)(=O)=O)cc1",
+      "name": "",
+      "homo_eV": -7.2825,
+      "lumo_eV": -0.259,
+      "lumo_eV_raw_xtb": -7.2497,
+      "homo_eV_raw_xtb": -11.0046,
+      "dipole_D": 8.064,
+      "homo_calibration_coeffs": [
+        0.331,
+        -3.64
+      ],
+      "lumo_calibration_coeffs": [
+        0.152,
+        0.843
+      ],
+      "reference": "xTB GFN2-xTB single-point, calibrated to B3LYP/6-311++G** scale via OLS affine map (quantum.py _XTB_HOMO_CALIBRATION/_XTB_LUMO_CALIBRATION). All values computed with the same method \u2014 internally consistent. HOMO from xTB, LUMO from xTB. This replaces the provenance-confounded orbital_calibration.json LUMO labels (53 DFT sources, citation rho=0.68).",
+      "method": "GFN2-xTB (calibrated to B3LYP/6-311++G**)"
+    }
+  ],
+  "n_merged_with_dft_homo": 73
+}

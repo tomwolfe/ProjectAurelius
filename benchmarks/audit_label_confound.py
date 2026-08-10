@@ -153,7 +153,10 @@ def audit_file(path: str, targets: tuple[str, ...]) -> list[dict[str, Any]]:
     """Run the confound analysis over every requested target in a file."""
     with open(path) as f:
         data = json.load(f)
-    entries = data if isinstance(data, list) else data.get("solvents", [])
+    if isinstance(data, dict):
+        entries = data.get("entries", data.get("solvents", []))
+    else:
+        entries = data
     results = []
     for target in targets:
         result = analyse(entries, target)
@@ -174,6 +177,7 @@ def main() -> int:
             ("homo_eV", "lumo_eV", "dielectric_constant", "viscosity_cP"),
         ),
         (os.path.join(DATA_DIR, "orbital_calibration.json"), ("homo_eV", "lumo_eV")),
+        (os.path.join(DATA_DIR, "lumo_calibration_xtb.json"), ("homo_eV", "lumo_eV")),
         (os.path.join(DATA_DIR, "experimental_ionization.json"), ("ip_eV",)),
     ]
 

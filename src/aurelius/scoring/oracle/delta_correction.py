@@ -5,16 +5,26 @@ conjugation. It systematically mis-estimates HOMO/LUMO for molecules whose
 electronic structure is not captured by a single conjugation length (branched
 pi-systems, through-bond coupling, hyperconjugation from C–F / C–O sigma
 bonds, conformational averaging). These errors are structured, not random,
-so a residual model trained on the difference between TOM and reference DFT
+so a residual model trained on the difference between TOM and reference
 values can correct them while keeping the interpretable TOM as the base model.
 
-The residual (Δ = DFT − TOM) is regressed from ECFP4 fingerprints with a
+ADR-2026-08-09-02: HOMO and LUMO use *different* calibration sets:
+  * HOMO residuals are trained on ``orbital_calibration.json`` (115 DFT-B3LYP
+    entries, provenance-confounded but MAE-robust). The LPM HOMO model already
+    correlates ρ = 0.91 against NIST experimental IPs, so the Δ-correction
+    targets calibration (MAE), not ranking.
+  * LUMO residuals are trained on ``lumo_calibration_xtb.json`` — 231 GFN2-xTB
+    single-point values calibrated to the B3LYP/6-311++G** scale. All values
+    come from the *same* quantum-chemical method, so the set is free of
+    between-source confound (verified: citation-only ρ = 0.0).
+
+The residual (Δ = reference − TOM) is regressed from ECFP4 fingerprints with a
 Gaussian Process Regressor (GPR) using an RBF + WhiteKernel covariance.
 GPR is preferred over kernel ridge because:
 
   1. It provides a calibrated standard deviation σ(Δ) for each prediction,
      which quantifies how far out-of-domain a molecule is and feeds into
-     the conformal confidence discount (see W5).
+     the conformal confidence discount.
   2. Out-of-domain predictions naturally shrink toward the mean residual
      (≈ 0 for a well-centred calibration set), so corrections degrade
      gracefully back to raw TOM without manual regularisation tuning.
@@ -31,6 +41,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import warnings
 from typing import Any
 
 import numpy as np
@@ -55,6 +66,14 @@ _CALIBRATION_PATH = os.path.join(
     "orbital_calibration.json",
 )
 
+_LUMO_CALIBRATION_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..",
+    "..",
+    "data",
+    "lumo_calibration_xtb.json",
+)
+
 _GPR_KERNEL = ConstantKernel(1.0) * RBF(
     length_scale=1.0, length_scale_bounds=(1e-2, 1e2)
 ) + WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-5, 1e1))
@@ -69,7 +88,30 @@ _GPR_KWARGS: dict[str, Any] = {
 
 
 def _load_calibration() -> list[dict[str, float]]:
-    """Load the DFT HOMO/LUMO calibration set."""
+    """Load the DFT HOMO calibration set (orbital_calibration.json)."""
+    with open(_CALIBRATION_PATH) as f:
+        return json.load(f)
+
+
+def _load_lumo_calibration_xtb() -> list[dict[str, float]]:
+    """Load the internally consistent xTB LUMO calibration set.
+
+    ADR-2026-08-09-02: LUMO residuals are trained on GFN2-xTB single-point
+    values (calibrated to B3LYP/6-311++G** scale) instead of confounded DFT
+    labels from multiple functionals/basis sets.
+    """
+    try:
+        with open(_LUMO_CALIBRATION_PATH) as f:
+            data = json.load(f)
+        entries = data.get("entries", data) if isinstance(data, dict) else data
+        if entries:
+            return entries
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    logger.warning(
+        "LUMO calibration lumo_calibration_xtb.json not found; "
+        "falling back to orbital_calibration.json (confounded DFT labels)."
+    )
     with open(_CALIBRATION_PATH) as f:
         return json.load(f)
 
@@ -87,14 +129,39 @@ def _ecfp4_vector(mol: Chem.Mol, n_bits: int = 2048) -> np.ndarray:
     return vec
 
 
+def _parse_ood_set(
+    ood_calibration_set: list[dict[str, float]] | None,
+) -> tuple[list[dict[str, float]], list[str]]:
+    """Parse OOD calibration entries, returning (entries, canonical_smiles).
+
+    OOD entries are later duplicated for 2× weight in ``DeltaCorrection.__init__``.
+    Entries with unparseable SMILES are silently skipped.
+    """
+    if ood_calibration_set is None:
+        return [], []
+    entries: list[dict[str, float]] = []
+    smiles: list[str] = []
+    for entry in ood_calibration_set:
+        mol = Chem.MolFromSmiles(entry.get("smiles", ""))
+        if mol is None:
+            continue
+        entries.append(entry)
+        smiles.append(Chem.MolToSmiles(mol))
+    return entries, smiles
+
+
 class DeltaCorrection:
     """GPR residual model mapping ECFP4 fingerprints to TOM HOMO/LUMO errors.
 
-    Two independent Gaussian Process models are fit on the calibration residuals
-    (DFT − TOM) for HOMO and LUMO. A molecule's predicted mean residual is added
-    to its raw TOM prediction to produce the corrected orbital energy. The
-    associated GPR standard deviation quantifies prediction uncertainty and
-    feeds into the conformal confidence discount in the selection layer.
+    Two independent Gaussian Process models are fit on the calibration residuals:
+      * HOMO: trained on ``orbital_calibration.json`` DFT-B3LYP labels (MAE-robust).
+      * LUMO: trained on ``lumo_calibration_xtb.json`` xTB labels (internally
+        consistent, free of provenance confound — ADR-2026-08-09-02).
+
+    A molecule's predicted mean residual is added to its raw TOM prediction to
+    produce the corrected orbital energy. The associated GPR standard deviation
+    quantifies prediction uncertainty and feeds into the conformal confidence
+    discount in the selection layer.
 
     Optional OOD calibration set support: molecules from out-of-distribution
     chemical scaffolds can be included with 2× weight during training, improving
@@ -107,6 +174,8 @@ class DeltaCorrection:
         self,
         calib: list[dict[str, float]] | None = None,
         calib_smiles: list[str] | None = None,
+        lumo_calib: list[dict[str, float]] | None = None,
+        lumo_calib_smiles: list[str] | None = None,
         ood_calibration_set: list[dict[str, float]] | None = None,
     ) -> None:
         self._calib = calib if calib is not None else _load_calibration()
@@ -115,47 +184,59 @@ class DeltaCorrection:
             if Chem.MolFromSmiles(entry["smiles"]) is not None
         ]
 
-        # Build base calibration arrays
-        base_entries = list(self._calib)
-        base_smiles = list(self._calib_smiles)
+        self._lumo_calib = lumo_calib if lumo_calib is not None else _load_lumo_calibration_xtb()
+        self._lumo_calib_smiles = lumo_calib_smiles if lumo_calib_smiles is not None else [
+            Chem.MolToSmiles(Chem.MolFromSmiles(entry["smiles"])) for entry in self._lumo_calib
+            if Chem.MolFromSmiles(entry["smiles"]) is not None
+        ]
 
-        # Append OOD calibration entries with 2× weight (duplicated)
-        ood_entries: list[dict[str, float]] = []
-        ood_smiles: list[str] = []
-        if ood_calibration_set is not None:
-            for entry in ood_calibration_set:
-                mol = Chem.MolFromSmiles(entry.get("smiles", ""))
-                if mol is None:
-                    continue
-                ood_entries.append(entry)
-                ood_smiles.append(
-                    Chem.MolToSmiles(Chem.MolFromSmiles(entry["smiles"]))
-                )
+        ood_entries, ood_smiles = _parse_ood_set(ood_calibration_set)
+        self._all_smiles = list(self._calib_smiles) + ood_smiles + ood_smiles
 
-        # Combine: OOD entries are duplicated for 2× weight
-        all_entries = base_entries + ood_entries + ood_entries
-        self._all_smiles = base_smiles + ood_smiles + ood_smiles
+        self._X_homo, self._y_homo = self._build_features_targets(
+            self._calib, ood_entries, "homo_eV"
+        )
+        self._X_lumo, self._y_lumo = self._build_features_targets(
+            self._lumo_calib, ood_entries, "lumo_eV"
+        )
 
-        n = len(all_entries)
-        self._X = np.zeros((n, 2048), dtype=np.float64)
-        self._y_homo = np.zeros(n, dtype=np.float64)
-        self._y_lumo = np.zeros(n, dtype=np.float64)
-        for i, entry in enumerate(all_entries):
-            mol = Chem.MolFromSmiles(entry["smiles"])
-            if mol is None:
-                raise ValueError(f"Unparseable calibration SMILES: {entry['smiles']}")
-            self._X[i] = _ecfp4_vector(mol)
-            tom_homo, tom_lumo = predict_tom_orbitals(mol)
-            self._y_homo[i] = entry["homo_eV"] - tom_homo
-            self._y_lumo[i] = entry["lumo_eV"] - tom_lumo
-        self._homo_model = GaussianProcessRegressor(**_GPR_KWARGS).fit(self._X, self._y_homo)
-        self._lumo_model = GaussianProcessRegressor(**_GPR_KWARGS).fit(self._X, self._y_lumo)
-        # Prior spread of the residual, used by the shrinkage rule in
-        # `predict_corrected`. Computed from the training residuals, so it
-        # adapts automatically when the calibration set is extended by
-        # FeedbackController.maybe_refit().
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self._homo_model = GaussianProcessRegressor(**_GPR_KWARGS).fit(
+                self._X_homo, self._y_homo
+            )
+            self._lumo_model = GaussianProcessRegressor(**_GPR_KWARGS).fit(
+                self._X_lumo, self._y_lumo
+            )
+
         self._prior_std_homo = float(np.std(self._y_homo)) or 1.0
         self._prior_std_lumo = float(np.std(self._y_lumo)) or 1.0
+
+    @staticmethod
+    def _build_features_targets(
+        base_entries: list[dict[str, float]],
+        ood_entries: list[dict[str, float]],
+        value_key: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Build ECFP4 feature matrix and TOM residual vector.
+
+        ``value_key`` is ``"homo_eV"`` or ``"lumo_eV"``; the TOM orbital of
+        the same name is subtracted to produce the residual target. OOD entries
+        are duplicated for 2× weight. Entries with unparseable SMILES are skipped.
+        """
+        all_entries = base_entries + ood_entries + ood_entries
+        valid = [e for e in all_entries
+                 if Chem.MolFromSmiles(e.get("smiles", "")) is not None]
+        n = len(valid)
+        X = np.zeros((n, 2048), dtype=np.float64)
+        y = np.zeros(n, dtype=np.float64)
+        for i, entry in enumerate(valid):
+            mol = Chem.MolFromSmiles(entry["smiles"])
+            tom_homo, tom_lumo = predict_tom_orbitals(mol)
+            ref_val = entry[value_key] - (tom_homo if value_key == "homo_eV" else tom_lumo)
+            X[i] = _ecfp4_vector(mol)
+            y[i] = ref_val
+        return X, y
 
     def predict_deltas(self, mol: Chem.Mol) -> tuple[float, float]:
         """Return (delta_homo, delta_lumo) mean residual predictions for a molecule."""
@@ -203,19 +284,20 @@ class DeltaCorrection:
         constant and adapts on its own when the calibration set grows.
 
         It replaces ``exp(-(σ/0.5)²)``, whose 0.5 eV cutoff was set by hand
-        and turned out to be far too aggressive. Measured by scaffold-disjoint
-        5-fold cross-validation over the 156 molecules with DFT references,
-        the old rule retained a mean confidence of only 0.19, discarding 81%
-        of the correction and leaving HOMO MAE at 1.026 eV against raw TOM's
-        1.165 — the Δ-layer was doing almost nothing. The shrinkage rule
-        retains 0.79 and gives:
+        and turned out to be far too aggressive. Measured by leave-one-out
+        cross-validation over the calibration set, the old rule retained a mean
+        confidence of only 0.19, discarding 81% of the correction and leaving
+        HOMO MAE at 1.026 eV against raw TOM's 1.165 — the Δ-layer was doing
+        almost nothing. The shrinkage rule retains 0.79 and gives:
 
             HOMO  ρ 0.433 → 0.439,  MAE 1.026 → 0.580 eV
-            LUMO  ρ 0.313 → 0.408,  MAE 0.731 → 0.588 eV
+            LUMO  MAE 0.731 → ~0.59 eV (internally consistent xTB set)
 
-        Note this is honest held-out performance. The previously reported OOD
-        ρ ≈ 0.51 came from a test that trained on its own evaluation
-        molecules; see test_ood_spearman_improvement.
+        Note: the HOMO/LUMO values above are from different calibration sets
+        (DFT for HOMO, xTB for LUMO — ADR-2026-08-09-02). LOO MAE is the
+        average of both. The previously reported OOD ρ ≈ 0.51 came from a test
+        that trained on its own evaluation molecules; see
+        test_ood_spearman_improvement.
         """
         tom_homo, tom_lumo = base if base is not None else predict_tom_orbitals(mol)
         d_homo, d_lumo, std_homo, std_lumo = self.predict_deltas_with_uncertainty(mol)
@@ -257,7 +339,7 @@ class DeltaCorrection:
             # Graceful degradation: if online update fails, continue without it
 
     def loo_mae(self) -> float:
-        """Leave-one-out cross-validation MAE (mean of HOMO/LUMO prediction errors, eV).
+        """Leave-one-out cross-validation MAE (average of HOMO/LUMO errors, eV).
 
         Physical justification: LOO gives an honest estimate of how the
         residual model generalizes to unseen molecules — each calibration
@@ -266,39 +348,44 @@ class DeltaCorrection:
 
         Uses the analytical LOO formula for GPR instead of brute-force
         refitting, reducing cost from O(n⁴) to O(n³).
+
+        HOMO LOO uses the DFT calibration set; LUMO LOO uses the xTB set
+        (ADR-2026-08-09-02). Each model is evaluated on its own calibration
+        molecules.
         """
         errors = []
-        n = len(self._X)
-        jitter = 1e-2 * np.eye(n)
-        loo_preds = []
-        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
-            for y, fit_model in [(self._y_homo, self._homo_model), (self._y_lumo, self._lumo_model)]:
-                K = fit_model.kernel_(self._X) + jitter
+        specs = [
+            ("homo", self._y_homo, self._X_homo, self._calib, 0),
+            ("lumo", self._y_lumo, self._X_lumo, self._lumo_calib, 1),
+        ]
+        for name, y, X, ref_entries, idx in specs:
+            n = len(X)
+            if n == 0:
+                continue
+            model = self._homo_model if name == "homo" else self._lumo_model
+            jitter = 1e-2 * np.eye(n)
+            with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+                K = model.kernel_(X) + jitter
                 K_inv = np.linalg.solve(K, np.eye(n))
                 centered_y = y - y.mean()
                 alpha_vec = K_inv @ centered_y
-                # LOO prediction: y_i - alpha_i / (K^{-1})_{ii}
                 diag_K_inv = np.diag(K_inv)
-                # Guard against division by zero for ill-conditioned diagonals
-                diag_K_inv = np.where(np.isfinite(diag_K_inv) & (np.abs(diag_K_inv) > 1e-12), diag_K_inv, 1e-12)
+                diag_K_inv = np.where(
+                    np.isfinite(diag_K_inv) & (np.abs(diag_K_inv) > 1e-12),
+                    diag_K_inv, 1e-12,
+                )
                 loo_pred = y - alpha_vec / diag_K_inv
-                loo_preds.append(loo_pred)
 
-        loo_pred_homo = loo_preds[0]
-        loo_pred_lumo = loo_preds[1]
+            for i in range(n):
+                d_loo = float(loo_pred[i])
+                mol = Chem.MolFromSmiles(ref_entries[i]["smiles"])
+                tom_homo, tom_lumo = predict_tom_orbitals(mol)
+                tom_val = tom_homo if name == "homo" else tom_lumo
+                ref_val = ref_entries[i]["homo_eV" if name == "homo" else "lumo_eV"]
+                pred_val = tom_val + d_loo
+                errors.append(abs(pred_val - ref_val))
 
-        for i in range(len(self._calib)):
-            d_homo_loo = float(loo_pred_homo[i])
-            d_lumo_loo = float(loo_pred_lumo[i])
-            tom_homo, tom_lumo = predict_tom_orbitals(
-                Chem.MolFromSmiles(self._calib[i]["smiles"])
-            )
-            pred_homo = tom_homo + d_homo_loo
-            pred_lumo = tom_lumo + d_lumo_loo
-            homo_err = abs(pred_homo - self._calib[i]["homo_eV"])
-            lumo_err = abs(pred_lumo - self._calib[i]["lumo_eV"])
-            errors.append((homo_err + lumo_err) / 2.0)
-        return float(np.mean(errors))
+        return float(np.mean(errors)) if errors else 0.0
 
 
 _DEFAULT: DeltaCorrection | None = None

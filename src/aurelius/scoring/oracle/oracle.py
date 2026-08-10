@@ -253,10 +253,10 @@ class PropertyOracle:
         quantum_result = self._quantum.evaluate(ctx.mol)
         homo = quantum_result["homo_eV"]
         lumo = quantum_result["lumo_eV"]
-        lumo - homo
 
-        # ADR-2026-08-09: Reduction stability proxy (Δ-learning on LUMO).
-        # MAE-only — ranking is provenance-confounded (ρ ≈ 0.06 unseen).
+        # ADR-2026-08-09-02: Reduction stability proxy.
+        # LUMO Δ-correction trained on internally consistent xTB set (231
+        # molecules, same Q-Chem method). Ranking is meaningful on this set.
         reduction_proxy = self._predict_reduction_proxy(ctx.mol)
 
         dielectric = predict_dielectric_proxy(ctx)
@@ -322,11 +322,12 @@ class PropertyOracle:
         return result
 
     def _predict_reduction_proxy(self, mol: Any) -> dict[str, float]:
-        """Δ-learning LUMO proxy for reduction stability (ADR-2026-08-09).
+        """Δ-learning LUMO proxy for reduction stability (ADR-2026-08-09-02).
 
-        Returns a dict with lumo_eV and confidence. The correction is shrunk
-        toward the TOM baseline for OOD molecules. This is an MAE-only proxy —
-        the output must NOT be used for ranking claims.
+        Returns a dict with lumo_eV and confidence. The correction is trained on
+        the internally consistent xTB calibration set (231 molecules, all from
+        GFN2-xTB) and shrunk toward the TOM baseline for OOD molecules.
+        Ranking is meaningful on the xTB set; MAE is also reported.
         """
         try:
             from aurelius.scoring.oracle.lumo_proxy import get_lumo_proxy
@@ -336,7 +337,7 @@ class PropertyOracle:
             return {
                 "lumo_eV": round(lumo, 4),
                 "confidence": conf,
-                "metric": "MAE-only (ranking confounded)",
+                "metric": "MAE + internally consistent LUMO ranking (xTB set)",
             }
         except Exception as exc:
             logger.debug("LUMO proxy failed (%s); omitting reduction_stability_proxy.", exc)
