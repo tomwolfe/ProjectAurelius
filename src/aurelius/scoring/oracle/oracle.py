@@ -254,9 +254,11 @@ class PropertyOracle:
         homo = quantum_result["homo_eV"]
         lumo = quantum_result["lumo_eV"]
 
-        # ADR-2026-08-09-02: Reduction stability proxy.
-        # LUMO Δ-correction trained on internally consistent xTB set (231
-        # molecules, same Q-Chem method). Ranking is meaningful on this set.
+        # ADR-2026-08-10: Reduction stability is now the ΔSCF electron
+        # affinity, validated against 40 experimental gas-phase EAs
+        # (rho = 0.91). The LUMO Δ-correction it replaces reached only
+        # rho = 0.10 on unseen molecules because a frozen virtual orbital is
+        # not a physical reduction descriptor for saturated solvents.
         reduction_proxy = self._predict_reduction_proxy(ctx.mol)
 
         dielectric = predict_dielectric_proxy(ctx)
@@ -321,31 +323,43 @@ class PropertyOracle:
         self._cache[smiles] = result
         return result
 
-    def _predict_reduction_proxy(self, mol: Any) -> dict[str, float]:
-        """Δ-learning LUMO proxy for reduction stability (ADR-2026-08-09-02).
+    def _predict_reduction_proxy(self, mol: Any) -> dict[str, Any]:
+        """ΔSCF electron affinity as the reduction-stability axis (ADR-2026-08-10).
 
-        Returns a dict with lumo_eV and confidence. The correction is trained on
-        the internally consistent xTB calibration set (231 molecules, all from
-        GFN2-xTB) and shrunk toward the TOM baseline for OOD molecules.
-        Ranking is meaningful on the xTB set; MAE is also reported.
+        Returns ``ea_eV`` on the experimental gas-phase electron-affinity
+        scale, where **higher means more easily reduced** (worse bulk reduction
+        stability). Backed by xTB ΔSCF when available (rho = 0.91 against 40
+        measured EAs), otherwise by an interpretable structural ridge model
+        (rho = 0.69, chemical-class-disjoint).
+
+        ``lumo_eV`` is still reported for backward compatibility but is a
+        calibration artefact only — it must not be used for ranking.
         """
+        record: dict[str, Any] = {
+            "ea_eV": None, "method": "unavailable", "confidence": 0.0,
+            "in_calibrated_span": False,
+            "metric": "Spearman rho vs 40 experimental gas-phase EAs",
+            "sign_convention": "higher ea_eV = more easily reduced = less stable",
+        }
+
+        try:
+            from aurelius.scoring.oracle.reduction import get_reduction_oracle
+
+            record.update(get_reduction_oracle().evaluate(mol))
+        except Exception as exc:
+            logger.debug("Reduction oracle failed (%s).", exc)
+
+        # Legacy field, retained for one release. Not a ranking input.
         try:
             from aurelius.scoring.oracle.lumo_proxy import get_lumo_proxy
 
-            proxy = get_lumo_proxy()
-            lumo, conf = proxy.predict_corrected(mol)
-            return {
-                "lumo_eV": round(lumo, 4),
-                "confidence": conf,
-                "metric": "MAE + internally consistent LUMO ranking (xTB set)",
-            }
-        except Exception as exc:
-            logger.debug("LUMO proxy failed (%s); omitting reduction_stability_proxy.", exc)
-            return {
-                "lumo_eV": None,
-                "confidence": 0.0,
-                "metric": "unavailable",
-            }
+            lumo, _conf = get_lumo_proxy().predict_corrected(mol)
+            record["lumo_eV"] = round(lumo, 4)
+            record["lumo_note"] = "calibration only (MAE); superseded for ranking"
+        except Exception:
+            record["lumo_eV"] = None
+
+        return record
 
     def predict_batch_properties(self, contexts: list[MoleculeContext]) -> dict[str, np.ndarray[Any, np.dtype[np.float32]]]:
         """Batch-predict properties for a list of molecules.

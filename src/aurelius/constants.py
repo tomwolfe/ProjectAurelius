@@ -33,10 +33,42 @@ a sharp transition within ~0.5 eV of the threshold."""
 # that it causes excessive first-cycle capacity loss.
 
 LUMO_TARGET: float = -1.0
-"""Target LUMO energy (eV) for ideal SEI formation at ~1.0 V vs Li/Li+."""
+"""Target LUMO energy (eV) for ideal SEI formation at ~1.0 V vs Li/Li+.
+
+Retained for the legacy LUMO field only. LUMO is no longer a ranking input —
+see EA_TARGET (ADR-2026-08-10).
+"""
 
 LUMO_SIGMA: float = 0.75
 """Gaussian width for LUMO reward. sigma=0.75 eV rewards LUMO in [-1.75, -0.25] eV."""
+
+# ---------------------------------------------------------------------------
+# Reduction stability — ΔSCF electron affinity (ADR-2026-08-10)
+# ---------------------------------------------------------------------------
+# The reduction axis is now ranked by ΔSCF electron affinity on the
+# experimental gas-phase scale (rho = 0.91 against 40 measured EAs), replacing
+# the frontier LUMO, which sat at the permutation noise floor (rho = 0.34 vs a
+# 0.31 bar). Higher EA = accepts an electron more readily = less stable.
+#
+# The target window is set by where real electrolytes actually fall, measured
+# with the shipped oracle:
+#
+#   bulk solvents (EC, DMC, DEC, PC, ACN, sulfolane)  EA ~ -2.1 eV
+#   SEI additives (FEC, VC, DTD, propane sultone)     EA ~ -0.9 eV
+#   too reducible (quinones, nitroaromatics, TCNE)    EA >  +1.0 eV
+#
+# A useful solvent must resist reduction in the bulk while still being
+# reducible enough to passivate, so the reward peaks in the additive/solvent
+# band and falls away sharply above zero.
+
+EA_TARGET: float = -1.2
+"""Target ΔSCF electron affinity (eV): the SEI-forming band just below the
+bulk-solvent mean, where FEC and VC sit."""
+
+EA_SIGMA: float = 1.1
+"""Gaussian width for the EA reward. Spans roughly [-2.3, -0.1] eV at 1 sigma,
+covering bulk carbonates through SEI additives while strongly penalising the
+easily reduced species above 0 eV."""
 
 # ---------------------------------------------------------------------------
 # Dielectric Constant Thresholds
@@ -119,7 +151,13 @@ SA_SIGMOID_STEEPNESS: float = 2.0
 # SA is a soft filter.
 
 SCORE_WEIGHT_LUMO: float = 0.23
-"""Weight for LUMO SEI-formation reward."""
+"""Weight for the reduction-stability reward.
+
+ADR-2026-08-10: this weight now drives the ΔSCF electron-affinity objective
+rather than the LUMO one. The name is kept for configuration compatibility;
+the magnitude is unchanged, so the balance between objectives is untouched
+while the axis underneath it went from noise (rho 0.34) to signal (rho 0.91).
+"""
 
 SCORE_WEIGHT_HOMO: float = 0.17
 """Weight for HOMO oxidative-stability penalty."""

@@ -425,29 +425,44 @@ def _acquisition_comparison(
     rows: list[dict[str, float]] = []
     for seed in seeds:
         holdout, seed_calib, unmeasured = _split(entries, seed)
-        base = _evaluate(_fit(seed_calib), holdout)["mae_eV"]
+        base = _evaluate(_fit(seed_calib), holdout)
         picks = _acquire_suggester(unmeasured, budget)
-        sug = _evaluate(_fit(seed_calib + picks), holdout)["mae_eV"]
+        sug = _evaluate(_fit(seed_calib + picks), holdout)
         rnd_picks = random.Random(seed).sample(unmeasured, budget)
-        rnd = _evaluate(_fit(seed_calib + rnd_picks), holdout)["mae_eV"]
+        rnd = _evaluate(_fit(seed_calib + rnd_picks), holdout)
         rows.append(
             {
                 "seed": seed,
-                "suggester_delta_mae": sug - base,
-                "random_delta_mae": rnd - base,
-                "edge": (rnd - base) - (sug - base),
+                "suggester_delta_mae": sug["mae_eV"] - base["mae_eV"],
+                "random_delta_mae": rnd["mae_eV"] - base["mae_eV"],
+                "edge": (rnd["mae_eV"] - base["mae_eV"]) - (sug["mae_eV"] - base["mae_eV"]),
+                # Ranking is what the EA consumes; MAE alone can improve while
+                # the ordering the search depends on gets no better.
+                "suggester_delta_rho": sug["spearman_rho"] - base["spearman_rho"],
+                "random_delta_rho": rnd["spearman_rho"] - base["spearman_rho"],
+                "rho_edge": sug["spearman_rho"] - rnd["spearman_rho"],
                 "suggester_redundancy": _batch_redundancy(picks),
                 "random_redundancy": _batch_redundancy(rnd_picks),
             }
         )
 
     edges = np.array([r["edge"] for r in rows])
+    rho_edges = np.array([r["rho_edge"] for r in rows])
+    # Paired t-test across splits: a single seed cannot separate an
+    # acquisition strategy from split luck.
+    rho_t = ttest_1samp(rho_edges, 0.0) if len(rho_edges) > 1 else None
+    mae_t = ttest_1samp(edges, 0.0) if len(edges) > 1 else None
     return {
         "budget": budget,
         "rows": rows,
         "mean_edge": float(edges.mean()),
         "std_edge": float(edges.std()),
         "suggester_wins": int((edges > 0).sum()),
+        "mean_rho_edge": float(rho_edges.mean()),
+        "std_rho_edge": float(rho_edges.std()),
+        "suggester_rho_wins": int((rho_edges > 0).sum()),
+        "rho_edge_p_value": float(rho_t.pvalue) if rho_t is not None else None,
+        "mae_edge_p_value": float(mae_t.pvalue) if mae_t is not None else None,
         "n_seeds": len(rows),
         "mean_suggester_redundancy": float(
             np.mean([r["suggester_redundancy"] for r in rows])
@@ -562,25 +577,37 @@ def main() -> int:
                 f"{r['random_delta_mae']:>+11.4f} {r['edge']:>+9.4f}"
             )
         print(
-            f"    mean edge {acq['mean_edge']:+.4f} +/- {acq['std_edge']:.4f} eV; "
+            f"    mean MAE edge {acq['mean_edge']:+.4f} +/- {acq['std_edge']:.4f} eV; "
             f"suggester better on {acq['suggester_wins']}/{acq['n_seeds']} splits"
+            + (f" (p={acq['mae_edge_p_value']:.3f})"
+               if acq.get("mae_edge_p_value") is not None else "")
+        )
+        print(
+            f"    mean rho edge {acq['mean_rho_edge']:+.4f} +/- "
+            f"{acq['std_rho_edge']:.4f}; suggester better on "
+            f"{acq['suggester_rho_wins']}/{acq['n_seeds']} splits"
+            + (f" (p={acq['rho_edge_p_value']:.3f})"
+               if acq.get("rho_edge_p_value") is not None else "")
         )
         print(
             f"    batch redundancy (mean pairwise Tanimoto): "
             f"suggester {acq['mean_suggester_redundancy']:.4f} vs "
             f"random {acq['mean_random_redundancy']:.4f}"
         )
-        majority = acq["suggester_wins"] > acq["n_seeds"] / 2
-        print(
-            "    -> "
-            + (
-                "suggester beats random on a majority of splits, but the "
-                "spread overlaps zero: directionally better, not proven."
-                if majority
-                else "indistinguishable from random at this budget "
-                "(sign of the edge flips across splits)."
-            )
-        )
+        # Ranking is the quantity the EA consumes, so it decides the verdict.
+        rho_p = acq.get("rho_edge_p_value")
+        rho_significant = rho_p is not None and rho_p < 0.05 and acq["mean_rho_edge"] > 0
+        majority = acq["suggester_rho_wins"] > acq["n_seeds"] / 2
+        if rho_significant:
+            verdict = ("suggester improves holdout RANKING over random "
+                       f"(p={rho_p:.3f}) — acquisition adds real value.")
+        elif majority:
+            verdict = ("suggester beats random on a majority of splits, but the "
+                       "spread overlaps zero: directionally better, not proven.")
+        else:
+            verdict = ("indistinguishable from random at this budget "
+                       "(sign of the edge flips across splits).")
+        print(f"    -> {verdict}")
 
     sabotage: dict[str, object] | None = None
     if args.sabotage:

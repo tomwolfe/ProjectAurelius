@@ -28,9 +28,10 @@ from aurelius.constants import (
     AL_CORROSION_MIN_FLUORINE,
     AL_CORROSION_PENALTY_FACTOR,
     DIELECTRIC_TARGET,
+    EA_SIGMA,
+    EA_TARGET,
     HOMO_THRESHOLD,
     LI_SOLVATION_TARGET,
-    LUMO_TARGET,
     SA_THRESHOLD,
     SCORE_WEIGHT_DIELECTRIC,
     SCORE_WEIGHT_HOMO,
@@ -101,10 +102,29 @@ class Objective:
         return self.function(value)
 
 
+def _extract_ea(tier2_result: dict[str, Any] | None) -> float | None:
+    """Pull the ΔSCF electron affinity out of an oracle result, if present.
+
+    Returns None when the reduction oracle did not run or produced no value,
+    so the caller can fall back to a neutral objective rather than treating a
+    missing measurement as a bad one.
+    """
+    if not tier2_result:
+        return None
+    proxy = tier2_result.get("reduction_stability_proxy")
+    if not isinstance(proxy, dict):
+        return None
+    value = proxy.get("ea_eV")
+    return float(value) if isinstance(value, (int, float)) else None
+
+
 _OBJECTIVES: list[Objective] = [
-    Objective("lumo_reward", "lumo_eV", SCORE_WEIGHT_LUMO,
-              lambda v: _gaussian(v, LUMO_TARGET, 0.75),
-              failure_reason_template="LUMO={value:.3f}eV (poor SEI formation)"),
+    # ADR-2026-08-10: reduction stability is ranked by ΔSCF electron affinity
+    # (rho = 0.91 against 40 measured gas-phase EAs), not by the frontier LUMO
+    # it replaces (rho = 0.34 against a 0.31 permutation bar).
+    Objective("reduction_stability_reward", "ea_eV", SCORE_WEIGHT_LUMO,
+              lambda v: _gaussian(v, EA_TARGET, EA_SIGMA),
+              failure_reason_template="EA={value:.3f}eV (reduction-unstable)"),
     Objective("homo_penalty", "homo_eV", SCORE_WEIGHT_HOMO,
               lambda v: _sigmoid(v, HOMO_THRESHOLD, 5.0, False),
               failure_reason_template="HOMO={value:.3f}eV (oxidative instability)"),
@@ -262,6 +282,7 @@ class AureliusPipeline:
             )
 
         quantum_confidence = t2_result.get("quantum_confidence", "unknown") if t2_result else "unknown"
+        ea_eV = _extract_ea(t2_result)
         score = self._compute_score(
             homo_eV, lumo_eV,
             dielectric_proxy=dielectric_proxy,
@@ -269,6 +290,7 @@ class AureliusPipeline:
             li_solvation_proxy=li_solvation_proxy,
             ctx=ctx,
             quantum_confidence=quantum_confidence,
+            ea_eV=ea_eV,
         )
 
         score = self._apply_domain_penalty(score, t2_result)
@@ -467,6 +489,7 @@ class AureliusPipeline:
         li_solvation_proxy: float = 0.0,
         ctx: MoleculeContext | None = None,
         quantum_confidence: str = "unknown",
+        ea_eV: float | None = None,
     ) -> dict[str, Any]:
         """Compute the multi-objective composite Aurelius Score.
 
@@ -504,6 +527,11 @@ class AureliusPipeline:
             "dielectric_proxy": dielectric_proxy,
             "viscosity_proxy": viscosity_proxy,
             "li_solvation_proxy": li_solvation_proxy,
+            # ADR-2026-08-10. When the reduction oracle is unavailable the
+            # objective must not silently reward or punish: EA_TARGET makes the
+            # Gaussian evaluate to its maximum, so the term drops out of the
+            # comparison between candidates rather than injecting a fake signal.
+            "ea_eV": EA_TARGET if ea_eV is None else ea_eV,
         }
 
         sub_scores: dict[str, float] = {}

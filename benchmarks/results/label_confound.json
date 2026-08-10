@@ -79,6 +79,34 @@
       "file": "orbital_calibration.json"
     },
     {
+      "target": "homo_eV",
+      "n": 231,
+      "n_sources": 1,
+      "label_std": 0.35764129160430064,
+      "citation_rho": 0.0,
+      "citation_mae": 0.2696,
+      "within_source_var": 0.12791,
+      "between_source_var": 0.0,
+      "between_source_fraction": 0.0,
+      "confounded": false,
+      "note": "single measurement source (1); provenance carries no signal",
+      "file": "lumo_calibration_xtb.json"
+    },
+    {
+      "target": "lumo_eV",
+      "n": 231,
+      "n_sources": 1,
+      "label_std": 0.41573709727508223,
+      "citation_rho": 0.0,
+      "citation_mae": 0.3193,
+      "within_source_var": 0.17284,
+      "between_source_var": 0.0,
+      "between_source_fraction": 0.0,
+      "confounded": false,
+      "note": "single measurement source (1); provenance carries no signal",
+      "file": "lumo_calibration_xtb.json"
+    },
+    {
       "target": "ip_eV",
       "n": 88,
       "n_sources": 1,
@@ -91,6 +119,20 @@
       "confounded": false,
       "note": "single measurement source (1); provenance carries no signal",
       "file": "experimental_ionization.json"
+    },
+    {
+      "target": "ea_eV",
+      "n": 40,
+      "n_sources": 1,
+      "label_std": 0.9807523690386886,
+      "citation_rho": 0.0,
+      "citation_mae": 0.7699,
+      "within_source_var": 0.96188,
+      "between_source_var": 0.0,
+      "between_source_fraction": 0.0,
+      "confounded": false,
+      "note": "single measurement source (1); provenance carries no signal",
+      "file": "experimental_electron_affinity.json"
     }
   ]
 }

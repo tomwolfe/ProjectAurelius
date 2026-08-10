@@ -146,15 +146,35 @@ class TestInformationGainRanking:
         assert out[0].smiles not in well_known
 
     def test_weights_change_the_outcome(self):
+        """Every term must be zeroed explicitly, or a defaulted term dominates.
+
+        This test previously listed only four weights. When ``expected_impact``
+        was added (ADR-2026-08-10-03) it kept its default 0.25 in both arms and
+        drove both rankings to the same answer, so the test failed for the
+        right reason: the override was silently incomplete.
+        """
+        off = dict.fromkeys(DEFAULT_WEIGHTS, 0.0)
+
         novelty_first = suggest_experiments(
-            CANDIDATES, top_n=3,
-            weights={"novelty": 1.0, "uncertainty": 0.0, "doa_proximity": 0.0, "bias": 0.0},
+            CANDIDATES, top_n=3, weights={**off, "novelty": 1.0},
         )
         uncertainty_first = suggest_experiments(
-            CANDIDATES, top_n=3,
-            weights={"novelty": 0.0, "uncertainty": 1.0, "doa_proximity": 0.0, "bias": 0.0},
+            CANDIDATES, top_n=3, weights={**off, "uncertainty": 1.0},
         )
         assert [s.smiles for s in novelty_first] != [s.smiles for s in uncertainty_first]
+
+    def test_expected_impact_changes_the_outcome(self):
+        """The decision-relevance term must be able to drive selection on its own."""
+        off = dict.fromkeys(DEFAULT_WEIGHTS, 0.0)
+
+        impact_first = suggest_experiments(
+            CANDIDATES, top_n=3, weights={**off, "expected_impact": 1.0},
+        )
+        uncertainty_first = suggest_experiments(
+            CANDIDATES, top_n=3, weights={**off, "uncertainty": 1.0},
+        )
+        assert impact_first, "expected-impact ranking returned nothing"
+        assert [s.smiles for s in impact_first] != [s.smiles for s in uncertainty_first]
 
     def test_doa_proximity_peaks_at_the_boundary(self):
         """Most informative near the edge, less so deep inside or far outside."""

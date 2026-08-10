@@ -38,6 +38,18 @@ are combined, each already computed elsewhere in the codebase:
     be extended. This term therefore peaks at the edge rather than increasing
     monotonically — see :func:`_doa_proximity_score`.
 
+``expected_impact`` — how much the measurement would move the *decision*, not
+    just the model (ADR-2026-08-10-03). The four terms above are all
+    model-centric: they maximise information about the oracle while being
+    indifferent to whether that information changes which molecules get made.
+    A wide interval on a molecule that is certainly mediocre is worth less
+    than a narrow interval on a molecule sitting on the top-k boundary, where
+    the measurement decides inclusion. This term estimates the probability
+    that the true value falls on the other side of the current top-k
+    threshold — the classic "expected change in the selected set" argument —
+    using the conformal interval as the predictive distribution. See
+    :func:`_expected_impact_score`.
+
 The weighted sum is deliberately transparent rather than a learned
 acquisition function: a chemist deciding whether to spend a week on a
 measurement should be able to read why it was suggested.
@@ -84,11 +96,17 @@ MEASURABLE_PROPERTIES: dict[str, str] = {
 # guarantee behind it; novelty is next because calibration-set coverage is
 # what makes that guarantee transfer.
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "uncertainty": 0.40,
-    "novelty": 0.25,
-    "doa_proximity": 0.20,
-    "bias": 0.15,
+    "uncertainty": 0.30,
+    "expected_impact": 0.25,
+    "novelty": 0.20,
+    "doa_proximity": 0.15,
+    "bias": 0.10,
 }
+
+# Fraction of the candidate pool treated as the "decision set" when computing
+# expected impact. Measurements only change what gets made if they can move a
+# molecule across this boundary.
+TOP_K_FRACTION = 0.25
 
 # A suggestion must be plausibly synthesizable to be worth lab time.
 MAX_SA_SCORE = 6.0
@@ -141,6 +159,73 @@ def _doa_proximity_score(doa_penalty: float) -> float:
     # Normalise to [0, 1] where 1 = at the floor, then peak at the midpoint.
     depth = (1.0 - doa_penalty) / (1.0 - floor)
     return round(1.0 - abs(depth - 0.5) * 2.0 + depth * 0.5, 6)
+
+
+def _expected_impact_score(
+    point: float,
+    interval: tuple[float, float],
+    threshold: float | None,
+) -> float:
+    """Probability the measurement moves this molecule across the top-k boundary.
+
+    Uncertainty sampling asks "where is the model least sure?". That is the
+    right question for building a model and the wrong one for running a
+    discovery campaign, where the only measurements that pay for themselves are
+    those that can change *which molecules get made*. A molecule predicted far
+    from the decision boundary teaches the model something even when the answer
+    is unsurprising, but it cannot alter the shortlist.
+
+    The conformal interval is treated as a 90% predictive interval and
+    approximated by a Gaussian with matching coverage (the half-width is
+    1.645σ). The score is then
+
+        2 · min(P(y > threshold), P(y ≤ threshold))
+
+    which is 1.0 when the prediction sits exactly on the boundary — a coin
+    flip, maximum decision-relevance — and decays to 0 as the molecule becomes
+    unambiguously in or out. Doubling normalises the maximum to 1.0.
+
+    Returns 0.0 when no threshold is available (single-candidate calls), so the
+    term degrades to neutral rather than to a misleading constant.
+    """
+    if threshold is None:
+        return 0.0
+
+    half_width = (interval[1] - interval[0]) / 2.0
+    if half_width <= 0:
+        # A zero-width interval means the model claims certainty: the
+        # measurement can only change the decision if the point is exactly on
+        # the boundary, which is measure-zero.
+        return 0.0
+
+    sigma = half_width / 1.645
+    from math import erf, sqrt
+
+    z = (threshold - point) / (sigma * sqrt(2.0))
+    p_below = 0.5 * (1.0 + erf(z))
+    return round(2.0 * min(p_below, 1.0 - p_below), 6)
+
+
+def _decision_thresholds(
+    predictions_by_property: dict[str, list[float]],
+    top_k_fraction: float = TOP_K_FRACTION,
+) -> dict[str, float]:
+    """Per-property top-k cut-off across the candidate pool.
+
+    The threshold is the value a molecule must beat to enter the top
+    ``top_k_fraction`` of the pool on that property. Properties where more is
+    better (dielectric) and less is better (viscosity) both work, because the
+    expected-impact score only cares about distance to the boundary, not which
+    side is preferable.
+    """
+    import numpy as np
+
+    thresholds: dict[str, float] = {}
+    for prop, values in predictions_by_property.items():
+        if len(values) < 4:
+            continue
+        thresholds[prop] = float(np.quantile(values, 1.0 - top_k_fraction))
+    return thresholds
 
 
 def _max_tanimoto_to_calibration(fp: Any, calibration_fps: list[Any]) -> float:
@@ -253,6 +338,10 @@ def _build_rationale(
             f"{interval[1] - interval[0]:.2f} {units}, which is wide relative to "
             f"its calibration residuals"
         ),
+        "expected_impact": (
+            "the prediction sits close to the shortlist cut-off, so the "
+            "measurement is likely to decide whether this molecule is pursued"
+        ),
         "novelty": "this scaffold is chemically distant from every calibration molecule",
         "doa_proximity": (
             "the molecule sits near the edge of the oracle's domain of "
@@ -279,16 +368,65 @@ def _score_property(
     doa: float,
     biases: dict[str, float],
     weights: dict[str, float],
+    threshold: float | None = None,
 ) -> tuple[float, dict[str, float], tuple[float, float]]:
     uncertainty, interval = _normalised_interval_width(predictor, prop, point, mol)
     components = {
         "uncertainty": round(uncertainty, 4),
+        "expected_impact": _expected_impact_score(point, interval, threshold),
         "novelty": round(novelty, 4),
         "doa_proximity": round(doa, 4),
         "bias": round(biases.get(prop, 0.0), 4),
     }
     score = sum(weights.get(name, 0.0) * value for name, value in components.items())
     return round(score, 6), components, interval
+
+
+_Evaluated = tuple["MoleculeContext", dict[str, float], float, float, str]
+
+
+def _evaluate_candidates(
+    candidates: list[str],
+    calibration_fps: list[Any],
+    max_sa_score: float,
+) -> tuple[list[_Evaluated], dict[str, Any]]:
+    """Score every candidate once: predictions, novelty, DoA and fingerprint.
+
+    Split out of :func:`suggest_experiments` so the expected-impact term can be
+    computed against pool-wide decision thresholds without pushing the caller
+    over the project's cyclomatic-complexity budget.
+
+    Returns ``(evaluated, fingerprints)`` where each evaluated entry is
+    ``(ctx, predictions, novelty, doa_score, doa_reason)``.
+    """
+    from aurelius.scoring.oracle.quantum import compute_quantum_domain_penalty
+    from aurelius.utils.chem_utils import electrolyte_synthetic_accessibility
+
+    evaluated: list[_Evaluated] = []
+    fingerprints: dict[str, Any] = {}
+
+    for smiles in candidates:
+        ctx = MoleculeContext.from_smiles(smiles)
+        if ctx is None:
+            logger.debug("Skipping unparseable SMILES: %s", smiles)
+            continue
+        if electrolyte_synthetic_accessibility(ctx) > max_sa_score:
+            continue
+
+        try:
+            predictions = _predicted_values(ctx)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Oracle failed for %s (%s); skipping.", smiles, exc)
+            continue
+
+        fingerprints[Chem.MolToSmiles(ctx.mol)] = ctx.get_ecfp4()
+        novelty = 1.0 - _max_tanimoto_to_calibration(ctx.get_ecfp4(), calibration_fps)
+        doa_penalty, doa_reason = compute_quantum_domain_penalty(ctx)
+        evaluated.append(
+            (ctx, predictions, novelty, _doa_proximity_score(doa_penalty), doa_reason)
+        )
+
+    return evaluated, fingerprints
 
 
 def suggest_experiments(
@@ -315,8 +453,6 @@ def suggest_experiments(
         Up to ``top_n`` suggestions, highest priority first.
     """
     from aurelius.scoring.oracle.conformal import get_conformal_predictor
-    from aurelius.scoring.oracle.quantum import compute_quantum_domain_penalty
-    from aurelius.utils.chem_utils import electrolyte_synthetic_accessibility
 
     active_weights = {**DEFAULT_WEIGHTS, **(weights or {})}
     wanted = properties or list(MEASURABLE_PROPERTIES)
@@ -328,31 +464,24 @@ def suggest_experiments(
     calibration_fps = _load_calibration_fingerprints()
     biases = _bias_magnitudes(controller)
 
+    # Pass 1: evaluate every candidate once, so the decision thresholds used by
+    # the expected-impact term reflect the whole pool rather than one molecule.
+    evaluated, fingerprints = _evaluate_candidates(
+        candidates, calibration_fps, max_sa_score
+    )
+
+    thresholds = _decision_thresholds(
+        {prop: [pred[prop] for _c, pred, *_ in evaluated] for prop in wanted}
+    )
+
+    # Pass 2: score each (molecule, property) pair against those thresholds.
     suggestions: list[ExperimentSuggestion] = []
-    fingerprints: dict[str, Any] = {}
-    for smiles in candidates:
-        ctx = MoleculeContext.from_smiles(smiles)
-        if ctx is None:
-            logger.debug("Skipping unparseable SMILES: %s", smiles)
-            continue
-        if electrolyte_synthetic_accessibility(ctx) > max_sa_score:
-            continue
-
-        fingerprints[Chem.MolToSmiles(ctx.mol)] = ctx.get_ecfp4()
-        novelty = 1.0 - _max_tanimoto_to_calibration(ctx.get_ecfp4(), calibration_fps)
-        doa_penalty, doa_reason = compute_quantum_domain_penalty(ctx)
-        doa = _doa_proximity_score(doa_penalty)
-
-        try:
-            predictions = _predicted_values(ctx)
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("Oracle failed for %s (%s); skipping.", smiles, exc)
-            continue
-
+    for ctx, predictions, novelty, doa, doa_reason in evaluated:
         for prop in wanted:
             point = predictions[prop]
             score, components, interval = _score_property(
-                prop, point, predictor, ctx.mol, novelty, doa, biases, active_weights
+                prop, point, predictor, ctx.mol, novelty, doa, biases,
+                active_weights, thresholds.get(prop),
             )
             canonical_property = MEASURABLE_PROPERTIES[prop]
             units = _UNITS[canonical_property]

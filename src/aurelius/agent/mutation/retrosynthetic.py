@@ -58,32 +58,83 @@ def _load_template_smarts() -> list[tuple[str, str]]:
     return compiled
 
 
+@lru_cache(maxsize=1)
+def _template_patterns() -> tuple[tuple[Chem.Mol, str, str], ...]:
+    """Compile every template once as (pattern, name, category)."""
+    compiled: list[tuple[Chem.Mol, str, str]] = []
+    for tmpl in _load_synthesis_templates():
+        pat = Chem.MolFromSmarts(tmpl.get("smarts", ""))
+        if pat is not None:
+            compiled.append((pat, tmpl.get("name", ""), tmpl.get("category", "")))
+    return tuple(compiled)
+
+
+# Structural motifs that make a molecule hard or dangerous to make, regardless
+# of how many nice functional groups it also contains. Values are multiplicative
+# penalties applied to the template score.
+_INFEASIBLE_MOTIFS: list[tuple[str, str, float]] = [
+    ("[OX2][OX2]", "peroxide", 0.15),
+    ("[NX2]=[NX2+]=[NX1-]", "azide", 0.15),
+    ("[N+](=O)[O-]", "nitro", 0.55),
+    ("[Si][OX2][Si]", "disiloxane", 0.35),
+    ("[SiX4]", "silicon", 0.45),
+    ("[B,Se,Te,As,Ge,Sn]", "exotic_heteroatom", 0.25),
+    ("[OX2r3]", "epoxide_or_dioxirane", 0.40),
+    ("[CX3](=[OX1])[OX2][CX3](=[OX1])", "anhydride", 0.55),
+    ("[CX3](=[OX1])[CX2]#[NX1]", "acyl_cyanide", 0.35),
+    ("[CX4](C#N)(C#N)C#N", "polynitrile_carbon", 0.30),
+    ("[F,Cl,Br,I][CX4][OX2][CX4][F,Cl,Br,I]", "bis_halo_ether", 0.55),
+]
+
+_COMPILED_INFEASIBLE: tuple[tuple[Chem.Mol, str, float], ...] = tuple(
+    (pat, name, penalty)
+    for smarts, name, penalty in _INFEASIBLE_MOTIFS
+    if (pat := Chem.MolFromSmarts(smarts)) is not None
+)
+
+
+def infeasibility_penalty(mol: Chem.Mol) -> tuple[float, list[str]]:
+    """Multiplicative penalty for motifs that defeat a plausible synthesis.
+
+    Returns ``(multiplier, motif_names)``. Penalties compound, so a molecule
+    carrying both a peroxide and a silyl ether is punished far harder than one
+    carrying either alone — which matches how a chemist reads such a structure.
+    """
+    if mol is None:
+        return 0.0, ["invalid"]
+
+    multiplier = 1.0
+    hits: list[str] = []
+    for pat, name, penalty in _COMPILED_INFEASIBLE:
+        if mol.HasSubstructMatch(pat):
+            multiplier *= penalty
+            hits.append(name)
+    return multiplier, hits
+
+
 def compute_synthesis_feasibility(mol: Chem.Mol) -> float:
-    """Compute template-based synthesis feasibility score for a molecule.
+    """Template-based synthesis feasibility score for a molecule.
 
-    Checks the molecule for the presence of functional groups that
-    correspond to known feasible synthesis routes for electrolyte
-    molecules. Core electrolyte functional groups (carbonate, ether,
-    sulfone) indicate high synthesizability via well-precedented
-    synthetic routes. Supporting functional groups (nitrile, fluoride,
-    hydroxyl, etc.) indicate moderate synthesizability. Molecules with
-    no recognizable electrolyte functional groups are scored low.
+    Physical justification: BRICS depth alone cannot distinguish fragments
+    that are commercially available from those requiring multi-step synthesis.
+    Template matching checks the structure against reaction pathways that are
+    standard in electrolyte synthesis.
 
-    Scoring:
-      - Any core group matched: 0.9 (directly synthesizable)
-      - Any functional group matched but no core: 0.5 (moderate)
-      - No groups matched: 0.1 (low, likely Frankenstein)
-      - No templates available: 0.5 (neutral default)
+    ADR-2026-08-10-02: this previously returned one of exactly three values
+    (0.9 / 0.5 / 0.1) depending on whether *any* core or functional template
+    matched. Since essentially every electrolyte candidate contains at least
+    one ether or carbonyl, the score was 0.9 for 96% of realistic populations
+    and carried almost no information. It is now graded on:
 
-    Physical justification: BRICS depth alone cannot distinguish
-    between fragments that are commercially available and those
-    that require multi-step synthesis. Template matching provides
-    a direct check against known feasible reaction pathways that
-    are standard in electrolyte synthesis. A molecule whose
-    structure is built from common electrolyte functional groups
-    (carbonates, ethers, sulfones) is more likely to be practically
-    synthesizable than one containing exotic or unusual functional
-    groups.
+    * **coverage** — what fraction of the molecule's heavy atoms is spanned by
+      recognised template motifs, so a molecule that is *entirely* made of
+      well-precedented groups outranks one with a single ester hanging off an
+      exotic core;
+    * **diversity** — how many distinct core/functional templates match,
+      saturating, since the second recognised motif adds less than the first;
+    * **infeasibility motifs** — a multiplicative penalty for peroxides,
+      azides, silyl ethers, polynitrile carbons and other groups that make a
+      molecule unmakeable or unusable regardless of what else it contains.
 
     Args:
         mol: RDKit molecule to evaluate.
@@ -94,18 +145,38 @@ def compute_synthesis_feasibility(mol: Chem.Mol) -> float:
     if mol is None:
         return 0.0
 
-    templates = _load_template_smarts()
+    templates = _template_patterns()
     if not templates:
         return 0.5
 
-    matched_core = _has_core_group(mol, templates)
-    matched_functional = _has_functional_group(mol, templates)
+    n_heavy = mol.GetNumHeavyAtoms()
+    if n_heavy == 0:
+        return 0.0
 
-    if matched_core:
-        return 0.9
-    if matched_functional:
-        return 0.5
-    return 0.1
+    covered: set[int] = set()
+    n_core = 0
+    n_functional = 0
+    for pat, _name, category in templates:
+        matches = mol.GetSubstructMatches(pat)
+        if not matches:
+            continue
+        if category == "core":
+            n_core += 1
+        elif category == "functional":
+            n_functional += 1
+        for match in matches:
+            covered.update(match)
+
+    if not covered:
+        return 0.1
+
+    coverage = len(covered) / n_heavy
+    # Saturating diversity term: 1 motif -> 0.5, 2 -> 0.71, 4 -> 1.0.
+    diversity = min(1.0, ((n_core + 0.5 * n_functional) / 4.0) ** 0.5)
+    base = 0.15 + 0.55 * coverage + 0.30 * diversity
+
+    penalty, _hits = infeasibility_penalty(mol)
+    return float(min(max(base * penalty, 0.0), 1.0))
 
 
 def _has_core_group(mol: Chem.Mol, templates: list[tuple[str, str]]) -> bool:
@@ -134,6 +205,34 @@ def _has_functional_group(mol: Chem.Mol, templates: list[tuple[str, str]]) -> bo
         except Exception:
             continue
     return False
+
+
+def _ring_aware_query_params():
+    """Query parameters that forbid a chain atom matching a ring atom.
+
+    ADR-2026-08-10-02: plain ``HasSubstructMatch`` is topology-blind, so the
+    linear precursor triglyme (COCCOCCOC) matches the strained triepoxide
+    C1OC1C1OC1C1OC1 at 100% atom coverage. The triepoxide was consequently
+    scored as directly purchasable (depth 1, direct confidence 1.00) and
+    survived adversarial filtering. Requiring ring atoms to match ring atoms
+    is the minimum chemistry a precursor lookup has to respect: a
+    three-membered ring is not "an ether you can buy".
+    """
+    params = Chem.AdjustQueryParameters.NoAdjustments()
+    params.adjustRingChain = True
+    params.adjustRingChainFlags = Chem.ADJUST_IGNORENONE
+    return params
+
+
+_RING_AWARE_PARAMS = _ring_aware_query_params()
+
+
+def as_ring_aware_query(mol: Chem.Mol) -> Chem.Mol:
+    """Return a topology-respecting query version of a precursor molecule."""
+    try:
+        return Chem.AdjustQueryProperties(mol, _RING_AWARE_PARAMS)
+    except Exception:
+        return mol
 
 
 def _load_precursors():
@@ -174,6 +273,10 @@ try:
 except Exception as e:
     print(f"Warning: Failed to load commercial precursors: {e}")
     _BB_MOLS = tuple()
+
+# Ring-aware query forms, built once. Used for every substructure lookup so a
+# chain precursor can never match a ring target (see _ring_aware_query_params).
+_BB_QUERIES: tuple[Chem.Mol, ...] = tuple(as_ring_aware_query(m) for m in _BB_MOLS)
 
 
 def _strip_brics_dummies(frag_smi: str) -> str | None:
@@ -259,19 +362,20 @@ def _precursor_match_score(mol: Chem.Mol) -> float:
     if n_heavy == 0:
         return 0.0
 
+    mol_query = as_ring_aware_query(mol)
     best_coverage = 0.0
-    for precursor in _BB_MOLS:
+    for precursor, p_query in zip(_BB_MOLS, _BB_QUERIES, strict=False):
         p_heavy = precursor.GetNumHeavyAtoms()
         if p_heavy == 0:
             continue
 
         # Direction 1: precursor is a substructure of the fragment
-        if mol.HasSubstructMatch(precursor):
+        if mol.HasSubstructMatch(p_query):
             coverage = p_heavy / n_heavy
             best_coverage = max(best_coverage, coverage)
 
         # Direction 2: fragment is a substructure of the precursor
-        elif precursor.HasSubstructMatch(mol):
+        elif precursor.HasSubstructMatch(mol_query):
             coverage = n_heavy / p_heavy
             best_coverage = max(best_coverage, coverage)
 
@@ -388,11 +492,11 @@ def _cached_retrosynthetic_depth(smiles: str) -> int:
     # This prevents benzene (substructure of biphenyl) from scoring depth 1.
     n_heavy = mol.GetNumHeavyAtoms()
     if n_heavy > 0:
-        for precursor in _BB_MOLS:
+        for precursor, p_query in zip(_BB_MOLS, _BB_QUERIES, strict=False):
             p_heavy = precursor.GetNumHeavyAtoms()
             if p_heavy == 0:
                 continue
-            if mol.HasSubstructMatch(precursor):
+            if mol.HasSubstructMatch(p_query):
                 coverage = p_heavy / n_heavy
                 if coverage >= 0.85:
                     return 1

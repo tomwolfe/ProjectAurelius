@@ -232,6 +232,15 @@ _GC_BASE_LI_SOLVATION: float = 1.0
 # Saturation parameter for GC fragment additivity.
 _GC_SATURATION_K: float = 0.693  # ln(2), half-max at count=1
 
+# Conductivity proxy scale (ADR-2026-08-10-04). The proxy is reported on a
+# 0-10 scale for continuity with earlier releases, but the previous hard clamp
+# is replaced by a smooth saturating map. The half-saturation constant is the
+# median raw Walden product over the 51 known electrolytes (4.89), so half the
+# output range is spent on the region where real solvents actually sit rather
+# than on the long tail.
+_CONDUCTIVITY_MAX: float = 10.0
+_WALDEN_HALF_SATURATION: float = 4.89
+
 
 def _saturate_contrib(count: int, max_contrib: float) -> float:
     """Michaelis-Menten style saturation for fragment additivity."""
@@ -437,12 +446,17 @@ def predict_ionic_conductivity_proxy_batch(
     Combines dielectric (salt dissociation), viscosity (Stokes-Einstein
     mobility), and Li+ solvation (charge carrier availability) into a
     single figure of merit.
+
+    Must stay numerically identical to the scalar
+    :func:`predict_ionic_conductivity_proxy`; ``test_batch_matches_scalar``
+    enforces this. ADR-2026-08-10-04 replaced the saturating clamp here too.
     """
     viscosity = np.maximum(viscosity, 0.001)
     effective_dielec = np.maximum(0.0, dielectric - 1.0)
     solvation_factor = np.exp(-0.5 * ((li_solvation - 3.5) / 1.5) ** 2)
-    conductivity = effective_dielec * solvation_factor / viscosity
-    return np.clip(conductivity, 0.0, 10.0)
+    walden = effective_dielec * solvation_factor / viscosity
+    scaled = walden / _WALDEN_HALF_SATURATION
+    return _CONDUCTIVITY_MAX * scaled / (1.0 + scaled)
 
 
 def _compute_dielectric_cross_terms(counts: dict[str, int]) -> float:
@@ -1159,14 +1173,27 @@ def predict_ionic_conductivity_proxy(
     centered on the Goldilocks target (3.5) — too-weak binding fails to
     dissociate salts, too-strong binding reduces transference number.
 
-    KNOWN LIMITATION (ADR-2026-08-07-04): the output clamp at 10.0 was
-    calibrated when `dielectric` was a compressed 1-15 proxy. On the true
-    epsilon scale roughly a quarter of a representative seed pool now
-    saturates at the cap, so this value cannot discriminate among strong
-    dissociators. It is currently reported but NOT consumed by scoring or
-    selection (no objective in pipeline.py references conductivity_proxy),
-    so ranking is unaffected. The clamp must be re-derived before this
-    figure is used for anything beyond reporting.
+    ADR-2026-08-10-04: the previous hard clamp at 10.0 was calibrated when
+    ``dielectric`` was a compressed 1-15 proxy. Once the Kirkwood-Fröhlich
+    model put ``dielectric`` on the true epsilon scale, **15 of 51 known
+    electrolytes (29%) pinned to exactly 10.000** — EC, FEC, PC, sulfolane and
+    every other strong dissociator became indistinguishable, which is precisely
+    the region a discovery campaign cares about.
+
+    The clamp is replaced by a smooth saturating map
+
+        sigma = C_MAX * w / (1 + w)     where w is the raw Walden product
+
+    which is monotone on [0, inf), so it never reorders two candidates, but has
+    no flat region: two molecules with raw products of 40 and 80 now differ in
+    output instead of both reporting 10.0. ``_WALDEN_HALF_SATURATION`` sets the
+    raw value mapping to half of ``_CONDUCTIVITY_MAX``; it is centred on the
+    median raw product of the known-electrolyte set so the dynamic range is
+    spent where real solvents actually live.
+
+    Rank order is unchanged by construction (the map is strictly increasing),
+    so this cannot alter any existing ranking claim — it only restores
+    resolution at the top of the scale.
     """
     if viscosity <= 0.0 or dielectric < 0.0:
         return 0.0
@@ -1176,8 +1203,10 @@ def predict_ionic_conductivity_proxy(
 
     if viscosity < 0.001:
         return 0.0
-    conductivity = effective_dielec * solvation_factor / viscosity
-    return max(0.0, min(10.0, conductivity))
+
+    walden = effective_dielec * solvation_factor / viscosity
+    scaled = walden / _WALDEN_HALF_SATURATION
+    return _CONDUCTIVITY_MAX * scaled / (1.0 + scaled)
 
 
 # ---------------------------------------------------------------------------

@@ -74,9 +74,32 @@ BB_MOLS = _load_all_precursors()
 _BB_MOLS = BB_MOLS
 
 
+def _build_bb_queries() -> tuple[Chem.Mol, ...]:
+    """Ring-aware query forms of every precursor, built once at import."""
+    from aurelius.agent.mutation.retrosynthetic import as_ring_aware_query
+
+    return tuple(as_ring_aware_query(m) for m in BB_MOLS)
+
+
+_BB_QUERIES: tuple[Chem.Mol, ...] = _build_bb_queries()
+
+
 @lru_cache(maxsize=2048)
 def _cached_coverage(smiles: str) -> float:
-    """Cached building block coverage by SMILES string."""
+    """Cached building-block coverage by SMILES string.
+
+    ADR-2026-08-10-02: this used to be the *fraction of fragments* that passed
+    a binary ``_is_known_bb_precursor`` test. With a 50%-of-heavy-atoms
+    threshold, virtually every small BRICS fragment of an electrolyte-like
+    molecule passes, so the statistic saturated at exactly 1.000 for nearly
+    the whole search space and contributed no selection pressure. It now
+    delegates to the continuous, heavy-atom-weighted, rarity-penalised
+    coverage already implemented in ``retrosynthetic._precursor_coverage``,
+    which distinguishes "every fragment is substantially purchasable" from
+    "every fragment merely contains a purchasable substructure".
+    """
+    from aurelius.agent.mutation.retrosynthetic import _precursor_coverage
+
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return 0.5
@@ -86,17 +109,7 @@ def _cached_coverage(smiles: str) -> float:
         return 0.5
     if not frags:
         return 0.5
-    matched = 0
-    for fs in frags:
-        core_smi = _strip_brics_dummies(fs)
-        if core_smi is None:
-            continue
-        core_mol = Chem.MolFromSmiles(core_smi)
-        if core_mol is None:
-            continue
-        if _is_known_bb_precursor(core_mol):
-            matched += 1
-    return matched / len(frags)
+    return _precursor_coverage(frags)
 
 
 def _strip_brics_dummies(frag_smi: str) -> str | None:
@@ -204,12 +217,15 @@ def _is_known_bb_precursor(mol: Chem.Mol) -> bool:
     substantially a purchasable compound" — while keeping genuinely commercial
     solvents (EC, FEC, DME, sulfolane) at full coverage.
     """
+    from aurelius.agent.mutation.retrosynthetic import as_ring_aware_query
+
     n_heavy = mol.GetNumHeavyAtoms()
     min_heavy = _BB_SIZE_COVERAGE_MIN * n_heavy
-    for bb in BB_MOLS:
-        if bb.HasSubstructMatch(mol):
+    mol_query = as_ring_aware_query(mol)
+    for bb, bb_query in zip(BB_MOLS, _BB_QUERIES, strict=False):
+        if bb.HasSubstructMatch(mol_query):
             return True
-        if bb.GetNumHeavyAtoms() >= min_heavy and mol.HasSubstructMatch(bb):
+        if bb.GetNumHeavyAtoms() >= min_heavy and mol.HasSubstructMatch(bb_query):
             return True
     return False
 
@@ -288,34 +304,53 @@ def _direct_precursor_match(mol: Chem.Mol) -> tuple[bool, float]:
     """Check if molecule directly matches any commercial precursor.
 
     Returns:
-        (matched, confidence) where confidence ∈ [0, 1] reflects the
-        quality of the best substructure/superset match.
+        (matched, confidence) where confidence ∈ [0, 1] is the largest
+        fraction of the molecule's heavy atoms accounted for by a single
+        commercial precursor.
+
+    ADR-2026-08-10-02: the two ``GetSubstructMatch`` calls previously had
+    their arguments reversed — ``bb.GetSubstructMatch(mol)`` asks "where does
+    the *whole molecule* sit inside the precursor", which returns an empty
+    tuple whenever the precursor is the smaller species. That is the common
+    case, so ``overlap`` was 0 and ``direct_conf`` was 0.000 for essentially
+    every candidate. With direct confidence pinned at zero, route confidence
+    collapsed to ``0.5 * depth_conf * brics_cov`` and the whole grounding
+    score became near-constant: all 15 molecules in ``discoveries.sdf``
+    scored exactly 0.7731. Matching in the correct direction restores the
+    intended per-molecule variation.
     """
     if mol is None or not BB_MOLS:
         return False, 0.0
 
-    best_confidence = 0.0
     n_atoms = mol.GetNumHeavyAtoms()
+    if n_atoms == 0:
+        return False, 0.0
 
-    for bb in BB_MOLS:
+    from aurelius.agent.mutation.retrosynthetic import as_ring_aware_query
+
+    mol_query = as_ring_aware_query(mol)
+    best_confidence = 0.0
+    for bb, bb_query in zip(BB_MOLS, _BB_QUERIES, strict=False):
         bb_atoms = bb.GetNumHeavyAtoms()
-        if n_atoms == 0:
+        if bb_atoms == 0:
             continue
 
-        if mol.HasSubstructMatch(bb):
-            overlap = len(bb.GetSubstructMatch(mol)) if mol.HasSubstructMatch(bb) else bb_atoms
-            confidence = overlap / max(n_atoms, 1)
-            best_confidence = max(best_confidence, confidence)
-            if confidence >= 0.95:
-                return True, confidence
+        # The precursor sits inside the molecule: how much of the target does
+        # one purchasable compound already account for?
+        if mol.HasSubstructMatch(bb_query):
+            confidence = len(mol.GetSubstructMatch(bb_query)) / n_atoms
+        # The molecule sits inside a larger precursor: it is a piece of
+        # something purchasable, which is weaker evidence.
+        elif bb.HasSubstructMatch(mol_query):
+            confidence = 0.5 * (n_atoms / bb_atoms)
+        else:
+            continue
 
-        elif bb.HasSubstructMatch(mol):
-            overlap = len(mol.GetSubstructMatch(bb))
-            confidence = overlap / max(bb_atoms, 1)
-            best_confidence = max(best_confidence, confidence)
-            if confidence >= 0.95:
-                return True, confidence
+        best_confidence = max(best_confidence, confidence)
+        if best_confidence >= 0.95:
+            return True, min(best_confidence, 1.0)
 
+    best_confidence = min(best_confidence, 1.0)
     return best_confidence > 0.3, best_confidence
 
 

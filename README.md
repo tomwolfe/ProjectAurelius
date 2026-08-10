@@ -1,21 +1,22 @@
-# Project Aurelius v12.0
+# Project Aurelius v12.1
 
 **Novel molecule discovery for battery electrolytes.**
 
-A physically-grounded Evolutionary Algorithm pipeline with a **hybrid quantum + fragment-additivity oracle**. Frontier orbitals (HOMO/LUMO) are predicted via quantum chemistry (xTB/GFN2-xTB preferred, Lone-Pair Orbital Model fallback) — bulk properties (dielectric, viscosity, Li+ solvation) via interpretable group-contribution fragment-additivity.
+A physically-grounded Evolutionary Algorithm pipeline with a **hybrid quantum + fragment-additivity oracle**. Frontier orbitals (HOMO/LUMO) are predicted via quantum chemistry (xTB/GFN2-xTB preferred, Lone-Pair Orbital Model fallback) — bulk properties (dielectric, viscosity, Li+ solvation) via interpretable group-contribution fragment-additivity. Reduction stability is predicted by ΔSCF electron affinity (ρ = 0.91 vs 40 measured gas-phase EAs), replacing the frontier LUMO, which sat at the noise floor.
 
 ## Why Hybrid?
 
 | Property | Method | Rationale |
 |----------|--------|-----------|
 | HOMO | QuantumOracle (xTB or **LPM**) | Orbitals are delocalised quantum phenomena — NOT additive. The LPM enumerates candidate ionisable lone-pair orbitals and applies Koopmans' theorem with geometric inductive attenuation. |
-| LUMO | QuantumOracle (xTB or TOM) | Virtual orbitals are not accessible via Koopmans; TOM's particle-in-a-box model is retained for LUMO. |
+| LUMO | QuantumOracle (xTB or TOM) | Reported for calibration/MAE only. Virtual orbitals are not accessible via Koopmans, so LUMO is **not** a ranking input. |
+| Reduction stability | **ΔSCF electron affinity** (xTB, or structural ridge) | `EA = E(neutral) − E(anion)` from two GFN2-xTB single points: a real energy difference between two optimised states, so it captures the orbital relaxation Koopmans discards. ρ = 0.91 against 40 measured gas-phase EAs. |
 | Dielectric ε | Kirkwood-Fröhlich (closed form) | ε is a bulk orientational response, **not** additive: it scales as μ²g/V_m and spans 2→90. Inputs (McGowan volume, Clausius-Mossotti ε∞, group dipole, correlation factor g) are all structure-derived. |
 | Viscosity | GC fragment-additivity + MW + RotB | Transport properties correlate with group contributions. |
 | Li+ Solvation | GC fragment-additivity | Donor-number additivity is physically valid. |
 | Ionic Conductivity | Walden-product proxy (ε, η, Li⁺) | Unifies salt dissociation, mobility, and charge-carrier availability into a single figure of merit. |
 
-The hybrid oracle (non-linear quantum HOMO/LUMO + closed-form dielectric + additive GC transport properties) keeps the pipeline physically grounded while maintaining interpretability. A Walden-product conductivity proxy combines dielectric, viscosity, and Li+ solvation into a unified transport metric (reporting only — see the docstring for its saturation caveat).
+The hybrid oracle (non-linear quantum HOMO/LUMO + closed-form dielectric + additive GC transport properties) keeps the pipeline physically grounded while maintaining interpretability. A Walden-product conductivity proxy combines dielectric, viscosity, and Li+ solvation into a unified transport metric (reporting only; the saturating clamp that pinned 29% of known electrolytes at the ceiling was fixed in ADR-2026-08-10-04).
 
 ### Dielectric accuracy (ADR-2026-08-07-04)
 
@@ -199,10 +200,63 @@ citation ρ = 0) — which is exactly why the LPM's ρ = 0.91 is trustworthy.
 **What is still claimable.** The Δ-layer genuinely improves LUMO *calibration*:
 MAE 0.863 → 0.797 on unseen, and 0.719 → 0.448 under scaffold-disjoint CV.
 MAE is comparatively robust to a constant per-source offset; rank correlation
-is not. LUMO is therefore reported as an MAE-only result, and reduction
-stability should be treated as the oracle's weakest axis until an
-experimental electron-affinity or reduction-potential dataset exists (none is
-currently in the repo, and xTB is not installed in this environment).
+is not. LUMO is therefore reported as an MAE-only result and is **no longer a
+ranking input** — see the next section, which replaces it.
+
+### Reduction stability: ΔSCF electron affinity (ADR-2026-08-10)
+
+Two attempts to rescue the reduction axis by cleaning LUMO *labels* both
+failed (unseen ρ 0.061 → 0.097). The third attempt changed the *observable*
+instead, and worked.
+
+The diagnosis: Koopmans' theorem is strong for the occupied space and weak for
+the virtual space. Ionisation removes an electron from a bound, localised lone
+pair — which is why LPM reaches ρ = 0.94 against NIST IPs. Electron attachment
+to a saturated carbonate or ether does not populate a bound orbital at all; the
+lowest virtual orbital is a discretised continuum function whose energy tracks
+the basis set rather than the chemistry. No amount of label cleaning can add
+information the descriptor does not contain.
+
+The replacement is the ΔSCF vertical electron affinity,
+`EA = E(neutral) − E(anion)`, from two GFN2-xTB single points — a genuine
+energy difference between two variationally optimised states, so it includes
+the orbital relaxation Koopmans discards.
+
+Validated against **40 directly measured gas-phase electron affinities**
+(`experimental_electron_affinity.json`; photoelectron spectroscopy, electron
+transfer equilibria, electron transmission). Single measurement class, one
+reference string, so the confound audit reports citation-only ρ = 0.000 and
+Spearman ρ is a *legitimate* metric here — unlike on the orbital benchmark:
+
+| estimator | ρ | MAE (eV) |
+|---|---|---|
+| TOM LUMO, negated (superseded) | +0.342 | 0.682 |
+| structural ridge, class-disjoint CV (no xTB) | +0.693 | 0.607 |
+| **xTB ΔSCF EA** | **+0.912** | **0.289** |
+
+Permutation control on the same set: |ρ| 95th percentile under shuffled labels
+is **0.310**. The superseded descriptor sits essentially at that noise floor,
+which explains the downstream 0.06 far better than provenance does.
+
+Sanity check on chemistry the field already knows — the SEI-formation ordering
+FEC > VC > EC > DMC ≫ DME is reproduced, and is pinned by
+`test_sei_additive_ordering`.
+
+Cost is 64 ms/molecule (two single points, parallelised across cores, 2.0×
+speedup over serial) and results are cached by canonical SMILES. Without xTB
+the axis degrades to an interpretable ridge model on electron-accepting
+structural features — validated leave-one-chemical-class-out, so quinones,
+nitroaromatics and polyacenes are each predicted by a model that never saw
+their class. It is roughly twice the ranking signal of the TOM LUMO it
+replaces, and the anti-pattern of falling back to a noise-floor descriptor is
+gone.
+
+**Honest limitations.** The experimental set is gas-phase and skews toward
+molecules with measurable (positive) EAs; most electrolyte solvents have
+negative EA and fall outside the calibrated span, where the model provides
+ranking rather than trustworthy absolute values (flagged per-prediction by
+`in_calibrated_span`). Vertical, not adiabatic. Solution-phase reduction
+potentials remain uncalibrated pending a clean experimental set.
 
 ### Synthesizability grounding (ADR-2026-08-08-04)
 
@@ -238,6 +292,45 @@ Score ranking is preserved (Spearman ρ = 0.992 before vs after on a fixed
 35-molecule set); absolute scores shift down ~7.6% because the dormant penalty
 is now live. Net Progress 0.373 → 0.371; the −0.002 is the top-k enrichment
 term reacting to the compressed absolute scale, not a ranking regression.
+
+#### Grounding was still constant, not merely weak (ADR-2026-08-10-02)
+
+Re-measuring the above on a realistic population found the signal had not
+actually been revived: **all 15 molecules in `discoveries.sdf` scored exactly
+0.7731** (std 0.000), and the 51 known electrolytes produced only 7 distinct
+values. Three defects, each masking the others:
+
+1. `_direct_precursor_match` called `GetSubstructMatch` with **reversed
+   arguments**, asking where the whole molecule sits inside the precursor.
+   That returns `()` whenever the precursor is smaller — the normal case — so
+   direct confidence was pinned at 0.000 for essentially every candidate.
+2. `_cached_coverage` counted the *fraction of fragments* passing a binary test
+   that nearly everything passes, saturating at exactly 1.000. A continuous,
+   size-weighted version already existed and was simply not wired in.
+3. `compute_synthesis_feasibility` returned one of three literals; 96% of
+   realistic candidates landed on 0.9.
+
+A fourth defect surfaced once the first was fixed: precursor lookup was
+**topology-blind**, so the linear precursor triglyme matched the strained
+triepoxide `C1OC1C1OC1C1OC1` at 100% atom coverage and scored it directly
+purchasable. Ring-aware queries (`AdjustQueryProperties`) fixed it; enforcing
+that then exposed 38 genuinely stocked cyclic reagents (VC, TMC, sultones, DTD,
+lactones, dioxolane, glymes) missing from the 223-entry precursor database.
+
+| metric | before | after |
+|---|---:|---:|
+| distinct grounding values / 51 known | 7 | **40** |
+| distinct grounding values / 15 discovered | 1 | **12** |
+| distinct template values / 51 | 2 | **28** |
+| known mean − Frankenstein mean | +0.311 | **+0.527** |
+| Frankensteins above known 25th pct | 1/12 | **0/12** |
+| Frankensteins passing the 0.75 report gate | 3/12 | **0/12** |
+
+The 0.75 wet-lab handoff gate is unchanged and remains correctly positioned:
+known electrolytes now average 0.780, adversarial structures 0.253.
+
+Residual limitation: retrosynthetic depth is still coarse (values 1, 2, 5) and
+is the next thing to improve if depth is to carry ranking weight on its own.
 
 ### Closed-loop efficacy (ADR-2026-08-08-05)
 
@@ -290,12 +383,63 @@ The redundancy reduction is unambiguous (below random on 5/5 splits) and the
 constant. **The accuracy edge itself remains unproven**: over 10 splits the
 spread still overlaps zero. Directionally better, not established.
 
-**Known limitation.** `brics_retrosynthetic_depth` still returns 1 for every
-molecule in a live EA population (variance 0.0); it only spreads on extreme
-inputs. Retrosynthetic depth was therefore *not* promoted to a Pareto objective —
-doing so would add a second constant column and pure complexity cost. The depth
-penalty inside `combined_grounding_score` remains effectively inactive for
-typical candidates.
+**Known limitation.** `brics_retrosynthetic_depth` is still coarse, returning
+only 1, 2 or 5. It now spreads across a realistic population (mean 1.98,
+std 1.38 over the known electrolytes) rather than being constant, but it
+remains too low-resolution to promote to its own Pareto objective.
+
+#### Expected-impact acquisition, and an honest negative result (ADR-2026-08-10-03)
+
+All four original acquisition terms are model-centric: they maximise
+information about the oracle while being indifferent to whether that
+information changes which molecules get *made*. A fifth term,
+`expected_impact`, estimates the probability that a measurement moves the
+molecule across the current top-k decision boundary, treating the conformal
+interval as a predictive distribution.
+
+Ablation over 10 frozen splits, budget 20:
+
+| strategy | ΔMAE (eV) | Δρ |
+|---|---:|---:|
+| suggester without expected_impact | −0.166 | −0.013 |
+| suggester with expected_impact (default) | −0.123 | **+0.024** |
+| expected_impact only | −0.134 | **+0.043** |
+| uncertainty only | −0.173 | −0.017 |
+| **random** | −0.148 | +0.027 |
+
+The term does what it was designed to do — it is the only term that moves
+holdout *ranking* in the right direction. But the honest headline is the last
+row: **random acquisition is statistically indistinguishable from every
+strategy tried.** Across budgets 5/10/20/40 the edge never approaches
+significance (best p = 0.111) and its sign flips between budgets. GPR
+posterior variance (p = 0.507) and max-min Tanimoto diversity (p = 0.619) also
+failed to beat random.
+
+This is *not* a saturated benchmark. Drawing 12 random subsets per split and
+comparing the best to the mean puts the ceiling for perfect subset choice at
+**0.066 eV** — a real prize that every acquisition function tested captures
+essentially none of. Recorded as an open capability gap rather than papered
+over. The benchmark now reports the Δρ edge with a paired t-test alongside
+ΔMAE, so a ranking claim can never again rest on MAE alone.
+
+### Conductivity proxy saturation (ADR-2026-08-10-04)
+
+The Walden proxy hard-clamped at 10.0, a bound calibrated when `dielectric`
+was a compressed 1–15 proxy. After Kirkwood-Fröhlich put ε on the true scale,
+**15 of 51 known electrolytes returned exactly 10.000** — EC, FEC, PC and
+sulfolane became indistinguishable, precisely the region that matters. The
+clamp is replaced by a smooth saturating map `C·w/(1+w)`, half-saturating at
+the median raw Walden product of the known-electrolyte set.
+
+| | before | after |
+|---|---:|---:|
+| pinned at ceiling | 15/51 | **0/51** |
+| distinct values | 35 | **48** |
+
+The map is strictly increasing, so it **cannot reorder any two candidates** —
+a resolution fix, not a ranking change, pinned by
+`test_monotone_in_the_walden_product`. It fixes dynamic range, not accuracy:
+the proxy is still uncalibrated against experimental conductivity.
 
 ## Architecture
 

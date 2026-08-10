@@ -1113,5 +1113,195 @@
     "smiles": "O=S(=O)(C)CC(F)(F)C(F)(F)F",
     "name": "Methyl pentafluoroethyl sulfone variant",
     "category": "fluorinated sulfones"
+  },
+  {
+    "smiles": "O=C1OC=CO1",
+    "name": "vinylene carbonate",
+    "category": "cyclic carbonates"
+  },
+  {
+    "smiles": "O=C1OCCCO1",
+    "name": "trimethylene carbonate",
+    "category": "cyclic carbonates"
+  },
+  {
+    "smiles": "O=C1OC(F)CO1",
+    "name": "fluoroethylene carbonate",
+    "category": "cyclic carbonates"
+  },
+  {
+    "smiles": "CC1COC(=O)O1",
+    "name": "propylene carbonate",
+    "category": "cyclic carbonates"
+  },
+  {
+    "smiles": "O=C1OCC(C)(C)CO1",
+    "name": "neopentyl glycol carbonate",
+    "category": "cyclic carbonates"
+  },
+  {
+    "smiles": "O=S1(=O)OCC1",
+    "name": "1,3-propanesultone-lower homolog",
+    "category": "cyclic sulfur"
+  },
+  {
+    "smiles": "O=S1(=O)OCCC1",
+    "name": "1,3-propane sultone",
+    "category": "cyclic sulfur"
+  },
+  {
+    "smiles": "O=S1(=O)OCCCC1",
+    "name": "1,4-butane sultone",
+    "category": "cyclic sulfur"
+  },
+  {
+    "smiles": "O=S1(=O)OCCO1",
+    "name": "ethylene sulfate (DTD)",
+    "category": "cyclic sulfur"
+  },
+  {
+    "smiles": "O=S1OCCO1",
+    "name": "ethylene sulfite",
+    "category": "cyclic sulfur"
+  },
+  {
+    "smiles": "O=S1(=O)CCC1",
+    "name": "trimethylene sulfone",
+    "category": "cyclic sulfur"
+  },
+  {
+    "smiles": "C1CCOC1",
+    "name": "tetrahydrofuran",
+    "category": "cyclic ethers"
+  },
+  {
+    "smiles": "C1COCCO1",
+    "name": "1,4-dioxane",
+    "category": "cyclic ethers"
+  },
+  {
+    "smiles": "C1COCO1",
+    "name": "1,3-dioxolane",
+    "category": "cyclic ethers"
+  },
+  {
+    "smiles": "CC1COCO1",
+    "name": "4-methyl-1,3-dioxolane",
+    "category": "cyclic ethers"
+  },
+  {
+    "smiles": "C1CCOCC1",
+    "name": "tetrahydropyran",
+    "category": "cyclic ethers"
+  },
+  {
+    "smiles": "O=C1CCCO1",
+    "name": "gamma-butyrolactone",
+    "category": "lactones"
+  },
+  {
+    "smiles": "O=C1CCCCO1",
+    "name": "delta-valerolactone",
+    "category": "lactones"
+  },
+  {
+    "smiles": "O=C1CCO1",
+    "name": "beta-propiolactone",
+    "category": "lactones"
+  },
+  {
+    "smiles": "CC1CCC(=O)O1",
+    "name": "gamma-valerolactone",
+    "category": "lactones"
+  },
+  {
+    "smiles": "O=C1OC(=O)C=C1",
+    "name": "maleic anhydride",
+    "category": "anhydrides"
+  },
+  {
+    "smiles": "O=C1CCC(=O)O1",
+    "name": "succinic anhydride",
+    "category": "anhydrides"
+  },
+  {
+    "smiles": "O=C1N(C)CCN1C",
+    "name": "dimethylimidazolidinone",
+    "category": "cyclic amides"
+  },
+  {
+    "smiles": "O=C1CCCN1C",
+    "name": "N-methylpyrrolidone",
+    "category": "cyclic amides"
+  },
+  {
+    "smiles": "O=C1OCCN1",
+    "name": "oxazolidinone",
+    "category": "cyclic amides"
+  },
+  {
+    "smiles": "N#CCC#N",
+    "name": "malononitrile",
+    "category": "nitriles"
+  },
+  {
+    "smiles": "N#CCCCC#N",
+    "name": "glutaronitrile",
+    "category": "nitriles"
+  },
+  {
+    "smiles": "N#CCCC#N",
+    "name": "succinonitrile",
+    "category": "nitriles"
+  },
+  {
+    "smiles": "COCCOCCOCCOC",
+    "name": "triglyme",
+    "category": "ethers"
+  },
+  {
+    "smiles": "FC(F)(F)CO",
+    "name": "trifluoroethanol",
+    "category": "fluorinated alcohols"
+  },
+  {
+    "smiles": "O=C(F)F",
+    "name": "carbonyl fluoride",
+    "category": "acyl halides"
+  },
+  {
+    "smiles": "O=C(Cl)Cl",
+    "name": "phosgene",
+    "category": "acyl halides"
+  },
+  {
+    "smiles": "O=C(Cl)OC",
+    "name": "methyl chloroformate",
+    "category": "acyl halides"
+  },
+  {
+    "smiles": "O=S(=O)(Cl)Cl",
+    "name": "sulfuryl chloride",
+    "category": "acyl halides"
+  },
+  {
+    "smiles": "O=S(Cl)Cl",
+    "name": "thionyl chloride",
+    "category": "acyl halides"
+  },
+  {
+    "smiles": "OCCO",
+    "name": "ethylene glycol",
+    "category": "alcohols"
+  },
+  {
+    "smiles": "OCCCO",
+    "name": "1,3-propanediol",
+    "category": "alcohols"
+  },
+  {
+    "smiles": "OCC(F)CO",
+    "name": "3-fluoro-1,2-propanediol",
+    "category": "fluorinated alcohols"
   }
 ]

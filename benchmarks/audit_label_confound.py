@@ -179,6 +179,7 @@ def main() -> int:
         (os.path.join(DATA_DIR, "orbital_calibration.json"), ("homo_eV", "lumo_eV")),
         (os.path.join(DATA_DIR, "lumo_calibration_xtb.json"), ("homo_eV", "lumo_eV")),
         (os.path.join(DATA_DIR, "experimental_ionization.json"), ("ip_eV",)),
+        (os.path.join(DATA_DIR, "experimental_electron_affinity.json"), ("ea_eV",)),
     ]
 
     results: list[dict[str, Any]] = []

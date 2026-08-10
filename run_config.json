@@ -1,7 +1,10 @@
 {
-  "max_generations": 2,
-  "batch_size": 50,
-  "use_nsga2": false,
+  "max_generations": 5,
+  "batch_size": 24,
+  "use_nsga2": true,
   "active_learning_threshold": 0.7,
-  "seed": 42
+  "seed": 42,
+  "mixture_mutation_rate": 0.35,
+  "mixture_seed_from_known": true,
+  "xtb_single_point": true
 }

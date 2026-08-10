@@ -140,6 +140,11 @@ class AgentConfig:
     seed: int = 42
     mixture_mutation_rate: float = 0.35
     mixture_seed_from_known: bool = True
+    # ADR-2026-08-10: this field was referenced by both ``run_screening`` and
+    # the ``aurelius agent`` CLI but never declared, so every CLI invocation
+    # raised TypeError before a single generation ran. The Tier-2.5 xTB gate
+    # was therefore unreachable from the command line since it was added.
+    xtb_single_point: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +169,7 @@ def _save_run_config(agent_cfg: AgentConfig) -> None:
         "seed": agent_cfg.seed,
         "mixture_mutation_rate": agent_cfg.mixture_mutation_rate,
         "mixture_seed_from_known": agent_cfg.mixture_seed_from_known,
+        "xtb_single_point": agent_cfg.xtb_single_point,
     }
     config_path = "run_config.json"
     with open(config_path, "w") as f:

@@ -562,6 +562,13 @@ def validate_cmd(
         raw = t2.get(obj.property_key, 0.0)
         if obj.property_key == "sa_score":
             raw = score.get("sa_score", 0.0)
+        elif obj.property_key == "ea_eV":
+            # Nested under reduction_stability_proxy, not a flat tier-2 key.
+            from aurelius.pipeline import _extract_ea
+
+            raw = _extract_ea(t2)
+            if raw is None:
+                raw = float("nan")
         sub = sub_scores.get(obj.name, 0.0)
         weighted = obj.weight * sub
         label = obj.name[:28]

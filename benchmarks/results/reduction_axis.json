@@ -1,0 +1,42 @@
+{
+  "n": 40,
+  "label_span_eV": [
+    -1.15,
+    3.3
+  ],
+  "xtb_available": true,
+  "results": [
+    {
+      "estimator": "TOM LUMO (negated) [superseded]",
+      "n": 40,
+      "spearman_rho": 0.34162366440922504,
+      "mae_eV": 0.6819394302489952,
+      "affine_slope": 0.3236044364122852,
+      "affine_intercept": 0.31253925244009384
+    },
+    {
+      "estimator": "structural_ridge (class-disjoint CV)",
+      "n": 40,
+      "spearman_rho": 0.6927479156108374,
+      "mae_eV": 0.6070453905169629,
+      "affine_slope": 0.6091669821987302,
+      "affine_intercept": 0.4255777394605665
+    },
+    {
+      "estimator": "structural_ridge (LOO)",
+      "n": 40,
+      "spearman_rho": 0.7535416113469997,
+      "mae_eV": 0.4834888484479098
+    },
+    {
+      "estimator": "xTB \u0394SCF EA",
+      "n": 40,
+      "spearman_rho": 0.9115301663156685,
+      "mae_eV": 0.2894648638148133,
+      "affine_slope": 0.6590161622535563,
+      "affine_intercept": -2.9176338176828693
+    }
+  ],
+  "permutation_rho_p95": 0.31011821132819656,
+  "dscf_seconds": 2.4586232090368867
+}
