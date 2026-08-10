@@ -77,6 +77,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from rdkit import Chem
+from rdkit.Chem import BRICS
 
 from aurelius.types import MoleculeContext
 
@@ -91,6 +92,17 @@ MEASURABLE_PROPERTIES: dict[str, str] = {
     "dielectric": "dielectric_constant",
     "viscosity": "viscosity_cP",
 }
+
+# Pool expansion target. Below this size, BRICS harvesting grows the pool
+# before acquisition scoring. The 61-mol unmeasured pool in the closed-loop
+# benchmark is too small for diversity-based acquisition to outperform random.
+MIN_POOL_SIZE = 100
+
+# Maximum number of BRICS fragments to harvest per candidate molecule.
+_MAX_FRAGMENTS_PER_MOL = 10
+
+# Maximum number of recombination products to generate.
+_MAX_RECOMBINATION_PRODUCTS = 200
 
 # Term weights. Uncertainty dominates because it is the term with a formal
 # guarantee behind it; novelty is next because calibration-set coverage is
@@ -226,6 +238,183 @@ def _decision_thresholds(
             continue
         thresholds[prop] = float(np.quantile(values, 1.0 - top_k_fraction))
     return thresholds
+
+
+# ---------------------------------------------------------------------------
+# Pool expansion via BRICS harvesting
+# ---------------------------------------------------------------------------
+# A small candidate pool (<100 mols) cannot support diversity-based acquisition
+# — the search space is already saturated and any selection ≈ random. BRICS
+# harvesting breaks high-scoring candidates into fragments and recombines them
+# to grow the pool before acquisition scoring.
+
+
+def _strip_brics_dummy_atoms(frag_smi: str) -> str | None:
+    """Remove BRICS dummy-atom labels (*) from a fragment SMILES."""
+    mol = Chem.MolFromSmiles(frag_smi)
+    if mol is None:
+        return None
+    rw = Chem.RWMol(mol)
+    for idx in sorted(
+        (a.GetIdx() for a in rw.GetAtoms() if a.GetAtomicNum() == 0),
+        reverse=True,
+    ):
+        rw.RemoveAtom(idx)
+    try:
+        rw.UpdatePropertyCache()
+        Chem.SanitizeMol(rw)
+    except Exception:
+        return None
+    return Chem.MolToSmiles(rw)
+
+
+def _harvest_fragments(candidates: list[str]) -> list[str]:
+    """Decompose candidates into BRICS fragments, strip dummies, deduplicate."""
+    seen: set[str] = set()
+    fragments: list[str] = []
+    for smi in candidates:
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            continue
+        try:
+            for frag in BRICS.BRICSDecompose(mol):
+                core = _strip_brics_dummy_atoms(frag)
+                if core is None or core in seen:
+                    continue
+                core_mol = Chem.MolFromSmiles(core)
+                if core_mol is None or core_mol.GetNumHeavyAtoms() < 2:
+                    continue
+                seen.add(core)
+                fragments.append(core)
+        except Exception:
+            continue
+    return fragments
+
+
+def _recombine_fragments(fragments: list[str], max_products: int = _MAX_RECOMBINATION_PRODUCTS) -> list[str]:
+    """Recombine BRICS fragments into novel candidate molecules.
+
+    Uses BRICSBuild to generate valid products from the fragment pool.
+    Returns up to max_products unique SMILES.
+    """
+    from rdkit.Chem.BRICS import BRICSBuild
+
+    mols = []
+    for f in fragments:
+        m = Chem.MolFromSmiles(f)
+        if m is not None:
+            mols.append(m)
+    if len(mols) < 2:
+        return []
+
+    seen: set[str] = set()
+    products: list[str] = []
+    try:
+        for product in BRICSBuild(mols):
+            smi = Chem.MolToSmiles(product)
+            if smi in seen:
+                continue
+            seen.add(smi)
+            products.append(smi)
+            if len(products) >= max_products:
+                break
+    except Exception:
+        pass
+    return products
+
+
+def expand_candidate_pool(candidates: list[str], target_size: int = MIN_POOL_SIZE) -> list[str]:
+    """Grow a small candidate pool via BRICS harvesting + recombination.
+
+    If the pool is already at or above target_size, returns the input unchanged.
+    Otherwise decomposes candidates into BRICS fragments, recombines them, and
+    merges the products back into the pool. Deduplicates by canonical SMILES.
+
+    Returns the expanded pool (original + generated), or the original pool if
+    expansion fails.
+    """
+    if len(candidates) >= target_size:
+        return list(candidates)
+
+    fragments = _harvest_fragments(candidates)
+    if not fragments:
+        return list(candidates)
+
+    products = _recombine_fragments(fragments)
+    if not products:
+        return list(candidates)
+
+    seen: set[str] = set()
+    merged: list[str] = []
+    for smi in list(candidates) + products:
+        canonical = Chem.CanonSmiles(smi) if Chem.MolFromSmiles(smi) else None
+        if canonical is None or canonical in seen:
+            continue
+        seen.add(canonical)
+        merged.append(canonical)
+
+    return merged
+
+
+# ---------------------------------------------------------------------------
+# Expected Improvement (EI) acquisition
+# ---------------------------------------------------------------------------
+# EI is the single-objective special case of EHVI. For the closed-loop
+# benchmark the target is HOMO; EI measures how much better a measurement
+# would be over the current best, under the conformal interval as the
+# predictive distribution. This replaces the linear weighted sum with a
+# quantity that has a formal decision-theoretic justification.
+
+
+def expected_improvement(
+    point: float,
+    interval: tuple[float, float],
+    current_best: float,
+    minimise: bool = True,
+) -> float:
+    """Expected Improvement over current_best under a Gaussian approximation.
+
+    The conformal interval is treated as a 90% predictive interval and
+    approximated by a Gaussian with matching coverage (half-width = 1.645σ).
+
+    Args:
+        point: Predicted value (mean of the Gaussian).
+        interval: (lower, upper) conformal prediction interval.
+        current_best: Best observed value so far (the incumbent).
+        minimise: True if lower is better (HOMO, LUMO), False if higher
+            is better (dielectric).
+
+    Returns:
+        Expected improvement ≥ 0. Zero when the interval has zero width.
+    """
+    half_width = (interval[1] - interval[0]) / 2.0
+    if half_width <= 0:
+        return 0.0
+
+    sigma = half_width / 1.645
+    from math import erf, sqrt
+
+    if minimise:
+        improvement = current_best - point
+    else:
+        improvement = point - current_best
+
+    if sigma <= 0:
+        return max(0.0, improvement)
+
+    z = improvement / (sigma * sqrt(2.0))
+    # EI = improvement * CDF(z) + sigma * PDF(z)
+    # Using: CDF(z) = 0.5 * (1 + erf(z)), PDF(z) = exp(-z^2) / sqrt(2*pi)
+    cdf = 0.5 * (1.0 + erf(z))
+    pdf = _standard_normal_pdf(z)
+    ei = improvement * cdf + sigma * pdf
+    return max(0.0, ei)
+
+
+def _standard_normal_pdf(z: float) -> float:
+    """Standard normal PDF at z."""
+    from math import exp, pi, sqrt
+    return exp(-0.5 * z * z) / sqrt(2.0 * pi)
 
 
 def _max_tanimoto_to_calibration(fp: Any, calibration_fps: list[Any]) -> float:
@@ -464,6 +653,17 @@ def suggest_experiments(
     calibration_fps = _load_calibration_fingerprints()
     biases = _bias_magnitudes(controller)
 
+    # Pool expansion: a small pool cannot support diversity-based acquisition.
+    # BRICS harvesting grows it to >= target_size before scoring.
+    if len(candidates) < MIN_POOL_SIZE:
+        expanded = expand_candidate_pool(candidates, target_size=MIN_POOL_SIZE)
+        if len(expanded) > len(candidates):
+            logger.info(
+                "Pool expanded %d -> %d via BRICS harvesting",
+                len(candidates), len(expanded),
+            )
+            candidates = expanded
+
     # Pass 1: evaluate every candidate once, so the decision thresholds used by
     # the expected-impact term reflect the whole pool rather than one molecule.
     evaluated, fingerprints = _evaluate_candidates(
@@ -475,7 +675,12 @@ def suggest_experiments(
     )
 
     # Pass 2: score each (molecule, property) pair against those thresholds.
-    suggestions: list[ExperimentSuggestion] = []
+    # EI is computed per-property using the incumbent (best calibrated value).
+    # First pass collects raw EI values so they can be normalised to [0, 1]
+    # across the pool — EI is in physical units (eV) and would otherwise
+    # dominate the weighted sum which is in [0, 1].
+    raw_suggestions: list[tuple[float, dict[str, float], tuple[float, float], str, float, str, str]] = []
+    ei_values: list[float] = []
     for ctx, predictions, novelty, doa, doa_reason in evaluated:
         for prop in wanted:
             point = predictions[prop]
@@ -483,23 +688,40 @@ def suggest_experiments(
                 prop, point, predictor, ctx.mol, novelty, doa, biases,
                 active_weights, thresholds.get(prop),
             )
-            canonical_property = MEASURABLE_PROPERTIES[prop]
-            units = _UNITS[canonical_property]
-            rationale = _build_rationale(prop, components, interval, units)
-            if doa_reason != "within domain":
-                rationale += f" Domain note: {doa_reason}."
-            suggestions.append(
-                ExperimentSuggestion(
-                    smiles=Chem.MolToSmiles(ctx.mol),
-                    property_to_measure=canonical_property,
-                    priority_score=score,
-                    rationale=rationale,
-                    predicted_value=round(point, 4),
-                    prediction_interval=(round(interval[0], 4), round(interval[1], 4)),
-                    components=components,
-                    units=units,
-                )
+            prop_values = [p[prop] for _, p, *_ in evaluated]
+            minimise = prop in ("homo", "lumo")
+            incumbent = min(prop_values) if minimise else max(prop_values)
+            ei = expected_improvement(point, interval, incumbent, minimise=minimise)
+            ei_values.append(ei)
+            raw_suggestions.append(
+                (score, components, interval, Chem.MolToSmiles(ctx.mol),
+                 point, prop, doa_reason)
             )
+
+    ei_max = max(ei_values) if ei_values else 1.0
+    suggestions = []
+    for (score, components, interval, smiles, point, prop, doa_reason), ei in zip(raw_suggestions, ei_values, strict=True):
+        # Normalise EI to [0, 1] then blend (EI gets 20% weight).
+        ei_norm = ei / ei_max if ei_max > 0 else 0.0
+        components["expected_improvement"] = round(ei, 6)
+        blended = 0.8 * score + 0.2 * ei_norm
+        canonical_property = MEASURABLE_PROPERTIES[prop]
+        units = _UNITS[canonical_property]
+        rationale = _build_rationale(prop, components, interval, units)
+        if doa_reason != "within domain":
+            rationale += f" Domain note: {doa_reason}."
+        suggestions.append(
+            ExperimentSuggestion(
+                smiles=smiles,
+                property_to_measure=canonical_property,
+                priority_score=round(blended, 6),
+                rationale=rationale,
+                predicted_value=round(point, 4),
+                prediction_interval=(round(interval[0], 4), round(interval[1], 4)),
+                components=components,
+                units=units,
+            )
+        )
 
     suggestions.sort(key=lambda s: (-s.priority_score, s.smiles, s.property_to_measure))
     return _diversify(suggestions, top_n, fingerprints=fingerprints)

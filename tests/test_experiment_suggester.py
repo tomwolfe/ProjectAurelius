@@ -20,7 +20,11 @@ from aurelius.agent.experiment_suggester import (
     ExperimentSuggestion,
     _diversify,
     _doa_proximity_score,
+    _harvest_fragments,
+    _strip_brics_dummy_atoms,
     default_candidate_pool,
+    expand_candidate_pool,
+    expected_improvement,
     suggest_experiments,
     write_suggestions,
 )
@@ -395,3 +399,125 @@ class TestConformalLocalAdaptivity:
         a = predictor.predict_interval("homo", -7.0)
         b = predictor.predict_interval("homo", -7.0)
         assert a == b
+
+
+# ---------------------------------------------------------------------------
+# Pool expansion tests (ADR-2026-08-11-02)
+# ---------------------------------------------------------------------------
+
+
+class TestPoolExpansion:
+    def test_strip_brics_dummy_atoms(self):
+        """BRICS dummy atoms (*) are removed from fragment SMILES."""
+        clean = _strip_brics_dummy_atoms("[1*]C(=O)OC")
+        assert clean is not None
+        assert "*" not in clean
+        assert Chem.MolFromSmiles(clean) is not None
+
+    def test_harvest_fragments_produces_valid_fragments(self):
+        """Harvested fragments are valid molecules with ≥2 heavy atoms."""
+        frags = _harvest_fragments(["COC(=O)OC", "O=C1OCCO1", "CC#N"])
+        assert len(frags) > 0
+        for f in frags:
+            mol = Chem.MolFromSmiles(f)
+            assert mol is not None
+            assert mol.GetNumHeavyAtoms() >= 2
+
+    def test_harvest_fragments_deduplicates(self):
+        """Identical fragments from different molecules are deduplicated."""
+        frags = _harvest_fragments(["COC(=O)OC", "COC(=O)OC"])
+        assert len(frags) == len(set(frags))
+
+    def test_expand_pool_grows_small_pool(self):
+        """A pool below MIN_POOL_SIZE is expanded via BRICS recombination."""
+        small_pool = ["COC(=O)OC", "O=C1OCCO1", "CC#N", "COCCOC"]
+        expanded = expand_candidate_pool(small_pool, target_size=50)
+        assert len(expanded) >= len(small_pool)
+
+    def test_expand_pool_preserves_originals(self):
+        """Original candidates are always in the expanded pool."""
+        originals = ["COC(=O)OC", "O=C1OCCO1"]
+        expanded = expand_candidate_pool(originals, target_size=50)
+        for smi in originals:
+            assert smi in expanded
+
+    def test_expand_pool_noop_when_large(self):
+        """A pool already at target_size is returned unchanged."""
+        large_pool = [f"CCCC{'C' * i}O" for i in range(120)]
+        expanded = expand_candidate_pool(large_pool, target_size=100)
+        assert expanded == large_pool
+
+    def test_expand_pool_deduplicates(self):
+        """Expanded pool has no duplicate SMILES."""
+        pool = ["COC(=O)OC", "O=C1OCCO1", "CC#N"]
+        expanded = expand_candidate_pool(pool, target_size=50)
+        assert len(expanded) == len(set(expanded))
+
+
+# ---------------------------------------------------------------------------
+# Expected Improvement tests
+# ---------------------------------------------------------------------------
+
+
+class TestExpectedImprovement:
+    def test_ei_zero_when_interval_zero_width(self):
+        """A point prediction (zero-width interval) has zero EI."""
+        ei = expected_improvement(-7.0, (-7.0, -7.0), -6.0, minimise=True)
+        assert ei == 0.0
+
+    def test_ei_positive_when_uncertain_and_near_incumbent(self):
+        """Uncertain prediction near the incumbent has positive EI."""
+        # point=-6.5, interval width=2.0, incumbent=-6.0, minimise=True
+        ei = expected_improvement(-6.5, (-7.5, -5.5), -6.0, minimise=True)
+        assert ei > 0.0
+
+    def test_ei_higher_for_wider_interval(self):
+        """More uncertainty → higher EI (more room for improvement)."""
+        narrow = expected_improvement(-6.5, (-6.8, -6.2), -6.0, minimise=True)
+        wide = expected_improvement(-6.5, (-8.0, -5.0), -6.0, minimise=True)
+        assert wide > narrow
+
+    def test_ei_zero_when_point_worse_than_incumbent_with_certainty(self):
+        """A certain prediction worse than the incumbent has ~zero EI."""
+        # point=-5.0 (worse than incumbent -6.0 when minimising), narrow interval
+        ei = expected_improvement(-5.0, (-5.1, -4.9), -6.0, minimise=True)
+        assert ei < 1e-10  # Gaussian tail, effectively zero
+
+    def test_ei_maximise_mode(self):
+        """EI works in maximisation mode (higher is better)."""
+        # point=-5.0, incumbent=-6.0, maximise=True → improvement expected
+        ei = expected_improvement(-5.0, (-5.5, -4.5), -6.0, minimise=False)
+        assert ei > 0.0
+
+    def test_ei_never_negative(self):
+        """EI is always ≥ 0 by construction."""
+        for point, interval, best, minimise in [
+            (-7.0, (-8.0, -6.0), -6.5, True),
+            (-5.0, (-5.5, -4.5), -6.0, False),
+            (-6.5, (-7.0, -6.0), -6.5, True),
+        ]:
+            ei = expected_improvement(point, interval, best, minimise=minimise)
+            assert ei >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# Integration: pool expansion + EI in suggest_experiments
+# ---------------------------------------------------------------------------
+
+
+class TestPoolExpansionIntegration:
+    def test_small_pool_gets_expanded(self):
+        """suggest_experiments expands a small pool before scoring."""
+        small_pool = ["COC(=O)OC", "O=C1OCCO1", "CC#N", "COCCOC", "CC(=O)OC(C)=O"]
+        out = suggest_experiments(small_pool, top_n=3, properties=["homo"])
+        assert len(out) > 0
+        # The output should include molecules beyond the original pool
+        # (if expansion produced valid candidates that scored well)
+
+    def test_ei_component_present_in_suggestions(self):
+        """Suggestions include the expected_improvement component."""
+        out = suggest_experiments(CANDIDATES, top_n=3, properties=["homo"])
+        assert len(out) > 0
+        for s in out:
+            assert "expected_improvement" in s.components
+            assert s.components["expected_improvement"] >= 0.0

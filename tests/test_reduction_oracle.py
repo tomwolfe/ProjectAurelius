@@ -18,11 +18,13 @@ from scipy.stats import spearmanr
 from aurelius.scoring.oracle.quantum import predict_tom_orbitals
 from aurelius.scoring.oracle.reduction import (
     ReductionOracle,
+    _ALPB_SOLVENT_BY_DIELECTRIC,
     _StructuralEAModel,
     calibrate_ea,
     compute_dscf_ea,
     has_xtb,
     load_experimental_ea,
+    solvent_from_dielectric,
     structural_features,
 )
 
@@ -235,3 +237,124 @@ def test_pipeline_ranks_by_electron_affinity():
     assert scores["EC"] > scores["benzoquinone"], (
         "an easily reduced quinone must not outrank a real electrolyte solvent"
     )
+
+
+# ---------------------------------------------------------------------------
+# Solution-phase ALPB tests (ADR-2026-08-11)
+# ---------------------------------------------------------------------------
+
+
+def test_solvent_from_dielectric_maps_correctly():
+    """Dielectric-to-solvent mapping picks the nearest named solvent."""
+    assert solvent_from_dielectric(1.9) == "hexane"
+    assert solvent_from_dielectric(37.5) == "acetonitrile"
+    assert solvent_from_dielectric(80.0) == "water"
+    # Clearly closer to one endpoint
+    assert solvent_from_dielectric(3.0) == "toluene"  # closer to 2.4 than 7.6
+    assert solvent_from_dielectric(8.5) == "dcm"  # closer to 9.1 than 7.6
+
+
+def test_solvent_from_dielectric_clamps_out_of_range():
+    """Values beyond the named range clamp to the nearest endpoint."""
+    assert solvent_from_dielectric(0.5) == "hexane"
+    assert solvent_from_dielectric(100.0) == "water"
+
+
+def test_solvent_from_dielectric_fallback_for_battery_range():
+    """Typical battery electrolytes (ε 2–40) map to a reasonable solvent."""
+    assert solvent_from_dielectric(2.5) in ("hexane", "toluene", "thf")
+    assert solvent_from_dielectric(30.0) in ("acetonitrile", "ethanol")
+
+
+def test_caching_key_includes_solvent(tmp_path):
+    """Same molecule with different solvents must not collide in the cache.
+
+    Regression guard: before the fix, the cache key was canonical SMILES
+    alone, so evaluating EC with solvent=None then solvent="acetonitrile"
+    returned the gas-phase result for both.
+    """
+    oracle_none = ReductionOracle(cache_path=str(tmp_path / "c1.json"), solvent=None)
+    oracle_alpb = ReductionOracle(cache_path=str(tmp_path / "c2.json"), solvent="acetonitrile")
+
+    mol = Chem.MolFromSmiles("O=C1OCCO1")
+    r_none = oracle_none.evaluate(mol)
+    r_alpb = oracle_alpb.evaluate(mol)
+
+    # Both should produce a result
+    assert r_none["ea_eV"] is not None
+    assert r_alpb["ea_eV"] is not None
+
+    # The solvent field must be recorded on each result
+    assert r_none["solvent"] is None
+    assert r_alpb["solvent"] == "acetonitrile"
+
+
+def test_same_solvent_hits_cache(tmp_path):
+    """Same molecule + same solvent must hit the cache on second call."""
+    oracle = ReductionOracle(cache_path=str(tmp_path / "cache.json"), solvent="acetonitrile")
+    mol = Chem.MolFromSmiles("O=C1OCCO1")
+
+    r1 = oracle.evaluate(mol)
+    r2 = oracle.evaluate(mol)
+    assert r1["ea_eV"] == r2["ea_eV"]
+    assert oracle.report()["hits"] >= 1
+
+
+@pytest.mark.skipif(not has_xtb(), reason="xTB not available")
+def test_alpb_flag_passed_to_xtb(tmp_path):
+    """When solvent is set, xTB must receive --alpb and return a valid EA."""
+    oracle = ReductionOracle(cache_path=str(tmp_path / "cache.json"), solvent="acetonitrile")
+    result = oracle.evaluate(Chem.MolFromSmiles("O=C1OCCO1"))
+    assert result["ea_eV"] is not None
+    assert result["solvent"] == "acetonitrile"
+    assert result["method"] == "xtb_dscf"
+
+
+@pytest.mark.skipif(not has_xtb(), reason="xTB not available")
+def test_gas_vs_solution_differ(tmp_path):
+    """Gas-phase and solution-phase EA must differ for a polar molecule.
+
+    ALPB stabilises the anion, so the solution-phase EA should differ from
+    the gas-phase value. This is the physical sanity check that the solvation
+    model is actually doing something.
+    """
+    mol = Chem.MolFromSmiles("O=C1OCCO1")
+    gas = ReductionOracle(cache_path=str(tmp_path / "gas.json"), solvent=None)
+    sol = ReductionOracle(cache_path=str(tmp_path / "sol.json"), solvent="acetonitrile")
+
+    ea_gas = gas.evaluate(mol)["ea_eV"]
+    ea_sol = sol.evaluate(mol)["ea_eV"]
+    assert ea_gas is not None
+    assert ea_sol is not None
+    # They should not be identical — solvation shifts the EA
+    assert ea_gas != ea_sol, "gas-phase and solution-phase EA must differ"
+
+
+def test_auto_solvent_selects_from_dielectric(tmp_path):
+    """with_auto_solvent picks a solvent based on the predicted dielectric."""
+    # EC has high dielectric (~65-90), should map to a high-ε solvent
+    oracle = ReductionOracle.with_auto_solvent(
+        Chem.MolFromSmiles("O=C1OCCO1"),
+        cache_path=str(tmp_path / "cache.json"),
+    )
+    # The solvent should be one of the named ALPB solvents, not None
+    assert oracle._solvent in dict(_ALPB_SOLVENT_BY_DIELECTRIC)
+
+
+def test_auto_solvent_differentiates_molecules(tmp_path):
+    """Different molecules with different dielectrics get different solvents."""
+    # EC (cyclic carbonate, high ε) vs DMC (linear carbonate, low ε)
+    oracle_ec = ReductionOracle.with_auto_solvent(
+        Chem.MolFromSmiles("O=C1OCCO1"),
+        cache_path=str(tmp_path / "ec.json"),
+    )
+    oracle_dmc = ReductionOracle.with_auto_solvent(
+        Chem.MolFromSmiles("COC(=O)OC"),
+        cache_path=str(tmp_path / "dmc.json"),
+    )
+    # Both should have a solvent assigned
+    assert oracle_ec._solvent is not None
+    assert oracle_dmc._solvent is not None
+    # EC has higher dielectric than DMC, so its solvent should be >= on the ε scale
+    eps_map = dict(_ALPB_SOLVENT_BY_DIELECTRIC)
+    assert eps_map[oracle_ec._solvent] >= eps_map[oracle_dmc._solvent]

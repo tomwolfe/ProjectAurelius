@@ -243,6 +243,56 @@ class DeltaCorrection:
         x = _ecfp4_vector(mol).reshape(1, -1)
         return float(self._homo_model.predict(x)[0]), float(self._lumo_model.predict(x)[0])
 
+    def predict_deltas_batch(
+        self,
+        mols: list[Chem.Mol],
+        return_std: bool = True,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None]:
+        """Batch Δ-correction for many molecules, with optional MLX acceleration.
+
+        Returns ``(d_homo, d_lumo, std_homo, std_lumo)`` where each is a 1-D
+        array of shape ``(n_mols,)``. std arrays are None when ``return_std=False``.
+
+        On Apple Silicon with MLX available, the GPR matrix operations run on
+        the GPU. Otherwise falls back to sklearn per-molecule prediction.
+        """
+        from aurelius.utils.device import get_device
+
+        n = len(mols)
+        if n == 0:
+            empty = np.array([], dtype=np.float32)
+            return empty, empty, (empty if return_std else None), (empty if return_std else None)
+
+        device = get_device()
+        if device == "mlx":
+            from aurelius.scoring.oracle.mlx_surrogate import predict_deltas_batch_mlx
+
+            d_homo, std_homo = predict_deltas_batch_mlx(
+                self._homo_model, mols, return_std=return_std
+            )
+            d_lumo, std_lumo = predict_deltas_batch_mlx(
+                self._lumo_model, mols, return_std=return_std
+            )
+            return d_homo, d_lumo, std_homo, std_lumo
+
+        # CPU fallback: per-molecule sklearn prediction
+        d_homo = np.zeros(n, dtype=np.float32)
+        d_lumo = np.zeros(n, dtype=np.float32)
+        std_homo = np.zeros(n, dtype=np.float32) if return_std else None
+        std_lumo = np.zeros(n, dtype=np.float32) if return_std else None
+        for i, mol in enumerate(mols):
+            if return_std:
+                dh, dl, sh, sl = self.predict_deltas_with_uncertainty(mol)
+                d_homo[i] = dh
+                d_lumo[i] = dl
+                std_homo[i] = sh  # type: ignore[index]
+                std_lumo[i] = sl  # type: ignore[index]
+            else:
+                dh, dl = self.predict_deltas(mol)
+                d_homo[i] = dh
+                d_lumo[i] = dl
+        return d_homo, d_lumo, std_homo, std_lumo
+
     def predict_deltas_with_uncertainty(
         self, mol: Chem.Mol
     ) -> tuple[float, float, float, float]:
@@ -261,6 +311,45 @@ class DeltaCorrection:
             float(std_homo[0]),
             float(std_lumo[0]),
         )
+
+    def predict_corrected_batch(
+        self,
+        mols: list[Chem.Mol],
+        base: list[tuple[float, float]] | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return corrected (homo, lumo) arrays for many molecules.
+
+        Uses batch Δ-correction with optional MLX acceleration. The OOD
+        damping is applied per-molecule using the GPR uncertainty.
+
+        Args:
+            mols: List of RDKit molecules.
+            base: Optional list of (homo, lumo) TOM predictions. Computed
+                internally if not provided.
+
+        Returns:
+            (homo_array, lumo_array) each of shape (n_mols,).
+        """
+        n = len(mols)
+        if n == 0:
+            empty = np.array([], dtype=np.float32)
+            return empty, empty
+
+        d_homo, d_lumo, std_homo, std_lumo = self.predict_deltas_batch(mols, return_std=True)
+
+        if base is None:
+            from aurelius.scoring.oracle.quantum import predict_tom_orbitals_batch
+            homo_base, lumo_base = predict_tom_orbitals_batch(mols)
+        else:
+            homo_base = np.array([b[0] for b in base], dtype=np.float32)
+            lumo_base = np.array([b[1] for b in base], dtype=np.float32)
+
+        var_prior_homo = self._prior_std_homo ** 2
+        var_prior_lumo = self._prior_std_lumo ** 2
+        conf_homo = var_prior_homo / (var_prior_homo + std_homo ** 2)
+        conf_lumo = var_prior_lumo / (var_prior_lumo + std_lumo ** 2)
+
+        return homo_base + d_homo * conf_homo, lumo_base + d_lumo * conf_lumo
 
     def predict_corrected(
         self, mol: Chem.Mol, base: tuple[float, float] | None = None

@@ -95,6 +95,37 @@ _EA_CALIBRATION: tuple[float, float] = (0.6590, -2.9176)
 # outside it are flagged: they are bounded extrapolations, not measurements.
 _EA_CALIBRATED_SPAN_RAW: tuple[float, float] = (2.92, 8.82)
 
+# xTB --alpb accepts named solvents. Map a predicted dielectric constant to
+# the nearest ALPB solvent so the ΔSCF EA is evaluated in a medium matching
+# the molecule's own polarity. For battery electrolytes the relevant range
+# is ε ≈ 2–40 (linear carbonates to acetonitrile); outside it we fall back
+# to acetonitrile as the standard reference solvent for CV calibration.
+_ALPB_SOLVENT_BY_DIELECTRIC: list[tuple[str, float]] = [
+    ("hexane", 1.9),
+    ("toluene", 2.4),
+    ("thf", 7.6),
+    ("dcm", 9.1),
+    ("acetone", 20.7),
+    ("ethanol", 24.3),
+    ("acetonitrile", 37.5),
+    ("dmso", 46.7),
+    ("water", 80.0),
+]
+
+
+def solvent_from_dielectric(epsilon: float) -> str:
+    """Map a predicted dielectric constant to the nearest xTB ALPB solvent.
+
+    Uses absolute distance on the ε scale. Clamps to the nearest named
+    solvent rather than extrapolating beyond the ends.
+    """
+    best, best_dist = "acetonitrile", float("inf")
+    for name, eps in _ALPB_SOLVENT_BY_DIELECTRIC:
+        d = abs(eps - epsilon)
+        if d < best_dist:
+            best, best_dist = name, d
+    return best
+
 
 @dataclass
 class ReductionResult:
@@ -107,6 +138,8 @@ class ReductionResult:
     ea_raw: float | None = None
     cpu_seconds: float = 0.0
 
+    solvent: str | None = None
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "ea_eV": None if self.ea_eV is None else round(self.ea_eV, 4),
@@ -115,6 +148,7 @@ class ReductionResult:
             "in_calibrated_span": self.in_calibrated_span,
             "ea_raw": None if self.ea_raw is None else round(self.ea_raw, 4),
             "cpu_seconds": round(self.cpu_seconds, 4),
+            "solvent": self.solvent,
         }
 
 
@@ -381,6 +415,34 @@ class ReductionOracle:
         self._misses = 0
         self._dirty = False
 
+    @classmethod
+    def with_auto_solvent(
+        cls,
+        mol: Chem.Mol,
+        cache_path: str = DEFAULT_CACHE_PATH,
+        threads: int = 1,
+    ) -> ReductionOracle:
+        """Create an oracle with solvent auto-selected from predicted dielectric.
+
+        Uses the Kirkwood-Fröhlich dielectric proxy to pick the nearest
+        ALPB solvent, falling back to "acetonitrile" when the proxy is
+        unavailable.
+        """
+        solvent = "acetonitrile"
+        try:
+            from aurelius.scoring.oracle.gc import predict_dielectric_proxy
+            from aurelius.types import MoleculeContext
+
+            ctx = mol if isinstance(mol, MoleculeContext) else MoleculeContext.from_smiles(
+                Chem.MolToSmiles(mol)
+            )
+            if ctx is not None:
+                eps = predict_dielectric_proxy(ctx)
+                solvent = solvent_from_dielectric(eps)
+        except Exception:
+            pass
+        return cls(cache_path=cache_path, solvent=solvent, threads=threads)
+
     def _load_cache(self) -> dict[str, dict[str, Any]]:
         try:
             with open(self._cache_path) as fh:
@@ -401,7 +463,8 @@ class ReductionOracle:
     def evaluate(self, ctx: MoleculeContext | Chem.Mol) -> dict[str, Any]:
         """Return the reduction-stability record for a molecule."""
         mol = ctx.mol if isinstance(ctx, MoleculeContext) else ctx
-        key = Chem.MolToSmiles(mol, canonical=True, isomericSmiles=True)
+        smiles = Chem.MolToSmiles(mol, canonical=True, isomericSmiles=True)
+        key = f"{smiles}|{self._solvent}"
 
         cached = self._cache.get(key)
         if cached is not None and cached.get("method") == self.method:
@@ -432,6 +495,7 @@ class ReductionOracle:
                     in_calibrated_span=in_span,
                     ea_raw=raw,
                     cpu_seconds=time.perf_counter() - start,
+                    solvent=self._solvent,
                 )
 
         fallback = self._get_fallback()
@@ -441,12 +505,14 @@ class ReductionOracle:
                 ea_eV=ea, method="structural_ridge", confidence=conf,
                 in_calibrated_span=True, ea_raw=None,
                 cpu_seconds=time.perf_counter() - start,
+                solvent=self._solvent,
             )
 
         return ReductionResult(
             ea_eV=None, method="unavailable", confidence=0.0,
             in_calibrated_span=False,
             cpu_seconds=time.perf_counter() - start,
+            solvent=self._solvent,
         )
 
     def flush(self) -> None:

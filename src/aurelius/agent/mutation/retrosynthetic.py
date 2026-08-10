@@ -546,6 +546,86 @@ def brics_retrosynthetic_depth(mol: Chem.Mol) -> int:
     return _cached_retrosynthetic_depth(smiles)
 
 
+def continuous_synthesizability_score(mol: Chem.Mol) -> float:
+    """Continuous [0,1] synthesizability score based on precursor coverage.
+
+    Unlike ``brics_retrosynthetic_depth`` which returns discrete {1,2,3,4,5},
+    this returns a continuous score that reflects *how well* the molecule is
+    grounded in commercial precursors. The score combines:
+
+    1. **Direct match quality** — the best precursor coverage of the molecule
+       itself (0 if no precursor matches, 1 if fully covered).
+    2. **Fragment coverage** — weighted precursor coverage of BRICS fragments
+       at the first decomposition level, rewarding molecules whose fragments
+       are substantially purchasable.
+    3. **Decomposition efficiency** — how quickly BRICS decomposition converges
+       to purchasable fragments, penalising molecules that require many steps.
+
+    Returns:
+        float in [0, 1] where 1.0 = directly purchasable, 0.0 = unsynthesizable.
+    """
+    if mol is None:
+        return 0.0
+
+    n_heavy = mol.GetNumHeavyAtoms()
+    if n_heavy == 0:
+        return 0.0
+
+    # Component 1: Direct precursor match (weight 0.40)
+    direct_match = _precursor_match_score(mol)
+    # _precursor_match_score uses 0.5 threshold internally; rescale so that
+    # partial matches contribute proportionally.
+    direct_score = min(direct_match / 0.85, 1.0) if direct_match > 0 else 0.0
+
+    # Component 2: Fragment coverage after one BRICS decomposition (weight 0.35)
+    try:
+        fragments = list(BRICS.BRICSDecompose(mol))
+    except Exception:
+        fragments = []
+    frag_coverage = _precursor_coverage(fragments) if fragments else 0.0
+
+    # Component 3: Decomposition efficiency (weight 0.25)
+    # How many steps to reach >0.6 coverage? Fewer steps = higher score.
+    decomp_score = _decomposition_efficiency(mol, fragments)
+
+    # Weighted combination
+    return 0.40 * direct_score + 0.35 * frag_coverage + 0.25 * decomp_score
+
+
+def _decomposition_efficiency(mol: Chem.Mol, fragments: list[str]) -> float:
+    """Score how quickly BRICS decomposition yields purchasable fragments.
+
+    Returns 1.0 if the molecule is directly purchasable, decaying smoothly
+    as more decomposition steps are needed.
+    """
+    if not fragments:
+        return 0.0
+
+    # Check if directly purchasable
+    direct = _precursor_match_score(mol)
+    if direct >= 0.85:
+        return 1.0
+
+    # Check first-level fragments
+    cov = _precursor_coverage(fragments)
+    if cov >= 0.6:
+        return 0.85
+    if cov >= 0.4:
+        return 0.65
+    if cov >= 0.2:
+        return 0.40
+
+    # One more decomposition level
+    next_frags = _decompose_fragments(fragments)
+    cov2 = _precursor_coverage(next_frags) if next_frags else 0.0
+    if cov2 >= 0.6:
+        return 0.50
+    if cov2 >= 0.3:
+        return 0.30
+
+    return 0.10
+
+
 def get_commercial_precursors() -> list[dict]:
     """Get the commercial precursors data with metadata.
 
