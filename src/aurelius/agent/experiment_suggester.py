@@ -98,6 +98,11 @@ MEASURABLE_PROPERTIES: dict[str, str] = {
 # benchmark is too small for diversity-based acquisition to outperform random.
 MIN_POOL_SIZE = 200
 
+# Minimum pool size to attempt expansion. Below this, BRICS harvesting cannot
+# produce meaningful fragments (the pool is too small/homologous), and the
+# acquisition scores the candidates directly.
+_MIN_EXPAND_POOL = 10
+
 # Maximum number of BRICS fragments to harvest per candidate molecule.
 _MAX_FRAGMENTS_PER_MOL = 10
 
@@ -301,18 +306,35 @@ def _harvest_fragments(candidates: list[str]) -> list[str]:
 def _recombine_fragments(fragments: list[str], max_products: int = _MAX_RECOMBINATION_PRODUCTS) -> list[str]:
     """Recombine BRICS fragments into novel candidate molecules.
 
-    Uses BRICSBuild to generate valid products from the fragment pool.
-    Returns up to max_products unique SMILES.
+    Uses the project's BRICS infrastructure (``find_complementary_pairs``,
+    ``inject_linkers``) to prepare a fragment pool with valid attachment
+    points, then ``BRICSBuild`` to generate products. Returns up to
+    ``max_products`` unique SMILES.
+
+    Fragments without complementary partners are bridged by universal linker
+    fragments (ether, ester, methylene, …) so the pool is never empty even
+    when the harvested fragments share no bond types.
     """
     from rdkit.Chem.BRICS import BRICSBuild
 
-    mols = []
+    from aurelius.agent.mutation.brics import (
+        find_complementary_pairs,
+        inject_linkers,
+    )
+
+    mols: list[Any] = []
     for f in fragments:
         m = Chem.MolFromSmiles(f)
         if m is not None:
             mols.append(m)
     if len(mols) < 2:
         return []
+
+    # Inject universal linkers when the harvested fragments have no
+    # complementary pairs — without this, BRICSBuild produces nothing.
+    pairs = find_complementary_pairs(mols)
+    if not pairs:
+        inject_linkers(mols)
 
     seen: set[str] = set()
     products: list[str] = []
@@ -363,11 +385,23 @@ def _quick_score_candidates(
     return scored
 
 
+def _has_brics_dummy(frag_smi: str) -> bool:
+    """True if the fragment SMILES contains a BRICS dummy atom ([N*])."""
+    mol = Chem.MolFromSmiles(frag_smi)
+    if mol is None:
+        return False
+    return any(a.GetAtomicNum() == 0 for a in mol.GetAtoms())
+
+
 def _harvest_labeled_fragments(top_candidates: list[str]) -> list[str]:
     """Decompose top candidates into BRICS fragments with dummy-atom labels intact.
 
     Unlike :func:`_harvest_fragments`, the labels are kept so the fragments
     remain recombinable via BRICSBuild. Duplicates are removed by stripped core.
+
+    Fragments without dummy atoms (whole molecules BRICS could not decompose)
+    are skipped — they have no attachment points and cannot participate in
+    recombination.
     """
     seen_cores: set[str] = set()
     labeled_frags: list[str] = []
@@ -377,6 +411,8 @@ def _harvest_labeled_fragments(top_candidates: list[str]) -> list[str]:
             continue
         try:
             for frag in BRICS.BRICSDecompose(mol):
+                if not _has_brics_dummy(frag):
+                    continue
                 core = _strip_brics_dummy_atoms(frag)
                 if core is None or core in seen_cores:
                     continue
@@ -415,8 +451,9 @@ def _harvest_from_top_candidates(
     recombination), recombines via BRICSBuild, and deduplicates against the
     existing pool.
 
-    Returns the expanded pool (original + generated), or the original pool if
-    harvesting produces nothing.
+    Returns the expanded pool (original + generated). If BRICS recombination
+    produces no novel molecules (small or homologous pool), returns the
+    original pool unchanged.
     """
     if len(candidates) < 2:
         return list(candidates)
@@ -425,14 +462,22 @@ def _harvest_from_top_candidates(
     top_candidates = [smi for smi, _ in scored[:top_n]]
 
     labeled_frags = _harvest_labeled_fragments(top_candidates)
-    if len(labeled_frags) < 2:
-        return list(candidates)
+    products: list[str] = []
+    if len(labeled_frags) >= 2:
+        products = _recombine_fragments(labeled_frags, max_products=max_products)
 
-    products = _recombine_fragments(labeled_frags, max_products=max_products)
-    if not products:
-        return list(candidates)
+    # Filter to genuinely novel products
+    original_canonical: set[str] = set()
+    for s in candidates:
+        m = Chem.MolFromSmiles(s)
+        if m is not None:
+            original_canonical.add(Chem.MolToSmiles(m))
+    novel_brics = [p for p in products if p not in original_canonical]
 
-    return _dedup_pool(candidates, products)
+    if novel_brics:
+        return _dedup_pool(candidates, novel_brics)
+
+    return list(candidates)
 
 
 def expand_candidate_pool(candidates: list[str], target_size: int = MIN_POOL_SIZE) -> list[str]:
@@ -443,13 +488,23 @@ def expand_candidate_pool(candidates: list[str], target_size: int = MIN_POOL_SIZ
     and merges the products back into the pool. Deduplicates by canonical SMILES.
 
     Returns the expanded pool (original + generated), or the original pool if
-    expansion fails.
+    expansion fails to produce any genuinely new molecules.
     """
     if len(candidates) >= target_size:
         return list(candidates)
 
     expanded = _harvest_from_top_candidates(candidates, top_n=10, max_products=150)
-    if len(expanded) <= len(candidates):
+
+    # Count genuinely new molecules — the input pool may contain duplicates
+    # that _dedup_pool collapses, so comparing raw lengths would reject a
+    # valid expansion that added novel structures.
+    original_canonical: set[str] = set()
+    for s in candidates:
+        m = Chem.MolFromSmiles(s)
+        if m is not None:
+            original_canonical.add(Chem.MolToSmiles(m))
+    novel = [s for s in expanded if s not in original_canonical]
+    if not novel:
         return list(candidates)
 
     return expanded
@@ -844,8 +899,11 @@ def suggest_experiments(
     biases = _bias_magnitudes(controller)
 
     # Pool expansion: a small pool cannot support diversity-based acquisition.
-    # BRICS harvesting grows it to >= target_size before scoring.
-    if len(candidates) < MIN_POOL_SIZE:
+    # BRICS harvesting grows it to >= target_size before scoring. Very small
+    # pools (< _MIN_EXPAND_POOL) skip expansion — there is not enough material
+    # for meaningful BRICS fragment harvesting, and the caller's candidates
+    # should be scored directly.
+    if _MIN_EXPAND_POOL <= len(candidates) < MIN_POOL_SIZE:
         expanded = expand_candidate_pool(candidates, target_size=MIN_POOL_SIZE)
         if len(expanded) > len(candidates):
             logger.info(

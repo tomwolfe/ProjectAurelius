@@ -10,33 +10,33 @@
       "estimator": "TOM LUMO (negated) [superseded]",
       "n": 40,
       "spearman_rho": 0.34162366440922504,
-      "mae_eV": 0.6819394302489952,
-      "affine_slope": 0.3236044364122852,
-      "affine_intercept": 0.31253925244009384
+      "mae_eV": 0.681939430235398,
+      "affine_slope": 0.3236044364270059,
+      "affine_intercept": 0.3125392523985186
     },
     {
       "estimator": "structural_ridge (class-disjoint CV)",
       "n": 40,
       "spearman_rho": 0.6927479156108374,
-      "mae_eV": 0.6070453905169629,
-      "affine_slope": 0.6091669821987302,
-      "affine_intercept": 0.4255777394605665
+      "mae_eV": 0.6070453905169627,
+      "affine_slope": 0.609166982198731,
+      "affine_intercept": 0.42557773946056526
     },
     {
       "estimator": "structural_ridge (LOO)",
       "n": 40,
       "spearman_rho": 0.7535416113469997,
-      "mae_eV": 0.4834888484479098
+      "mae_eV": 0.48348884844790996
     },
     {
       "estimator": "xTB \u0394SCF EA",
       "n": 40,
       "spearman_rho": 0.9115301663156685,
-      "mae_eV": 0.2894648638148133,
-      "affine_slope": 0.6590161622535563,
-      "affine_intercept": -2.9176338176828693
+      "mae_eV": 0.2894650227953478,
+      "affine_slope": 0.6590162978342048,
+      "affine_intercept": -2.917634639324473
     }
   ],
   "permutation_rho_p95": 0.31011821132819656,
-  "dscf_seconds": 2.4586232090368867
+  "dscf_seconds": 2.311415333999321
 }

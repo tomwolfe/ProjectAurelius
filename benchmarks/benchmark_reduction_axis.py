@@ -52,7 +52,7 @@ from aurelius.scoring.oracle.reduction import (  # noqa: E402
     _StructuralEAModel,
     compute_dscf_ea_batch,
     has_xtb,  # noqa: E402
-    load_experimental_ea,
+    load_experimental_ea_gas,
 )
 
 
@@ -102,9 +102,12 @@ def _class_disjoint_cv(entries: list[dict], feats: np.ndarray, labels: np.ndarra
 
 
 def run(json_out: str | None = None) -> dict:
-    entries = load_experimental_ea()
+    # Gas-phase only: the ΔSCF EA computed here is gas-phase (no solvent), so
+    # mixing in solution-phase labels (on a different physical scale) would
+    # corrupt the correlation. See ADR-2026-08-11 (solution-phase EA).
+    entries = load_experimental_ea_gas()
     if not entries:
-        print("No experimental EA data available; aborting.")
+        print("No experimental gas-phase EA data available; aborting.")
         return {}
 
     mols = [Chem.MolFromSmiles(e["smiles"]) for e in entries]

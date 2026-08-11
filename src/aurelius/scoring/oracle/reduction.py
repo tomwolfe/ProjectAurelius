@@ -474,6 +474,12 @@ class ReductionOracle:
         Uses the Kirkwood-Fröhlich dielectric proxy to pick the nearest
         ALPB solvent, falling back to "acetonitrile" when the proxy is
         unavailable.
+
+        .. warning::
+            Solution-phase ALPB ΔSCF EA is **unvalidated** (ρ = −0.915 vs 10
+            experimental CV onsets — actively anti-correlated; see
+            ADR-2026-08-11-04). This method is opt-in only. The default
+            ``ReductionOracle()`` uses the validated gas-phase path.
         """
         solvent = "acetonitrile"
         try:
@@ -488,6 +494,11 @@ class ReductionOracle:
                 solvent = solvent_from_dielectric(eps)
         except Exception:
             pass
+        logger.warning(
+            "Solution-phase ALPB ΔSCF EA is unvalidated (ρ = −0.915 vs experiment). "
+            "Use gas-phase ReductionOracle() for validated rankings. "
+            "See ADR-2026-08-11-04."
+        )
         return cls(cache_path=cache_path, solvent=solvent, threads=threads)
 
     def _load_cache(self) -> dict[str, dict[str, Any]]:
