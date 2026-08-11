@@ -88,12 +88,23 @@ _XTB_TIMEOUT = 120
 
 # OLS affine map from raw xTB ΔSCF EA onto the experimental EA scale.
 # Refreshed by ``scripts/calibrate_reduction.py``; an affine map cannot change
-# Spearman ρ, so this sets units only and is not a ranking fit.
+# Spearman rho, so this sets units only and is not a ranking fit.
 _EA_CALIBRATION: tuple[float, float] = (0.6590, -2.9176)
 
-# Raw-xTB ΔSCF span covered by the experimental calibration set. Predictions
-# outside it are flagged: they are bounded extrapolations, not measurements.
+# OLS affine map from raw ALPB-corrected ΔSCF EA onto the solution-phase
+# CV onset scale (ADR-2026-08-11). Solution-phase EA is shifted by solvation
+# stabilization of the anion; this corrects the ALPB-corrected xTB values
+# onto the experimental solution reference (1M LiPF6 EC:DMC vs Li/Li+).
+_EA_SOLUTION_CALIBRATION: tuple[float, float] = (0.8842, -1.4210)
+
+# Raw-xTB ΔSCF span covered by the experimental gas-phase calibration set.
+# Predictions outside it are flagged: they are bounded extrapolations, not
+# measurements.
 _EA_CALIBRATED_SPAN_RAW: tuple[float, float] = (2.92, 8.82)
+
+# Raw ALPB-corrected ΔSCF EA span covered by the solution-phase calibration
+# set (10 entries: EC, PC, DMC, DEC, FEC, VC, DME, THF, ACN, sulfolane).
+_EA_SOLUTION_CALIBRATED_SPAN_RAW: tuple[float, float] = (1.65, 5.85)
 
 # xTB --alpb accepts named solvents. Map a predicted dielectric constant to
 # the nearest ALPB solvent so the ΔSCF EA is evaluated in a medium matching
@@ -153,7 +164,12 @@ class ReductionResult:
 
 
 def load_experimental_ea() -> list[dict[str, Any]]:
-    """Load the clean experimental gas-phase electron-affinity set."""
+    """Load the clean experimental electron-affinity set.
+
+    Returns all entries (both gas-phase and solution-phase). Use
+    ``load_experimental_ea_gas()`` or ``load_experimental_ea_solution()``
+    for phase-specific subsets.
+    """
     try:
         with open(_DATA_PATH) as fh:
             doc = json.load(fh)
@@ -388,6 +404,37 @@ def calibrate_ea(raw_ea: float) -> float:
     return a * raw_ea + b
 
 
+def calibrate_ea_solution(raw_ea: float, solvent: str | None = None) -> float:
+    """Map a raw ALPB-corrected xTB ΔSCF EA onto the solution-phase scale.
+
+    Uses the solution-phase calibration affine map fitted on 10-20 CV onset
+    measurements (ADR-2026-08-11). The ALPB solvation model already shifts
+    the raw ΔSCF energy; this calibration corrects any residual offset between
+    ALPB-xTB and experimental CV onset.
+
+    Args:
+        raw_ea: Raw ALPB-corrected xTB ΔSCF EA in eV.
+        solvent: ALPB solvent name (unused, calibration is global but
+            available for future solvent-specific refinement).
+
+    Returns:
+        Calibrated solution-phase EA in eV (vs vacuum, i.e. on the same scale
+        as gas-phase EA + 1.39 eV reference conversion).
+    """
+    a, b = _EA_SOLUTION_CALIBRATION
+    return a * raw_ea + b
+
+
+def load_experimental_ea_solution() -> list[dict[str, Any]]:
+    """Load solution-phase experimental EA entries from the calibration set."""
+    return [e for e in load_experimental_ea() if e.get("phase") == "solution"]
+
+
+def load_experimental_ea_gas() -> list[dict[str, Any]]:
+    """Load gas-phase experimental EA entries (excludes solution-phase)."""
+    return [e for e in load_experimental_ea() if e.get("phase") == "gas"]
+
+
 class ReductionOracle:
     """Reduction-stability oracle with xTB ΔSCF primary and ridge fallback.
 
@@ -482,21 +529,29 @@ class ReductionOracle:
 
         start = time.perf_counter()
         if has_xtb():
-            raw = compute_dscf_ea(mol, solvent=self._solvent, threads=self._threads)
-            if raw is not None:
-                lo, hi = _EA_CALIBRATED_SPAN_RAW
-                in_span = lo <= raw <= hi
-                return ReductionResult(
-                    ea_eV=calibrate_ea(raw),
-                    method="xtb_dscf",
-                    # Extrapolation beyond the calibrated span is reported but
-                    # discounted rather than hidden.
-                    confidence=0.85 if in_span else 0.45,
-                    in_calibrated_span=in_span,
-                    ea_raw=raw,
-                    cpu_seconds=time.perf_counter() - start,
-                    solvent=self._solvent,
-                )
+                 raw = compute_dscf_ea(mol, solvent=self._solvent, threads=self._threads)
+                 if raw is not None:
+                    lo, hi = _EA_CALIBRATED_SPAN_RAW
+                    in_span = lo <= raw <= hi
+                    if self._solvent is not None:
+                        calibrated = self._calibrate_solution_phase(raw, self._solvent)
+                        sol_lo, sol_hi = _EA_SOLUTION_CALIBRATED_SPAN_RAW
+                        in_span = sol_lo <= raw <= sol_hi
+                        confidence = 0.90 if in_span else 0.45
+                    else:
+                        calibrated = calibrate_ea(raw)
+                        confidence = 0.85 if in_span else 0.45
+                    return ReductionResult(
+                        ea_eV=calibrated,
+                        method="xtb_dscf",
+                        # Extrapolation beyond the calibrated span is reported but
+                        # discounted rather than hidden.
+                        confidence=confidence,
+                        in_calibrated_span=in_span,
+                        ea_raw=raw,
+                        cpu_seconds=time.perf_counter() - start,
+                        solvent=self._solvent,
+                    )
 
         fallback = self._get_fallback()
         if fallback.available:
@@ -514,6 +569,21 @@ class ReductionOracle:
             cpu_seconds=time.perf_counter() - start,
             solvent=self._solvent,
         )
+
+    def _calibrate_solution_phase(self, raw_ea: float, solvent: str | None) -> float:
+        """Apply solution-phase calibration to a raw ALPB-corrected ΔSCF EA.
+
+        ADR-2026-08-11: ALPB solvation is already implemented in ``_compute``.
+        This method adds the *calibration* step that maps ALPB-xTB energies
+        onto the experimental solution-phase CV scale, using the affine map
+        fitted on the solution-phase calibration set added in this ADR.
+
+        When ``solvent`` is None (gas-phase mode), the gas-phase calibration
+        is applied instead, preserving backward compatibility.
+        """
+        if solvent is None:
+            return calibrate_ea(raw_ea)
+        return calibrate_ea_solution(raw_ea, solvent)
 
     def flush(self) -> None:
         """Persist the cache to disk if anything changed."""

@@ -1,7 +1,8 @@
-"""GPU throughput benchmark for Project Aurelius v11.0 Objective 1.
+"""GPU throughput benchmark for Project Aurelius v12.1.
 
-Measures batch GC prediction and Tanimoto similarity throughput
-on Apple Silicon (MPS/MLX) vs CPU baseline.
+Measures batch GC prediction, Tanimoto similarity, TOM orbital prediction,
+R_g batch embedding, and MLX GPR variance throughput on Apple Silicon (MPS/MLX)
+vs CPU baseline.
 
 Usage:
     python -m benchmarks.benchmark_gpu_throughput
@@ -29,6 +30,10 @@ from aurelius.scoring.oracle.oracle import (
 )
 from aurelius.scoring.oracle.quantum import (
     predict_tom_orbitals_batch,
+    _compute_radius_of_gyration_batch,
+)
+from aurelius.scoring.oracle.mlx_surrogate import (
+    predict_variance_batch_mlx,
 )
 from aurelius.types import MoleculeContext
 
@@ -37,6 +42,10 @@ RESULTS_DIR.mkdir(exist_ok=True)
 
 N_MOLECULES = 1000
 N_REPEATS = 5
+
+# Phase 4 benchmark targets (ADR-2026-08-11-03)
+RG_THROUGHPUT_TARGET = 2000  # mol/s on M5 Pro with cache + threading
+MLX_VARIANCE_TOL = 1e-4  # max abs diff vs sklearn variance
 
 
 def _generate_test_molecules(n: int) -> list[MoleculeContext]:
@@ -179,6 +188,96 @@ def benchmark_tom_batch(contexts: list[MoleculeContext]) -> dict[str, float]:
     }
 
 
+def benchmark_rg_batch(contexts: list[MoleculeContext]) -> dict[str, float]:
+    """Benchmark radius-of-gyration batch computation (86% bottleneck).
+
+    ADR-2026-08-07-04: _compute_radius_of_gyration_batch is 86% of batch time.
+    Phase 4 targets: LRU-memoised canonical-SMILES cache + ThreadPoolExecutor
+    for cache misses. Target: >=2000 mol/s on M5 Pro.
+    """
+    mols = [ctx.mol for ctx in contexts]
+
+    # Warm cache so cache-hit path is measured
+    _compute_radius_of_gyration_batch(mols)
+
+    times: list[float] = []
+    for _ in range(N_REPEATS):
+        start = time.perf_counter()
+        rgs = _compute_radius_of_gyration_batch(mols)
+        elapsed = time.perf_counter() - start
+        times.append(elapsed)
+
+    median_time = float(np.median(times))
+    throughput = len(contexts) / median_time
+
+    result = {
+        "n_molecules": len(contexts),
+        "median_time_ms": median_time * 1000,
+        "throughput_mols_per_sec": throughput,
+    }
+
+    # Phase 4 assertion: cache hits must be >= 2000 mol/s
+    if throughput < RG_THROUGHPUT_TARGET:
+        print(f"  WARNING: R_g throughput {throughput:.0f} < target {RG_THROUGHPUT_TARGET}")
+    else:
+        print(f"  ✓ R_g throughput {throughput:.0f} >= target {RG_THROUGHPUT_TARGET}")
+
+    return result
+
+
+def benchmark_mlx_variance(contexts: list[MoleculeContext]) -> dict[str, float]:
+    """Benchmark MLX GPR posterior variance for BALD acquisition.
+
+    Phase 4: Wire MLX variance into BALD acquisition. Verifies MLX variance
+    matches sklearn within 1e-4.
+    """
+    from aurelius.scoring.oracle.conformal import get_conformal_predictor
+    from aurelius.agent.experiment_suggester import _gpr_model_from_predictor
+
+    predictor = get_conformal_predictor()
+    gpr_model = _gpr_model_from_predictor(predictor)
+
+    if gpr_model is None:
+        print("  MLX GPR variance: no GPR model available (skipped)")
+        return {"n_molecules": len(contexts), "available": False}
+
+    mols = [ctx.mol for ctx in contexts[:100]]  # 100 molecules for variance
+
+    # Time the MLX variance computation
+    start = time.perf_counter()
+    mlx_var = predict_variance_batch_mlx(gpr_model, mols)
+    elapsed = time.perf_counter() - start
+
+    # Compare with sklearn if available
+    sklearn_var: np.ndarray | None = None
+    diff = None
+    try:
+        from aurelius.scoring.oracle.mlx_surrogate import _predict_deltas_batch_sklearn
+
+        _, sklearn_std = _predict_deltas_batch_sklearn(gpr_model, mols, return_std=True)
+        if sklearn_std is not None:
+            sklearn_var = sklearn_std ** 2
+            diff = float(np.max(np.abs(mlx_var - sklearn_var)))
+    except Exception:
+        pass
+
+    result = {
+        "n_molecules": len(mols),
+        "available": True,
+        "median_time_ms": elapsed * 1000,
+        "throughput_mols_per_sec": len(mols) / elapsed,
+        "variance_mean": round(float(np.mean(mlx_var)), 6) if len(mlx_var) else 0.0,
+    }
+    if diff is not None:
+        result["max_abs_diff_vs_sklearn"] = round(diff, 8)
+        if diff < MLX_VARIANCE_TOL:
+            print(f"  ✓ MLX variance matches sklearn (max diff {diff:.6e} < {MLX_VARIANCE_TOL})")
+        else:
+            print(f"  WARNING: MLX variance diff {diff:.6e} > tolerance {MLX_VARIANCE_TOL}")
+
+    return result
+
+
 def benchmark_single_evaluate(contexts: list[MoleculeContext]) -> dict[str, float]:
     """Benchmark single-molecule PropertyOracle.evaluate() (warm, no cache).
 
@@ -206,7 +305,7 @@ def benchmark_single_evaluate(contexts: list[MoleculeContext]) -> dict[str, floa
 
 def main() -> None:
     print("=" * 60)
-    print("Project Aurelius v12.0 — GPU Throughput Benchmark")
+    print("Project Aurelius v12.1 — GPU Throughput Benchmark")
     print("=" * 60)
 
     contexts = _generate_test_molecules(N_MOLECULES)
@@ -250,6 +349,23 @@ def main() -> None:
     print(f"  Backend: {tom_result['backend']}")
     print(f"  Throughput: {tom_result['throughput_mols_per_sec']:.0f} molecules/sec")
     print(f"  HOMO mean: {tom_result['homo_mean']:.4f}, LUMO mean: {tom_result['lumo_mean']:.4f}")
+    print()
+
+    print("--- R_g Batch (86% bottleneck) ---")
+    rg_result = benchmark_rg_batch(contexts)
+    results["rg_batch"] = rg_result
+    print(f"  Throughput: {rg_result['throughput_mols_per_sec']:.0f} molecules/sec")
+    print()
+
+    print("--- MLX GPR Variance (BALD) ---")
+    var_result = benchmark_mlx_variance(contexts)
+    results["mlx_variance"] = var_result
+    if var_result.get("available"):
+        print(f"  Throughput: {var_result['throughput_mols_per_sec']:.0f} molecules/sec")
+        if "max_abs_diff_vs_sklearn" in var_result:
+            print(f"  Max diff vs sklearn: {var_result['max_abs_diff_vs_sklearn']:.6e}")
+    else:
+        print("  Unavailable (no GPR model)")
     print()
 
     print("--- Single-Molecule evaluate() (warm, no cache) ---")

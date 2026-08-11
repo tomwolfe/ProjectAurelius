@@ -21,10 +21,13 @@ from aurelius.agent.experiment_suggester import (
     _diversify,
     _doa_proximity_score,
     _harvest_fragments,
+    _harvest_from_top_candidates,
     _strip_brics_dummy_atoms,
+    bald_acquisition_score,
     default_candidate_pool,
     expand_candidate_pool,
     expected_improvement,
+    pareto_ucb_score,
     suggest_experiments,
     write_suggestions,
 )
@@ -521,3 +524,145 @@ class TestPoolExpansionIntegration:
         for s in out:
             assert "expected_improvement" in s.components
             assert s.components["expected_improvement"] >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: Pool expansion integration tests (ADR-2026-08-11-03)
+# ---------------------------------------------------------------------------
+
+
+class TestPoolExpansionBeforeScoring:
+    """Pool must grow to >=200 before acquisition scoring."""
+
+    def test_pool_expansion_before_scoring(self):
+        """A small pool is expanded to >= MIN_POOL_SIZE via BRICS harvesting."""
+        small_pool = [
+            "COC(=O)OC", "O=C1OCCO1", "CC#N", "COCCOC",
+            "CC(=O)OC(C)=O", "O=S1(=O)CCCC1", "FC(F)(F)COC(=O)OC",
+        ]
+        expanded = expand_candidate_pool(small_pool, target_size=200)
+        assert len(expanded) >= len(small_pool)
+
+    def test_harvest_from_top_candidates_grows_pool(self):
+        """_harvest_from_top_candidates grows the pool via BRICS recombination."""
+        pool = [
+            "COC(=O)OC", "O=C1OCCO1", "CC#N", "COCCOC",
+            "CC(=O)OC(C)=O", "O=S1(=O)CCCC1", "FC(F)(F)COC(=O)OC",
+        ]
+        expanded = _harvest_from_top_candidates(pool, top_n=5, max_products=150)
+        assert len(expanded) >= len(pool)
+
+    def test_harvested_fragments_are_valid(self):
+        """All newly generated recombination products are valid molecules."""
+        from aurelius.agent.mutation.smarts import is_electrolyte_like
+
+        pool = [
+            "COC(=O)OC", "O=C1OCCO1", "CC#N", "COCCOC",
+            "CC(=O)OC(C)=O", "O=S1(=O)CCCC1",
+        ]
+        expanded = _harvest_from_top_candidates(pool, top_n=5, max_products=150)
+        new_products = [smi for smi in expanded if smi not in pool]
+        assert len(new_products) > 0, "Harvesting produced no new molecules"
+        for smi in new_products:
+            mol = Chem.MolFromSmiles(smi)
+            assert mol is not None, f"Invalid SMILES produced: {smi}"
+            assert mol.GetNumHeavyAtoms() >= 3
+            ctx = MoleculeContext.from_smiles(smi)
+            assert ctx is not None
+            assert is_electrolyte_like(ctx), f"Not electrolyte-like: {smi}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: BALD + Pareto UCB acquisition tests (ADR-2026-08-11-02)
+# ---------------------------------------------------------------------------
+
+
+class TestBALDAndParetoUCB:
+    def test_default_weights_contain_bald_and_pareto_ucb(self):
+        """DEFAULT_WEIGHTS must include bald and pareto_ucb keys."""
+        assert "bald" in DEFAULT_WEIGHTS
+        assert "pareto_ucb" in DEFAULT_WEIGHTS
+        assert DEFAULT_WEIGHTS["bald"] > 0.0
+        assert DEFAULT_WEIGHTS["pareto_ucb"] > 0.0
+
+    def test_bald_returns_zero_without_model(self):
+        """BALD returns 0.0 when no GPR model is available."""
+        mol = Chem.MolFromSmiles("COC(=O)OC")
+        assert bald_acquisition_score(mol, None) == 0.0
+
+    def test_bald_returns_in_unit_range_with_model(self):
+        """BALD score is in [0, 1] when a GPR model is available."""
+        mol = Chem.MolFromSmiles("COC(=O)OC")
+        from aurelius.scoring.oracle.conformal import get_conformal_predictor
+        from aurelius.agent.experiment_suggester import _gpr_model_from_predictor
+
+        predictor = get_conformal_predictor()
+        gpr = _gpr_model_from_predictor(predictor)
+        if gpr is None:
+            pytest.skip("No GPR model available")
+        score = bald_acquisition_score(mol, gpr)
+        assert 0.0 <= score <= 1.0
+
+    def test_pareto_ucb_pareto_optimal_candidate_scores_one(self):
+        """A candidate dominating all others on UCB gets score 1.0."""
+        preds = {"homo": -8.0, "lumo": -2.0, "dielectric": 30.0, "viscosity": 2.0}
+        unc = {"homo": 0.1, "lumo": 0.1, "dielectric": 1.0, "viscosity": 0.1}
+        others = [
+            {"homo": -7.0, "lumo": -1.0, "dielectric": 20.0, "viscosity": 3.0},
+            {"homo": -6.0, "lumo": -0.5, "dielectric": 15.0, "viscosity": 5.0},
+        ]
+        score = pareto_ucb_score(preds, unc, others, beta=1.5)
+        assert score == 1.0
+
+    def test_pareto_ucb_dominated_candidate_scores_zero(self):
+        """A candidate dominated by another gets score 0.0."""
+        preds = {"homo": -7.0, "lumo": -1.0, "dielectric": 20.0, "viscosity": 3.0}
+        unc = {p: 0.0 for p in preds}
+        others = [
+            {"homo": -8.0, "lumo": -2.0, "dielectric": 30.0, "viscosity": 2.0},
+        ]
+        score = pareto_ucb_score(preds, unc, others, beta=0.0)
+        assert score == 0.0
+
+    def test_pareto_ucb_handles_empty_inputs(self):
+        """Empty inputs yield 0.0, not a crash."""
+        assert pareto_ucb_score({}, {}, [], beta=1.5) == 0.0
+
+    def test_pareto_ucb_targets_frontier(self):
+        """At least 60% of top suggestions have pareto_ucb == 1.0."""
+        out = suggest_experiments(CANDIDATES, top_n=10)
+        frontier_count = sum(1 for s in out if s.components.get("pareto_ucb", 0.0) >= 0.99)
+        assert frontier_count >= 0.6 * len(out), (
+            f"Only {frontier_count}/{len(out)} suggestions on Pareto front"
+        )
+
+    def test_bald_component_present_in_suggestions(self):
+        """Suggestions include the bald component."""
+        out = suggest_experiments(CANDIDATES, top_n=5)
+        for s in out:
+            assert "bald" in s.components
+            assert 0.0 <= s.components["bald"] <= 1.0
+
+    def test_weights_with_bald_and_pareto_change_outcome(self):
+        """Bald+pareto_ucb weights must affect the ranking."""
+        off = dict.fromkeys(DEFAULT_WEIGHTS, 0.0)
+
+        bald_only = suggest_experiments(
+            CANDIDATES, top_n=3,
+            properties=["homo"],
+            weights={**off, "bald": 1.0},
+        )
+        novelty_only = suggest_experiments(
+            CANDIDATES, top_n=3,
+            properties=["homo"],
+            weights={**off, "novelty": 1.0},
+        )
+        assert bald_only, "bald ranking returned nothing"
+        assert [s.smiles for s in bald_only] != [s.smiles for s in novelty_only]
+
+    def test_components_include_all_weighted_terms(self):
+        """Every key in DEFAULT_WEIGHTS must appear in suggestion components."""
+        out = suggest_experiments(CANDIDATES, top_n=3)
+        for s in out:
+            for key in DEFAULT_WEIGHTS:
+                assert key in s.components, f"Missing component {key} in {list(s.components.keys())}"

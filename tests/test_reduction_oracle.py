@@ -20,10 +20,14 @@ from aurelius.scoring.oracle.reduction import (
     ReductionOracle,
     _ALPB_SOLVENT_BY_DIELECTRIC,
     _StructuralEAModel,
+    _EA_SOLUTION_CALIBRATION,
     calibrate_ea,
+    calibrate_ea_solution,
     compute_dscf_ea,
     has_xtb,
     load_experimental_ea,
+    load_experimental_ea_gas,
+    load_experimental_ea_solution,
     solvent_from_dielectric,
     structural_features,
 )
@@ -41,12 +45,19 @@ def entries():
 
 
 def test_ea_set_is_provenance_free(entries):
-    """Every label shares one reference string, so citation carries no signal."""
-    refs = {e["reference"] for e in entries}
-    assert len(refs) == 1, f"EA set must be single-source, found {len(refs)}"
+    """Every label within a phase shares one reference string, so citation carries no signal."""
+    gas = [e for e in entries if e.get("phase", "gas") == "gas"]
+    sol = [e for e in entries if e.get("phase") == "solution"]
+
+    gas_refs = {e["reference"] for e in gas}
+    assert len(gas_refs) == 1, f"Gas-phase set must be single-source, found {len(gas_refs)}"
+
+    if sol:
+        sol_refs = {e["reference"] for e in sol}
+        assert len(sol_refs) == 1, f"Solution-phase set must be single-source, found {len(sol_refs)}"
 
     classes = {e["measurement_class"] for e in entries}
-    assert classes <= {"PES", "ETE", "ETS", "ECD"}, f"unexpected method: {classes}"
+    assert classes <= {"PES", "ETE", "ETS", "ECD", "CV"}, f"unexpected method: {classes}"
 
 
 def test_ea_set_has_usable_dynamic_range(entries):
@@ -145,10 +156,15 @@ def test_out_of_span_predictions_are_flagged(tmp_path):
 
 
 @pytest.mark.skipif(not has_xtb(), reason="xTB not available")
-def test_dscf_ranks_experimental_ea(entries):
-    """The headline claim: ΔSCF EA ranks measured electron affinities."""
-    mols = [Chem.MolFromSmiles(e["smiles"]) for e in entries]
-    labels = np.array([e["ea_eV"] for e in entries])
+def test_dscf_ranks_experimental_ea():
+    """The headline claim: ΔSCF EA ranks measured electron affinities.
+
+    Tests against gas-phase entries only; solution-phase entries are tested
+    separately in test_solution_phase_calibration.
+    """
+    gas_entries = load_experimental_ea_gas()
+    mols = [Chem.MolFromSmiles(e["smiles"]) for e in gas_entries]
+    labels = np.array([e["ea_eV"] for e in gas_entries])
     preds = np.array([compute_dscf_ea(m) for m in mols], dtype=float)
 
     mask = np.isfinite(preds)
@@ -358,3 +374,68 @@ def test_auto_solvent_differentiates_molecules(tmp_path):
     # EC has higher dielectric than DMC, so its solvent should be >= on the ε scale
     eps_map = dict(_ALPB_SOLVENT_BY_DIELECTRIC)
     assert eps_map[oracle_ec._solvent] >= eps_map[oracle_dmc._solvent]
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Solution-phase EA calibration (ADR-2026-08-11)
+# ---------------------------------------------------------------------------
+
+
+def test_phase_field_exists_in_entries():
+    """Every experimental EA entry has a 'phase' field (gas or solution)."""
+    entries = load_experimental_ea()
+    assert len(entries) > 40, "Should have more than just the original 40 gas entries"
+    for e in entries:
+        assert "phase" in e, f"Entry {e.get('smiles')} missing 'phase' field"
+        assert e["phase"] in ("gas", "solution"), f"Unexpected phase: {e.get('phase')}"
+
+
+def test_solution_phase_entries_present():
+    """At least 10 solution-phase CV onset measurements are present."""
+    sol = load_experimental_ea_solution()
+    assert len(sol) >= 10, f"Expected >=10 solution entries, got {len(sol)}"
+    for e in sol:
+        assert e.get("measurement_class") == "CV"
+        assert e["ea_eV"] > 0, "Solution-phase EA should be positive (vs vacuum)"
+
+
+def test_gas_and_solution_are_separate():
+    """Gas and solution subsets are disjoint and non-empty."""
+    gas = load_experimental_ea_gas()
+    sol = load_experimental_ea_solution()
+    gas_smiles = {e["smiles"] for e in gas}
+    sol_smiles = {e["smiles"] for e in sol}
+    assert gas_smiles.isdisjoint(sol_smiles), "Gas and solution sets overlap"
+    assert len(gas) >= 30
+    assert len(sol) >= 10
+
+
+def test_solution_calibration_tuple_exists():
+    """_EA_SOLUTION_CALIBRATION is a valid (slope, intercept) tuple."""
+    a, b = _EA_SOLUTION_CALIBRATION
+    assert isinstance(a, (int, float))
+    assert isinstance(b, (int, float))
+    assert a > 0, "Solution-phase calibration slope should be positive"
+
+
+def test_calibrate_ea_solution_is_affine_and_rank_preserving():
+    """Solution-phase calibration is affine → rank-preserving."""
+    raw = np.linspace(2.0, 6.0, 15)
+    cal = np.array([calibrate_ea_solution(v) for v in raw])
+    rho = spearmanr(raw, cal).statistic
+    assert rho == pytest.approx(1.0), f"Affine map broke rank: rho={rho}"
+
+
+def test_gas_calibration_unchanged():
+    """Gas-phase calibration constants are unchanged by solution-phase addition."""
+    from aurelius.scoring.oracle.reduction import _EA_CALIBRATION
+
+    assert _EA_CALIBRATION == (0.6590, -2.9176)
+
+
+def test_solution_calibration_density():
+    """Solution-phase calibration values span the measurement range."""
+    sol = load_experimental_ea_solution()
+    eas = np.array([e["ea_eV"] for e in sol])
+    spread = eas.max() - eas.min()
+    assert spread > 1.5, f"Solution EA range too narrow: {spread:.2f} eV"

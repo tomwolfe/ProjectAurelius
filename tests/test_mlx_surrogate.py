@@ -104,3 +104,128 @@ class TestMLXSurrogate:
         homo, lumo = correction.predict_corrected_batch(sample_mols, base=base)
         assert homo.shape == (len(sample_mols),)
         assert lumo.shape == (len(sample_mols),)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: MLX GPR variance for BALD acquisition
+# ---------------------------------------------------------------------------
+
+
+class TestPredictVarianceBatchMLX:
+    def test_variance_batch_returns_correct_shape(self, correction, sample_mols):
+        """predict_variance_batch_mlx returns (n,) variance array."""
+        from aurelius.scoring.oracle.mlx_surrogate import predict_variance_batch_mlx
+
+        variances = predict_variance_batch_mlx(correction._homo_model, sample_mols)
+        assert variances.shape == (len(sample_mols),)
+        assert variances.dtype == np.float32
+
+    def test_variance_is_non_negative(self, correction, sample_mols):
+        """Posterior variance must be non-negative."""
+        from aurelius.scoring.oracle.mlx_surrogate import predict_variance_batch_mlx
+
+        variances = predict_variance_batch_mlx(correction._homo_model, sample_mols)
+        assert np.all(variances >= 0.0), "Variance contains negative values"
+
+    def test_variance_matches_sklearn(self, correction, sample_mols):
+        """MLX variance must match sklearn within 1e-4."""
+        from aurelius.scoring.oracle.mlx_surrogate import (
+            predict_variance_batch_mlx,
+            _predict_deltas_batch_sklearn,
+        )
+
+        mlx_var = predict_variance_batch_mlx(correction._homo_model, sample_mols)
+        _, sklearn_std = _predict_deltas_batch_sklearn(
+            correction._homo_model, sample_mols, return_std=True
+        )
+        if sklearn_std is None:
+            pytest.skip("sklearn std not available")
+
+        sklearn_var = sklearn_std ** 2
+        max_diff = float(np.max(np.abs(mlx_var - sklearn_var)))
+        assert max_diff < 1e-4, f"MLX variance differs from sklearn by {max_diff:.6e}"
+
+    def test_variance_empty_input(self, correction):
+        """Empty input returns empty array."""
+        from aurelius.scoring.oracle.mlx_surrogate import predict_variance_batch_mlx
+
+        variances = predict_variance_batch_mlx(correction._homo_model, [])
+        assert len(variances) == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: R_g batch caching + threading (ADR-2026-08-07-04)
+# ---------------------------------------------------------------------------
+
+
+class TestRadiusOfGyrationBatch:
+    def test_batch_returns_correct_shape(self):
+        """R_g batch returns array matching input length."""
+        from aurelius.scoring.oracle.quantum import _compute_radius_of_gyration_batch
+
+        mols = [Chem.MolFromSmiles(s) for s in ["C1COC(=O)O1", "COC(=O)OC", "CC#N"]]
+        rgs = _compute_radius_of_gyration_batch(mols)
+        assert rgs.shape == (3,)
+        assert rgs.dtype == np.float32
+
+    def test_batch_empty_input(self):
+        """Empty input returns empty array."""
+        from aurelius.scoring.oracle.quantum import _compute_radius_of_gyration_batch
+
+        rgs = _compute_radius_of_gyration_batch([])
+        assert len(rgs) == 0
+
+    def test_batch_cache_hits(self):
+        """Repeated molecules hit the cache — no recomputation."""
+        from aurelius.scoring.oracle.quantum import (
+            _compute_radius_of_gyration_batch,
+            _RG_CACHE,
+        )
+
+        smi = "C1COC(=O)O1"
+        mol = Chem.MolFromSmiles(smi)
+        mols = [mol, mol, mol]
+
+        # Use a unique molecule so cache state from other tests doesn't interfere
+        unique_smi = "CCCCCCCCCCCCCCCCO"  # long alkyl chain, likely not cached
+        unique_mol = Chem.MolFromSmiles(unique_smi)
+        unique_mols = [unique_mol, unique_mol, unique_mol]
+
+        cache_before = len(_RG_CACHE)
+        rgs = _compute_radius_of_gyration_batch(unique_mols)
+        cache_after = len(_RG_CACHE)
+
+        assert cache_after > cache_before, "Cache was not populated"
+        assert len(set(rgs.tolist())) == 1, "Identical molecules got different R_g"
+
+    def test_batch_threaded_parallelism(self):
+        """Batch with many unique molecules runs via ThreadPoolExecutor."""
+        from aurelius.scoring.oracle.quantum import (
+            _compute_radius_of_gyration_batch,
+            _RG_CACHE,
+        )
+
+        # Use valid SMILES that are unlikely to be in cache
+        mols = [Chem.MolFromSmiles(f"CC{'C'*i}N") for i in range(10, 20)]
+        rgs = _compute_radius_of_gyration_batch(mols)
+        assert rgs.shape == (10,)
+
+    def test_throughput_meets_target(self):
+        """R_g batch must achieve >= 2000 mol/s with cache hits on M5 Pro."""
+        from aurelius.scoring.oracle.quantum import _compute_radius_of_gyration_batch
+
+        mols = [Chem.MolFromSmiles(f"CC{'C'*i}N") for i in range(50)]
+        # Warm cache
+        _compute_radius_of_gyration_batch(mols)
+        mols = [m for m in mols if m is not None]
+
+        import time
+        start = time.perf_counter()
+        _compute_radius_of_gyration_batch(mols)
+        elapsed = time.perf_counter() - start
+        throughput = len(mols) / elapsed
+
+        # This target assumes M5 Pro; on other platforms it's a softer check
+        from aurelius.utils.device import get_device
+        if get_device() == "mlx":
+            assert throughput >= 2000, f"R_g throughput {throughput:.0f} < 2000 mol/s"

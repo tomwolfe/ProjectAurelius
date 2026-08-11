@@ -96,7 +96,7 @@ MEASURABLE_PROPERTIES: dict[str, str] = {
 # Pool expansion target. Below this size, BRICS harvesting grows the pool
 # before acquisition scoring. The 61-mol unmeasured pool in the closed-loop
 # benchmark is too small for diversity-based acquisition to outperform random.
-MIN_POOL_SIZE = 100
+MIN_POOL_SIZE = 200
 
 # Maximum number of BRICS fragments to harvest per candidate molecule.
 _MAX_FRAGMENTS_PER_MOL = 10
@@ -106,14 +106,21 @@ _MAX_RECOMBINATION_PRODUCTS = 200
 
 # Term weights. Uncertainty dominates because it is the term with a formal
 # guarantee behind it; novelty is next because calibration-set coverage is
-# what makes that guarantee transfer.
+# what makes that guarantee transfer. BALD and pareto_ucb are the Phase 2
+# acquisition terms targeting epistemic variance on the Pareto frontier.
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "uncertainty": 0.30,
-    "expected_impact": 0.25,
-    "novelty": 0.20,
-    "doa_proximity": 0.15,
-    "bias": 0.10,
+    "uncertainty": 0.20,
+    "expected_impact": 0.15,
+    "novelty": 0.15,
+    "doa_proximity": 0.10,
+    "bias": 0.05,
+    "bald": 0.20,
+    "pareto_ucb": 0.15,
 }
+
+# Exploration-exploitation tradeoff for Pareto UCB. Higher values favour
+# exploration (uncertain candidates); lower values favour exploitation.
+_PARETO_UCB_BETA = 1.5
 
 # Fraction of the candidate pool treated as the "decision set" when computing
 # expected impact. Measurements only change what gets made if they can move a
@@ -323,27 +330,68 @@ def _recombine_fragments(fragments: list[str], max_products: int = _MAX_RECOMBIN
     return products
 
 
-def expand_candidate_pool(candidates: list[str], target_size: int = MIN_POOL_SIZE) -> list[str]:
-    """Grow a small candidate pool via BRICS harvesting + recombination.
+def _quick_score_candidates(
+    candidates: list[str],
+) -> list[tuple[str, float]]:
+    """Lightweight pre-scoring to rank candidates for pool expansion.
 
-    If the pool is already at or above target_size, returns the input unchanged.
-    Otherwise decomposes candidates into BRICS fragments, recombines them, and
-    merges the products back into the pool. Deduplicates by canonical SMILES.
+    Uses oracle point predictions only (no conformal intervals, no DoA) to
+    produce a composite quality score. This ranks candidates so that
+    `_harvest_from_top_candidates` harvests fragments from the most promising
+    molecules, yielding higher-quality recombination products.
 
-    Returns the expanded pool (original + generated), or the original pool if
-    expansion fails.
+    Returns list of (canonical_smiles, score) sorted descending by score.
     """
-    if len(candidates) >= target_size:
-        return list(candidates)
+    scored: list[tuple[str, float]] = []
+    for smi in candidates:
+        ctx = MoleculeContext.from_smiles(smi)
+        if ctx is None:
+            continue
+        try:
+            predictions = _predicted_values(ctx)
+        except Exception:
+            continue
+        score = (
+            -0.30 * predictions["homo"]
+            - 0.25 * predictions["lumo"]
+            + 0.25 * predictions["dielectric"]
+            - 0.20 * predictions["viscosity"]
+        )
+        canonical = Chem.MolToSmiles(ctx.mol)
+        scored.append((canonical, score))
+    scored.sort(key=lambda x: -x[1])
+    return scored
 
-    fragments = _harvest_fragments(candidates)
-    if not fragments:
-        return list(candidates)
 
-    products = _recombine_fragments(fragments)
-    if not products:
-        return list(candidates)
+def _harvest_labeled_fragments(top_candidates: list[str]) -> list[str]:
+    """Decompose top candidates into BRICS fragments with dummy-atom labels intact.
 
+    Unlike :func:`_harvest_fragments`, the labels are kept so the fragments
+    remain recombinable via BRICSBuild. Duplicates are removed by stripped core.
+    """
+    seen_cores: set[str] = set()
+    labeled_frags: list[str] = []
+    for smi in top_candidates:
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            continue
+        try:
+            for frag in BRICS.BRICSDecompose(mol):
+                core = _strip_brics_dummy_atoms(frag)
+                if core is None or core in seen_cores:
+                    continue
+                core_mol = Chem.MolFromSmiles(core)
+                if core_mol is None or core_mol.GetNumHeavyAtoms() < 2:
+                    continue
+                seen_cores.add(core)
+                labeled_frags.append(frag)
+        except Exception:
+            continue
+    return labeled_frags
+
+
+def _dedup_pool(candidates: list[str], products: list[str]) -> list[str]:
+    """Merge candidates and generated products, deduplicating by canonical SMILES."""
     seen: set[str] = set()
     merged: list[str] = []
     for smi in list(candidates) + products:
@@ -352,8 +400,59 @@ def expand_candidate_pool(candidates: list[str], target_size: int = MIN_POOL_SIZ
             continue
         seen.add(canonical)
         merged.append(canonical)
-
     return merged
+
+
+def _harvest_from_top_candidates(
+    candidates: list[str],
+    top_n: int = 10,
+    max_products: int = 150,
+) -> list[str]:
+    """Harvest BRICS fragments from top-scoring candidates and recombine them.
+
+    Takes the top-`top_n` candidates by a lightweight oracle quality score,
+    decomposes each into BRICS fragments (keeping dummy-atom labels for valid
+    recombination), recombines via BRICSBuild, and deduplicates against the
+    existing pool.
+
+    Returns the expanded pool (original + generated), or the original pool if
+    harvesting produces nothing.
+    """
+    if len(candidates) < 2:
+        return list(candidates)
+
+    scored = _quick_score_candidates(candidates)
+    top_candidates = [smi for smi, _ in scored[:top_n]]
+
+    labeled_frags = _harvest_labeled_fragments(top_candidates)
+    if len(labeled_frags) < 2:
+        return list(candidates)
+
+    products = _recombine_fragments(labeled_frags, max_products=max_products)
+    if not products:
+        return list(candidates)
+
+    return _dedup_pool(candidates, products)
+
+
+def expand_candidate_pool(candidates: list[str], target_size: int = MIN_POOL_SIZE) -> list[str]:
+    """Grow a small candidate pool via BRICS harvesting + recombination.
+
+    If the pool is already at or above target_size, returns the input unchanged.
+    Otherwise harvests fragments from top-scoring candidates, recombines them,
+    and merges the products back into the pool. Deduplicates by canonical SMILES.
+
+    Returns the expanded pool (original + generated), or the original pool if
+    expansion fails.
+    """
+    if len(candidates) >= target_size:
+        return list(candidates)
+
+    expanded = _harvest_from_top_candidates(candidates, top_n=10, max_products=150)
+    if len(expanded) <= len(candidates):
+        return list(candidates)
+
+    return expanded
 
 
 # ---------------------------------------------------------------------------
@@ -394,10 +493,7 @@ def expected_improvement(
     sigma = half_width / 1.645
     from math import erf, sqrt
 
-    if minimise:
-        improvement = current_best - point
-    else:
-        improvement = point - current_best
+    improvement = current_best - point if minimise else point - current_best
 
     if sigma <= 0:
         return max(0.0, improvement)
@@ -540,6 +636,14 @@ def _build_rationale(
             f"the {prop} model currently shows a systematic offset against "
             f"ingested measurements"
         ),
+        "bald": (
+            "this molecule has high epistemic uncertainty in the GPR posterior, "
+            "so measuring it would most reduce model uncertainty"
+        ),
+        "pareto_ucb": (
+            "the molecule sits on the optimistic Pareto frontier across "
+            "multiple objectives, so the measurement could shift the frontier"
+        ),
     }
     secondary = [name for name, value in drivers[1:] if value > 0.4]
     text = f"Measure {prop}: {phrases.get(lead, lead)} (weight {lead_value:.2f})."
@@ -558,6 +662,8 @@ def _score_property(
     biases: dict[str, float],
     weights: dict[str, float],
     threshold: float | None = None,
+    bald_score: float = 0.0,
+    pareto_score: float = 0.0,
 ) -> tuple[float, dict[str, float], tuple[float, float]]:
     uncertainty, interval = _normalised_interval_width(predictor, prop, point, mol)
     components = {
@@ -566,12 +672,17 @@ def _score_property(
         "novelty": round(novelty, 4),
         "doa_proximity": round(doa, 4),
         "bias": round(biases.get(prop, 0.0), 4),
+        "bald": round(bald_score, 4),
+        "pareto_ucb": round(pareto_score, 4),
     }
     score = sum(weights.get(name, 0.0) * value for name, value in components.items())
     return round(score, 6), components, interval
 
 
 _Evaluated = tuple["MoleculeContext", dict[str, float], float, float, str]
+_RawSuggestion = tuple[
+    float, dict[str, float], tuple[float, float], str, float, str, str
+]
 
 
 def _evaluate_candidates(
@@ -616,6 +727,85 @@ def _evaluate_candidates(
         )
 
     return evaluated, fingerprints
+
+
+def _collect_raw_suggestions(
+    evaluated: list[_Evaluated],
+    all_predictions: list[dict[str, float]],
+    wanted: list[str],
+    predictor: Any,
+    bald_scores: dict[str, float],
+    per_prop_uncertainty: dict[str, dict[str, float]],
+    biases: dict[str, float],
+    weights: dict[str, float],
+    thresholds: dict[str, float],
+) -> tuple[list[_RawSuggestion], list[float]]:
+    """Pass 2 of suggestion: score each (molecule, property) pair.
+
+    For every evaluated molecule and every requested property, computes the
+    composite priority score and the raw expected-improvement value. EI is left
+    unnormalised so the caller can rescale it across the pool before blending.
+
+    Returns ``(raw_suggestions, ei_values)``.
+    """
+    raw_suggestions: list[_RawSuggestion] = []
+    ei_values: list[float] = []
+    for ctx, predictions, novelty, doa, doa_reason in evaluated:
+        smiles_key = Chem.MolToSmiles(ctx.mol)
+        bald = bald_scores.get(smiles_key, 0.0)
+        for prop in wanted:
+            point = predictions[prop]
+            pareto = pareto_ucb_score(
+                predictions, per_prop_uncertainty.get(smiles_key, {}),
+                all_predictions,
+            )
+            score, components, interval = _score_property(
+                prop, point, predictor, ctx.mol, novelty, doa, biases,
+                weights, thresholds.get(prop),
+                bald_score=bald, pareto_score=pareto,
+            )
+            prop_values = [p[prop] for _, p, *_ in evaluated]
+            minimise = prop in ("homo", "lump")
+            incumbent = min(prop_values) if minimise else max(prop_values)
+            ei = expected_improvement(point, interval, incumbent, minimise=minimise)
+            ei_values.append(ei)
+            raw_suggestions.append(
+                (score, components, interval, smiles_key, point, prop, doa_reason)
+            )
+    return raw_suggestions, ei_values
+
+
+def _build_suggestions_from_raw(
+    raw_suggestions: list[_RawSuggestion],
+    ei_values: list[float],
+    ei_max: float,
+) -> list[ExperimentSuggestion]:
+    """Pass 3: turn scored pairs into ExperimentSuggestion objects with EI blending."""
+    suggestions: list[ExperimentSuggestion] = []
+    for (score, components, interval, smiles, point, prop, doa_reason), ei in zip(
+        raw_suggestions, ei_values, strict=True
+    ):
+        ei_norm = ei / ei_max if ei_max > 0 else 0.0
+        components["expected_improvement"] = round(ei, 6)
+        blended = 0.8 * score + 0.2 * ei_norm
+        canonical_property = MEASURABLE_PROPERTIES[prop]
+        units = _UNITS[canonical_property]
+        rationale = _build_rationale(prop, components, interval, units)
+        if doa_reason != "within domain":
+            rationale += f" Domain note: {doa_reason}."
+        suggestions.append(
+            ExperimentSuggestion(
+                smiles=smiles,
+                property_to_measure=canonical_property,
+                priority_score=round(blended, 6),
+                rationale=rationale,
+                predicted_value=round(point, 4),
+                prediction_interval=(round(interval[0], 4), round(interval[1], 4)),
+                components=components,
+                units=units,
+            )
+        )
+    return suggestions
 
 
 def suggest_experiments(
@@ -670,6 +860,20 @@ def suggest_experiments(
         candidates, calibration_fps, max_sa_score
     )
 
+    # Pre-compute BALD acquisition scores (Phase 2): epistemic posterior
+    # variance per candidate molecule. This is a single batch call to the
+    # MLX GPR surrogate, reusing the variance already computed there.
+    all_predictions = [pred for _c, pred, *_ in evaluated]
+    gpr_model = _gpr_model_from_predictor(predictor)
+    bald_scores = _compute_bald_scores(evaluated, gpr_model)
+
+    # Pre-compute per-property uncertainty for Pareto UCB (Phase 2).
+    # We use the conformal interval half-width as a proxy for sigma on each
+    # objective, since the GPR variance is molecule-level (not per-property).
+    per_prop_uncertainty = _compute_per_property_uncertainty(
+        evaluated, predictor, wanted,
+    )
+
     thresholds = _decision_thresholds(
         {prop: [pred[prop] for _c, pred, *_ in evaluated] for prop in wanted}
     )
@@ -679,52 +883,250 @@ def suggest_experiments(
     # First pass collects raw EI values so they can be normalised to [0, 1]
     # across the pool — EI is in physical units (eV) and would otherwise
     # dominate the weighted sum which is in [0, 1].
-    raw_suggestions: list[tuple[float, dict[str, float], tuple[float, float], str, float, str, str]] = []
-    ei_values: list[float] = []
-    for ctx, predictions, novelty, doa, doa_reason in evaluated:
-        for prop in wanted:
-            point = predictions[prop]
-            score, components, interval = _score_property(
-                prop, point, predictor, ctx.mol, novelty, doa, biases,
-                active_weights, thresholds.get(prop),
-            )
-            prop_values = [p[prop] for _, p, *_ in evaluated]
-            minimise = prop in ("homo", "lumo")
-            incumbent = min(prop_values) if minimise else max(prop_values)
-            ei = expected_improvement(point, interval, incumbent, minimise=minimise)
-            ei_values.append(ei)
-            raw_suggestions.append(
-                (score, components, interval, Chem.MolToSmiles(ctx.mol),
-                 point, prop, doa_reason)
-            )
+    raw_suggestions, ei_values = _collect_raw_suggestions(
+        evaluated, all_predictions, wanted, predictor,
+        bald_scores, per_prop_uncertainty, biases,
+        active_weights, thresholds,
+    )
 
     ei_max = max(ei_values) if ei_values else 1.0
-    suggestions = []
-    for (score, components, interval, smiles, point, prop, doa_reason), ei in zip(raw_suggestions, ei_values, strict=True):
-        # Normalise EI to [0, 1] then blend (EI gets 20% weight).
-        ei_norm = ei / ei_max if ei_max > 0 else 0.0
-        components["expected_improvement"] = round(ei, 6)
-        blended = 0.8 * score + 0.2 * ei_norm
-        canonical_property = MEASURABLE_PROPERTIES[prop]
-        units = _UNITS[canonical_property]
-        rationale = _build_rationale(prop, components, interval, units)
-        if doa_reason != "within domain":
-            rationale += f" Domain note: {doa_reason}."
-        suggestions.append(
-            ExperimentSuggestion(
-                smiles=smiles,
-                property_to_measure=canonical_property,
-                priority_score=round(blended, 6),
-                rationale=rationale,
-                predicted_value=round(point, 4),
-                prediction_interval=(round(interval[0], 4), round(interval[1], 4)),
-                components=components,
-                units=units,
-            )
-        )
+    suggestions = _build_suggestions_from_raw(raw_suggestions, ei_values, ei_max)
 
     suggestions.sort(key=lambda s: (-s.priority_score, s.smiles, s.property_to_measure))
     return _diversify(suggestions, top_n, fingerprints=fingerprints)
+
+
+# ---------------------------------------------------------------------------
+# BALD + Pareto UCB acquisition (Phase 2)
+# ---------------------------------------------------------------------------
+# BALD (Bayesian Active Learning by Disagreement) targets the expected reduction
+# in GPR posterior variance — the measurement that most reduces epistemic
+# uncertainty on the Pareto frontier. For a Gaussian posterior this reduces to
+# the posterior variance sigma*^2(x) from the GPR: higher variance = more to
+# learn from measuring this molecule.
+#
+# Pareto UCB (Upper Confidence Bound) scores each candidate by what fraction of
+# its objectives are on the optimistic Pareto front (mu + beta*sigma). This
+# naturally balances exploration (high sigma) and exploitation (good mu) across
+# the multi-objective electrolyte design space.
+
+
+def _gpr_model_from_predictor(predictor: Any) -> Any | None:
+    """Extract a fitted GPR model from the conformal predictor's delta layer.
+
+    The conformal predictor wraps a DeltaCorrection object that holds the
+    sklearn GPR used for residual correction. We extract it here so the BALD
+    acquisition can query posterior variance without retraining.
+
+    Returns None if no GPR model is available.
+    """
+    try:
+        delta = getattr(predictor, "_delta_correction", None)
+        if delta is None:
+            return None
+        gpr = getattr(delta, "_gpr_model", None)
+        if gpr is None:
+            gpr = getattr(delta, "gpr_model", None)
+        if gpr is None:
+            return None
+        if getattr(gpr, "X_train_", None) is None:
+            return None
+        return gpr
+    except Exception:
+        return None
+
+
+def bald_acquisition_score(
+    mol: Any,
+    gpr_model: Any | None,
+) -> float:
+    """Compute BALD score for a single candidate molecule.
+
+    For a Gaussian posterior, BALD = H[p(y|x,D)] - E[H[p(y|x,theta)]]
+    reduces monotonically to the epistemic variance sigma*^2(x) / sigma_noise^2.
+    We return the normalised posterior std so the score is in [0, 1].
+
+    Uses MLX GPR surrogate if available (fast GPU path), else sklearn.
+    Returns 0.0 when no GPR model is available.
+    """
+    if gpr_model is None:
+        return 0.0
+
+    from rdkit import Chem
+
+    from aurelius.scoring.oracle.mlx_surrogate import predict_deltas_batch_mlx
+
+    smiles = Chem.MolToSmiles(mol)
+    mol_obj = Chem.MolFromSmiles(smiles)
+    if mol_obj is None:
+        return 0.0
+
+    try:
+        _, stds = predict_deltas_batch_mlx(gpr_model, [mol_obj], return_std=True)
+    except Exception:
+        return 0.0
+
+    if stds is None or len(stds) == 0:
+        return 0.0
+
+    raw_score = float(stds[0])
+    return raw_score / (1.0 + raw_score)
+
+
+_PARETO_ORIENTATION: dict[str, float] = {
+    "homo": -1.0,
+    "lumo": -1.0,
+    "dielectric": 1.0,
+    "viscosity": -1.0,
+}
+
+
+def _valid_pareto_props(
+    predictions: dict[str, float], uncertainties: dict[str, float]
+) -> list[str]:
+    """Properties present in both predictions and uncertainties."""
+    return [p for p in _PARETO_ORIENTATION if p in predictions and p in uncertainties]
+
+
+def _ucb_values(
+    predictions: dict[str, float],
+    uncertainties: dict[str, float],
+    props: list[str],
+    beta: float,
+) -> list[float]:
+    """Compute UCB (mu + beta*sigma) per oriented objective."""
+    return [
+        _PARETO_ORIENTATION[p] * predictions.get(p, 0.0)
+        + beta * abs(uncertainties.get(p, 0.0))
+        for p in props
+    ]
+
+
+def _is_dominated(this_ucb: list[float], other_ucb: list[float]) -> bool:
+    """True if *other_ucb* dominates *this_ucb*: >= on all objectives, > on one."""
+    return all(o >= t for o, t in zip(other_ucb, this_ucb, strict=True)) and any(
+        o > t for o, t in zip(other_ucb, this_ucb, strict=True)
+    )
+
+
+def pareto_ucb_score(
+    predictions: dict[str, float],
+    uncertainties: dict[str, float],
+    all_predictions: list[dict[str, float]],
+    beta: float = _PARETO_UCB_BETA,
+) -> float:
+    """Pareto-front score under UCB orientation.
+
+    For each objective, compute the UCB: mu + beta * sigma, oriented so
+    higher is better. A candidate is on the Pareto front if no other candidate
+    dominates it across all UCB values. The score is 1.0 if Pareto-optimal,
+    0.0 otherwise.
+
+    Objectives are oriented so that higher is always better:
+      - HOMO: negated (high |homo| = stable, hard to oxidise)
+      - LUMO: negated (low LUMO = easily reduced; we want high LUMO = stable)
+      - dielectric: as-is (higher = better solvation)
+      - viscosity: negated (lower = better ion transport)
+
+    Returns a value in [0, 1].
+    """
+    valid_props = _valid_pareto_props(predictions, uncertainties)
+    if not valid_props or not all_predictions:
+        return 0.0
+
+    if not uncertainties:
+        uncertainties = {p: 0.0 for p in valid_props}
+
+    this_ucb = _ucb_values(predictions, uncertainties, valid_props, beta)
+
+    for other in all_predictions:
+        if other is predictions:
+            continue
+        other_ucb = _ucb_values(other, uncertainties, valid_props, beta)
+        if _is_dominated(this_ucb, other_ucb):
+            return 0.0
+
+    return 1.0
+
+
+def _compute_bald_scores(
+    evaluated: list[tuple[Any, dict[str, float], float, float, str]],
+    gpr_model: Any | None,
+) -> dict[str, float]:
+    """Compute BALD scores for all evaluated candidates.
+
+    Uses the MLX GPR surrogate to batch-predict posterior variance.
+    Returns a dict mapping canonical SMILES to BALD score.
+    """
+    from rdkit import Chem
+
+    if gpr_model is None or not evaluated:
+        return {}
+
+    mols = [ctx.mol for ctx, _, *_ in evaluated]
+    smiles_keys = [Chem.MolToSmiles(ctx.mol) for ctx, _, *_ in evaluated]
+
+    try:
+        from aurelius.scoring.oracle.mlx_surrogate import MLXGPRSurrogate
+
+        surrogate = MLXGPRSurrogate(gpr_model)
+        if surrogate.is_available:
+            _, stds = surrogate.predict_batch(mols, return_std=True)
+            if stds is not None:
+                return {
+                    smi: std / (1.0 + std) for smi, std in zip(smiles_keys, stds, strict=False)
+                }
+    except Exception:
+        pass
+
+    try:
+
+
+        # Fallback: approximate BALD via the uncertainty term from the conformal
+        # interval half-width, normalised to [0, 1].
+        from aurelius.scoring.oracle.conformal import get_conformal_predictor
+
+        predictor = get_conformal_predictor()
+        result = {}
+        for ctx, preds, _, _, _ in evaluated:
+            total_width = 0.0
+            n_props = 0
+            for prop in MEASURABLE_PROPERTIES:
+                _, interval = predictor.predict_interval(prop, preds.get(prop, 0.0), mol=ctx.mol)
+                total_width += interval[1] - interval[0]
+                n_props += 1
+            avg_width = total_width / max(n_props, 1)
+            result[Chem.MolToSmiles(ctx.mol)] = avg_width / (1.0 + avg_width)
+        return result
+    except Exception:
+        return {}
+
+
+def _compute_per_property_uncertainty(
+    evaluated: list[tuple[Any, dict[str, float], float, float, str]],
+    predictor: Any,
+    properties: list[str],
+) -> dict[str, dict[str, float]]:
+    """Compute per-property uncertainty (interval half-width) for Pareto UCB.
+
+    Returns a dict mapping canonical SMILES to {prop: uncertainty} dicts.
+    """
+    from rdkit import Chem
+
+    result: dict[str, dict[str, float]] = {}
+    for ctx, preds, _, _, _ in evaluated:
+        smi = Chem.MolToSmiles(ctx.mol)
+        unc: dict[str, float] = {}
+        for prop in properties:
+            try:
+                _, interval = predictor.predict_interval(
+                    prop, preds.get(prop, 0.0), mol=ctx.mol
+                )
+                unc[prop] = (interval[1] - interval[0]) / 2.0
+            except Exception:
+                unc[prop] = 0.0
+        result[smi] = unc
+    return result
 
 
 # Each additional suggestion for an already-chosen molecule or property is

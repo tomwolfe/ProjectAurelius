@@ -220,6 +220,33 @@ def predict_deltas_batch_mlx(
     return surrogate.predict_batch(mols, return_std=return_std)
 
 
+def predict_variance_batch_mlx(
+    sklearn_gpr: Any,
+    mols: list[Chem.Mol],
+) -> np.ndarray:
+    """Compute GPR posterior variance for a batch of molecules.
+
+    Ports the posterior variance computation: sigma^2 = k** - v^T v where
+    v = L^{-1} @ k(X*, X_train)^T. The kernel matrix multiply runs on the
+    MLX GPU (M5 Pro); the triangular solve runs on the CPU stream since
+    MLX GPU does not support ``solve_triangular``.
+
+    This is used by BALD acquisition to rank candidates by epistemic
+    uncertainty reduction (Phase 2 wiring in experiment_suggester.py).
+
+    Args:
+        sklearn_gpr: Fitted GaussianProcessRegressor.
+        mols: List of RDKit molecules.
+
+    Returns:
+        1-D float32 array of posterior variances, same length as mols.
+    """
+    means, stds = predict_deltas_batch_mlx(sklearn_gpr, mols, return_std=True)
+    if stds is None:
+        return np.zeros(len(mols), dtype=np.float32)
+    return np.asarray(stds, dtype=np.float32) ** 2
+
+
 def _predict_deltas_batch_sklearn(
     sklearn_gpr: Any,
     mols: list[Chem.Mol],
