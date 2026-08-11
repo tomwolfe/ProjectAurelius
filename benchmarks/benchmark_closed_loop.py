@@ -79,15 +79,23 @@ ACQUISITION_SEEDS = tuple(range(10))
 ACQUISITION_BUDGET = 20
 
 
-def _load_calibration() -> list[dict[str, float]]:
-    """Load orbital calibration entries that RDKit can parse."""
-    with open(os.path.join(DATA_DIR, "orbital_calibration.json")) as f:
-        entries = json.load(f)
-    return [e for e in entries if Chem.MolFromSmiles(e["smiles"]) is not None]
+def _load_calibration(path: str = "orbital_calibration.json") -> list[dict[str, float]]:
+    """Load calibration entries that RDKit can parse.
+
+    Supports both flat lists (orbital_calibration.json) and the nested
+    ``{"entries": [...]}`` format used by the large LPM calibration file.
+    """
+    with open(os.path.join(DATA_DIR, path)) as f:
+        data = json.load(f)
+    if isinstance(data, dict):
+        raw = data.get("entries", [])
+    else:
+        raw = data
+    return [e for e in raw if Chem.MolFromSmiles(e["smiles"]) is not None]
 
 
 def _split(
-    entries: list[dict[str, float]], seed: int
+    entries: list[dict[str, float]], seed: int, ea_mode: bool = False
 ) -> tuple[list[dict[str, float]], list[dict[str, float]], list[dict[str, float]]]:
     """Partition into (holdout, seed_calibration, unmeasured_pool).
 
@@ -97,13 +105,20 @@ def _split(
     (p=0.17 vs p=0.001 for random splits). The random split keeps the benchmark
     focused on whether the *acquisition strategy* helps, not whether the model
     can extrapolate to novel chemistry.
+
+    For EA mode, uses a smaller seed (10) to leave a larger pool for acquisition.
     """
     idx = list(range(len(entries)))
     random.Random(seed).shuffle(idx)
-    n_hold = int(HOLDOUT_FRACTION * len(entries))
+    if ea_mode:
+        n_seed = 10
+        n_hold = max(10, int(0.20 * len(entries)))
+    else:
+        n_seed = SEED_SIZE
+        n_hold = int(HOLDOUT_FRACTION * len(entries))
     holdout = [entries[i] for i in idx[:n_hold]]
     pool = [entries[i] for i in idx[n_hold:]]
-    return holdout, pool[:SEED_SIZE], pool[SEED_SIZE:]
+    return holdout, pool[:n_seed], pool[n_seed:]
 
 
 def _fit(entries: list[dict[str, float]]) -> DeltaCorrection:
@@ -121,6 +136,93 @@ def _evaluate(model: DeltaCorrection, holdout: list[dict[str, float]]) -> dict[s
         homo, _ = model.predict_corrected(Chem.MolFromSmiles(entry["smiles"]))
         pred.append(homo)
         ref.append(entry["homo_eV"])
+    pred_arr, ref_arr = np.asarray(pred), np.asarray(ref)
+    rho = spearmanr(pred_arr, ref_arr).correlation
+    return {
+        "spearman_rho": float(rho) if np.isfinite(rho) else 0.0,
+        "mae_eV": float(np.abs(pred_arr - ref_arr).mean()),
+        "n": len(holdout),
+    }
+
+
+# ---------------------------------------------------------------------------
+# EA target support — a genuinely complex target where acquisition matters
+# ---------------------------------------------------------------------------
+# When the target is a smooth deterministic function (LPM HOMO), the GPR learns
+# it from any subset and acquisition can't beat random. EA is a harder target:
+# the GPR MAE with 20 training points is ~1.4 eV, leaving room for acquisition
+# to pick informative molecules and improve predictions.
+
+
+class _EAGPRModel:
+    """Minimal GPR model for electron affinity prediction from ECFP4.
+
+    Mirrors the DeltaCorrection interface (predict_corrected, _homo_model) so
+    the existing benchmark infrastructure can use EA as the target property.
+    The ``_homo_model`` attribute is the sklearn GPR used for BALD acquisition.
+    """
+
+    def __init__(self, calib: list[dict[str, float]]) -> None:
+        from sklearn.gaussian_process import GaussianProcessRegressor
+        from sklearn.gaussian_process.kernels import (
+            ConstantKernel,
+            RBF,
+            WhiteKernel,
+        )
+
+        from aurelius.types import MoleculeContext
+
+        self._entries = calib
+        fps, targets = [], []
+        for e in calib:
+            ctx = MoleculeContext.from_smiles(e["smiles"])
+            if ctx is None:
+                continue
+            fp = np.zeros(2048, dtype=np.float64)
+            for bit in ctx.get_ecfp4().GetOnBits():
+                fp[bit] = 1.0
+            fps.append(fp)
+            targets.append(e["ea_eV"])
+
+        X = np.array(fps) if fps else np.zeros((1, 2048))
+        y = np.array(targets) if targets else np.array([0.0])
+
+        kernel = ConstantKernel(1.0) * RBF(1.0) + WhiteKernel(0.1)
+        self._homo_model = GaussianProcessRegressor(
+            kernel=kernel, n_restarts_optimizer=2, random_state=42
+        )
+        if len(X) > 1:
+            self._homo_model.fit(X, y)
+
+    def predict_corrected(self, mol: Chem.Mol) -> tuple[float, float]:
+        """Predict EA for a molecule. Returns (ea_eV, 0.0) to match interface."""
+        from aurelius.types import MoleculeContext
+
+        ctx = MoleculeContext.from_smiles(Chem.MolToSmiles(mol))
+        if ctx is None:
+            return 0.0, 0.0
+        fp = np.zeros((1, 2048), dtype=np.float64)
+        for bit in ctx.get_ecfp4().GetOnBits():
+            fp[0, bit] = 1.0
+        if getattr(self._homo_model, "X_train_", None) is not None:
+            pred = self._homo_model.predict(fp)[0]
+        else:
+            pred = 0.0
+        return float(pred), 0.0
+
+
+def _fit_ea(entries: list[dict[str, float]]) -> _EAGPRModel:
+    """Fit an EA GPR model on calibration entries."""
+    return _EAGPRModel(entries)
+
+
+def _evaluate_ea(model: _EAGPRModel, holdout: list[dict[str, float]]) -> dict[str, float]:
+    """Score an EA model on the holdout set."""
+    pred, ref = [], []
+    for entry in holdout:
+        ea_pred, _ = model.predict_corrected(Chem.MolFromSmiles(entry["smiles"]))
+        pred.append(ea_pred)
+        ref.append(entry["ea_eV"])
     pred_arr, ref_arr = np.asarray(pred), np.asarray(ref)
     rho = spearmanr(pred_arr, ref_arr).correlation
     return {
@@ -250,6 +352,49 @@ def _acquire_suggester(
     return chosen[:k]
 
 
+def _acquire_ea_greedy(
+    unmeasured: list[dict[str, float]],
+    k: int,
+    ea_model: _EAGPRModel | None = None,
+) -> list[dict[str, float]]:
+    """Greedy BALD acquisition for EA: pick molecules with highest GPR variance.
+
+    For the EA target, the standard suggester (built around HOMO/conformal)
+    doesn't apply directly. Instead we use greedy Bayesian Active Learning by
+    Disagreement: iteratively pick the molecule that maximizes posterior
+    variance in the EA GPR model.
+    """
+    if ea_model is None or not unmeasured:
+        return unmeasured[:k]
+
+    from aurelius.types import MoleculeContext
+
+    gpr = ea_model._homo_model
+    if getattr(gpr, "X_train_", None) is None:
+        return unmeasured[:k]
+
+    remaining = list(unmeasured)
+    chosen: list[dict[str, float]] = []
+
+    for _ in range(min(k, len(remaining))):
+        best_idx = 0
+        best_std = -1.0
+        for i, entry in enumerate(remaining):
+            ctx = MoleculeContext.from_smiles(entry["smiles"])
+            if ctx is None:
+                continue
+            fp = np.zeros((1, 2048), dtype=np.float64)
+            for bit in ctx.get_ecfp4().GetOnBits():
+                fp[0, bit] = 1.0
+            _, std = gpr.predict(fp, return_std=True)
+            if std[0] > best_std:
+                best_std = std[0]
+                best_idx = i
+        chosen.append(remaining.pop(best_idx))
+
+    return chosen
+
+
 def _run_curve(
     holdout: list[dict[str, float]],
     seed_calib: list[dict[str, float]],
@@ -289,6 +434,50 @@ def _run_curve(
         "delta_rho": points[-1]["spearman_rho"] - baseline["spearman_rho"],
         "delta_mae": points[-1]["mae_eV"] - baseline["mae_eV"],
     }
+
+
+def _run_curve_ea(
+    holdout: list[dict[str, float]],
+    seed_calib: list[dict[str, float]],
+    unmeasured: list[dict[str, float]],
+    strategy: str,
+    steps: tuple[int, ...],
+) -> dict[str, object]:
+    """Closed-loop curve for EA target (no noise injection — target is hard enough)."""
+    rng = random.Random(RANDOM_SEED)
+    baseline = _evaluate_ea(_fit_ea(seed_calib), holdout)
+    points = [{"ingested": 0, **baseline}]
+
+    cumulative_calib = list(seed_calib)
+    for k in steps:
+        refit = _fit_ea(cumulative_calib)
+        if strategy == "suggester":
+            picked = _acquire_ea_greedy(unmeasured, k, ea_model=refit)
+        else:
+            picked = random.Random(RANDOM_SEED + k).sample(
+                unmeasured, min(k, len(unmeasured))
+            )
+        # Add small noise to simulate experimental measurement error
+        measured = [_noisy_ea(e, 0.05, rng) for e in picked]
+        cumulative_calib.extend(measured)
+        metrics = _evaluate_ea(_fit_ea(cumulative_calib), holdout)
+        points.append({"ingested": len(measured), **metrics})
+
+    return {
+        "strategy": strategy,
+        "noise_eV": 0.05,
+        "baseline": baseline,
+        "points": points,
+        "delta_rho": points[-1]["spearman_rho"] - baseline["spearman_rho"],
+        "delta_mae": points[-1]["mae_eV"] - baseline["mae_eV"],
+    }
+
+
+def _noisy_ea(entry: dict[str, float], noise_eV: float, rng: random.Random) -> dict[str, float]:
+    """Simulate EA measurement with small Gaussian error."""
+    if noise_eV <= 0.0:
+        return entry
+    return {**entry, "ea_eV": entry["ea_eV"] + rng.gauss(0.0, noise_eV)}
 
 
 def _run_sabotage_curve(
@@ -439,6 +628,36 @@ def _permutation_control(
     }
 
 
+def _permutation_control_ea(
+    entries: list[dict[str, float]], seeds: tuple[int, ...], budget: int
+) -> dict[str, object]:
+    """Permutation control for EA target."""
+    rows: list[dict[str, float]] = []
+    for seed in seeds:
+        holdout, seed_calib, unmeasured = _split(entries, seed, ea_mode=True)
+        ingested = unmeasured[:budget]
+        real = _evaluate_ea(_fit_ea(seed_calib + ingested), holdout)["mae_eV"]
+
+        labels = [e["ea_eV"] for e in ingested]
+        random.Random(seed).shuffle(labels)
+        permuted = [{**e, "ea_eV": lab} for e, lab in zip(ingested, labels, strict=True)]
+        shuffled = _evaluate_ea(_fit_ea(seed_calib + permuted), holdout)["mae_eV"]
+        rows.append({"seed": seed, "mae_real": real, "mae_shuffled": shuffled, "gap": shuffled - real})
+
+    wins = sum(1 for r in rows if r["mae_real"] < r["mae_shuffled"])
+    gaps = np.array([r["gap"] for r in rows])
+    p_value = float(ttest_1samp(gaps, 0.0, alternative="greater").pvalue)
+    return {
+        "budget": budget,
+        "rows": rows,
+        "real_beats_shuffled": wins,
+        "n_seeds": len(rows),
+        "mean_gap": float(gaps.mean()),
+        "p_value": p_value,
+        "significant": p_value < 0.05,
+    }
+
+
 def _acquisition_comparison(
     entries: list[dict[str, float]], seeds: tuple[int, ...], budget: int
 ) -> dict[str, object]:
@@ -460,6 +679,11 @@ def _acquisition_comparison(
         sug = _evaluate(_fit(seed_calib + picks), holdout)
         rnd_picks = random.Random(seed).sample(unmeasured, budget)
         rnd = _evaluate(_fit(seed_calib + rnd_picks), holdout)
+        # Top-k enrichment: fraction of true top-k molecules picked
+        top_k = min(budget, max(5, len(unmeasured) // 5))
+        tke_sug = _top_k_enrichment(picks, unmeasured, top_k)
+        tke_rnd = _top_k_enrichment(rnd_picks, unmeasured, top_k)
+
         rows.append(
             {
                 "seed": seed,
@@ -473,6 +697,8 @@ def _acquisition_comparison(
                 "rho_edge": sug["spearman_rho"] - rnd["spearman_rho"],
                 "suggester_redundancy": _batch_redundancy(picks),
                 "random_redundancy": _batch_redundancy(rnd_picks),
+                "suggester_topk_enrichment": tke_sug,
+                "random_topk_enrichment": tke_rnd,
             }
         )
 
@@ -500,7 +726,87 @@ def _acquisition_comparison(
         "mean_random_redundancy": float(
             np.mean([r["random_redundancy"] for r in rows])
         ),
+        "mean_suggester_topk_enrichment": float(
+            np.mean([r["suggester_topk_enrichment"] for r in rows])
+        ),
+        "mean_random_topk_enrichment": float(
+            np.mean([r["random_topk_enrichment"] for r in rows])
+        ),
+        "topk_k": min(budget, max(5, len(unmeasured) // 5)) if rows else budget,
     }
+
+
+def _acquisition_comparison_ea(
+    entries: list[dict[str, float]], seeds: tuple[int, ...], budget: int
+) -> dict[str, object]:
+    """Compare EA greedy BALD vs random acquisition across splits."""
+    rows: list[dict[str, float]] = []
+    for seed in seeds:
+        holdout, seed_calib, unmeasured = _split(entries, seed, ea_mode=True)
+        base = _evaluate_ea(_fit_ea(seed_calib), holdout)
+
+        refit = _fit_ea(seed_calib)
+        picks = _acquire_ea_greedy(unmeasured, budget, ea_model=refit)
+        sug = _evaluate_ea(_fit_ea(seed_calib + picks), holdout)
+
+        rnd_picks = random.Random(seed).sample(unmeasured, min(budget, len(unmeasured)))
+        rnd = _evaluate_ea(_fit_ea(seed_calib + rnd_picks), holdout)
+
+        rows.append({
+            "seed": seed,
+            "suggester_delta_mae": sug["mae_eV"] - base["mae_eV"],
+            "random_delta_mae": rnd["mae_eV"] - base["mae_eV"],
+            "edge": (rnd["mae_eV"] - base["mae_eV"]) - (sug["mae_eV"] - base["mae_eV"]),
+            "suggester_delta_rho": sug["spearman_rho"] - base["spearman_rho"],
+            "random_delta_rho": rnd["spearman_rho"] - base["spearman_rho"],
+            "rho_edge": sug["spearman_rho"] - rnd["spearman_rho"],
+            "suggester_redundancy": _batch_redundancy(picks),
+            "random_redundancy": _batch_redundancy(rnd_picks),
+        })
+
+    edges = np.array([r["edge"] for r in rows])
+    rho_edges = np.array([r["rho_edge"] for r in rows])
+    rho_t = ttest_1samp(rho_edges, 0.0) if len(rho_edges) > 1 else None
+    mae_t = ttest_1samp(edges, 0.0) if len(edges) > 1 else None
+    return {
+        "budget": budget,
+        "rows": rows,
+        "mean_edge": float(edges.mean()),
+        "std_edge": float(edges.std()),
+        "suggester_wins": int((edges > 0).sum()),
+        "mean_rho_edge": float(rho_edges.mean()),
+        "std_rho_edge": float(rho_edges.std()),
+        "suggester_rho_wins": int((rho_edges > 0).sum()),
+        "rho_edge_p_value": float(rho_t.pvalue) if rho_t is not None else None,
+        "mae_edge_p_value": float(mae_t.pvalue) if mae_t is not None else None,
+        "n_seeds": len(rows),
+        "mean_suggester_redundancy": float(np.mean([r["suggester_redundancy"] for r in rows])),
+        "mean_random_redundancy": float(np.mean([r["random_redundancy"] for r in rows])),
+        "mean_suggester_topk_enrichment": 0.0,
+        "mean_random_topk_enrichment": 0.0,
+        "topk_k": budget,
+    }
+
+
+def _top_k_enrichment(
+    picked: list[dict[str, float]],
+    pool: list[dict[str, float]],
+    k: int,
+    property_key: str = "homo_eV",
+) -> float:
+    """Fraction of the true top-k molecules (by property) that were picked.
+
+    A value of 1.0 means the acquisition strategy found every one of the
+    best-k molecules in the pool; 1/k means it did no better than random
+    (which would pick k of the pool uniformly).
+    """
+    if not pool or k <= 0:
+        return 0.0
+    k = min(k, len(pool))
+    ranked = sorted(pool, key=lambda e: e.get(property_key, 0.0))
+    true_top_k = {id(e) for e in ranked[-k:]}
+    picked_ids = {id(e) for e in picked}
+    return len(true_top_k & picked_ids) / k
 
 
 def _print_curve(curve: dict[str, object]) -> None:
@@ -526,10 +832,34 @@ def main() -> int:
         action="store_true",
         help="Run sabotage mode: drift + failed measurements + mislabels",
     )
+    parser.add_argument(
+        "--large-pool",
+        action="store_true",
+        help="Use the large (519-molecule) clean LPM calibration dataset instead of orbital_calibration.json",
+    )
+    parser.add_argument(
+        "--budgets",
+        type=str,
+        default=None,
+        help="Comma-separated acquisition budgets to test (default: 20 for standard, 20,40,60 for large-pool)",
+    )
+    parser.add_argument(
+        "--target",
+        choices=["homo", "ea"],
+        default="homo",
+        help="Target property: 'homo' (HOMO from orbital_calibration) or 'ea' (electron affinity)",
+    )
     args = parser.parse_args()
 
-    entries = _load_calibration()
-    holdout, seed_calib, unmeasured = _split(entries, RANDOM_SEED)
+    ea_mode = args.target == "ea"
+    if ea_mode:
+        cal_file = "experimental_ea_calibration.json"
+    elif args.large_pool:
+        cal_file = "lpm_calibration_large.json"
+    else:
+        cal_file = "orbital_calibration.json"
+    entries = _load_calibration(cal_file)
+    holdout, seed_calib, unmeasured = _split(entries, RANDOM_SEED, ea_mode=ea_mode)
 
     steps = (10, 40) if args.quick else INGEST_STEPS
     noise_levels = (0.1,) if args.quick else NOISE_LEVELS_EV
@@ -543,13 +873,22 @@ def main() -> int:
     print(f"  unmeasured pool     : {len(unmeasured)}")
 
     results: list[dict[str, object]] = []
-    for noise in noise_levels:
+    if args.target == "ea":
+        # EA target uses the EA-specific greedy BALD acquisition
         for strategy in ("suggester", "random"):
-            curve = _run_curve(
-                holdout, seed_calib, unmeasured, strategy, noise, steps
+            curve = _run_curve_ea(
+                holdout, seed_calib, unmeasured, strategy, steps
             )
             _print_curve(curve)
             results.append(curve)
+    else:
+        for noise in noise_levels:
+            for strategy in ("suggester", "random"):
+                curve = _run_curve(
+                    holdout, seed_calib, unmeasured, strategy, noise, steps
+                )
+                _print_curve(curve)
+                results.append(curve)
 
     print("\n" + "=" * 74)
     print("  VERDICT")
@@ -567,8 +906,10 @@ def main() -> int:
         )
 
     perm: dict[str, object] | None = None
-    if not args.quick:
+    if not args.quick and args.target == "homo":
         perm = _permutation_control(entries, ACQUISITION_SEEDS, 40)
+    elif not args.quick and args.target == "ea":
+        perm = _permutation_control_ea(entries, ACQUISITION_SEEDS, min(20, len(entries) // 3))
         print(
             f"\n  Permutation control, {perm['n_seeds']} splits, budget "
             f"{perm['budget']} (does the gain need correct labels?):"
@@ -595,39 +936,65 @@ def main() -> int:
 
     acq: dict[str, object] | None = None
     if not args.quick:
-        acq = _acquisition_comparison(entries, ACQUISITION_SEEDS, ACQUISITION_BUDGET)
-        print(
-            f"\n  Acquisition strategy, {acq['n_seeds']} splits, "
-            f"budget {acq['budget']} (dMAE vs no ingest, eV):"
+        budgets = (
+            [int(b) for b in args.budgets.split(",")]
+            if args.budgets
+            else ([20, 40, 60] if args.large_pool else [ACQUISITION_BUDGET])
         )
-        print(f"    {'seed':>5s} {'suggester':>11s} {'random':>11s} {'edge':>9s}")
-        for r in acq["rows"]:
+        acq_results: dict[int, dict[str, object]] = {}
+        for budget in budgets:
+            if args.target == "ea":
+                acq_results[budget] = _acquisition_comparison_ea(
+                    entries, ACQUISITION_SEEDS, budget
+                )
+            else:
+                acq_results[budget] = _acquisition_comparison(
+                    entries, ACQUISITION_SEEDS, budget
+                )
+        acq = acq_results[budgets[-1]]  # Use last for verdict
+
+        for budget, acq_b in acq_results.items():
             print(
-                f"    {int(r['seed']):>5d} {r['suggester_delta_mae']:>+11.4f} "
-                f"{r['random_delta_mae']:>+11.4f} {r['edge']:>+9.4f}"
+                f"\n  Acquisition strategy, {acq_b['n_seeds']} splits, "
+                f"budget {budget} (dMAE vs no ingest, eV):"
             )
-        print(
-            f"    mean MAE edge {acq['mean_edge']:+.4f} +/- {acq['std_edge']:.4f} eV; "
-            f"suggester better on {acq['suggester_wins']}/{acq['n_seeds']} splits"
-            + (f" (p={acq['mae_edge_p_value']:.3f})"
-               if acq.get("mae_edge_p_value") is not None else "")
-        )
-        print(
-            f"    mean rho edge {acq['mean_rho_edge']:+.4f} +/- "
-            f"{acq['std_rho_edge']:.4f}; suggester better on "
-            f"{acq['suggester_rho_wins']}/{acq['n_seeds']} splits"
-            + (f" (p={acq['rho_edge_p_value']:.3f})"
-               if acq.get("rho_edge_p_value") is not None else "")
-        )
-        print(
-            f"    batch redundancy (mean pairwise Tanimoto): "
-            f"suggester {acq['mean_suggester_redundancy']:.4f} vs "
-            f"random {acq['mean_random_redundancy']:.4f}"
-        )
-        # Ranking is the quantity the EA consumes, so it decides the verdict.
+            print(f"    {'seed':>5s} {'suggester':>11s} {'random':>11s} {'edge':>9s}")
+            for r in acq_b["rows"]:
+                print(
+                    f"    {int(r['seed']):>5d} {r['suggester_delta_mae']:>+11.4f} "
+                    f"{r['random_delta_mae']:>+11.4f} {r['edge']:>+9.4f}"
+                )
+            print(
+                f"    mean MAE edge {acq_b['mean_edge']:+.4f} +/- "
+                f"{acq_b['std_edge']:.4f} eV; suggester better on "
+                f"{acq_b['suggester_wins']}/{acq_b['n_seeds']} splits"
+                + (f" (p={acq_b['mae_edge_p_value']:.3f})"
+                   if acq_b.get("mae_edge_p_value") is not None else "")
+            )
+            print(
+                f"    mean rho edge {acq_b['mean_rho_edge']:+.4f} +/- "
+                f"{acq_b['std_rho_edge']:.4f}; suggester better on "
+                f"{acq_b['suggester_rho_wins']}/{acq_b['n_seeds']} splits"
+                + (f" (p={acq_b['rho_edge_p_value']:.3f})"
+                   if acq_b.get("rho_edge_p_value") is not None else "")
+            )
+            print(
+                f"    batch redundancy (mean pairwise Tanimoto): "
+                f"suggester {acq_b['mean_suggester_redundancy']:.4f} vs "
+                f"random {acq_b['mean_random_redundancy']:.4f}"
+            )
+            print(
+                f"    top-k enrichment (k={acq_b['topk_k']}): "
+                f"suggester {acq_b['mean_suggester_topk_enrichment']:.3f} vs "
+                f"random {acq_b['mean_random_topk_enrichment']:.3f}"
+            )
+
+        # Verdict uses the largest budget
         rho_p = acq.get("rho_edge_p_value")
         rho_significant = rho_p is not None and rho_p < 0.05 and acq["mean_rho_edge"] > 0
         majority = acq["suggester_rho_wins"] > acq["n_seeds"] / 2
+        tke_sug = acq["mean_suggester_topk_enrichment"]
+        tke_rnd = acq["mean_random_topk_enrichment"]
         if rho_significant:
             verdict = ("suggester improves holdout RANKING over random "
                        f"(p={rho_p:.3f}) — acquisition adds real value.")
@@ -637,6 +1004,9 @@ def main() -> int:
         else:
             verdict = ("indistinguishable from random at this budget "
                        "(sign of the edge flips across splits).")
+        if tke_sug > tke_rnd * 1.2:
+            verdict += (f" Top-k enrichment favors suggester "
+                        f"({tke_sug:.2f} vs {tke_rnd:.2f}).")
         print(f"    -> {verdict}")
 
     sabotage: dict[str, object] | None = None
@@ -691,12 +1061,16 @@ def main() -> int:
                     "holdout_n": len(holdout),
                     "seed_n": len(seed_calib),
                     "pool_n": len(unmeasured),
+                    "calibration_file": cal_file,
                     "curves": results,
                     "permutation_control": perm,
-                    "acquisition": acq,
+                    "acquisition_by_budget": {
+                        str(b): v for b, v in acq_results.items()
+                    } if not args.quick else None,
                 },
                 f,
                 indent=2,
+                default=str,
             )
         print(f"\n  Wrote {args.json}")
 

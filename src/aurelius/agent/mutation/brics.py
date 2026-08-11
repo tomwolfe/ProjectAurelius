@@ -384,14 +384,11 @@ def _compute_route_confidence(mol: Chem.Mol) -> float:
 
 def combined_grounding_score(mol: Chem.Mol) -> float:
     """Combined grounding score: weighted blend of BRICS coverage, template feasibility,
-    and route confidence.
+    route confidence, and continuous synthesizability.
 
     Uses a weighted combination:
-      0.35 × BRICS_coverage + 0.30 × template_feasibility + 0.35 × route_confidence
-
-    Route confidence blends direct commercial precursor matching quality,
-    retrosynthetic depth (shallower = more confident), and BRICS fragment
-    coverage into a single [0, 1] score.
+      0.30 × BRICS_coverage + 0.25 × template_feasibility + 0.25 × route_confidence
+      + 0.20 × continuous_synthesizability
 
     Physical justification: BRICS fragment matching alone
     overestimates synthesizability for molecules whose fragments
@@ -399,38 +396,33 @@ def combined_grounding_score(mol: Chem.Mol) -> float:
     well-precedented. Template-based feasibility captures this
     by checking whether the molecule's disconnections match
     known reaction templates. Route confidence adds a direct
-    check against the commercial precursor database and rewards
-    shallow retrosynthetic trees. The 0.35/0.30/0.35 weighting
-    keeps all three grounded in distinct physical signals while
-    prioritising the two precursor-based signals equally.
+    check against the commercial precursor database. The continuous
+    synthesizability score (ADR-2026-08-11-07) replaces the coarse
+    discrete {1,2,5} depth penalty with a smooth [0,1] signal that
+    combines direct precursor match quality, fragment coverage, and
+    decomposition efficiency.
 
-    ADR-2026-08-07-05: Depth-dependent penalty now follows the
-    safe synthesibility form mandated by the Net Progress simplicity gate:
-    ``score *= max(0.5, 1.0 - 0.1 * (depth - 1))``. This monotonically
-    penalises deeper trees while keeping the floor at 0.5 so that a
-    genuinely high-value novel scaffold is never fully rejected. The
-    previous hardcoded {1:1.0, 2:0.95, 3:0.85, 4:0.75, 5:0.65} table is
-    replaced by this closed form, halving the per-call branch count and
-    reducing architectural surface for the Net Progress test.
-
-    ADR-2026-08-08-01: Added route confidence component (0.35 weight).
-    This captures the direct alignment between the candidate structure and
-    commercially available building blocks, independent of BRICS fragment
-    decomposition. Molecules with high direct precursor overlap are more
-    likely to be real, synthesizable compounds rather than Frankenstein
-    assemblies.
+    ADR-2026-08-11-07: Replaced the discrete depth penalty
+    (``max(0.5, 1.0 - 0.1 * (depth - 1))``) with the continuous
+    synthesizability score. The discrete depth had only 4 distinct
+    penalty values {1.0, 0.9, 0.8, 0.7} for depths {1,2,3,4,5},
+    providing coarse selection pressure. The continuous score varies
+    smoothly across the full [0,1] range and strongly penalizes
+    adversarial Frankenstein molecules (mean 0.33 vs 0.97 for known
+    electrolytes).
 
     Returns: score in [0, 1] where 1.0 = perfect synthesizability.
     """
     brics_cov = brics_building_block_coverage(mol)
-    from aurelius.agent.mutation.retrosynthetic import compute_synthesis_feasibility
+    from aurelius.agent.mutation.retrosynthetic import (
+        compute_synthesis_feasibility,
+        continuous_synthesizability_score,
+    )
     template_feas = compute_synthesis_feasibility(mol)
-    depth = brics_retrosynthetic_depth(mol)
     route_conf = _compute_route_confidence(mol)
+    synth_score = continuous_synthesizability_score(mol)
 
-    depth_penalty_factor = max(0.5, 1.0 - 0.1 * (depth - 1))
-
-    return (0.35 * brics_cov + 0.30 * template_feas + 0.35 * route_conf) * depth_penalty_factor
+    return 0.30 * brics_cov + 0.25 * template_feas + 0.25 * route_conf + 0.20 * synth_score
 
 
 # ---------------------------------------------------------------------------

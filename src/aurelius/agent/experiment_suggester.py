@@ -696,15 +696,32 @@ def _normalised_interval_width(
     return ratio / (1.0 + ratio), (lower, upper)
 
 
+# Shared oracle instance for pool scoring. LPM-only (no xTB) is sufficient
+# for acquisition ranking — the conformal predictor supplies uncertainty
+# intervals, and the oracle only needs point predictions for the
+# expected-impact and Pareto-UCB terms. xTB adds ~90 ms/mol of subprocess
+# overhead with no benefit to acquisition quality.
+_pool_oracle: Any = None
+
+
+def _get_pool_oracle() -> Any:
+    """Return the shared LPM-only oracle, creating it on first use."""
+    global _pool_oracle
+    if _pool_oracle is None:
+        from aurelius.scoring.oracle.quantum import QuantumOracle
+
+        _pool_oracle = QuantumOracle(use_xtb=False, use_lone_pair=True, use_delta_correction=False)
+    return _pool_oracle
+
+
 def _predicted_values(ctx: MoleculeContext) -> dict[str, float]:
     """Oracle point predictions for every measurable property."""
     from aurelius.scoring.oracle.gc import (
         predict_dielectric_proxy,
         predict_viscosity_proxy,
     )
-    from aurelius.scoring.oracle.quantum import QuantumOracle
 
-    orbitals = QuantumOracle().evaluate(ctx.mol)
+    orbitals = _get_pool_oracle().evaluate(ctx.mol)
     return {
         "homo": float(orbitals["homo_eV"]),
         "lumo": float(orbitals["lumo_eV"]),

@@ -82,11 +82,25 @@ def _find_xtb_binary() -> str | None:
 
 
 _HAS_XTB: bool = _find_xtb_binary() is not None
+_XTB_BINARY_PATH: str | None = None
 
 
 def has_xtb() -> bool:
     """Return True if the xTB binary is available on PATH."""
     return _HAS_XTB
+
+
+def _get_xtb_binary_path() -> str | None:
+    """Return the cached xTB binary path, computing it once.
+
+    Previously _run_xtb called _find_xtb_binary() on every invocation,
+    spawning 5-6 subprocesses per molecule just to locate the binary.
+    With ~56 xTB calls per batch that wasted ~2.5s on PATH probing alone.
+    """
+    global _XTB_BINARY_PATH
+    if _XTB_BINARY_PATH is None:
+        _XTB_BINARY_PATH = _find_xtb_binary()
+    return _XTB_BINARY_PATH
 
 
 def _generate_xyz(mol: Chem.Mol) -> str:
@@ -190,7 +204,7 @@ def _run_xtb(xyz_content: str, workdir: str | None = None) -> dict[str, float] |
     with open(xyz_path, "w") as f:
         f.write(xyz_content)
 
-    xtb_bin = _find_xtb_binary()
+    xtb_bin = _get_xtb_binary_path()
     if xtb_bin is None:
         return None
 
@@ -1059,6 +1073,108 @@ class QuantumOracle:
                 logger.warning("Delta correction failed (%s) — using raw estimate.", exc)
 
         return {"homo_eV": homo, "lumo_eV": lumo, "dipole_D": 0.0}
+
+    def evaluate_batch(
+        self,
+        mols: list[Chem.Mol],
+        max_workers: int | None = None,
+    ) -> list[dict[str, float]]:
+        """Evaluate a batch of molecules, parallelizing xTB subprocess calls.
+
+        xTB subprocess calls release the GIL, so ThreadPoolExecutor gives
+        near-linear speedup on multi-core. Molecules already in cache are
+        skipped. TOM/LPM fallback is computed in-process (fast, ~4 ms/mol).
+        """
+        if max_workers is None:
+            max_workers = min(8, len(mols)) if mols else 1
+        results, xtb_indices, xtb_inputs = self._prepare_batch(mols)
+        self._run_xtb_parallel(results, xtb_indices, xtb_inputs, mols, max_workers)
+        self._fill_fallbacks(results, xtb_indices, mols)
+        return [r if r is not None else self._evaluate_closed_form(mols[i]) for i, r in enumerate(results)]
+
+    def _prepare_batch(
+        self, mols: list[Chem.Mol]
+    ) -> tuple[list[dict[str, float] | None], list[int], list[tuple[str, str]]]:
+        """Separate cached, xTB, and closed-form molecules for batch evaluation."""
+        results: list[dict[str, float] | None] = [None] * len(mols)
+        xtb_indices: list[int] = []
+        xtb_inputs: list[tuple[str, str]] = []
+        for i, mol in enumerate(mols):
+            smiles = Chem.MolToSmiles(mol)
+            if smiles in self._cache:
+                results[i] = dict(self._cache[smiles])
+                continue
+            if self._use_xtb:
+                xtb_indices.append(i)
+                xtb_inputs.append((smiles, _generate_xyz(mol)))
+            else:
+                result = self._evaluate_closed_form(mol)
+                result["quantum_confidence"] = self._tom_confidence(mol)
+                results[i] = result
+                self._cache[smiles] = result
+        return results, xtb_indices, xtb_inputs
+
+    def _run_xtb_parallel(
+        self,
+        results: list[dict[str, float] | None],
+        xtb_indices: list[int],
+        xtb_inputs: list[tuple[str, str]],
+        mols: list[Chem.Mol],
+        max_workers: int,
+    ) -> None:
+        """Run xTB subprocess calls in parallel and store results."""
+        if not xtb_inputs:
+            return
+        xtb_bin = _get_xtb_binary_path()
+        if xtb_bin is None:
+            return
+        import concurrent.futures
+
+        def _run_one(item: tuple[int, tuple[str, str]]) -> tuple[int, dict[str, float] | None]:
+            idx, (_smi, xyz) = item
+            return idx, _run_xtb(xyz)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(_run_one, (xi, xin)): xi
+                for xi, xin in zip(xtb_indices, xtb_inputs, strict=True)
+            }
+            for future in concurrent.futures.as_completed(future_to_idx):
+                orig_idx = future_to_idx[future]
+                try:
+                    idx, xtb_res = future.result()
+                except Exception:
+                    continue
+                mol = mols[idx]
+                if xtb_res is not None:
+                    result = _calibrate_xtb_orbitals(xtb_res)
+                    result["quantum_confidence"] = "xtb"
+                    self._n_xtb_calls += 1
+                else:
+                    result = self._evaluate_closed_form(mol)
+                    result["quantum_confidence"] = self._tom_confidence(mol)
+                    self._n_tom_calls += 1
+                results[idx] = result
+                self._cache[Chem.MolToSmiles(mol)] = result
+
+    def _fill_fallbacks(
+        self,
+        results: list[dict[str, float] | None],
+        xtb_indices: list[int],
+        mols: list[Chem.Mol],
+    ) -> None:
+        """Fill any remaining None results with closed-form evaluation."""
+        for i in xtb_indices:
+            if results[i] is None:
+                result = self._evaluate_closed_form(mols[i])
+                result["quantum_confidence"] = self._tom_confidence(mols[i])
+                results[i] = result
+                self._cache[Chem.MolToSmiles(mols[i])] = result
+
+    def _tom_confidence(self, mol: Chem.Mol) -> str:
+        L = _longest_conjugation_path(mol)
+        n_rings = mol.GetRingInfo().NumRings()
+        return "tom_high" if L <= 8 and n_rings <= 2 else "tom_low"
 
     def clear_cache(self) -> None:
         self._cache.clear()
