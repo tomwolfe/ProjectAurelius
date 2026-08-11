@@ -76,8 +76,9 @@ import logging
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+import numpy as np
 from rdkit import Chem
-from rdkit.Chem import BRICS
+from rdkit.Chem import AllChem, BRICS
 
 from aurelius.types import MoleculeContext
 
@@ -113,14 +114,17 @@ _MAX_RECOMBINATION_PRODUCTS = 200
 # guarantee behind it; novelty is next because calibration-set coverage is
 # what makes that guarantee transfer. BALD and pareto_ucb are the Phase 2
 # acquisition terms targeting epistemic variance on the Pareto frontier.
+# batch_ei (Phase 3) replaces greedy per-molecule EI with fantasization-based
+# batch scoring that captures subset-level information gain.
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "uncertainty": 0.20,
-    "expected_impact": 0.15,
+    "uncertainty": 0.15,
+    "expected_impact": 0.10,
     "novelty": 0.15,
     "doa_proximity": 0.10,
     "bias": 0.05,
-    "bald": 0.20,
-    "pareto_ucb": 0.15,
+    "bald": 0.15,
+    "pareto_ucb": 0.10,
+    "batch_ei": 0.20,
 }
 
 # Exploration-exploitation tradeoff for Pareto UCB. Higher values favour
@@ -439,6 +443,18 @@ def _dedup_pool(candidates: list[str], products: list[str]) -> list[str]:
     return merged
 
 
+def _count_fragmentable_bonds(smi: str) -> int:
+    """Count BRICS-breakable bonds in a molecule (proxy for fragment yield)."""
+    mol = Chem.MolFromSmiles(smi)
+    if mol is None:
+        return 0
+    try:
+        frags = BRICS.BRICSDecompose(mol)
+    except Exception:
+        return 0
+    return len(frags)
+
+
 def _harvest_from_top_candidates(
     candidates: list[str],
     top_n: int = 10,
@@ -451,6 +467,12 @@ def _harvest_from_top_candidates(
     recombination), recombines via BRICSBuild, and deduplicates against the
     existing pool.
 
+    Candidates are ranked by a composite of quality score and fragmentability,
+    so that molecules with more BRICS-breakable bonds are preferred — small
+    cyclic carbonates/sulfones score high on quality but produce zero fragments,
+    yielding no expansion. The fragmentability term breaks ties among
+    similarly-scored candidates toward those that actually grow the pool.
+
     Returns the expanded pool (original + generated). If BRICS recombination
     produces no novel molecules (small or homologous pool), returns the
     original pool unchanged.
@@ -459,7 +481,18 @@ def _harvest_from_top_candidates(
         return list(candidates)
 
     scored = _quick_score_candidates(candidates)
-    top_candidates = [smi for smi, _ in scored[:top_n]]
+    if not scored:
+        return list(candidates)
+
+    # Select harvest candidates by quality, but prefer those with more
+    # BRICS-breakable bonds. Small cyclic molecules (carbonates, sulfones)
+    # dominate the quality ranking but have no breakable bonds, producing zero
+    # fragments. To avoid this, we take the top-30 by quality and re-rank by
+    # fragment count, so the most fragmentable molecules among high-quality
+    # candidates are harvested first.
+    top_by_quality = [smi for smi, _ in scored[: max(top_n * 3, 30)]]
+    top_by_quality.sort(key=lambda s: _count_fragmentable_bonds(s), reverse=True)
+    top_candidates = top_by_quality[:top_n]
 
     labeled_frags = _harvest_labeled_fragments(top_candidates)
     products: list[str] = []
@@ -487,13 +520,27 @@ def expand_candidate_pool(candidates: list[str], target_size: int = MIN_POOL_SIZ
     Otherwise harvests fragments from top-scoring candidates, recombines them,
     and merges the products back into the pool. Deduplicates by canonical SMILES.
 
+    Expansion loops: each pass harvests from the current pool (including
+    products from prior passes) and adds novel products. This continues until
+    the target size is reached or no new molecules are produced. A single
+    BRICS pass often produces <50 novel molecules; looping accumulates enough
+    to reach the >=200 target that diversity-based acquisition needs.
+
     Returns the expanded pool (original + generated), or the original pool if
     expansion fails to produce any genuinely new molecules.
     """
     if len(candidates) >= target_size:
         return list(candidates)
 
-    expanded = _harvest_from_top_candidates(candidates, top_n=10, max_products=150)
+    pool = list(candidates)
+    max_passes = 5  # Guard against infinite loops with degenerate chemistry.
+    for _ in range(max_passes):
+        if len(pool) >= target_size:
+            break
+        expanded = _harvest_from_top_candidates(pool, top_n=10, max_products=200)
+        if len(expanded) <= len(pool):
+            break  # No new molecules produced; stop.
+        pool = expanded
 
     # Count genuinely new molecules — the input pool may contain duplicates
     # that _dedup_pool collapses, so comparing raw lengths would reject a
@@ -503,11 +550,11 @@ def expand_candidate_pool(candidates: list[str], target_size: int = MIN_POOL_SIZ
         m = Chem.MolFromSmiles(s)
         if m is not None:
             original_canonical.add(Chem.MolToSmiles(m))
-    novel = [s for s in expanded if s not in original_canonical]
+    novel = [s for s in pool if s not in original_canonical]
     if not novel:
         return list(candidates)
 
-    return expanded
+    return pool
 
 
 # ---------------------------------------------------------------------------
@@ -699,6 +746,10 @@ def _build_rationale(
             "the molecule sits on the optimistic Pareto frontier across "
             "multiple objectives, so the measurement could shift the frontier"
         ),
+        "batch_ei": (
+            "measuring this molecule would most reduce uncertainty across the "
+            "entire candidate pool (fantasized batch information gain)"
+        ),
     }
     secondary = [name for name, value in drivers[1:] if value > 0.4]
     text = f"Measure {prop}: {phrases.get(lead, lead)} (weight {lead_value:.2f})."
@@ -719,6 +770,7 @@ def _score_property(
     threshold: float | None = None,
     bald_score: float = 0.0,
     pareto_score: float = 0.0,
+    batch_ei_score: float = 0.0,
 ) -> tuple[float, dict[str, float], tuple[float, float]]:
     uncertainty, interval = _normalised_interval_width(predictor, prop, point, mol)
     components = {
@@ -729,6 +781,7 @@ def _score_property(
         "bias": round(biases.get(prop, 0.0), 4),
         "bald": round(bald_score, 4),
         "pareto_ucb": round(pareto_score, 4),
+        "batch_ei": round(batch_ei_score, 4),
     }
     score = sum(weights.get(name, 0.0) * value for name, value in components.items())
     return round(score, 6), components, interval
@@ -791,6 +844,7 @@ def _collect_raw_suggestions(
     predictor: Any,
     bald_scores: dict[str, float],
     per_prop_uncertainty: dict[str, dict[str, float]],
+    batch_ei_scores: dict[str, float],
     biases: dict[str, float],
     weights: dict[str, float],
     thresholds: dict[str, float],
@@ -808,6 +862,7 @@ def _collect_raw_suggestions(
     for ctx, predictions, novelty, doa, doa_reason in evaluated:
         smiles_key = Chem.MolToSmiles(ctx.mol)
         bald = bald_scores.get(smiles_key, 0.0)
+        batch_ei = batch_ei_scores.get(smiles_key, 0.0)
         for prop in wanted:
             point = predictions[prop]
             pareto = pareto_ucb_score(
@@ -818,6 +873,7 @@ def _collect_raw_suggestions(
                 prop, point, predictor, ctx.mol, novelty, doa, biases,
                 weights, thresholds.get(prop),
                 bald_score=bald, pareto_score=pareto,
+                batch_ei_score=batch_ei,
             )
             prop_values = [p[prop] for _, p, *_ in evaluated]
             minimise = prop in ("homo", "lump")
@@ -870,6 +926,7 @@ def suggest_experiments(
     properties: list[str] | None = None,
     weights: dict[str, float] | None = None,
     max_sa_score: float = MAX_SA_SCORE,
+    delta_correction: Any | None = None,
 ) -> list[ExperimentSuggestion]:
     """Rank molecule/property pairs by expected information gain.
 
@@ -882,6 +939,11 @@ def suggest_experiments(
             ``MEASURABLE_PROPERTIES``). Defaults to all.
         weights: Override the term weights.
         max_sa_score: Reject candidates harder to make than this.
+        delta_correction: Optional ``DeltaCorrection`` instance (e.g. a refit
+            model from the closed-loop benchmark). When provided, its GPR model
+            is used for BALD and batch_ei acquisition instead of extracting from
+            the conformal predictor (which has no GPR). This is the key input
+            that makes acquisition model-aware.
 
     Returns:
         Up to ``top_n`` suggestions, highest priority first.
@@ -903,14 +965,24 @@ def suggest_experiments(
     # pools (< _MIN_EXPAND_POOL) skip expansion — there is not enough material
     # for meaningful BRICS fragment harvesting, and the caller's candidates
     # should be scored directly.
-    if _MIN_EXPAND_POOL <= len(candidates) < MIN_POOL_SIZE:
-        expanded = expand_candidate_pool(candidates, target_size=MIN_POOL_SIZE)
-        if len(expanded) > len(candidates):
-            logger.info(
-                "Pool expanded %d -> %d via BRICS harvesting",
-                len(candidates), len(expanded),
+    # EXPANSION IS DEFAULT: runs before every acquisition call when the pool is
+    # below target. A 61-mol pool is saturated (ADR-2026-08-10-03) — random already
+    # covers a third of it at budget 20. Expansion to >=200 gives diversity-based
+    # acquisition room to operate.
+    if len(candidates) < MIN_POOL_SIZE:
+        if len(candidates) >= _MIN_EXPAND_POOL:
+            expanded = expand_candidate_pool(candidates, target_size=MIN_POOL_SIZE)
+            if len(expanded) > len(candidates):
+                logger.info(
+                    "Pool expanded %d -> %d via BRICS harvesting",
+                    len(candidates), len(expanded),
+                )
+                candidates = expanded
+        else:
+            logger.debug(
+                "Pool too small for expansion (%d < %d); scoring directly.",
+                len(candidates), _MIN_EXPAND_POOL,
             )
-            candidates = expanded
 
     # Pass 1: evaluate every candidate once, so the decision thresholds used by
     # the expected-impact term reflect the whole pool rather than one molecule.
@@ -921,9 +993,17 @@ def suggest_experiments(
     # Pre-compute BALD acquisition scores (Phase 2): epistemic posterior
     # variance per candidate molecule. This is a single batch call to the
     # MLX GPR surrogate, reusing the variance already computed there.
+    # The conformal predictor has no GPR; use the caller's DeltaCorrection
+    # (e.g. a refit model) when available — this is what makes acquisition
+    # model-aware in the closed-loop benchmark.
     all_predictions = [pred for _c, pred, *_ in evaluated]
-    gpr_model = _gpr_model_from_predictor(predictor)
+    gpr_model = _gpr_model_from_delta(delta_correction) if delta_correction is not None else _gpr_model_from_predictor(predictor)
     bald_scores = _compute_bald_scores(evaluated, gpr_model)
+
+    # Pre-compute batch EI scores (Phase 3): fantasization-based subset-level
+    # information gain. For each candidate, simulate its inclusion in the GPR
+    # posterior and score by variance reduction across the whole pool.
+    batch_ei_scores = _compute_batch_ei_scores(evaluated, gpr_model)
 
     # Pre-compute per-property uncertainty for Pareto UCB (Phase 2).
     # We use the conformal interval half-width as a proxy for sigma on each
@@ -943,7 +1023,7 @@ def suggest_experiments(
     # dominate the weighted sum which is in [0, 1].
     raw_suggestions, ei_values = _collect_raw_suggestions(
         evaluated, all_predictions, wanted, predictor,
-        bald_scores, per_prop_uncertainty, biases,
+        bald_scores, per_prop_uncertainty, batch_ei_scores, biases,
         active_weights, thresholds,
     )
 
@@ -992,6 +1072,21 @@ def _gpr_model_from_predictor(predictor: Any) -> Any | None:
         return gpr
     except Exception:
         return None
+
+
+def _gpr_model_from_delta(delta_correction: Any) -> Any | None:
+    """Extract the HOMO GPR model from a DeltaCorrection instance.
+
+    The DeltaCorrection holds two sklearn GPR models (``_homo_model``,
+    ``_lumo_model``). We use the HOMO model for acquisition since the
+    closed-loop benchmark targets HOMO. Returns None if unavailable.
+    """
+    gpr = getattr(delta_correction, "_homo_model", None)
+    if gpr is None:
+        return None
+    if getattr(gpr, "X_train_", None) is None:
+        return None
+    return gpr
 
 
 def bald_acquisition_score(
@@ -1185,6 +1280,84 @@ def _compute_per_property_uncertainty(
                 unc[prop] = 0.0
         result[smi] = unc
     return result
+
+
+# ---------------------------------------------------------------------------
+# Fantasization-based batch Expected Improvement (Phase 3)
+# ---------------------------------------------------------------------------
+# Greedy per-molecule acquisition (BALD, Pareto UCB, EI) cannot capture
+# subset-level information gain: the value of measuring a *set* of molecules is
+# not the sum of their individual values. Fantasization simulates each
+# candidate's inclusion in the GPR posterior via a rank-1 Cholesky update and
+# scores it by the expected reduction in posterior variance across the *entire*
+# remaining pool. This captures complementarity: two candidates that reduce
+# uncertainty on different regions of chemical space score higher as a pair
+# than two that both reduce uncertainty on the same region.
+#
+# Computational cost is O(n_pool^2 * n_train) per batch — tractable for
+# n_pool=200, n_train=70 (~2.8M kernel evals in numpy).
+
+
+def _ecfp4_dense_np(mol: Any, n_bits: int = 2048) -> np.ndarray:
+    """Dense ECFP4 bit vector as float64 numpy array."""
+    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=n_bits)
+    vec = np.zeros(n_bits, dtype=np.float64)
+    for bit in fp.GetOnBits():
+        vec[bit] = 1.0
+    return vec
+
+
+def _compute_batch_ei_scores(
+    evaluated: list[tuple[Any, dict[str, float], float, float, str]],
+    gpr_model: Any | None,
+) -> dict[str, float]:
+    """Compute fantasization-based batch EI scores for all evaluated candidates.
+
+    For each candidate, simulates its inclusion in the GPR posterior and scores
+    by total variance reduction across all other candidates. Returns a dict
+    mapping canonical SMILES to normalised score in [0, 1].
+
+    Falls back to uniform scores when no GPR model is available (the weight
+    contributes nothing to the total).
+    """
+    from aurelius.scoring.oracle.gpr_fantasize import (
+        extract_gpr_state,
+        fantasize_batch_scores,
+    )
+
+    if gpr_model is None or not evaluated:
+        return {}
+
+    try:
+        state = extract_gpr_state(gpr_model)
+    except Exception as exc:
+        logger.debug("GPR state extraction failed (%s); batch_ei disabled.", exc)
+        return {}
+
+    # Build feature matrix for the pool
+    smiles_list: list[str] = []
+    features_list: list[np.ndarray] = []
+    for ctx, _, _, _, _ in evaluated:
+        smi = Chem.MolToSmiles(ctx.mol)
+        smiles_list.append(smi)
+        features_list.append(_ecfp4_dense_np(ctx.mol))
+
+    X_pool = np.stack(features_list)
+    try:
+        scores = fantasize_batch_scores(state, X_pool)
+    except Exception as exc:
+        logger.debug("Fantasization failed (%s); batch_ei disabled.", exc)
+        return {}
+
+    if scores is None or len(scores) == 0:
+        return {}
+
+    # Normalise to [0, 1]
+    s_max = float(scores.max())
+    if s_max <= 0:
+        return {smi: 0.0 for smi in smiles_list}
+    normed = scores / s_max
+    return {smi: float(v) for smi, v in zip(smiles_list, normed)}
 
 
 # Each additional suggestion for an already-chosen molecule or property is

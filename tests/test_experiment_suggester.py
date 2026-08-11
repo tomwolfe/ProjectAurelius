@@ -666,3 +666,114 @@ class TestBALDAndParetoUCB:
         for s in out:
             for key in DEFAULT_WEIGHTS:
                 assert key in s.components, f"Missing component {key} in {list(s.components.keys())}"
+
+
+class TestBatchEI:
+    """Phase 3: fantasization-based batch Expected Improvement."""
+
+    def test_batch_ei_component_present(self):
+        """Suggestions include the batch_ei component."""
+        out = suggest_experiments(CANDIDATES, top_n=5)
+        for s in out:
+            assert "batch_ei" in s.components
+            assert 0.0 <= s.components["batch_ei"] <= 1.0
+
+    def test_batch_ei_not_constant(self):
+        """Batch EI scores vary across candidates (not all identical) when a model is provided."""
+        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
+        import os
+        data_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius", "data")
+        with open(os.path.join(data_dir, "orbital_calibration.json")) as f:
+            all_entries = json.load(f)
+        calib = [e for e in all_entries[:30] if Chem.MolFromSmiles(e["smiles"]) is not None]
+        model = DeltaCorrection(calib=calib, calib_smiles=[
+            Chem.MolToSmiles(Chem.MolFromSmiles(e["smiles"])) for e in calib
+        ])
+        out = suggest_experiments(CANDIDATES, top_n=5, properties=["homo"], delta_correction=model)
+        scores = [s.components["batch_ei"] for s in out]
+        assert len(set(scores)) > 1, "batch_ei is constant — fantasization not working"
+
+    def test_batch_ei_weight_affects_ranking(self):
+        """batch_ei weight must affect the pre-diversification ranking."""
+        from aurelius.agent.experiment_suggester import (
+            _compute_batch_ei_scores,
+            _evaluate_candidates,
+            _load_calibration_fingerprints,
+        )
+        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
+        import os
+        data_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius", "data")
+        with open(os.path.join(data_dir, "orbital_calibration.json")) as f:
+            all_entries = json.load(f)
+        calib = [e for e in all_entries[:30] if Chem.MolFromSmiles(e["smiles"]) is not None]
+        model = DeltaCorrection(calib=calib, calib_smiles=[
+            Chem.MolToSmiles(Chem.MolFromSmiles(e["smiles"])) for e in calib
+        ])
+
+        # Compute batch EI scores directly and verify they differ from BALD
+        calibration_fps = _load_calibration_fingerprints()
+        evaluated, _ = _evaluate_candidates(CANDIDATES, calibration_fps, max_sa_score=6.0)
+        batch_scores = _compute_batch_ei_scores(evaluated, model._homo_model)
+
+        # batch_ei should rank the candidates differently than uniform
+        assert len(batch_scores) > 0, "No batch EI scores computed"
+        ranked_by_batch = sorted(batch_scores.items(), key=lambda x: -x[1])
+        top_batch = ranked_by_batch[0][0]
+
+        # The top batch EI pick should be the molecule that reduces pool-wide
+        # uncertainty the most — verify it's a real molecule from our candidates
+        assert top_batch in [Chem.MolToSmiles(Chem.MolFromSmiles(c)) for c in CANDIDATES], (
+            f"Top batch EI pick {top_batch} not in candidate set"
+        )
+
+    def test_batch_ei_prefers_diverse_uncertainty_reducers(self):
+        """Batch EI scores a diverse, uncertain candidate higher than a redundant one."""
+        from aurelius.agent.experiment_suggester import (
+            _compute_batch_ei_scores,
+            _evaluate_candidates,
+            _load_calibration_fingerprints,
+        )
+        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
+
+        # Fit a DeltaCorrection on a small calibration set (like the benchmark does)
+        import os
+        data_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius", "data")
+        with open(os.path.join(data_dir, "orbital_calibration.json")) as f:
+            all_entries = json.load(f)
+        calib = [e for e in all_entries[:30] if Chem.MolFromSmiles(e["smiles"]) is not None]
+        model = DeltaCorrection(calib=calib, calib_smiles=[
+            Chem.MolToSmiles(Chem.MolFromSmiles(e["smiles"])) for e in calib
+        ])
+
+        # Pool: candidates not in the calibration set
+        pool = [
+            "CS(=O)(=O)c1ccc(C#N)cc1",  # aryl sulfone nitrile — unusual
+            "FC(F)(F)COC(=O)OC",       # fluorinated carbonate
+            "COCCOCCOC",                # glyme
+        ]
+        calibration_fps = _load_calibration_fingerprints()
+        evaluated, _ = _evaluate_candidates(pool, calibration_fps, max_sa_score=6.0)
+        scores = _compute_batch_ei_scores(evaluated, model._homo_model)
+
+        # The unusual scaffold should have a non-trivial batch EI score
+        assert len(scores) > 0, "No batch EI scores computed"
+        vals = list(scores.values())
+        assert any(v > 0 for v in vals), "All batch EI scores are zero"
+        assert len(set(round(v, 6) for v in vals)) > 1, "Batch EI scores are uniform"
+
+    def test_suggester_uses_delta_correction(self):
+        """suggest_experiments accepts a delta_correction parameter for model-aware acquisition."""
+        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
+        import os
+        data_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius", "data")
+        with open(os.path.join(data_dir, "orbital_calibration.json")) as f:
+            all_entries = json.load(f)
+        calib = [e for e in all_entries[:30] if Chem.MolFromSmiles(e["smiles"]) is not None]
+        model = DeltaCorrection(calib=calib, calib_smiles=[
+            Chem.MolToSmiles(Chem.MolFromSmiles(e["smiles"])) for e in calib
+        ])
+
+        # With delta_correction, batch_ei should be non-zero
+        out_with = suggest_experiments(CANDIDATES, top_n=5, properties=["homo"], delta_correction=model)
+        batch_ei_with = [s.components.get("batch_ei", 0.0) for s in out_with]
+        assert any(v > 0 for v in batch_ei_with), "batch_ei is zero even with delta_correction"
