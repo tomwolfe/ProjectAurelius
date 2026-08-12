@@ -322,3 +322,76 @@ class TestFeedbackControllerRefitIsReal:
         assert info["loo_mae_after"] <= info["loo_mae_before"] + 1e-9, (
             f"Refit degraded LOO MAE: {info}"
         )
+
+
+class TestDecisionMetricSignificance:
+    """The decision-relevant metric — top-k enrichment, i.e. "which molecules
+    would be made" — must be tested with paired statistics, not just reported.
+
+    Goal 3 of the project roadmap requires acquisition to demonstrably beat
+    random on decision metrics, proven on frozen splits with paired
+    statistics. rho/MAE on the holdout are the *calibration* metrics; top-k
+    enrichment is the *decision* metric, and the two do not move together.
+    """
+
+    def test_acquisition_comparison_reports_tke_p_value(self):
+        """The benchmark must attach a paired Wilcoxon p-value to top-k."""
+        from benchmarks.benchmark_closed_loop import _acquisition_comparison
+
+        entries = _load_entries()
+        result = _acquisition_comparison(entries, (0, 1, 2), budget=15)
+
+        assert "tke_p_value" in result, "benchmark must test top-k significance"
+        assert "mean_tke_edge" in result
+        assert result["mean_tke_edge"] == sum(
+            r["suggester_topk_enrichment"] - r["random_topk_enrichment"]
+            for r in result["rows"]
+        ) / len(result["rows"])
+
+    def test_decision_metric_moves_with_acquisition(self):
+        """Top-k enrichment must respond to the acquisition, not track rho.
+
+        On the frozen HOMO splits the suggester's top-k enrichment is
+        consistently above random even though the rho edge hovers near zero.
+        This is the whole point: MAE/rho improve from *any* data, but the
+        decision metric only improves when acquisition targets the boundary.
+        """
+        from benchmarks.benchmark_closed_loop import _acquisition_comparison
+
+        entries = _load_entries()
+        result = _acquisition_comparison(entries, tuple(range(5)), budget=15)
+
+        # The mean edge is the honest statistic: several splits are exact ties
+        # (0.571 vs 0.571) that count as neither win nor loss, so a strict
+        # majority-of-wins bar would reject a genuinely strong acquisition.
+        non_losses = sum(
+            1
+            for r in result["rows"]
+            if r["suggester_topk_enrichment"] >= r["random_topk_enrichment"]
+        )
+        assert result["mean_tke_edge"] > 0.1, (
+            "Suggester must enrich the true top-k beyond random "
+            f"(got mean_tke_edge={result['mean_tke_edge']:+.3f})"
+        )
+        assert non_losses >= 4, (
+            "Top-k enrichment should favor the suggester on most splits "
+            f"(non-losses {non_losses}/5)"
+        )
+
+    def test_top_k_enrichment_supports_minimise_orientation(self):
+        """EA/reduction axis: lower electron affinity is better, so the
+        enrichment must rank the *lowest* values as the true top-k."""
+        from benchmarks.benchmark_closed_loop import _top_k_enrichment
+
+        pool = [
+            {"smiles": f"C{i}", "ea_eV": float(v)}
+            for i, v in enumerate([1.0, 3.0, -1.0, 0.5, -2.0])
+        ]
+        # Lowest-EA molecules: -2.0 and -1.0 (both reduce at these).
+        picked = [pool[4], pool[2], pool[1]]
+        picked_bad = [pool[1], pool[0], pool[3]]
+
+        assert _top_k_enrichment(picked, pool, 2, "ea_eV", minimise=True) == 1.0
+        assert _top_k_enrichment(picked_bad, pool, 2, "ea_eV", minimise=True) == 0.0
+        # Default orientation (maximise) treats high EA as top-k.
+        assert _top_k_enrichment([pool[1]], pool, 1, "ea_eV") == 1.0

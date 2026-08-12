@@ -126,8 +126,18 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "bias": 0.05,
     "bald": 0.10,
     "pareto_ucb": 0.10,
-    "batch_ei": 0.25,
+        "batch_ei": 0.25,
 }
+
+# ADR-2026-08-12-003: the closed-loop benchmark showed that the EA greedy
+# acquisition path (BALD/fantasize + diversity only) was actively *worse* than
+# random when the GPR posterior variance is near-uniform — the epistemic term
+# carries no ranking signal and selection collapses to diversity sampling.
+# The decision-relevance term mirrors ``expected_impact`` but on the EA axis
+# (probability of crossing the current top-k EA boundary, where lower EA =
+# more reduction-stable). Blending weight for the decision term in the EA
+# greedy acquisition used by benchmarks/benchmark_closed_loop.py.
+EA_DECISION_LAMBDA = 0.5
 
 # Exploration-exploitation tradeoff for Pareto UCB. Higher values favour
 # exploration (uncertain candidates); lower values favour exploitation.
@@ -895,7 +905,7 @@ def _collect_raw_suggestions(
                 batch_ei_score=batch_ei,
             )
             prop_values = [p[prop] for _, p, *_ in evaluated]
-            minimise = prop in ("homo", "lump")
+            minimise = prop in ("homo", "lumo")
             incumbent = min(prop_values) if minimise else max(prop_values)
             ei = expected_improvement(point, interval, incumbent, minimise=minimise)
             ei_values.append(ei)
