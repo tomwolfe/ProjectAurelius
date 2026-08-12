@@ -1,0 +1,37 @@
+{
+  "ea": {
+    "top_n_mean_score": 8.671554999999998,
+    "n_above_65": 0,
+    "n_above_65_full": 0,
+    "novelty_ratio": 0.07692307692307693,
+    "pairwise_diversity": 0.8453462880736835,
+    "n_screened": 21,
+    "runtime_s": 0.016740798950195312
+  },
+  "random": {
+    "top_n_mean_score": 8.81784,
+    "n_above_65": 0,
+    "n_above_65_full": 0,
+    "novelty_ratio": 0.07692307692307693,
+    "pairwise_diversity": 0.843257331920797,
+    "n_screened": 21,
+    "runtime_s": 0.014786005020141602
+  },
+  "random_top_k": {
+    "top_n_mean_score": 8.96286,
+    "n_above_65": 0,
+    "n_above_65_full": 0,
+    "novelty_ratio": 0.08333333333333333,
+    "pairwise_diversity": 0.832437580354914,
+    "n_screened": 21,
+    "runtime_s": 0.014506101608276367
+  },
+  "candidate_count": 28,
+  "evaluations_per_strategy": 50,
+  "total_evaluations": 150,
+  "strategies compared": [
+    "ea-style",
+    "random",
+    "random_top_k"
+  ]
+}

@@ -1225,6 +1225,9 @@ def pareto_ucb_score(
     return 1.0
 
 
+DECISION_BOUNDARY = 65.0  # Score threshold for "good" electrolyte
+DECISION_BOUNDARY_WIDTH = 10.0  # Width of the boundary region for soft penalty
+
 def _compute_bald_scores(
     evaluated: list[tuple[Any, dict[str, float], float, float, str]],
     gpr_model: Any | None,
@@ -1233,6 +1236,10 @@ def _compute_bald_scores(
 
     Uses the MLX GPR surrogate to batch-predict posterior variance.
     Returns a dict mapping canonical SMILES to BALD score.
+
+    Includes an explicit top-k decision-boundary impact term: candidates
+    whose predicted mean score is near the decision boundary (65) receive
+    a boost, since these are the most informative for topping the leaderboard.
     """
     from rdkit import Chem
 
@@ -1249,9 +1256,27 @@ def _compute_bald_scores(
         if surrogate.is_available:
             _, stds = surrogate.predict_batch(mols, return_std=True)
             if stds is not None:
-                return {
-                    smi: std / (1.0 + std) for smi, std in zip(smiles_keys, stds, strict=False)
+                # Compute predicted means for decision boundary term
+                _, means = surrogate.predict_batch(mols)
+                # Top-k decision boundary impact: boost candidates near score=65
+                top_k = min(20, len(evaluated))
+                # Sort by predicted mean to find top-k
+                mean_std_pairs = list(zip(means, stds, smiles_keys))
+                mean_std_pairs.sort(key=lambda x: -x[0])  # Sort by mean descending
+                top_candidates = mean_std_pairs[:top_k]
+                # Compute decision boundary boost for top-k
+                db_boost: dict[str, float] = {}
+                for mean, std, smi in top_candidates:
+                    dist_to_boundary = abs(mean - DECISION_BOUNDARY)
+                    # Soft penalty: higher when closer to boundary
+                    db_term = float(np.exp(-dist_to_boundary / DECISION_BOUNDARY_WIDTH))
+                    db_boost[smi] = db_term
+                # Combine BALD score with decision boundary boost
+                bald_scores = {
+                    smi: (std / (1.0 + std)) * (0.5 + 0.5 * db_boost.get(smi, 0.0))
+                    for smi, std in zip(smiles_keys, stds, strict=False)
                 }
+                return bald_scores
     except Exception:
         pass
 

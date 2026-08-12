@@ -70,7 +70,7 @@ from aurelius.scoring.oracle.delta_correction import DeltaCorrection  # noqa: E4
 RDLogger.DisableLog("rdApp.*")
 warnings.filterwarnings("ignore")
 
-HOLDOUT_FRACTION = 0.30
+HOLDOUT_FRACTION = 0.5  # 50% hold-out for frozen evaluation (≈57 from 115-entry dataset).30
 SEED_SIZE = 20
 INGEST_STEPS = (10, 20, 40)
 NOISE_LEVELS_EV = (0.0, 0.1, 0.3)
@@ -112,7 +112,7 @@ def _split(
     random.Random(seed).shuffle(idx)
     if ea_mode:
         n_seed = 10
-        n_hold = max(10, int(0.20 * len(entries)))
+        n_hold = max(20, int(0.50 * len(entries)))  # Larger hold-out for EA mode
     else:
         n_seed = SEED_SIZE
         n_hold = int(HOLDOUT_FRACTION * len(entries))

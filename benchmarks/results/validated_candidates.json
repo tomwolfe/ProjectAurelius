@@ -1,0 +1,185 @@
+{
+  "candidates": [
+    {
+      "smiles": "O",
+      "score": 21.3912,
+      "dielectric": 69.22520707816898,
+      "viscosity": 0.8028421182996666,
+      "li_solv": 1.0,
+      "retro_depth": 1,
+      "scaffold": "O"
+    },
+    {
+      "smiles": "O",
+      "score": 21.3912,
+      "dielectric": 69.22520707816898,
+      "viscosity": 0.8028421182996666,
+      "li_solv": 1.0,
+      "retro_depth": 1,
+      "scaffold": "O"
+    },
+    {
+      "smiles": "C#N",
+      "score": 16.825,
+      "dielectric": 53.835824692102136,
+      "viscosity": 1.3377160635374725,
+      "li_solv": 1.7998822468867717,
+      "retro_depth": 1,
+      "scaffold": "C#N"
+    },
+    {
+      "smiles": "CS(=O)C",
+      "score": 15.8443,
+      "dielectric": 46.70028801494185,
+      "viscosity": 1.640391471107357,
+      "li_solv": 6.6054685064218805,
+      "retro_depth": 1,
+      "scaffold": "CS(C)=O"
+    },
+    {
+      "smiles": "CS(=O)(=O)F",
+      "score": 14.269,
+      "dielectric": 45.27920455665998,
+      "viscosity": 1.859595081300584,
+      "li_solv": 2.0958203657204644,
+      "retro_depth": 1,
+      "scaffold": "CS(=O)(=O)F"
+    },
+    {
+      "smiles": "C1CS(=O)(=O)CC1",
+      "score": 14.2586,
+      "dielectric": 44.627015644418535,
+      "viscosity": 2.213893498131681,
+      "li_solv": 2.9398576413503514,
+      "retro_depth": 1,
+      "scaffold": "O=S1(=O)CCCC1"
+    },
+    {
+      "smiles": "FCS(=O)(=O)F",
+      "score": 13.5739,
+      "dielectric": 43.13804171177007,
+      "viscosity": 1.8518184054084925,
+      "li_solv": 1.8818015275127908,
+      "retro_depth": 1,
+      "scaffold": "O=S(=O)(F)CF"
+    },
+    {
+      "smiles": "CS(=O)(=O)C",
+      "score": 12.474,
+      "dielectric": 38.65780432913826,
+      "viscosity": 1.9394165949707836,
+      "li_solv": 2.8878263412223513,
+      "retro_depth": 1,
+      "scaffold": "CS(C)(=O)=O"
+    },
+    {
+      "smiles": "O=S(=O)(F)C(F)(F)F",
+      "score": 12.2149,
+      "dielectric": 39.37330865727969,
+      "viscosity": 2.421887767677656,
+      "li_solv": 1.1162932845020137,
+      "retro_depth": 1,
+      "scaffold": "O=S(=O)(F)C(F)(F)F"
+    },
+    {
+      "smiles": "CC#N",
+      "score": 11.9314,
+      "dielectric": 37.3639745739479,
+      "viscosity": 1.1018824883516476,
+      "li_solv": 1.7998822468867717,
+      "retro_depth": 1,
+      "scaffold": "CC#N"
+    },
+    {
+      "smiles": "C(C)#N",
+      "score": 11.9314,
+      "dielectric": 37.3639745739479,
+      "viscosity": 1.1018824883516476,
+      "li_solv": 1.7998822468867717,
+      "retro_depth": 1,
+      "scaffold": "CC#N"
+    },
+    {
+      "smiles": "CCS(=O)(=O)F",
+      "score": 11.7337,
+      "dielectric": 36.82121649800728,
+      "viscosity": 1.9179316234186845,
+      "li_solv": 2.1238516658484645,
+      "retro_depth": 1,
+      "scaffold": "CCS(=O)(=O)F"
+    },
+    {
+      "smiles": "CS(=O)(=O)C(F)F",
+      "score": 11.3106,
+      "dielectric": 35.65538091478855,
+      "viscosity": 2.691404867994449,
+      "li_solv": 2.0098916933647524,
+      "retro_depth": 1,
+      "scaffold": "CS(=O)(=O)C(F)F"
+    },
+    {
+      "smiles": "CS(=O)(=O)C(F)(F)F",
+      "score": 10.7839,
+      "dielectric": 34.33099579574953,
+      "viscosity": 2.5674624919474622,
+      "li_solv": 1.4708912546232114,
+      "retro_depth": 1,
+      "scaffold": "CS(=O)(=O)C(F)(F)F"
+    },
+    {
+      "smiles": "CS(=O)(=O)C1CC(F)CC1",
+      "score": 10.5855,
+      "dielectric": 32.992244825477485,
+      "viscosity": 5.466388733025994,
+      "li_solv": 2.5319749936781193,
+      "retro_depth": 1,
+      "scaffold": "C1CCCC1"
+    },
+    {
+      "smiles": "N#CC(F)F",
+      "score": 10.4444,
+      "dielectric": 33.3773397092027,
+      "viscosity": 1.462047478205748,
+      "li_solv": 0.9040006972211728,
+      "retro_depth": 1,
+      "scaffold": "N#CC(F)F"
+    },
+    {
+      "smiles": "CS(=O)(=O)C(F)CF",
+      "score": 9.7971,
+      "dielectric": 30.45277748835501,
+      "viscosity": 2.9465640721882163,
+      "li_solv": 2.237893555214445,
+      "retro_depth": 1,
+      "scaffold": "CS(=O)(=O)C(F)CF"
+    },
+    {
+      "smiles": "N#CC(F)(F)F",
+      "score": 9.7956,
+      "dielectric": 31.5257239302761,
+      "viscosity": 1.4091062620212496,
+      "li_solv": 0.5,
+      "retro_depth": 1,
+      "scaffold": "N#CC(F)(F)F"
+    },
+    {
+      "smiles": "CS(=O)(=O)CC(F)F",
+      "score": 9.7471,
+      "dielectric": 30.45277748835501,
+      "viscosity": 2.9465640721882163,
+      "li_solv": 2.0379229934927525,
+      "retro_depth": 1,
+      "scaffold": "CS(=O)(=O)CC(F)F"
+    },
+    {
+      "smiles": "O=S(=O)(C(F)(F)F)C(F)(F)F",
+      "score": 9.6663,
+      "dielectric": 30.865365680036067,
+      "viscosity": 3.4172515282733347,
+      "li_solv": 1.2756517661260705,
+      "retro_depth": 1,
+      "scaffold": "O=S(=O)(C(F)(F)F)C(F)(F)F"
+    }
+  ],
+  "count": 20
+}
