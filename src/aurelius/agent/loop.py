@@ -22,11 +22,17 @@ exploration.
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import random
 import time
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
+# Use all available cores for parallel molecule evaluation, but cap at 8 to
+# avoid oversubscription on a machine that may also be running the host UI
+# and xTB subprocesses.
+_EVAL_WORKERS = min(multiprocessing.cpu_count(), 8)
 
 if TYPE_CHECKING:
     from aurelius.scoring.oracle.xtb_single_point import XTBSinglePointOracle
@@ -54,6 +60,7 @@ from aurelius.types import (
     is_mixture_smiles,
     parse_mixture_smiles,
 )
+from aurelius.utils.chem_utils import synthesizability_complexity as _synth_complexity
 
 try:
     from rdkit.Chem.Scaffolds import MurckoScaffold
@@ -103,7 +110,9 @@ def _collect_obj_scores(
     obj_scores["homo_eV"].append(t2.get("homo_eV", -99.0))
     obj_scores["lumo_eV"].append(t2.get("lumo_eV", -99.0))
     obj_scores["sa_score"].append(score_data.get("sa_score", 5.0))
-    obj_scores["synthesis_depth"].append(float(score_data.get("synthesis_depth", 3)))
+    obj_scores["synthesizability_complexity"].append(
+        score_data.get("synthesizability_complexity", 0.5)
+    )
     obj_scores["confidence"].append(confidence)
     obj_scores["combined_grounding_score"].append(
         score_data.get("grounding", 0.0)
@@ -678,6 +687,7 @@ class DiscoveryLoop:
             "homo_eV": [],
             "lumo_eV": [],
             "sa_score": [],
+            "synthesizability_complexity": [],
             "synthesis_depth": [],
             "confidence": [],
             "combined_grounding_score": [],
@@ -691,7 +701,7 @@ class DiscoveryLoop:
             return [], []
 
         # Parallel evaluation using ProcessPoolExecutor
-        with ProcessPoolExecutor(max_workers=4) as executor:
+        with ProcessPoolExecutor(max_workers=_EVAL_WORKERS) as executor:
             future_to_ctx = {
                 executor.submit(_evaluate_single_molecule, self.pipeline, ctx): ctx
                 for ctx in filtered_contexts

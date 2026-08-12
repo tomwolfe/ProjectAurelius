@@ -36,10 +36,13 @@ except Exception:  # pragma: no cover - RDKit always present when pipeline runs
 # Cascade filtering thresholds for wet-lab decision readiness.
 # The DFT geometry-optimization gate (dft_grounding_score >= 0.80) is mandatory
 # unless the caller passes ``skip_dft=True`` to ``generate_report()``.
+# Note: ``synthesis_depth`` is retained for backward compatibility in result
+# serialisation, but the primary selection objective is now the continuous
+# ``synthesizability_complexity`` score in [0, 1].
 CANDIDATE_CASCADE = [
     ("is_viable", True, "Candidate must be viable (is_viable=True)"),
     ("combined_grounding_score", 0.75, "Combined grounding score must be >= 0.75"),
-    ("synthesis_depth", 2, "Synthesis depth must be <= 2"),
+    ("synthesizability_complexity", 0.6, "Synthesizability complexity must be >= 0.6"),
     ("domain_penalty", 0.95, "Domain penalty must be >= 0.95"),
     ("novelty_to_seed", 0.3, "Novelty to seed must be >= 0.3"),
 ]
@@ -175,7 +178,7 @@ CANDIDATE_FIELDS = [
     "gap_eV", "confidence_interval_low", "confidence_interval_high",
     "synthesis_hints", "risk_flags", "sa_score", "dielectric_proxy",
     "viscosity_proxy", "diversity_penalty", "combined_grounding_score",
-    "domain_penalty", "is_viable", "synthesis_depth",
+    "synthesizability_complexity", "domain_penalty", "is_viable",
     "dft_grounding_score", "dft_final_energy_eV", "dft_method",
 ]
 
@@ -211,7 +214,7 @@ class ReportingEngine:
             return None
         if getattr(result, "total_score", 0.0) < 65.0:
             return None
-        if (sd := getattr(result, "synthesis_depth", None)) is not None and sd > 4:
+        if (sc := getattr(result, "synthesizability_complexity", None)) is not None and sc < 0.6:
             return None
 
         ctx = MoleculeContext.from_smiles(smiles)
@@ -397,8 +400,8 @@ class ReportingEngine:
                 reasons.append("Not viable")
             if float(c.get("combined_grounding_score", 0.0)) < 0.75:
                 reasons.append(f"Insufficient grounding ({c.get('combined_grounding_score', 0):.3f} < 0.75)")
-            if (sd := c.get("synthesis_depth")) is not None and sd > 2:
-                reasons.append(f"Depth {sd} > 2")
+            if (sc := c.get("synthesizability_complexity")) is not None and sc < 0.6:
+                reasons.append(f"Complexity {sc:.3f} < 0.6")
             if float(c.get("domain_penalty", 1.0)) < 0.95:
                 reasons.append(f"Domain {c.get('domain_penalty', 1):.3f} < 0.95")
             if float(c.get("novelty_to_seed", 0.0)) < 0.3:
@@ -547,7 +550,10 @@ def _passes_stage(candidate: dict[str, object], key: str, threshold: object) -> 
     if key == "is_viable":
         return bool(value)
     if isinstance(threshold, (int, float)) and isinstance(value, (int, float)):
+        if key == "synthesizability_complexity":
+            return value >= threshold  # higher complexity = more makeable
         if key == "synthesis_depth":
+            # Retained for backward compatibility: treat depth > 4 as too deep
             return value <= threshold
         return value >= threshold
     return bool(value == threshold)

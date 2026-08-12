@@ -110,21 +110,23 @@ _MAX_FRAGMENTS_PER_MOL = 10
 # Maximum number of recombination products to generate.
 _MAX_RECOMBINATION_PRODUCTS = 200
 
-# Term weights. Uncertainty dominates because it is the term with a formal
-# guarantee behind it; novelty is next because calibration-set coverage is
-# what makes that guarantee transfer. BALD and pareto_ucb are the Phase 2
-# acquisition terms targeting epistemic variance on the Pareto frontier.
-# batch_ei (Phase 3) replaces greedy per-molecule EI with fantasization-based
-# batch scoring that captures subset-level information gain.
+# Term weights. expected_impact is now the dominant term because it directly
+# measures decision-relevance: the probability a measurement moves a molecule
+# across the top-k boundary, which is what matters for prioritizing synthesis.
+# Uncertainty is secondary — it is well-calibrated but alone does not ensure
+# the measurement changes experimental priority. Novelty ensures coverage of
+# new chemistry. BALD and pareto_ucb are Phase 2 terms targeting epistemic
+# variance on the Pareto frontier. batch_ei (Phase 3) captures subset-level
+# information gain.
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "uncertainty": 0.15,
-    "expected_impact": 0.10,
+    "uncertainty": 0.10,
+    "expected_impact": 0.30,
     "novelty": 0.15,
-    "doa_proximity": 0.10,
+    "doa_proximity": 0.05,
     "bias": 0.05,
-    "bald": 0.15,
+    "bald": 0.10,
     "pareto_ucb": 0.10,
-    "batch_ei": 0.20,
+    "batch_ei": 0.25,
 }
 
 # Exploration-exploitation tradeoff for Pareto UCB. Higher values favour
@@ -1053,8 +1055,18 @@ def suggest_experiments(
     ei_max = max(ei_values) if ei_values else 1.0
     suggestions = _build_suggestions_from_raw(raw_suggestions, ei_values, ei_max)
 
+    # Build elite predictions map for property-space diversification in _diversify.
+    # Use the full pool of evaluated candidate predictions so the batch can span
+    # diverse regions of property space, not collapse onto one chemically coherent
+    # but predictably similar region.
+    all_pred_by_smiles: dict[str, dict[str, float]] = {}
+    for ctx, predictions, *_ in evaluated:
+        smi = Chem.MolToSmiles(ctx.mol)
+        all_pred_by_smiles[smi] = predictions
+
     suggestions.sort(key=lambda s: (-s.priority_score, s.smiles, s.property_to_measure))
-    return _diversify(suggestions, top_n, fingerprints=fingerprints)
+    return _diversify(suggestions, top_n, fingerprints=fingerprints,
+                      elite_predictions=all_pred_by_smiles)
 
 
 # ---------------------------------------------------------------------------
@@ -1435,10 +1447,37 @@ def _structural_penalty(fp: Any, chosen_fps: list[Any]) -> float:
     return 1.0 - _SIMILARITY_LAMBDA * max_sim
 
 
+def _property_distance(
+    point: float, prop: str, elite_points: dict[str, list[float]],
+) -> float:
+    """Distance from a prediction to the nearest elite set value for a property.
+
+    Returns a value in [0, 1] where 1 = far from all elites, 0 = coincident
+    with an elite. If no elites are tracked for this property, returns 1.0.
+    ``elite_points`` maps property name -> list of predicted values from
+    already-selected candidates.
+    """
+    if prop not in elite_points or not elite_points[prop]:
+        return 1.0
+    elite_vals = list(elite_points[prop])
+    if not elite_vals:
+        return 1.0
+    min_dist = min(abs(point - v) for v in elite_vals)
+    # Normalise: assume property range of ~10 eV (HOMO/LUMO) or ~80 units
+    # (dielectric/viscosity) for a rough scale; a distance of 1.0 eV or
+    # 10 units is "close".
+    if prop in ("homo_eV", "lumo_eV"):
+        norm = min_dist / 1.0
+    else:
+        norm = min_dist / 10.0
+    return max(0.0, min(1.0, 1.0 - norm))
+
+
 def _diversify(
     ranked: list[ExperimentSuggestion],
     top_n: int,
     fingerprints: dict[str, Any] | None = None,
+    elite_predictions: dict[str, dict[str, float]] | None = None,
 ) -> list[ExperimentSuggestion]:
     """Greedily pick a worklist that is not four copies of the same experiment.
 
@@ -1450,7 +1489,7 @@ def _diversify(
     marginal value of the second one is much lower than its standalone score
     suggests.
 
-    Two redundancy signals are combined, both standard greedy approximations
+    Three redundancy signals are combined, standard greedy approximations
     to batch-mode active learning:
 
     1. **Exact repetition** — a compounding discount for molecules and
@@ -1458,6 +1497,10 @@ def _diversify(
     2. **Structural redundancy** (ADR-2026-08-08-06) — a Tanimoto penalty
        against the scaffolds already chosen, when ``fingerprints`` is
        supplied.
+    3. **Property-space distance** — a penalty for candidates whose predicted
+       property values are close to those already selected (the current elite
+       set). This ensures the batch spans diverse regions of property space,
+       not just one chemically coherent but predictably similar region.
 
     Signal 1 alone is insufficient and was the measured defect: it treats two
     distinct-but-near-identical homologues as fully independent, so the batch
@@ -1467,6 +1510,10 @@ def _diversify(
     them. Empirically the batch was more redundant than random sampling
     (mean pairwise Tanimoto 0.132 vs 0.077 at k=10).
 
+    Signal 3 mitigates this: two molecules with identical scaffolds but
+    very different predicted HOMO values provide complementary information
+    about the decision boundary, so they should not both be selected.
+
     This is a re-ordering only: nothing new enters the list, and the adjusted
     score is recorded on each suggestion so the effect is auditable.
     """
@@ -1475,6 +1522,13 @@ def _diversify(
     seen_molecules: dict[str, int] = {}
     seen_properties: dict[str, int] = {}
     chosen_fps: list[Any] = []
+    # Track predicted property values of selected candidates for property-space
+    # diversification. Keys are property names; values are lists of predicted
+    # points from chosen suggestions.
+    elite_points: dict[str, list[float]] = {}
+    if elite_predictions:
+        for prop in elite_predictions:
+            elite_points[prop] = list(elite_predictions[prop].values())
 
     while remaining and len(selected) < top_n:
         best_index, best_value = 0, -1.0
@@ -1483,11 +1537,23 @@ def _diversify(
                 seen_molecules.get(candidate.smiles, 0)
                 + seen_properties.get(candidate.property_to_measure, 0)
             )
-            value = candidate.priority_score * penalty
             if fingerprints is not None:
-                value *= _structural_penalty(
+                value = candidate.priority_score * penalty * _structural_penalty(
                     fingerprints.get(candidate.smiles), chosen_fps
                 )
+            else:
+                value = candidate.priority_score * penalty
+
+            # Property-space distance penalty: reduce score of candidates
+            # whose predictions are close to already-elite predictions.
+            if elite_predictions is not None:
+                prop = candidate.property_to_measure
+                point = candidate.predicted_value
+                dist = _property_distance(point, prop, {
+                    p: list(vals) for p, vals in elite_points.items() if p == prop
+                })
+                value *= dist
+
             if value > best_value:
                 best_index, best_value = i, value
         chosen = remaining.pop(best_index)
@@ -1501,6 +1567,11 @@ def _diversify(
             fp = fingerprints.get(chosen.smiles)
             if fp is not None:
                 chosen_fps.append(fp)
+        # Track this candidate's prediction for future property-space checks
+        prop = chosen.property_to_measure
+        if prop not in elite_points:
+            elite_points[prop] = []
+        elite_points[prop].append(candidate.predicted_value)
         chosen.components["batch_adjusted_score"] = round(best_value, 6)
         selected.append(chosen)
 
