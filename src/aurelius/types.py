@@ -81,6 +81,7 @@ class ScreeningResult:
     viscosity_proxy: float | None = None
     li_solvation_proxy: float | None = None
     sa_score: float | None = None
+    synthesizability_complexity: float | None = None
     synthesis_depth: int | None = None
     sub_scores: dict[str, float] | None = None
     combined_grounding_score: float | None = None

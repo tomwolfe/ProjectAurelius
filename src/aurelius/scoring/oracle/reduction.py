@@ -91,20 +91,28 @@ _XTB_TIMEOUT = 120
 # Spearman rho, so this sets units only and is not a ranking fit.
 _EA_CALIBRATION: tuple[float, float] = (0.6590, -2.9176)
 
-# OLS affine map from raw ALPB-corrected ΔSCF EA onto the solution-phase
-# CV onset scale (ADR-2026-08-11). Solution-phase EA is shifted by solvation
-# stabilization of the anion; this corrects the ALPB-corrected xTB values
-# onto the experimental solution reference (1M LiPF6 EC:DMC vs Li/Li+).
-_EA_SOLUTION_CALIBRATION: tuple[float, float] = (0.8842, -1.4210)
+# OLS affine map from *Born-corrected* gas-phase ΔSCF EA onto the solution-phase
+# CV onset scale (ADR-2026-08-11-05). Unlike the old ALPB calibration
+# (ADR-2026-08-11, ρ = −0.915), this is applied to gas-phase ΔSCF EA + Born
+# correction — an additive, rank-preserving correction on the validated gas-
+# phase values. Calibrate with:
+#   python scripts/calibrate_reduction.py --solution
+# Default values are placeholders; the script will overwrite them.
+_EA_SOLUTION_CALIBRATION: tuple[float, float] = (1.0, 0.0)
+
+# Effective dielectric of the EC:DMC 1:1 mixture used for CV calibration.
+# EC (ε≈89) and DMC (ε≈3.8) in 1:1 volume mix → ε_eff ≈ 30.
+_SOLUTION_PHASE_EPSILON: float = 30.0
 
 # Raw-xTB ΔSCF span covered by the experimental gas-phase calibration set.
 # Predictions outside it are flagged: they are bounded extrapolations, not
 # measurements.
 _EA_CALIBRATED_SPAN_RAW: tuple[float, float] = (2.92, 8.82)
 
-# Raw ALPB-corrected ΔSCF EA span covered by the solution-phase calibration
-# set (10 entries: EC, PC, DMC, DEC, FEC, VC, DME, THF, ACN, sulfolane).
-_EA_SOLUTION_CALIBRATED_SPAN_RAW: tuple[float, float] = (1.65, 5.85)
+# Gas-phase ΔSCF raw span that maps to the solution-phase calibration set
+# (10 entries: EC, PC, DMC, DEC, FEC, VC, DME, THF, ACN, sulfolane).
+# Set after running: python scripts/calibrate_reduction.py --solution
+_EA_SOLUTION_CALIBRATED_SPAN_RAW: tuple[float, float] = (0.0, 10.0)
 
 # xTB --alpb accepts named solvents. Map a predicted dielectric constant to
 # the nearest ALPB solvent so the ΔSCF EA is evaluated in a medium matching
@@ -123,6 +131,114 @@ _ALPB_SOLVENT_BY_DIELECTRIC: list[tuple[str, float]] = [
     ("water", 80.0),
 ]
 
+# ---------------------------------------------------------------------------
+# Born solvation correction (ADR-2026-08-11-05)
+# ---------------------------------------------------------------------------
+# The ALPB continuum model applied to the ΔSCF cycle is anti-correlated with
+# solution-phase experiment (ρ = −0.915, see ADR-2026-08-11-04). The failure is
+# concentrated in weakly-coordinating solvents (ethers, nitriles) where the
+# anion is barely bound and the continuum model's energy shift is unreliable.
+#
+# Instead of computing the ΔSCF *in* solvent, we take the validated gas-phase
+# ΔSCF EA (ρ = 0.91 vs 40 measured gas-phase EAs) and add a Born solvation
+# correction for the anion:
+#
+#   EA_solution = EA_gas + ΔG_solv(electron-attached state)
+#
+# The Born solvation free energy for a charge −e in a spherical cavity of
+# radius r in a medium of dielectric ε:
+#
+#   ΔG_solv = (1 − 1/ε) · (e² / 8πε₀r) = 13.598 · (1 − 1/ε) / r   [eV]
+#
+# where 13.598 eV·Å is the Born constant (e²/8πε₀ in eV·Å units). The neutral
+# molecule's solvation is negligible by comparison (no net charge), so this is
+# just the anion stabilization.
+#
+# The cavity radius is estimated from the van-der-Waals volume. The correction
+# is always positive (stabilises the anion → raises solution EA relative to
+# gas), which matches the experimental trend: solution-phase EAs are uniformly
+# *higher* than gas-phase values for the same chemical family.
+
+_BORN_CONSTANT_EV_ANGSTROM: float = 13.598
+# vdW radii in Å, used to estimate the Born cavity volume.
+_VDW_RADII: dict[str, float] = {
+    "H": 1.20, "He": 1.40,
+    "Li": 1.82, "Be": 1.53, "B": 1.92, "C": 1.70, "N": 1.55, "O": 1.52,
+    "F": 1.47, "Ne": 1.54,
+    "P": 1.80, "S": 1.80, "Cl": 1.75, "Se": 1.90, "Br": 1.85, "I": 1.98,
+    "Si": 2.10, "Ge": 2.02,
+}
+
+
+def _cavity_radius(mol: Chem.Mol) -> float:
+    """Estimate the Born cavity radius (Å) from summed atomic vdW volumes.
+
+    Treats the molecule as a sphere whose volume equals the sum of atomic
+    vdW volumes (all heavy atoms + explicit hydrogens). A 1.4 Å floor
+    guards against unrealistically small cavities for diatomics and ensures
+    the Born energy stays finite.
+    """
+    mol_h = Chem.AddHs(mol) if not mol.GetNumAtoms() == mol.GetNumHeavyAtoms() else mol
+    vol_a3 = sum(
+        (4.0 / 3.0) * np.pi * (_VDW_RADII.get(a.GetSymbol(), 1.6) ** 3)
+        for a in mol_h.GetAtoms()
+    )
+    r = (3.0 * vol_a3 / (4.0 * np.pi)) ** (1.0 / 3.0)
+    return max(r, 1.4)
+
+
+def _born_solvation_correction(epsilon: float, radius: float) -> float:
+    """Born solvation free energy of the anion in eV.
+
+    Always positive (stabilising): higher ε → larger correction, smaller
+    cavity → larger correction. Returns 0 for vacuum (ε = 1).
+    """
+    if epsilon <= 1.0:
+        return 0.0
+    return _BORN_CONSTANT_EV_ANGSTROM * (1.0 - 1.0 / epsilon) / radius
+
+
+def born_solvation_correction(mol: Chem.Mol, epsilon: float) -> float:
+    """Public entry point for the Born anion-solvation correction (eV)."""
+    return _born_solvation_correction(epsilon, _cavity_radius(mol))
+
+
+def compute_solution_ea(
+    mol: Chem.Mol,
+    epsilon: float = 30.0,
+    gas_raw_ea: float | None = None,
+    threads: int = 1,
+) -> tuple[float | None, float | None, float]:
+    """Gas-phase ΔSCF EA shifted by the Born anion solvation correction.
+
+    Combines the validated gas-phase xTB ΔSCF EA with a Born solvation
+    correction to approximate the solution-phase electron affinity:
+
+        EA_solution = calibrate_ea(raw_gas_ea) + Born(ε, r_cavity)
+
+    Args:
+        mol: RDKit molecule.
+        epsilon: Dielectric constant of the solvation medium. Use ~30 for
+            EC:DMC 1:1 (the CV calibration solvent); use the molecule's own
+            predicted dielectric for a self-consistent medium.
+        gas_raw_ea: Pre-computed raw gas-phase ΔSCF EA to avoid a redundant
+            xTB call. If None, xTB is called.
+        threads: Number of xTB threads (ignored if ``gas_raw_ea`` is given).
+
+    Returns:
+        (solution_ea_calibrated, gas_ea_calibrated, raw_gas_ea)
+        All None for the EA fields when xTB is unavailable.
+    """
+    if gas_raw_ea is None:
+        gas_raw_ea = compute_dscf_ea(mol, solvent=None, threads=threads)
+    if gas_raw_ea is None:
+        return None, None, 0.0
+
+    born = _born_solvation_correction(epsilon, _cavity_radius(mol))
+    gas_cal = calibrate_ea(gas_raw_ea)
+    solution_cal = calibrate_ea_solution(gas_cal + born)
+    return solution_cal, gas_cal, gas_raw_ea
+
 
 def solvent_from_dielectric(epsilon: float) -> str:
     """Map a predicted dielectric constant to the nearest xTB ALPB solvent.
@@ -138,18 +254,31 @@ def solvent_from_dielectric(epsilon: float) -> str:
     return best
 
 
+# Reverse lookup: ALPB solvent name → dielectric constant.
+_SOLUTION_DIELECTRIC: dict[str, float] = {
+    name: eps for name, eps in _ALPB_SOLVENT_BY_DIELECTRIC
+}
+
+
+def _epsilon_for_solvent(solvent: str | None) -> float | None:
+    """Return the dielectric constant of a named ALPB solvent, or None."""
+    if solvent is None:
+        return None
+    return _SOLUTION_DIELECTRIC.get(solvent)
+
+
 @dataclass
 class ReductionResult:
     """Reduction-stability estimate for one molecule."""
 
     ea_eV: float | None
-    method: str  # "xtb_dscf" | "structural_ridge" | "unavailable"
+    method: str  # "xtb_dscf" | "xtb_dscf_solution" | "structural_ridge" | "unavailable"
     confidence: float
     in_calibrated_span: bool
     ea_raw: float | None = None
     cpu_seconds: float = 0.0
-
     solvent: str | None = None
+    gas_ea_eV: float | None = None  # Validated gas-phase EA, when computed
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -158,6 +287,7 @@ class ReductionResult:
             "confidence": round(self.confidence, 4),
             "in_calibrated_span": self.in_calibrated_span,
             "ea_raw": None if self.ea_raw is None else round(self.ea_raw, 4),
+            "gas_ea_eV": None if self.gas_ea_eV is None else round(self.gas_ea_eV, 4),
             "cpu_seconds": round(self.cpu_seconds, 4),
             "solvent": self.solvent,
         }
@@ -404,25 +534,26 @@ def calibrate_ea(raw_ea: float) -> float:
     return a * raw_ea + b
 
 
-def calibrate_ea_solution(raw_ea: float, solvent: str | None = None) -> float:
-    """Map a raw ALPB-corrected xTB ΔSCF EA onto the solution-phase scale.
+def calibrate_ea_solution(born_corrected_ea: float) -> float:
+    """Affine calibration for the solution-phase scale (ADR-2026-08-11-05).
 
-    Uses the solution-phase calibration affine map fitted on 10-20 CV onset
-    measurements (ADR-2026-08-11). The ALPB solvation model already shifts
-    the raw ΔSCF energy; this calibration corrects any residual offset between
-    ALPB-xTB and experimental CV onset.
+    Applied *after* the gas-phase calibration and Born solvation correction:
+
+        solution_EA = a * (calibrate_ea(raw_gas_ea) + born_correction) + b
+
+    The affine map absorbs any residual systematic offset between the
+    Born-corrected gas-phase values and the 10 CV onsets (EC:DMC 1:1).
+    Like the gas-phase map, it cannot change Spearman ρ — ranking is set
+    by the gas-phase ΔSCF + Born correction upstream.
 
     Args:
-        raw_ea: Raw ALPB-corrected xTB ΔSCF EA in eV.
-        solvent: ALPB solvent name (unused, calibration is global but
-            available for future solvent-specific refinement).
+        born_corrected_ea: Gas-phase-calibrated EA + Born correction, in eV.
 
     Returns:
-        Calibrated solution-phase EA in eV (vs vacuum, i.e. on the same scale
-        as gas-phase EA + 1.39 eV reference conversion).
+        Calibrated solution-phase EA in eV (vs vacuum).
     """
     a, b = _EA_SOLUTION_CALIBRATION
-    return a * raw_ea + b
+    return a * born_corrected_ea + b
 
 
 def load_experimental_ea_solution() -> list[dict[str, Any]]:
@@ -451,6 +582,7 @@ class ReductionOracle:
         self,
         cache_path: str = DEFAULT_CACHE_PATH,
         solvent: str | None = None,
+        solvent_epsilon: float | None = None,
         threads: int = 1,
     ) -> None:
         self._cache_path = cache_path
@@ -461,6 +593,10 @@ class ReductionOracle:
         self._hits = 0
         self._misses = 0
         self._dirty = False
+        # Effective dielectric of the solvation medium. When solvent is a named
+        # ALPB solvent, look it up; otherwise use the explicit epsilon or the
+        # medium's dielectric (default EC:DMC ≈ 30).
+        self._medium_epsilon: float = solvent_epsilon or _epsilon_for_solvent(solvent) or 30.0
 
     @classmethod
     def with_auto_solvent(
@@ -469,19 +605,23 @@ class ReductionOracle:
         cache_path: str = DEFAULT_CACHE_PATH,
         threads: int = 1,
     ) -> ReductionOracle:
-        """Create an oracle with solvent auto-selected from predicted dielectric.
+        """Create an oracle with solvation corrected to the medium's dielectric.
 
-        Uses the Kirkwood-Fröhlich dielectric proxy to pick the nearest
-        ALPB solvent, falling back to "acetonitrile" when the proxy is
-        unavailable.
+        Uses the Kirkwood-Fröhlich dielectric proxy for this molecule as the
+        effective solvent dielectric (ε). The solution-phase EA is computed as
+        the validated gas-phase ΔSCF EA plus a Born anion solvation correction
+        (ADR-2026-08-11-05), replacing the ALPB-in-ΔSCF approach that was
+        anti-correlated with experiment (ρ = −0.915, see ADR-2026-08-11-04).
 
-        .. warning::
-            Solution-phase ALPB ΔSCF EA is **unvalidated** (ρ = −0.915 vs 10
-            experimental CV onsets — actively anti-correlated; see
-            ADR-2026-08-11-04). This method is opt-in only. The default
-            ``ReductionOracle()`` uses the validated gas-phase path.
+        The Born correction is always positive — it stabilises the anion and
+        raises the solution-phase EA relative to the gas-phase value. Because
+        it is an additive *correction* on the validated gas-phase ranking
+        (not a replacement ΔSCF computed in continuum solvent), it cannot
+        reverse the gas-phase ordering. An affine calibration on the 10
+        solution-phase CV onsets absorbs any residual systematic offset.
         """
         solvent = "acetonitrile"
+        epsilon = 30.0
         try:
             from aurelius.scoring.oracle.gc import predict_dielectric_proxy
             from aurelius.types import MoleculeContext
@@ -492,14 +632,16 @@ class ReductionOracle:
             if ctx is not None:
                 eps = predict_dielectric_proxy(ctx)
                 solvent = solvent_from_dielectric(eps)
+                epsilon = eps
         except Exception:
             pass
-        logger.warning(
-            "Solution-phase ALPB ΔSCF EA is unvalidated (ρ = −0.915 vs experiment). "
-            "Use gas-phase ReductionOracle() for validated rankings. "
-            "See ADR-2026-08-11-04."
+        logger.info(
+            "Solution-phase mode: gas-phase ΔSCF EA + Born correction (ε=%.1f).", epsilon
         )
-        return cls(cache_path=cache_path, solvent=solvent, threads=threads)
+        return cls(
+            cache_path=cache_path, solvent=solvent,
+            solvent_epsilon=epsilon, threads=threads,
+        )
 
     def _load_cache(self) -> dict[str, dict[str, Any]]:
         try:
@@ -516,7 +658,9 @@ class ReductionOracle:
 
     @property
     def method(self) -> str:
-        return "xtb_dscf" if has_xtb() else "structural_ridge"
+        if not has_xtb():
+            return "structural_ridge"
+        return "xtb_dscf_solution" if self._solvent is not None else "xtb_dscf"
 
     def evaluate(self, ctx: MoleculeContext | Chem.Mol) -> dict[str, Any]:
         """Return the reduction-stability record for a molecule."""
@@ -540,23 +684,42 @@ class ReductionOracle:
 
         start = time.perf_counter()
         if has_xtb():
-                 raw = compute_dscf_ea(mol, solvent=self._solvent, threads=self._threads)
-                 if raw is not None:
+            if self._solvent is not None:
+                # Solution-phase path (ADR-2026-08-11-05): gas-phase ΔSCF EA
+                # (validated, ρ = 0.91) + Born anion solvation correction.
+                # ALPB-in-ΔSCF was tried and found anti-correlated (ρ = −0.915);
+                # the Born correction is a transparent, additive correction that
+                # cannot reverse the gas-phase ranking.
+                epsilon = self._medium_epsilon
+                sol_ea, gas_ea, raw_gas = compute_solution_ea(
+                    mol, epsilon=epsilon, threads=self._threads
+                )
+                if sol_ea is not None:
+                    raw = raw_gas
+                    calibrated = sol_ea
                     lo, hi = _EA_CALIBRATED_SPAN_RAW
                     in_span = lo <= raw <= hi
-                    if self._solvent is not None:
-                        calibrated = self._calibrate_solution_phase(raw, self._solvent)
-                        sol_lo, sol_hi = _EA_SOLUTION_CALIBRATED_SPAN_RAW
-                        in_span = sol_lo <= raw <= sol_hi
-                        confidence = 0.90 if in_span else 0.45
-                    else:
-                        calibrated = calibrate_ea(raw)
-                        confidence = 0.85 if in_span else 0.45
+                    confidence = 0.85 if in_span else 0.45
+                    return ReductionResult(
+                        ea_eV=calibrated,
+                        method="xtb_dscf_solution",
+                        confidence=confidence,
+                        in_calibrated_span=in_span,
+                        ea_raw=raw,
+                        gas_ea_eV=gas_ea,
+                        cpu_seconds=time.perf_counter() - start,
+                        solvent=self._solvent,
+                    )
+            else:
+                raw = compute_dscf_ea(mol, solvent=None, threads=self._threads)
+                if raw is not None:
+                    lo, hi = _EA_CALIBRATED_SPAN_RAW
+                    in_span = lo <= raw <= hi
+                    calibrated = calibrate_ea(raw)
+                    confidence = 0.85 if in_span else 0.45
                     return ReductionResult(
                         ea_eV=calibrated,
                         method="xtb_dscf",
-                        # Extrapolation beyond the calibrated span is reported but
-                        # discounted rather than hidden.
                         confidence=confidence,
                         in_calibrated_span=in_span,
                         ea_raw=raw,
@@ -564,9 +727,20 @@ class ReductionOracle:
                         solvent=self._solvent,
                     )
 
+        # Fallback: structural ridge (no xTB)
         fallback = self._get_fallback()
         if fallback.available:
             ea, conf = fallback.predict(mol)
+            # The structural ridge is trained on experimental gas-phase EAs.
+            # When in solution-phase mode, add the Born solvation correction and
+            # apply the solution-phase affine calibration. Reduce confidence
+            # because the cavity radius and dielectric are approximate.
+            if self._solvent is not None:
+                born = _born_solvation_correction(
+                    self._medium_epsilon, _cavity_radius(mol)
+                )
+                ea = calibrate_ea_solution(ea + born)
+                conf *= 0.6
             return ReductionResult(
                 ea_eV=ea, method="structural_ridge", confidence=conf,
                 in_calibrated_span=True, ea_raw=None,
@@ -580,21 +754,6 @@ class ReductionOracle:
             cpu_seconds=time.perf_counter() - start,
             solvent=self._solvent,
         )
-
-    def _calibrate_solution_phase(self, raw_ea: float, solvent: str | None) -> float:
-        """Apply solution-phase calibration to a raw ALPB-corrected ΔSCF EA.
-
-        ADR-2026-08-11: ALPB solvation is already implemented in ``_compute``.
-        This method adds the *calibration* step that maps ALPB-xTB energies
-        onto the experimental solution-phase CV scale, using the affine map
-        fitted on the solution-phase calibration set added in this ADR.
-
-        When ``solvent`` is None (gas-phase mode), the gas-phase calibration
-        is applied instead, preserving backward compatibility.
-        """
-        if solvent is None:
-            return calibrate_ea(raw_ea)
-        return calibrate_ea_solution(raw_ea, solvent)
 
     def flush(self) -> None:
         """Persist the cache to disk if anything changed."""

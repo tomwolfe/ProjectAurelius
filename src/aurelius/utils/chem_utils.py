@@ -321,10 +321,117 @@ def electrolyte_synthetic_accessibility(ctx: Any) -> float:
     return float(np.clip(score, 1.0, 10.0))
 
 
+def synthesizability_complexity(ctx: Any) -> float:
+    """Higher-resolution continuous synthesizability complexity score [0, 1].
+
+    Replaces the coarse rule-based SA score (1–10, ~10 distinct values) with
+    a fine-grained signal that varies continuously across the full [0, 1]
+    range. Unlike ``electrolyte_synthetic_accessibility`` which uses additive
+    rule deltas with 0.15–3.0 steps, this score combines:
+
+    1. **Fragment diversity** — the number of unique fragments from a BRICS
+       decomposition, normalised by molecular size. More fragments relative
+       to size = higher complexity.
+    2. **Functional-group diversity** — the number of distinct electron-
+       accepting / donating motifs (counted via the SA rule smarts),
+       each weighted by its rarity in commercial building blocks.
+    3. **Ring strain** — continuous penalty for strained rings (3- and
+       4-membered), scaled by atom count rather than a flat +1.0.
+    4. **Stereochemical complexity** — number of stereocenters and double-bond
+       geometry, continuous penalty.
+
+    The four components are combined as:
+        complexity = 0.35 * frag_complexity + 0.30 * fg_complexity
+                   + 0.20 * ring_strain + 0.15 * stereo_complexity
+
+    Physical justification: synthesis difficulty is driven by (a) how many
+    fragments must be assembled, (b) how many distinct functional groups
+    must be introduced in sequence, (c) whether rings are strained, and
+    (d) stereochemical control. All four are continuous quantities;
+    collapsing them to 10 bins loses the fine-grained discrimination that
+    NSGA-II selection pressure needs.
+
+    ADR-2026-08-11-08: Replaces the coarse SA score as the primary
+    synthesizability objective in NSGA-II selection.
+
+    Args:
+        ctx: Pre-parsed MoleculeContext (or any object with a ``mol`` attribute).
+
+    Returns:
+        float in [0, 1] where 1.0 = maximally complex / hard to synthesise,
+        0.0 = simple / directly purchasable.
+    """
+    mol = ctx.mol
+    n_heavy = mol.GetNumHeavyAtoms()
+    if n_heavy == 0:
+        return 1.0
+
+    # --- Component 1: Fragment diversity ---
+    # Number of unique BRICS fragments, normalised by log(molecule size).
+    try:
+        from rdkit.Chem import BRICS
+        fragments = list(BRICS.BRICSDecompose(mol))
+        n_frags = len(fragments)
+    except Exception:
+        n_frags = 1
+    # log-scale: 1 fragment → 0, 12+ fragments → ~1.0
+    frag_diversity = min(np.log1p(n_frags) / np.log1p(12.0), 1.0)
+
+    # Size factor: heavier molecules need more steps
+    size_factor = min(np.log10(max(n_heavy, 5)) / 3.0, 1.0)
+    frag_complexity = 0.6 * frag_diversity + 0.4 * size_factor
+
+    # --- Component 2: Functional-group complexity ---
+    # Count distinct electron-accepting / donating motifs from the SA rule set.
+    # Each motif contributes proportionally, so more diverse chemistry = harder.
+    fg_count = 0
+    n_rules_triggered = 0
+    for _name, rule_fn in _SA_RULES:
+        delta = abs(rule_fn(ctx))
+        if delta > 0:
+            n_rules_triggered += 1
+            fg_count += delta
+
+    # Normalise: simple penalties are 0.15-0.5 per group, cap at ~15 groups
+    fg_complexity = min(fg_count / 4.0, 1.0) * (1.0 - 1.0 / max(n_rules_triggered, 1))
+
+    # --- Component 3: Ring strain ---
+    ring_info = mol.GetRingInfo()
+    strained_atoms = set()
+    for ring in ring_info.AtomRings():
+        if len(ring) <= 4:
+            strained_atoms.update(ring)
+    ring_strain = min(len(strained_atoms) / max(n_heavy, 1), 1.0)
+
+    # --- Component 4: Stereochemical complexity ---
+    n_stereo = Chem.rdMolDescriptors.CalcNumAtomStereoCenters(mol)
+    n_rings = len(ring_info.AtomRings())
+    stereo_complexity = min(
+        (n_stereo * 0.2 + min(n_rings, 3) * 0.15) / 1.0, 1.0
+    )
+
+    complexity = (
+        0.35 * frag_complexity + 0.30 * fg_complexity
+        + 0.20 * ring_strain + 0.15 * stereo_complexity
+    )
+    return float(np.clip(complexity, 0.0, 1.0))
+
+
+def synthesizability_reward(ctx: Any) -> float:
+    """Synthesizability reward in [0, 1] — the complement of complexity.
+
+    Higher = easier to synthesise. This is ``1 - synthesizability_complexity``
+    so it can be used directly as a maximisation objective in scoring.
+    """
+    return 1.0 - synthesizability_complexity(ctx)
+
+
 __all__ = [
     "_serialize_fp",
     "_deserialize_fp",
     "_tanimoto",
     "electrolyte_synthetic_accessibility",
+    "synthesizability_complexity",
+    "synthesizability_reward",
     "get_canonical_smiles",
 ]

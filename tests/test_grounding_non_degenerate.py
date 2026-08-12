@@ -35,6 +35,8 @@ from aurelius.agent.mutation.retrosynthetic import (
     compute_synthesis_feasibility,
     infeasibility_penalty,
 )
+from aurelius.types import MoleculeContext
+from aurelius.utils.chem_utils import synthesizability_complexity
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "src", "aurelius", "data")
@@ -172,3 +174,70 @@ def test_ring_aware_matching_keeps_true_ring_precursors():
     """The fix must not break legitimate ring-to-ring matches."""
     ec = Chem.MolFromSmiles("O=C1OCCO1")
     assert ec.HasSubstructMatch(as_ring_aware_query(Chem.MolFromSmiles("O=C1OCCO1")))
+
+
+# ---------------------------------------------------------------------------
+# Higher-resolution synthesizability (ADR-2026-08-11-08)
+# ---------------------------------------------------------------------------
+
+
+def test_complexity_score_in_unit_interval():
+    """synthesizability_complexity returns [0, 1] for all test molecules."""
+    for smi in ["O=C1OCCO1", "COC(=O)OC", "COCCOC", "CC#N", "O=S1(=O)CCCC1",
+                "C1=CC=CC=C1", "CC1CC1", "O"]:
+        mol = MoleculeContext.from_smiles(smi)
+        score = synthesizability_complexity(mol)
+        assert 0.0 <= score <= 1.0, f"{smi}: complexity {score} out of [0,1]"
+
+
+def test_complexity_higher_resolution_than_sa_score():
+    """The complexity score must produce more distinct values than SA (1-10).
+
+    The coarse SA score has ~10 distinct values; the continuous complexity
+    score should produce at least 15 distinct values across the same set,
+    providing finer selection pressure for NSGA-II.
+    """
+    from aurelius.utils.chem_utils import electrolyte_synthetic_accessibility
+
+    smiles_list = [
+        "O=C1OCCO1", "COC(=O)OC", "CCOC(=O)OC", "O=C1OC(F)CO1",
+        "O=C1OC=CO1", "COCCOC", "CC1CCOC1", "CC#N", "O=S1(=O)CCCC1",
+        "O=C1C=CC(=O)C=C1", "O=C1C=CC(=O)c2ccccc21",
+        "CC1COC(=O)O1", "COc1ccc(C(F)(F)F)cc1", "C1CC1", "CCC1CC1",
+        "CCCC1CC1", "CC(C)C1CC1", "C1CCOC1", "C1CCCC1",
+    ]
+    sa_values = set()
+    cx_values = set()
+    for smi in smiles_list:
+        ctx = MoleculeContext.from_smiles(smi)
+        sa = round(electrolyte_synthetic_accessibility(ctx), 1)
+        cx = synthesizability_complexity(ctx)
+        sa_values.add(sa)
+        cx_values.add(round(cx, 4))
+
+    assert len(cx_values) >= 12, (
+        f"complexity score only has {len(cx_values)} distinct values — should be >=12"
+    )
+    assert len(cx_values) > len(sa_values), (
+        f"complexity ({len(cx_values)} values) must be higher-resolution than "
+        f"SA score ({len(sa_values)} values)"
+    )
+
+
+def test_simple_solvents_have_lower_complexity():
+    """Known simple electrolytes should score easier (lower complexity) than
+    complex / strained molecules."""
+    dmc = synthesizability_complexity(MoleculeContext.from_smiles("COC(=O)OC"))
+    dme = synthesizability_complexity(MoleculeContext.from_smiles("COCCOC"))
+    # Simple solvents should not be harder than a bare aromatic ring
+    assert dmc < 0.9, f"DMC complexity too high: {dmc}"
+    assert dme < 0.9, f"DME complexity too high: {dme}"
+
+
+def test_strained_ring_increases_complexity():
+    """A 3-membered ring should score higher complexity than its open-chain analog."""
+    oxirane = synthesizability_complexity(MoleculeContext.from_smiles("C1CO1"))
+    ethanol = synthesizability_complexity(MoleculeContext.from_smiles("CCO"))
+    assert oxirane > ethanol, (
+        f"oxirane ({oxirane}) should be harder than ethanol ({ethanol})"
+    )

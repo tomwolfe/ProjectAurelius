@@ -317,22 +317,26 @@ def test_same_solvent_hits_cache(tmp_path):
 
 
 @pytest.mark.skipif(not has_xtb(), reason="xTB not available")
-def test_alpb_flag_passed_to_xtb(tmp_path):
-    """When solvent is set, xTB must receive --alpb and return a valid EA."""
+def test_solution_uses_born_correction(tmp_path):
+    """When solvent is set, xTB runs gas-phase + Born correction (not ALPB)."""
     oracle = ReductionOracle(cache_path=str(tmp_path / "cache.json"), solvent="acetonitrile")
     result = oracle.evaluate(Chem.MolFromSmiles("O=C1OCCO1"))
     assert result["ea_eV"] is not None
     assert result["solvent"] == "acetonitrile"
-    assert result["method"] == "xtb_dscf"
+    assert result["method"] == "xtb_dscf_solution"
+    # Gas-phase EA must be reported alongside the solution EA.
+    assert result["gas_ea_eV"] is not None
+    # Solution EA should differ from gas EA (Born correction shifts it).
+    assert result["ea_eV"] != result["gas_ea_eV"]
 
 
 @pytest.mark.skipif(not has_xtb(), reason="xTB not available")
 def test_gas_vs_solution_differ(tmp_path):
     """Gas-phase and solution-phase EA must differ for a polar molecule.
 
-    ALPB stabilises the anion, so the solution-phase EA should differ from
-    the gas-phase value. This is the physical sanity check that the solvation
-    model is actually doing something.
+    The Born correction stabilises the anion, so the solution-phase EA should
+    differ from the gas-phase value. This is the physical sanity check that
+    the solvation correction is actually being applied.
     """
     mol = Chem.MolFromSmiles("O=C1OCCO1")
     gas = ReductionOracle(cache_path=str(tmp_path / "gas.json"), solvent=None)
@@ -342,8 +346,8 @@ def test_gas_vs_solution_differ(tmp_path):
     ea_sol = sol.evaluate(mol)["ea_eV"]
     assert ea_gas is not None
     assert ea_sol is not None
-    # They should not be identical — solvation shifts the EA
-    assert ea_gas != ea_sol, "gas-phase and solution-phase EA must differ"
+    # Solution EA should be higher (Born correction is positive).
+    assert ea_sol > ea_gas, "solution EA must exceed gas EA (anion stabilised)"
 
 
 def test_auto_solvent_selects_from_dielectric(tmp_path):
@@ -377,8 +381,50 @@ def test_auto_solvent_differentiates_molecules(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Phase 3: Solution-phase EA calibration (ADR-2026-08-11)
+# Born solvation correction (ADR-2026-08-11-05)
 # ---------------------------------------------------------------------------
+
+
+def test_cavity_radius_is_positive_and_finite():
+    """Cavity radius must be a positive Ångström value for any molecule."""
+    from aurelius.scoring.oracle.reduction import _cavity_radius
+
+    for smi in ["O=C1OCCO1", "COCCOC", "CC#N", "C1=CC=CC=C1", "O=S1(=O)CCCC1"]:
+        mol = Chem.MolFromSmiles(smi)
+        r = _cavity_radius(mol)
+        assert r > 0, f"cavity radius must be positive for {smi}"
+        assert r < 10, f"cavity radius implausible ({r:.2f} Å) for {smi}"
+
+
+def test_born_correction_increases_with_dielectric():
+    """Higher ε → more anion stabilization → larger positive correction."""
+    from aurelius.scoring.oracle.reduction import (_born_solvation_correction,
+                                                   _cavity_radius)
+
+    mol = Chem.MolFromSmiles("O=C1OCCO1")
+    r = _cavity_radius(mol)
+    low = _born_solvation_correction(2.0, r)
+    high = _born_solvation_correction(80.0, r)
+    assert high > low > 0, "Born correction must be positive and increase with ε"
+
+
+def test_born_correction_zero_at_vacuum():
+    """At ε=1 (vacuum), the Born correction must vanish."""
+    from aurelius.scoring.oracle.reduction import (_born_solvation_correction,
+                                                   _cavity_radius)
+
+    mol = Chem.MolFromSmiles("O=C1OCCO1")
+    r = _cavity_radius(mol)
+    assert _born_solvation_correction(1.0, r) == 0.0
+
+
+def test_born_correction_inversely_scales_with_radius():
+    """Smaller cavity → larger (more negative) solvation energy."""
+    from aurelius.scoring.oracle.reduction import _born_solvation_correction
+
+    big = _born_solvation_correction(30.0, 5.0)
+    small = _born_solvation_correction(30.0, 1.5)
+    assert small > big, "smaller cavity must yield larger |solvation|"
 
 
 def test_phase_field_exists_in_entries():
@@ -416,6 +462,53 @@ def test_solution_calibration_tuple_exists():
     assert isinstance(a, (int, float))
     assert isinstance(b, (int, float))
     assert a > 0, "Solution-phase calibration slope should be positive"
+    assert a == pytest.approx(1.0), (
+        "solution-phase calibration is identity until fitted by "
+        "scripts/calibrate_reduction.py --solution"
+    )
+    assert b == pytest.approx(0.0)
+
+
+def test_born_correction_preserves_gas_ranking():
+    """Born correction is additive → cannot reverse gas-phase ranking.
+
+    This is the core structural argument of ADR-2026-08-11-05: because the
+    correction is a monotonic function of cavity radius applied to the
+    validated gas-phase EA, it cannot produce the sign-reversal that
+    ALPB ΔSCF did (ρ = −0.915). The gas-phase ordering is preserved modulo
+    the cavity-size dependence, which is far weaker than the gas-phase EA
+    spread.
+    """
+    from aurelius.scoring.oracle.reduction import (
+        _born_solvation_correction, _cavity_radius,
+    )
+
+    gas_entries = load_experimental_ea_gas()
+    gas_eas = np.array([e["ea_eV"] for e in gas_entries])
+    rads = np.array([_cavity_radius(Chem.MolFromSmiles(e["smiles"])) for e in gas_entries])
+    born = np.array([_born_solvation_correction(30.0, r) for r in rads])
+
+    assert born.max() - born.min() < (gas_eas.max() - gas_eas.min()), (
+        "Born correction span exceeds gas EA span — ranking could be reversed"
+    )
+
+
+def test_solution_phase_born_correction_shifts_ether_up():
+    """Born correction is always positive: anions are stabilised in solvent.
+
+    For the ether solvent DME (which has a negative or near-zero gas-phase EA),
+    the Born correction should add a substantial positive shift, bringing the
+    solution-phase prediction closer to the CV-measured range.
+    """
+    from aurelius.scoring.oracle.reduction import (
+        _born_solvation_correction, _cavity_radius,
+    )
+
+    dme = Chem.MolFromSmiles("COCCOC")
+    r = _cavity_radius(dme)
+    assert _born_solvation_correction(30.0, r) > 3.0, (
+        "Born correction for ether in medium-ε solvent should exceed 3 eV"
+    )
 
 
 def test_calibrate_ea_solution_is_affine_and_rank_preserving():

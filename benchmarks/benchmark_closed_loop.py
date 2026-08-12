@@ -338,6 +338,12 @@ def _acquire_suggester(
             top_n=k,
             properties=["homo"],
             delta_correction=delta_correction,
+            # A frozen-holdout benchmark cannot ingest BRICS-generated
+            # molecules (no ground-truth labels), so disable pool expansion
+            # and rank only the supplied pool. Otherwise 19/20 "suggester
+            # picks" are novel structures the benchmark silently discards and
+            # replaces with pool order — measuring random, not acquisition.
+            expand_pool=False,
         )
         chosen = [
             by_canonical[s.smiles] for s in suggestions if s.smiles in by_canonical
@@ -356,16 +362,37 @@ def _acquire_ea_greedy(
     unmeasured: list[dict[str, float]],
     k: int,
     ea_model: _EAGPRModel | None = None,
+    use_fantasize: bool = True,
+    diversity_lambda: float = 0.7,
 ) -> list[dict[str, float]]:
-    """Greedy BALD acquisition for EA: pick molecules with highest GPR variance.
+    """Greedy batch acquisition for EA.
 
     For the EA target, the standard suggester (built around HOMO/conformal)
-    doesn't apply directly. Instead we use greedy Bayesian Active Learning by
-    Disagreement: iteratively pick the molecule that maximizes posterior
-    variance in the EA GPR model.
+    doesn't apply directly. Candidates are scored by epistemic informativeness
+    and greedily selected with an optional Tanimoto diversity penalty.
+
+    Two scoring backends are available (``use_fantasize`` flag):
+
+    * **Fantasize** (default) — scores each candidate by the total epistemic
+      variance reduction it would produce across the *whole pool* if measured,
+      using rank-1 Cholesky updates (``gpr_fantasize``). This captures
+      subset-level information: a measurement that reduces uncertainty on many
+      diverse pool molecules scores higher than one that reduces it only
+      locally. O(n²), exact for a Gaussian posterior.
+
+    * **BALD** — pure posterior std at each candidate. Picks the highest-
+      variance (most uncertain) molecules.
+
+    On top of either scorer, an iterative Tanimoto diversity penalty
+    (``diversity_lambda``) discounts candidates structurally similar to those
+    already in the batch, preventing collapse onto one scaffold family.
+
+    Falls back to pure BALD when the GPR state cannot be extracted.
     """
     if ea_model is None or not unmeasured:
         return unmeasured[:k]
+
+    from rdkit import DataStructs
 
     from aurelius.types import MoleculeContext
 
@@ -373,24 +400,67 @@ def _acquire_ea_greedy(
     if getattr(gpr, "X_train_", None) is None:
         return unmeasured[:k]
 
-    remaining = list(unmeasured)
+    # Pre-compute contexts, fingerprints and dense feature vectors once.
+    entries: list[dict[str, float]] = []
+    rdkit_fps: list[Any] = []
+    feat_vecs: list[np.ndarray] = []
+    for entry in unmeasured:
+        ctx = MoleculeContext.from_smiles(entry["smiles"])
+        if ctx is None:
+            continue
+        fp = ctx.get_ecfp4()
+        dense = np.zeros(2048, dtype=np.float64)
+        for bit in fp.GetOnBits():
+            dense[bit] = 1.0
+        entries.append(entry)
+        rdkit_fps.append(fp)
+        feat_vecs.append(dense)
+
+    n = len(entries)
+    if n == 0:
+        return unmeasured[:k]
+
+    X_pool = np.stack(feat_vecs)
+
+    # Epistemic scores: fantasize (total pool variance reduction) or BALD.
+    scores: np.ndarray | None = None
+    if use_fantasize:
+        try:
+            from aurelius.scoring.oracle.gpr_fantasize import (
+                extract_gpr_state,
+                fantasize_batch_scores,
+            )
+
+            state = extract_gpr_state(gpr)
+            scores = fantasize_batch_scores(state, X_pool)
+        except Exception:
+            scores = None
+    if scores is None or len(scores) == 0:
+        # BALD fallback: posterior std at each candidate.
+        _, stds = gpr.predict(X_pool, return_std=True)
+        scores = stds
+
+    # Greedy selection with optional Tanimoto diversity penalty.
     chosen: list[dict[str, float]] = []
+    chosen_fps: list[Any] = []
+    remaining = list(range(n))
 
     for _ in range(min(k, len(remaining))):
-        best_idx = 0
-        best_std = -1.0
-        for i, entry in enumerate(remaining):
-            ctx = MoleculeContext.from_smiles(entry["smiles"])
-            if ctx is None:
-                continue
-            fp = np.zeros((1, 2048), dtype=np.float64)
-            for bit in ctx.get_ecfp4().GetOnBits():
-                fp[0, bit] = 1.0
-            _, std = gpr.predict(fp, return_std=True)
-            if std[0] > best_std:
-                best_std = std[0]
-                best_idx = i
-        chosen.append(remaining.pop(best_idx))
+        best_idx = -1
+        best_val = -1.0
+        for ri in remaining:
+            score = float(scores[ri])
+            if chosen_fps and diversity_lambda > 0:
+                max_sim = float(max(DataStructs.BulkTanimotoSimilarity(rdkit_fps[ri], chosen_fps)))
+                score *= 1.0 - diversity_lambda * max_sim
+            if score > best_val:
+                best_val = score
+                best_idx = ri
+        if best_idx < 0:
+            break
+        chosen.append(entries[best_idx])
+        chosen_fps.append(rdkit_fps[best_idx])
+        remaining.remove(best_idx)
 
     return chosen
 
@@ -708,6 +778,8 @@ def _acquisition_comparison(
     # acquisition strategy from split luck.
     rho_t = ttest_1samp(rho_edges, 0.0) if len(rho_edges) > 1 else None
     mae_t = ttest_1samp(edges, 0.0) if len(edges) > 1 else None
+    mae_d = float(edges.mean() / edges.std()) if edges.std() > 0 else 0.0
+    rho_d = float(rho_edges.mean() / rho_edges.std()) if rho_edges.std() > 0 else 0.0
     return {
         "budget": budget,
         "rows": rows,
@@ -719,6 +791,8 @@ def _acquisition_comparison(
         "suggester_rho_wins": int((rho_edges > 0).sum()),
         "rho_edge_p_value": float(rho_t.pvalue) if rho_t is not None else None,
         "mae_edge_p_value": float(mae_t.pvalue) if mae_t is not None else None,
+        "mae_cohens_d": mae_d,
+        "rho_cohens_d": rho_d,
         "n_seeds": len(rows),
         "mean_suggester_redundancy": float(
             np.mean([r["suggester_redundancy"] for r in rows])
@@ -768,6 +842,9 @@ def _acquisition_comparison_ea(
     rho_edges = np.array([r["rho_edge"] for r in rows])
     rho_t = ttest_1samp(rho_edges, 0.0) if len(rho_edges) > 1 else None
     mae_t = ttest_1samp(edges, 0.0) if len(edges) > 1 else None
+    # Cohen's d: mean edge divided by pooled std (effect size, independent of n).
+    mae_d = float(edges.mean() / edges.std()) if edges.std() > 0 else 0.0
+    rho_d = float(rho_edges.mean() / rho_edges.std()) if rho_edges.std() > 0 else 0.0
     return {
         "budget": budget,
         "rows": rows,
@@ -779,6 +856,8 @@ def _acquisition_comparison_ea(
         "suggester_rho_wins": int((rho_edges > 0).sum()),
         "rho_edge_p_value": float(rho_t.pvalue) if rho_t is not None else None,
         "mae_edge_p_value": float(mae_t.pvalue) if mae_t is not None else None,
+        "mae_cohens_d": mae_d,
+        "rho_cohens_d": rho_d,
         "n_seeds": len(rows),
         "mean_suggester_redundancy": float(np.mean([r["suggester_redundancy"] for r in rows])),
         "mean_random_redundancy": float(np.mean([r["random_redundancy"] for r in rows])),
@@ -786,6 +865,124 @@ def _acquisition_comparison_ea(
         "mean_random_topk_enrichment": 0.0,
         "topk_k": budget,
     }
+
+
+def _acquisition_permutation_control_ea(
+    entries: list[dict[str, float]], seeds: tuple[int, ...], budget: int
+) -> dict[str, object]:
+    """Sabotage test: does the acquisition edge require model-aware scoring?
+
+    The permutation control for ingestion (``_permutation_control_ea``) checks
+    that the *gain* needs correct labels. This checks the complementary claim:
+    that the *acquisition ranking itself* is doing something non-random. We run
+    the EA suggester but shuffle the GPR's posterior-std scores before greedy
+    selection, destroying the link between informativeness and selection order
+    while keeping the selection mechanism (greedy + diversity) and batch size
+    fixed. If the unshuffled suggester does not beat the shuffled one, the
+    "acquisition edge" is an artefact of the mechanism, not the scoring.
+
+    On a uniform-holdout benchmark where posterior variance is near-uniform,
+    the shuffled and unshuffled versions should be indistinguishable — which
+    is itself an informative null result.
+    """
+    rows: list[dict[str, float]] = []
+    for seed in seeds:
+        holdout, seed_calib, unmeasured = _split(entries, seed, ea_mode=True)
+        base = _evaluate_ea(_fit_ea(seed_calib), holdout)
+
+        refit = _fit_ea(seed_calib)
+        real_picks = _acquire_ea_greedy(unmeasured, budget, ea_model=refit)
+        real = _evaluate_ea(_fit_ea(seed_calib + real_picks), holdout)
+
+        # Shuffle the GPR scores: refit, extract stds, permute, reselect.
+        shuffled_picks = _acquire_ea_greedy_shuffled(unmeasured, budget, seed_calib, seed)
+        shuf = _evaluate_ea(_fit_ea(seed_calib + shuffled_picks), holdout)
+
+        rows.append({
+            "seed": seed,
+            "real_delta_mae": real["mae_eV"] - base["mae_eV"],
+            "shuffled_delta_mae": shuf["mae_eV"] - base["mae_eV"],
+            "edge": (shuf["mae_eV"] - base["mae_eV"]) - (real["mae_eV"] - base["mae_eV"]),
+        })
+
+    edges = np.array([r["edge"] for r in rows])
+    t_result = ttest_1samp(edges, 0.0) if len(edges) > 1 else None
+    return {
+        "budget": budget,
+        "rows": rows,
+        "mean_edge": float(edges.mean()),
+        "std_edge": float(edges.std()),
+        "real_wins": int((edges > 0).sum()),
+        "n_seeds": len(rows),
+        "p_value": float(t_result.pvalue) if t_result is not None else None,
+    }
+
+
+def _acquire_ea_greedy_shuffled(
+    unmeasured: list[dict[str, float]],
+    k: int,
+    seed_calib: list[dict[str, float]],
+    seed: int,
+) -> list[dict[str, float]]:
+    """EA acquisition with shuffled informativeness scores (sabotage condition)."""
+    if not unmeasured:
+        return []
+
+    from rdkit import DataStructs
+
+    from aurelius.types import MoleculeContext
+
+    gpr = _fit_ea(seed_calib)._homo_model
+    if getattr(gpr, "X_train_", None) is None:
+        return unmeasured[:k]
+
+    entries: list[dict[str, float]] = []
+    rdkit_fps: list[Any] = []
+    feat_vecs: list[np.ndarray] = []
+    for entry in unmeasured:
+        ctx = MoleculeContext.from_smiles(entry["smiles"])
+        if ctx is None:
+            continue
+        fp = ctx.get_ecfp4()
+        dense = np.zeros(2048, dtype=np.float64)
+        for bit in fp.GetOnBits():
+            dense[bit] = 1.0
+        entries.append(entry)
+        rdkit_fps.append(fp)
+        feat_vecs.append(dense)
+
+    n = len(entries)
+    if n == 0:
+        return unmeasured[:k]
+
+    X_pool = np.stack(feat_vecs)
+    _, stds = gpr.predict(X_pool, return_std=True)
+    # Destroy the score→informativeness link.
+    permuted = stds.copy()
+    random.Random(seed).shuffle(permuted)
+
+    chosen: list[dict[str, float]] = []
+    chosen_fps: list[Any] = []
+    remaining = list(range(n))
+
+    for _ in range(min(k, len(remaining))):
+        best_idx = -1
+        best_val = -1.0
+        for ri in remaining:
+            score = float(permuted[ri])
+            if chosen_fps:
+                max_sim = float(max(DataStructs.BulkTanimotoSimilarity(rdkit_fps[ri], chosen_fps)))
+                score *= 1.0 - 0.7 * max_sim
+            if score > best_val:
+                best_val = score
+                best_idx = ri
+        if best_idx < 0:
+            break
+        chosen.append(entries[best_idx])
+        chosen_fps.append(rdkit_fps[best_idx])
+        remaining.remove(best_idx)
+
+    return chosen
 
 
 def _top_k_enrichment(
@@ -835,7 +1032,7 @@ def main() -> int:
     parser.add_argument(
         "--large-pool",
         action="store_true",
-        help="Use the large (519-molecule) clean LPM calibration dataset instead of orbital_calibration.json",
+        help="Use the large calibration dataset (519 LPM / 353 EA) instead of the small default",
     )
     parser.add_argument(
         "--budgets",
@@ -849,17 +1046,27 @@ def main() -> int:
         default="homo",
         help="Target property: 'homo' (HOMO from orbital_calibration) or 'ea' (electron affinity)",
     )
+    parser.add_argument(
+        "--splits",
+        type=int,
+        default=10,
+        help="Number of frozen random splits (default: 10)",
+    )
     args = parser.parse_args()
 
     ea_mode = args.target == "ea"
-    if ea_mode:
+    if ea_mode and args.large_pool:
+        cal_file = "ea_calibration_large.json"
+    elif ea_mode:
         cal_file = "experimental_ea_calibration.json"
     elif args.large_pool:
         cal_file = "lpm_calibration_large.json"
     else:
         cal_file = "orbital_calibration.json"
+    global ACQUISITION_SEEDS
     entries = _load_calibration(cal_file)
     holdout, seed_calib, unmeasured = _split(entries, RANDOM_SEED, ea_mode=ea_mode)
+    ACQUISITION_SEEDS = tuple(range(args.splits))
 
     steps = (10, 40) if args.quick else INGEST_STEPS
     noise_levels = (0.1,) if args.quick else NOISE_LEVELS_EV
@@ -935,6 +1142,7 @@ def main() -> int:
         )
 
     acq: dict[str, object] | None = None
+    acq_perm: dict[str, object] | None = None
     if not args.quick:
         budgets = (
             [int(b) for b in args.budgets.split(",")]
@@ -952,6 +1160,14 @@ def main() -> int:
                     entries, ACQUISITION_SEEDS, budget
                 )
         acq = acq_results[budgets[-1]]  # Use last for verdict
+
+        # Acquisition sabotage: does the acquisition edge require model-aware
+        # scoring, or is it an artefact of the selection mechanism? Only for
+        # EA (the target where acquisition has the best chance).
+        if args.target == "ea":
+            acq_perm = _acquisition_permutation_control_ea(
+                entries, ACQUISITION_SEEDS, budgets[-1]
+            )
 
         for budget, acq_b in acq_results.items():
             print(
@@ -988,6 +1204,11 @@ def main() -> int:
                 f"suggester {acq_b['mean_suggester_topk_enrichment']:.3f} vs "
                 f"random {acq_b['mean_random_topk_enrichment']:.3f}"
             )
+            print(
+                f"    effect size (Cohen's d): MAE {acq_b.get('mae_cohens_d', 0.):+.2f}, "
+                f"rho {acq_b.get('rho_cohens_d', 0.):+.2f} "
+                f"(|d|<0.2 trivial, 0.2-0.5 small, 0.5-0.8 medium, >0.8 large)"
+            )
 
         # Verdict uses the largest budget
         rho_p = acq.get("rho_edge_p_value")
@@ -1008,6 +1229,31 @@ def main() -> int:
             verdict += (f" Top-k enrichment favors suggester "
                         f"({tke_sug:.2f} vs {tke_rnd:.2f}).")
         print(f"    -> {verdict}")
+
+        if acq_perm is not None:
+            print(
+                f"\n  Acquisition sabotage, {acq_perm['n_seeds']} splits, "
+                f"budget {acq_perm['budget']} (shuffled GPR scores):"
+            )
+            print(
+                f"    real suggester better on {acq_perm['real_wins']}"
+                f"/{acq_perm['n_seeds']} splits, "
+                f"mean edge {acq_perm['mean_edge']:+.4f} +/- "
+                f"{acq_perm['std_edge']:.4f} eV"
+                + (f" (p={acq_perm['p_value']:.3f})"
+                   if acq_perm.get("p_value") is not None else "")
+            )
+            print(
+                "    -> "
+                + (
+                    "acquisition scoring is model-aware (real beats shuffled)."
+                    if acq_perm.get("p_value") is not None
+                    and acq_perm["p_value"] < 0.05
+                    and acq_perm["mean_edge"] > 0
+                    else "acquisition scoring NOT separable from shuffled "
+                         "(scores carry no usable ranking signal on this target)."
+                )
+            )
 
     sabotage: dict[str, object] | None = None
     if args.sabotage:

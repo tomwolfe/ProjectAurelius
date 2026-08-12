@@ -70,6 +70,7 @@ from aurelius.scoring.oracle import (
 from aurelius.screening.tier1 import Filter
 from aurelius.types import MoleculeContext
 from aurelius.utils.chem_utils import electrolyte_synthetic_accessibility
+from aurelius.utils.chem_utils import synthesizability_complexity as _synthesizability_complexity
 
 logger = logging.getLogger(__name__)
 
@@ -541,6 +542,7 @@ class AureliusPipeline:
         sa_score: float = 5.0
         synthesis_depth: int = 3  # Default moderate depth
         grounding: float = 0.0
+        synth_complexity: float = 1.0  # Default: maximally complex
         if ctx is not None:
             try:
                 sa_score = electrolyte_synthetic_accessibility(ctx)
@@ -551,7 +553,12 @@ class AureliusPipeline:
             except Exception:
                 synthesis_depth = 3
             grounding = self._grounding_score(ctx)
+            try:
+                synth_complexity = _synthesizability_complexity(ctx)
+            except Exception:
+                synth_complexity = 1.0
         raw_values["sa_score"] = sa_score
+        raw_values["synth_complexity"] = synth_complexity
 
         for obj in _OBJECTIVES:
             score = obj(raw_values[obj.property_key])
@@ -578,6 +585,7 @@ class AureliusPipeline:
             "is_viable": is_viable,
             "sub_scores": sub_scores,
             "sa_score": round(sa_score, 4),
+            "synthesizability_complexity": round(synth_complexity, 4),
             "synthesis_depth": synthesis_depth,
             "grounding": round(grounding, 4),
             "rejection_reasons": rejection_reasons,
@@ -690,3 +698,50 @@ class AureliusPipeline:
                 results[idx] = future.result()
 
         return [results[i] for i in range(len(contexts))]
+
+    def save_result(self, result: dict[str, Any], path: str) -> None:
+        """Save a screening result to a JSON file.
+
+        Args:
+            result: Result dict from screen_molecule or screen_batch.
+            path: Path to JSON file.
+        """
+        import json
+
+        # Handle both old (with total_score) and new (score dict) result formats
+        normalized = dict(result)
+
+        # If result has a 'score' dict with 'total_score', extract it
+        if "score" in normalized and isinstance(normalized["score"], dict):
+            if "total_score" not in normalized:
+                normalized["total_score"] = normalized["score"].get("total_score")
+
+        with open(path, 'w') as f:
+            json.dump(normalized, f, indent=2)
+
+    def load_result(self, path: str) -> dict[str, Any]:
+        """Load a screening result from a JSON file.
+
+        Args:
+            path: Path to JSON file.
+
+        Returns:
+            Loaded result dict with ``total_score`` normalized.
+        """
+        import json
+
+        with open(path, 'r') as f:
+            result = json.load(f)
+
+        # Normalize: ensure total_score is at the top level
+        if "score" in result and isinstance(result["score"], dict):
+            # Extract total_score from the score dict if present
+            if "total_score" not in result and "total_score" in result["score"]:
+                result["total_score"] = result["score"]["total_score"]
+            # Also copy sub-scores to top level for convenience
+            for key in ["sa_score", "synthesizability_complexity", "synthesis_depth",
+                       "grounding", "rejection_reasons"]:
+                if key not in result and key in result["score"]:
+                    result[key] = result["score"][key]
+
+        return result

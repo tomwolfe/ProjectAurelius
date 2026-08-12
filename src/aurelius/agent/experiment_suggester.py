@@ -944,6 +944,7 @@ def suggest_experiments(
     weights: dict[str, float] | None = None,
     max_sa_score: float = MAX_SA_SCORE,
     delta_correction: Any | None = None,
+    expand_pool: bool = True,
 ) -> list[ExperimentSuggestion]:
     """Rank molecule/property pairs by expected information gain.
 
@@ -961,6 +962,11 @@ def suggest_experiments(
             is used for BALD and batch_ei acquisition instead of extracting from
             the conformal predictor (which has no GPR). This is the key input
             that makes acquisition model-aware.
+        expand_pool: If True (default), BRICS-harvest pools smaller than
+            ``MIN_POOL_SIZE`` before scoring. Disable when the caller wants
+            the suggester to rank *only* the supplied candidates (e.g. a
+            frozen holdout-style benchmark where generated molecules have no
+            ground-truth labels and must not enter the suggestion list).
 
     Returns:
         Up to ``top_n`` suggestions, highest priority first.
@@ -986,7 +992,7 @@ def suggest_experiments(
     # below target. A 61-mol pool is saturated (ADR-2026-08-10-03) — random already
     # covers a third of it at budget 20. Expansion to >=200 gives diversity-based
     # acquisition room to operate.
-    if len(candidates) < MIN_POOL_SIZE:
+    if expand_pool and len(candidates) < MIN_POOL_SIZE:
         if len(candidates) >= _MIN_EXPAND_POOL:
             expanded = expand_candidate_pool(candidates, target_size=MIN_POOL_SIZE)
             if len(expanded) > len(candidates):

@@ -313,6 +313,31 @@ class TestBatchDiversity:
         ]
         assert len(_diversify(ranked, top_n=10)) == 2
 
+    def test_expand_pool_false_ranks_supplied_candidates_only(self):
+        """With expand_pool=False, every suggestion comes from the supplied pool.
+
+        Regression test for the closed-loop benchmark measurement bug: without
+        this flag, BRICS harvesting grows a small pool to 200+ molecules and
+        the suggester picks 19/20 from the expanded set — so a benchmark that
+        filters suggestions back to the supplied pool was measuring pool order,
+        not acquisition.
+        """
+        supplied = [
+            "COC(=O)OC",
+            "O=C1OCCO1",
+            "CC#N",
+            "COCCOC",
+            "O=S1(=O)CCCC1",
+            "C1COC(=O)O1",
+        ]
+        supplied_set = {Chem.MolToSmiles(Chem.MolFromSmiles(s)) for s in supplied}
+        out = suggest_experiments(supplied, top_n=5, properties=["homo"], expand_pool=False)
+        assert len(out) > 0
+        for s in out:
+            assert s.smiles in supplied_set, (
+                f"Suggestion {s.smiles} not in supplied pool (BRICS leak)"
+            )
+
 
 class TestRationale:
     def test_rationale_names_the_dominant_reason(self):
