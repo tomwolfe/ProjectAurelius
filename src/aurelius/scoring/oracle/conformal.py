@@ -25,6 +25,7 @@ from typing import Any
 
 import numpy as np
 from rdkit import Chem
+from rdkit.Chem import rdMolDescriptors
 
 from aurelius.types import MoleculeContext
 
@@ -138,7 +139,7 @@ class ConformalPredictor:
     def difficulty(mol: Chem.Mol) -> float:
         """Per-molecule difficulty estimate ``sigma(x)`` used to scale intervals.
 
-        ``sigma`` combines two sources of expected error:
+        ``sigma`` combines three sources of expected error:
 
         * **Distance to the calibration set.** Split conformal prediction is
           justified by exchangeability. A molecule far from everything the
@@ -149,6 +150,10 @@ class ConformalPredictor:
         * **Domain-of-applicability penalty.** Captures topological features
           (long conjugation without sp3 support, excessive pi systems) that
           the orbital models are known to handle poorly.
+        * **Electrolyte-specific features.** Fluorine substitution and ring
+          structures significantly affect HOMO/LUMO energies and polarizability
+          in battery electrolyte solvents. Molecules with many fluorines or
+          conjugated rings are harder to predict, warranting wider intervals.
 
         Distance carries most of the weight because, for the saturated
         electrolytes this project searches, the DoA penalty is near 1.0 for
@@ -163,10 +168,21 @@ class ConformalPredictor:
             ctx = MoleculeContext(smiles=Chem.MolToSmiles(mol), mol=mol)
             penalty, _ = compute_quantum_domain_penalty(ctx)
             distance = 1.0 - _max_similarity_to_calibration(ctx.get_ecfp4())
+
+            # Electrolyte-specific features that vary across electrolyte solvents:
+            # - Fluorine substitution strongly affects electronic properties
+            #   and polarizability; each F atom increases prediction difficulty.
+            # - Conjugated rings extend pi-systems and affect domain of
+            #   applicability.
+            n_f = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 9)
+            n_rings = rdMolDescriptors.CalcNumRings(mol)
+            fluorine_factor = 1.0 + 0.05 * n_f  # ~0.4 range for 0-8 F atoms
+            ring_factor = 1.0 + 0.15 * n_rings  # ~0.3 range for 0-2 rings
         except Exception:  # pragma: no cover - defensive
             return 1.0
         # distance 0 -> 1.0, distance 1 -> 2.5 ; penalty 0.70 adds ~0.4 more.
-        sigma = (1.0 + 1.5 * distance) * (1.0 + (1.0 - min(penalty, 1.0)))
+        # electrolyte features add ~0.4-0.5 range on top.
+        sigma = (1.0 + 1.5 * distance) * (1.0 + (1.0 - min(penalty, 1.0))) * fluorine_factor * ring_factor
         return float(min(4.0, max(0.5, sigma)))
 
     def _orbital_residuals(self, calib: list[dict[str, Any]]) -> tuple[list[float], list[float]]:
