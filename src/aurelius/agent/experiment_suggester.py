@@ -994,7 +994,7 @@ def suggest_experiments(
     # below target. A 61-mol pool is saturated (ADR-2026-08-10-03) — random already
     # covers a third of it at budget 20. Expansion to >=200 gives diversity-based
     # acquisition room to operate.
-    if expand_pool and len(candidates) < MIN_POOL_SIZE:
+    if expand_pool and len(candidates) < MIN_POOL_SIZE * 2:
         if len(candidates) >= _MIN_EXPAND_POOL:
             expanded = expand_candidate_pool(candidates, target_size=MIN_POOL_SIZE)
             if len(expanded) > len(candidates):

@@ -141,9 +141,12 @@ _OBJECTIVES: list[Objective] = [
     Objective("sa_penalty", "sa_score", SCORE_WEIGHT_SA,
               lambda v: _sigmoid(v, SA_THRESHOLD, 2.0, False),
               failure_reason_template="SA score={value:.2f} (hard to synthesize)"),
-    Objective("synthesizability_reward", "sa_score", 0.08,
+    Objective("synthesizability_reward", "sa_score", 0.20,
               lambda v: 1.0 - (v / 10.0),
               failure_reason_template="SA score={value:.2f} (hard to synthesize)"),
+    Objective("combined_grounding_score", "grounding", 0.15,
+              lambda v: v,
+              failure_reason_template="grounding={value:.3f} (no BRICS grounding)"),
 ]
 
 
