@@ -562,6 +562,7 @@ class AureliusPipeline:
                 synth_complexity = 1.0
         raw_values["sa_score"] = sa_score
         raw_values["synth_complexity"] = synth_complexity
+        raw_values["grounding"] = grounding
 
         for obj in _OBJECTIVES:
             score = obj(raw_values[obj.property_key])

@@ -77,3 +77,4 @@ run_summary.json
 # Generated QM caches (machine-specific, regenerated on demand)
 xtb_cache.json
 src/xtb_cache.json
+.orchestrate/

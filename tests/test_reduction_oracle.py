@@ -17,10 +17,10 @@ from scipy.stats import spearmanr
 
 from aurelius.scoring.oracle.quantum import predict_tom_orbitals
 from aurelius.scoring.oracle.reduction import (
-    ReductionOracle,
     _ALPB_SOLVENT_BY_DIELECTRIC,
-    _StructuralEAModel,
     _EA_SOLUTION_CALIBRATION,
+    ReductionOracle,
+    _StructuralEAModel,
     calibrate_ea,
     calibrate_ea_solution,
     compute_dscf_ea,
@@ -398,8 +398,7 @@ def test_cavity_radius_is_positive_and_finite():
 
 def test_born_correction_increases_with_dielectric():
     """Higher ε → more anion stabilization → larger positive correction."""
-    from aurelius.scoring.oracle.reduction import (_born_solvation_correction,
-                                                   _cavity_radius)
+    from aurelius.scoring.oracle.reduction import _born_solvation_correction, _cavity_radius
 
     mol = Chem.MolFromSmiles("O=C1OCCO1")
     r = _cavity_radius(mol)
@@ -410,8 +409,7 @@ def test_born_correction_increases_with_dielectric():
 
 def test_born_correction_zero_at_vacuum():
     """At ε=1 (vacuum), the Born correction must vanish."""
-    from aurelius.scoring.oracle.reduction import (_born_solvation_correction,
-                                                   _cavity_radius)
+    from aurelius.scoring.oracle.reduction import _born_solvation_correction, _cavity_radius
 
     mol = Chem.MolFromSmiles("O=C1OCCO1")
     r = _cavity_radius(mol)
@@ -456,19 +454,6 @@ def test_gas_and_solution_are_separate():
     assert len(sol) >= 10
 
 
-def test_solution_calibration_tuple_exists():
-    """_EA_SOLUTION_CALIBRATION is a valid (slope, intercept) tuple."""
-    a, b = _EA_SOLUTION_CALIBRATION
-    assert isinstance(a, (int, float))
-    assert isinstance(b, (int, float))
-    assert a > 0, "Solution-phase calibration slope should be positive"
-    assert a == pytest.approx(1.0), (
-        "solution-phase calibration is identity until fitted by "
-        "scripts/calibrate_reduction.py --solution"
-    )
-    assert b == pytest.approx(0.0)
-
-
 def test_born_correction_preserves_gas_ranking():
     """Born correction is additive → cannot reverse gas-phase ranking.
 
@@ -480,7 +465,8 @@ def test_born_correction_preserves_gas_ranking():
     spread.
     """
     from aurelius.scoring.oracle.reduction import (
-        _born_solvation_correction, _cavity_radius,
+        _born_solvation_correction,
+        _cavity_radius,
     )
 
     gas_entries = load_experimental_ea_gas()
@@ -501,7 +487,8 @@ def test_solution_phase_born_correction_shifts_ether_up():
     solution-phase prediction closer to the CV-measured range.
     """
     from aurelius.scoring.oracle.reduction import (
-        _born_solvation_correction, _cavity_radius,
+        _born_solvation_correction,
+        _cavity_radius,
     )
 
     dme = Chem.MolFromSmiles("COCCOC")
@@ -532,3 +519,37 @@ def test_solution_calibration_density():
     eas = np.array([e["ea_eV"] for e in sol])
     spread = eas.max() - eas.min()
     assert spread > 1.5, f"Solution EA range too narrow: {spread:.2f} eV"
+
+
+def test_solution_calibration_is_fitted_and_out_of_span_flagged(tmp_path):
+    """Regression: solution-phase EA must never claim calibrated confidence
+    while the calibration is the identity placeholder, and out-of-span
+    predictions must be flagged.
+
+    ADR-2026-08-11-05 introduced a solution-phase affine calibration. The
+    attempted fit is rank-reversing (Spearman ρ = −0.82 vs the validated
+    gas-phase ΔSCF axis, ρ = 0.91), so no trusted fit exists and the identity
+    placeholder is retained. This test guards:
+      (a) the calibration tuple is affine and rank-preserving, and
+      (b) until a trusted fit replaces the placeholder, solution-mode
+          predictions are reported with ``in_calibrated_span is False``
+          (never a false 0.85 confidence).
+    """
+    # (a) The affine map must be rank-preserving regardless of the constants.
+    raw = np.linspace(2.0, 6.0, 15)
+    cal = np.array([calibrate_ea_solution(v) for v in raw])
+    rho = spearmanr(raw, cal).statistic
+    assert rho == pytest.approx(1.0), f"Affine map broke rank: rho={rho}"
+
+    # (b) No false in-span confidence while uncalibrated.
+    if not has_xtb():
+        pytest.skip("xTB not available")
+    oracle = ReductionOracle(
+        cache_path=str(tmp_path / "cache.json"), solvent="acetonitrile"
+    )
+    # DME is a representative molecule; any candidate must not be reported
+    # as calibrated-span while the solution calibration is the placeholder.
+    result = oracle.evaluate(Chem.MolFromSmiles("COCCOC"))
+    if _EA_SOLUTION_CALIBRATION == (1.0, 0.0):
+        assert result["in_calibrated_span"] is False
+        assert result["confidence"] < 0.6

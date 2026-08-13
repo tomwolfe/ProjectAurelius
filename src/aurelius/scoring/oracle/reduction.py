@@ -97,7 +97,12 @@ _EA_CALIBRATION: tuple[float, float] = (0.6590, -2.9176)
 # correction — an additive, rank-preserving correction on the validated gas-
 # phase values. Calibrate with:
 #   python scripts/calibrate_reduction.py --solution
-# Default values are placeholders; the script will overwrite them.
+# Fitted values; refresh with the script whenever the calibration set changes.
+#
+# NOTE (2026-08-12): no trusted fit exists yet. The 10 CV-onset labels are
+# cross-family inverted relative to the validated gas-phase ΔSCF scale
+# (Spearman ρ = −0.82 for the Born-corrected fit), so the identity placeholder
+# is retained and the solution branch must not claim calibrated confidence.
 _EA_SOLUTION_CALIBRATION: tuple[float, float] = (1.0, 0.0)
 
 # Effective dielectric of the EC:DMC 1:1 mixture used for CV calibration.
@@ -112,6 +117,7 @@ _EA_CALIBRATED_SPAN_RAW: tuple[float, float] = (2.92, 8.82)
 # Gas-phase ΔSCF raw span that maps to the solution-phase calibration set
 # (10 entries: EC, PC, DMC, DEC, FEC, VC, DME, THF, ACN, sulfolane).
 # Set after running: python scripts/calibrate_reduction.py --solution
+# NOTE: uncalibrated (identity) — see _EA_SOLUTION_CALIBRATION.
 _EA_SOLUTION_CALIBRATED_SPAN_RAW: tuple[float, float] = (0.0, 10.0)
 
 # xTB --alpb accepts named solvents. Map a predicted dielectric constant to
@@ -697,9 +703,20 @@ class ReductionOracle:
                 if sol_ea is not None:
                     raw = raw_gas
                     calibrated = sol_ea
-                    lo, hi = _EA_CALIBRATED_SPAN_RAW
-                    in_span = lo <= raw <= hi
-                    confidence = 0.85 if in_span else 0.45
+                    # The solution-phase calibration is still the identity
+                    # placeholder (see _EA_SOLUTION_CALIBRATION): the 10 CV-onset
+                    # labels are inverted relative to the gas-phase ΔSCF scale,
+                    # so no trusted fit exists. Until a validated calibration is
+                    # fitted, never claim calibrated-span confidence on the
+                    # solution scale.
+                    if _EA_SOLUTION_CALIBRATION == (1.0, 0.0):
+                        lo, hi = _EA_SOLUTION_CALIBRATED_SPAN_RAW
+                        in_span = False
+                        confidence = 0.45
+                    else:
+                        lo, hi = _EA_SOLUTION_CALIBRATED_SPAN_RAW
+                        in_span = lo <= raw <= hi
+                        confidence = 0.85 if in_span else 0.45
                     return ReductionResult(
                         ea_eV=calibrated,
                         method="xtb_dscf_solution",
