@@ -47,6 +47,25 @@ Project Aurelius has strong single-molecule accuracy where it matters most — �
 ### Regression test
 - **`test_batch_screening_matches_scalar_scores`** in `tests/test_loop.py` (new test, mock-free, `use_xtb=False` for CI speed): screens ≥10 molecules through `pipeline.screen_batch` and asserts (a) every per-molecule dict is key-identical to `pipeline.screen_molecule` for the same candidate (same `total_score`, `ea_eV`, `homo_eV`), and (b) the batch result includes `ea_eV` — i.e. the batch path covers the reduction axis. Fails today because `predict_batch_properties` has no `ea_eV` key.
 
+## Gap 1 execution status (2026-08-12) — COMPLETE, verified
+
+The mechanical work was executed and verified end-to-end:
+
+1. **`src/aurelius/scoring/oracle/oracle.py`** — `predict_batch_properties` now computes the reduction axis: a batch EA path calling `compute_dscf_ea_batch`, returning `ea_eV` and `reduction_records` per molecule (keys documented at `oracle.py:393`).
+2. **`src/aurelius/pipeline.py`** — `screen_batch` now calls `predict_batch_properties` + the batch EA path and assembles per-molecule results key-identical to `screen_molecule` via `_assemble_batch_result`; `screen_molecule` is a thin single-candidate wrapper over `screen_batch` so the two paths cannot drift.
+3. **`src/aurelius/agent/loop.py`** — the per-molecule `ProcessPoolExecutor` submits were replaced with one `self.pipeline.screen_batch(filtered_contexts)` call per generation (loop.py:711); `_rank_by_xtb` is parallelised with `ThreadPoolExecutor` (max_workers `_EVAL_WORKERS`) over a lock-protected `XTBSinglePointOracle` wrapper that serialises `_persist()` so concurrent threads cannot race the `xtb_cache.json` disk write.
+
+**Verification:**
+- `pytest tests/test_loop.py tests/test_selection.py tests/test_net_progress.py tests/test_closed_loop_efficacy.py tests/test_discovery_smoke.py` → **43 passed**.
+- Regression test `test_batch_screening_matches_scalar_scores` passes (batch path covers `ea_eV`; batch/scalar key-identical within float32 tolerance).
+- `pytest tests/` → **521 passed, 8 failed, 2 skipped**; all 8 failures are pre-existing on clean checkout (verified via `git stash`) — **zero new regressions**.
+- `benchmarks/benchmark_gpu_throughput.py` → `oracle_batch` keys now include `ea_eV` and `reduction_records`. Throughput with the reduction axis is ~10.7 mol/s (93 ms/mol) — xTB-bound (ΔSCF EA ~64–79 ms/mol + Born), not a wiring limit. The previous 1759 mol/s was the reduction-axis-free path, which is exactly what this gap removed.
+
+**Notes for reviewers:**
+- Float32/float64 rounding: batch is float32 (MLX); the regression test uses 2e-4 tolerance for orbital values (two rounding units) — verified as pure precision noise, not a logic drift.
+- New lint findings (B905 `zip(strict=True)`, F841 unused var) introduced by the refactor were fixed; remaining 16 lint errors are pre-existing on clean checkout.
+- Throughput target "≥100 mol/s end-to-end incl. reduction axis" is NOT met: the reduction axis is xTB-bound. Closing it requires a cheaper EA surrogate (MLX ΔSCF, Δ-machine-learning) or parallel xTB saturation — tracked as open.
+
 ## Gap 2 — Discovery claims are unmeasured and the CI gates pass on an empty section; the one "oracle loses" headline is a confound artefact
 
 **Why this is a bottleneck.** Two of the product's core claims — "the search rediscovers known electrolytes and proposes ≥80% novel scaffolds" — are **not measured at all**: the committed `unified_benchmark.json` has `"discovery": {}`, and `check_tolerances` only evaluates the discovery gates `if disc:` is truthy, so the gates pass by default. Separately, the report's only visible "oracle loses to RF" row (HOMO) is computed on labels that the project's own confound audit flags (provenance carries ρ 0.67 of the signal, from 22 heterogeneous sources), which is why a model with ρ 0.94 on 88 measured NIST IPs appears to rank HOMO at ρ 0.11 — a marketing/credibility liability and a false signal for the next modelling task. The genuinely weak axis, Donor Number (ρ 0.19, n = 33), is excluded from the audit targets entirely.
@@ -71,6 +90,36 @@ Project Aurelius has strong single-molecule accuracy where it matters most — �
 ### Regression test
 - **`test_discovery_gates_require_results`** in `tests/test_net_progress.py` (new test): asserts `check_tolerances({"discovery": {}})` returns `failures` containing a "discovery" entry (i.e. the gate can no longer pass on an empty section) — import `check_tolerances` from `benchmarks/benchmark_unified.py` (existing precedent: `tests/test_label_confound.py` imports the audit module).
 - **`test_donor_number_audited`** in `tests/test_label_confound.py` (new test): asserts `donor_number` is present in the audit's target list.
+
+## Gap 2 execution status (2026-08-12) — COMPLETE, verified, gates now FAIL honestly
+
+The mechanical work was executed and verified end-to-end:
+
+1. **`benchmarks/benchmark_unified.py`** — `check_tolerances` now hard-fails on a missing/empty `discovery` section: `if not disc:` appends `"discovery benchmark not run: discovery section missing/empty (rediscovery/novelty/score-gap gates not evaluated)"` (line 568). The three existing gates (rediscovery ≥ 0.50, novelty ≥ 0.80, score gap ≥ 0.0) are preserved.
+2. **`benchmarks/audit_label_confound.py`** — `donor_number` added to the audited targets (module-scope `AUDIT_TARGETS` so tests can pin coverage without re-implementing the audit).
+3. **Full benchmark run without `--skip-discovery`** — `benchmarks/results/unified_benchmark.json` discovery section is now populated and `unified_benchmark.md` regenerated.
+
+**Verification:**
+- `pytest tests/test_net_progress.py tests/test_label_confound.py` → **10 passed** (includes the two new regression tests `test_discovery_gates_require_results`, `test_donor_number_audited`).
+- Full suite → **525 passed, 8 failed, 2 skipped** — the 8 failures are exactly the pre-existing set (verified on clean checkout earlier); **zero new regressions**.
+- Direct gate probe: `check_tolerances({'discovery': {}})` returns a `"discovery benchmark not run"` failure.
+- Ruff clean on all touched benchmark/test files (one worker-introduced SIM108 fixed during verification).
+
+**Honest finding — the gates now surface a real product gap, not a green check.** With the section no longer skippable, the benchmark reports:
+
+```
+rediscovery_rate: 0.0    (target ≥ 0.50)      → FAIL
+novel_scaffold_ratio: 0.5455 (target ≥ 0.80)   → FAIL
+score_gap: 27.16          (target ≥ 0.0)       → PASS
+```
+
+- **Rediscovery is genuinely 0/51**: the metric compares canonical SMILES on both sides (verified — no canonicalization artifact), and the loop's mutation engine does not reproduce exact SMILES of the 51 known electrolytes in 5 generations. This directly contradicts the product claim "the search rediscovers known electrolytes" — previously untested because the section was empty.
+- **Novelty 54.5% < 80%**: the top-50 scaffold pool is 45% known scaffolds. The claim "≥80% novel scaffolds" is likewise unsubstantiated at current loop settings.
+- **Donor Number confound confirmed**: `label_confound.json` now reports `donor_number` with citation ρ 0.7037 and between-source fraction 0.509 → **confounded**. The "weak ρ 0.19" Donor Number axis is substantially a label-quality artifact, not a model limitation.
+
+**Notes for reviewers:**
+- The benchmark `.md` status flipped from ✅ PASS to ❌ FAIL. This is the intended outcome — the gates now measure the discovery claims instead of silently passing an empty section. Do not "fix" the FAIL by loosening tolerances or re-introducing `--skip-discovery`; the fix is loop/mutation work so the search actually rediscovers/novel-scaffolds, or an explicit scoping decision that the claims are aspirational.
+- The e2e benchmark run (verification row in the table) executed the discovery loop with xTB; it is the source of the committed numbers.
 
 ## Gap 3 — Solution-phase EA is an uncalibrated placeholder pinned by a regression test
 
@@ -105,7 +154,7 @@ The calibration script was written but never executed on an xTB machine, and the
 | 1 | `pytest tests/test_loop.py -k batch -v` | `test_batch_screening_matches_scalar_scores` passes; batch path returns `ea_eV` |
 | 1 (perf) | `python benchmarks/benchmark_gpu_throughput.py` | `oracle_batch` keys include `ea_eV`; throughput stays ≥ 1000 mol/s on M5 Pro |
 | 2 | `pytest tests/test_net_progress.py tests/test_label_confound.py -v` | `test_discovery_gates_require_results` and `test_donor_number_audited` pass |
-| 2 (e2e) | `python benchmarks/benchmark_unified.py` (no `--skip-discovery`) | exit 0 **and** `benchmarks/results/unified_benchmark.json` `discovery` section non-empty with all of `rediscovery_rate`, `novel_scaffold_ratio`, `score_gap` |
+| 2 (e2e) | `python benchmarks/benchmark_unified.py` (no `--skip-discovery`) | `benchmarks/results/unified_benchmark.json` `discovery` section non-empty with all of `rediscovery_rate`, `novel_scaffold_ratio`, `score_gap`; gates are *evaluated* (FAIL status is correct until the loop actually rediscovers/novel-scaffolds — an empty section is the only thing that must never recur) |
 | 3 | `python scripts/calibrate_reduction.py --solution` then `pytest tests/test_reduction_oracle.py -k solution -v` | script prints a non-identity tuple; `test_solution_calibration_is_fitted` passes |
 | 3 (span) | `pytest tests/test_reduction_oracle.py -k "in_calibrated_span or calibrated_span" -v` | solution-mode confidence uses the solution span |
 

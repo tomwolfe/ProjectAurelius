@@ -72,6 +72,24 @@ BETWEEN_SOURCE_LIMIT = 0.50
 MIN_ENTRIES = 10
 MIN_SOURCES = 3
 
+# Which targets are audited per data file. Kept at module scope so tests can
+# pin coverage without re-implementing the audit. Gap 2 (part B): donor_number
+# — the weakest bulk axis (rho 0.19, n=33) — was the one
+# external_property_benchmark target never audited.
+AUDIT_TARGETS: dict[str, tuple[str, ...]] = {
+    "external_property_benchmark.json": (
+        "homo_eV",
+        "lumo_eV",
+        "dielectric_constant",
+        "viscosity_cP",
+        "donor_number",
+    ),
+    "orbital_calibration.json": ("homo_eV", "lumo_eV"),
+    "lumo_calibration_xtb.json": ("homo_eV", "lumo_eV"),
+    "experimental_ionization.json": ("ip_eV",),
+    "experimental_electron_affinity.json": ("ea_eV",),
+}
+
 
 def _grouped(
     entries: list[dict[str, Any]], target: str
@@ -153,10 +171,7 @@ def audit_file(path: str, targets: tuple[str, ...]) -> list[dict[str, Any]]:
     """Run the confound analysis over every requested target in a file."""
     with open(path) as f:
         data = json.load(f)
-    if isinstance(data, dict):
-        entries = data.get("entries", data.get("solvents", []))
-    else:
-        entries = data
+    entries = data.get("entries", data.get("solvents", [])) if isinstance(data, dict) else data
     results = []
     for target in targets:
         result = analyse(entries, target)
@@ -172,14 +187,8 @@ def main() -> int:
     args = parser.parse_args()
 
     checks = [
-        (
-            os.path.join(DATA_DIR, "external_property_benchmark.json"),
-            ("homo_eV", "lumo_eV", "dielectric_constant", "viscosity_cP"),
-        ),
-        (os.path.join(DATA_DIR, "orbital_calibration.json"), ("homo_eV", "lumo_eV")),
-        (os.path.join(DATA_DIR, "lumo_calibration_xtb.json"), ("homo_eV", "lumo_eV")),
-        (os.path.join(DATA_DIR, "experimental_ionization.json"), ("ip_eV",)),
-        (os.path.join(DATA_DIR, "experimental_electron_affinity.json"), ("ea_eV",)),
+        (os.path.join(DATA_DIR, name), targets)
+        for name, targets in AUDIT_TARGETS.items()
     ]
 
     results: list[dict[str, Any]] = []

@@ -523,10 +523,11 @@ def check_tolerances(results: dict) -> tuple[bool, list[str]]:
     orb = results.get("orbital", {})
     if "experimental_ip" in orb:
         ip = orb["experimental_ip"]
-        if ip.get("lpm", {}).get("spearman_rho", 0) < TOLERANCES["orbital"]["lpm_nist_rho_min"]:
-            failures.append(f"LPM NIST ρ={ip['lpm']['spearman_rho']:.3f} < {TOLERANCES['orbital']['lpm_nist_rho_min']}")
-        if ip.get("lpm", {}).get("mae", 999) > TOLERANCES["orbital"]["lpm_nist_mae_max"]:
-            failures.append(f"LPM NIST MAE={ip['lpm']['mae']:.3f} > {TOLERANCES['orbital']['lpm_nist_mae_max']}")
+        lpm = ip.get("lpm", {})
+        if lpm.get("spearman_rho", 0) < TOLERANCES["orbital"]["lpm_nist_rho_min"]:
+            failures.append(f"LPM NIST ρ={lpm.get('spearman_rho', 0):.3f} < {TOLERANCES['orbital']['lpm_nist_rho_min']}")
+        if lpm.get("mae", 999) > TOLERANCES["orbital"]["lpm_nist_mae_max"]:
+            failures.append(f"LPM NIST MAE={lpm.get('mae', 999):.3f} > {TOLERANCES['orbital']['lpm_nist_mae_max']}")
     if "unseen" in orb and "tom" in orb["unseen"]:
         gap = orb.get("seen", {}).get("tom", {}).get("spearman_rho", 0) - orb["unseen"]["tom"]["spearman_rho"]
         if gap > TOLERANCES["orbital"]["tom_leakage_gap_max"]:
@@ -534,18 +535,21 @@ def check_tolerances(results: dict) -> tuple[bool, list[str]]:
 
     # Dielectric
     diel = results.get("dielectric", {})
-    if diel.get("verified", {}).get("mae", 999) > TOLERANCES["dielectric"]["kf_mae_max"]:
-        failures.append(f"KF MAE={diel['verified']['mae']:.3f} > {TOLERANCES['dielectric']['kf_mae_max']}")
-    if diel.get("verified", {}).get("spearman_rho", 0) < TOLERANCES["dielectric"]["kf_rho_min"]:
-        failures.append(f"KF ρ={diel['verified']['spearman_rho']:.3f} < {TOLERANCES['dielectric']['kf_rho_min']}")
-    if diel.get("commercial", {}).get("mae", 999) > TOLERANCES["dielectric"]["commercial_mae_max"]:
-        failures.append(f"Commercial MAE={diel['commercial']['mae']:.3f} > {TOLERANCES['dielectric']['commercial_mae_max']}")
+    v = diel.get("verified", {})
+    c = diel.get("commercial", {})
+    if v.get("mae", 999) > TOLERANCES["dielectric"]["kf_mae_max"]:
+        failures.append(f"KF MAE={v.get('mae', 999):.3f} > {TOLERANCES['dielectric']['kf_mae_max']}")
+    if v.get("spearman_rho", 0) < TOLERANCES["dielectric"]["kf_rho_min"]:
+        failures.append(f"KF ρ={v.get('spearman_rho', 0):.3f} < {TOLERANCES['dielectric']['kf_rho_min']}")
+    if c.get("mae", 999) > TOLERANCES["dielectric"]["commercial_mae_max"]:
+        failures.append(f"Commercial MAE={c.get('mae', 999):.3f} > {TOLERANCES['dielectric']['commercial_mae_max']}")
 
     # Bulk properties
     bulk = results.get("bulk_properties", {})
     for prop in ["viscosity", "donor_number"]:
-        if bulk.get(prop, {}).get("spearman_rho", 0) < TOLERANCES[prop]["rho_min"]:
-            failures.append(f"{prop} ρ={bulk[prop]['spearman_rho']:.3f} < {TOLERANCES[prop]['rho_min']}")
+        b = bulk.get(prop, {})
+        if b.get("spearman_rho", 0) < TOLERANCES[prop]["rho_min"]:
+            failures.append(f"{prop} ρ={b.get('spearman_rho', 0):.3f} < {TOLERANCES[prop]['rho_min']}")
 
     # ML baseline (warnings only, not CI failures — transparency over gating)
     ml = results.get("ml_baseline", {})
@@ -556,9 +560,14 @@ def check_tolerances(results: dict) -> tuple[bool, list[str]]:
             # - Donor Number: GC fragment model needs better calibration
             print(f"  ⚠️  ML BASELINE WARNING: {prop} oracle ρ={res['oracle_rho']:.3f} < RF ρ={res['rf_rho']:.3f} - 0.05 (documented limitation)")
 
-    # Discovery (only if benchmark was run)
+    # Discovery (hard CI failure if benchmark was not run)
     disc = results.get("discovery", {})
-    if disc:  # Only check if discovery benchmark was run
+    if not disc:  # Missing, None, or empty discovery section is a hard CI failure
+        failures.append(
+            "discovery benchmark not run: discovery section missing/empty "
+            "(rediscovery/novelty/score-gap gates not evaluated)"
+        )
+    else:
         if disc.get("rediscovery_rate", 0) < TOLERANCES["discovery"]["rediscovery_rate_min"]:
             failures.append(f"Rediscovery rate={disc['rediscovery_rate']:.3f} < {TOLERANCES['discovery']['rediscovery_rate_min']}")
         if disc.get("novel_scaffold_ratio", 0) < TOLERANCES["discovery"]["novel_scaffold_min"]:

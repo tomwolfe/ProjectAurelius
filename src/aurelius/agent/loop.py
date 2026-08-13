@@ -24,8 +24,9 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import random
+import threading
 import time
-from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -70,24 +71,27 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 
-def _evaluate_single_molecule(
-    pipeline: Any,
-    ctx: MoleculeContext,
-) -> tuple[str, dict[str, Any] | None]:
-    """Evaluate a single molecule through the pipeline.
+class _LockedXTBSinglePointOracle:
+    """Thread-safe wrapper around ``XTBSinglePointOracle`` for parallel ranking.
 
-    Module-level helper for ProcessPoolExecutor. Must be a top-level
-    function to be picklable.
-
-    Returns:
-        Tuple of (smiles, result_dict or None)
+    ``XTBSinglePointOracle.evaluate`` mutates a shared in-memory cache and
+    calls ``_persist()`` — a disk write of ``xtb_cache.json`` — on every cold
+    call, so concurrent ranking threads would race on the cache file. The
+    wrapper serialises ``_persist`` with a class-level lock and delegates
+    everything else to the wrapped instance.
     """
-    try:
-        result = pipeline.screen_molecule(ctx)
-        return ctx.smiles, result
-    except Exception as exc:
-        log.debug("Pipeline error for %s: %s", ctx.smiles, exc)
-        return ctx.smiles, None
+
+    _persist_lock = threading.Lock()
+
+    def __init__(self, wrapped: Any) -> None:
+        self._wrapped = wrapped
+
+    def evaluate(self, ctx: MoleculeContext) -> dict[str, Any]:
+        return self._wrapped.evaluate(ctx)
+
+    def _persist(self) -> None:
+        with type(self)._persist_lock:
+            self._wrapped._persist()
 
 
 def _collect_obj_scores(
@@ -216,7 +220,7 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
 
     wall_start = time.time()
 
-    pipeline = AureliusPipeline()
+    pipeline = AureliusPipeline(use_xtb=False)
     pipeline.initialize()
 
     loop = DiscoveryLoop(
@@ -700,61 +704,58 @@ class DiscoveryLoop:
         if not filtered_contexts:
             return [], []
 
-        # Parallel evaluation using ProcessPoolExecutor
-        with ProcessPoolExecutor(max_workers=_EVAL_WORKERS) as executor:
-            future_to_ctx = {
-                executor.submit(_evaluate_single_molecule, self.pipeline, ctx): ctx
-                for ctx in filtered_contexts
-            }
+        # Batch evaluation through the pipeline's batch oracle path. The
+        # pipeline's screen_batch assembles per-molecule results key-identical
+        # to screen_molecule and preserves input order; per-molecule failures
+        # fall back to the scalar path internally.
+        batch_results = self.pipeline.screen_batch(filtered_contexts)
+        for ctx, result in zip(filtered_contexts, batch_results, strict=True):
+            if result is None:
+                continue
 
-            for future in as_completed(future_to_ctx):
-                ctx = future_to_ctx[future]
-                smi, result = self._process_evaluation_future(future, ctx)
-                if smi is None:
-                    continue
+            smi = ctx.smiles
+            score_data = result.get("score")
+            if score_data is None:
+                continue
 
-                score_data = result.get("score")
-                if score_data is None:
-                    continue
+            self.screened_smiles.add(smi)
+            self.engine.add_to_db(smi)
 
-                self.screened_smiles.add(smi)
-                self.engine.add_to_db(smi)
+            total_score = score_data.get("total_score", 0.0)
+            self.engine.record_reaction_success(smi, total_score)
+            all_scores.append(total_score)
 
-                total_score = score_data.get("total_score", 0.0)
-                self.engine.record_reaction_success(smi, total_score)
-                all_scores.append(total_score)
+            # Extract conformal confidence for uncertainty-aware selection
+            conformal_conf = result.get("conformal_confidence", 1.0)
+            all_confidences.append(conformal_conf)
 
-                # Extract conformal confidence for uncertainty-aware selection
-                conformal_conf = result.get("conformal_confidence", 1.0)
-                all_confidences.append(conformal_conf)
+            t2 = result.get("tier2", {}) or {}
+            result_map[smi] = t2
+            novelty = self._compute_novelty(ctx)
+            sub_scores = score_data.get("sub_scores", {})
 
-                t2 = result.get("tier2", {}) or {}
-                result_map[smi] = t2
-                novelty = self._compute_novelty(ctx)
-                sub_scores = score_data.get("sub_scores", {})
-
-                # W7: Active learning escalation - re-evaluate low-confidence
-                # TOM predictions with xTB to get more reliable results.
-                total_score, conformal_conf, score_data, sub_scores, t2 = (
-                    self._maybe_escalate(
-                        smi, ctx, total_score, conformal_conf, score_data, sub_scores, t2
-                    )
+            # W7: Active learning escalation - re-evaluate low-confidence
+            # TOM predictions with xTB to get more reliable results.
+            total_score, conformal_conf, score_data, sub_scores, t2 = (
+                self._maybe_escalate(
+                    smi, ctx, total_score, conformal_conf, score_data, sub_scores, t2
                 )
+            )
 
-                result_contexts.append(ctx)
+            result_contexts.append(ctx)
 
-                # Collect per-candidate objective scores for NSGA-II
-                _collect_obj_scores(
-                    obj_scores, total_score, t2, score_data, conformal_conf, novelty
-                )
+            # Collect per-candidate objective scores for NSGA-II
+            _collect_obj_scores(
+                obj_scores, total_score, t2, score_data, conformal_conf, novelty
+            )
 
-                # W6: Accumulate feedback for experimental/oracle refinement
-                self._accumulate_feedback(smi, t2, total_score, conformal_conf)
+            # W6: Accumulate feedback for experimental/oracle refinement
+            self._accumulate_feedback(smi, t2, total_score, conformal_conf)
 
-                sr = self._build_screening_result(smi, total_score, score_data, t2, novelty, ctx, sub_scores)
-                self._maybe_log_discovery(smi, total_score, conformal_conf, score_data, sr)
+            sr = self._build_screening_result(smi, total_score, score_data, t2, novelty, ctx, sub_scores)
+            self._maybe_log_discovery(smi, total_score, conformal_conf, score_data, sr)
 
-                self.all_results.append(sr)
+            self.all_results.append(sr)
 
         mix_contexts, mix_scores = self._evaluate_mixture_pairs(valid_contexts, result_map)
         result_contexts.extend(mix_contexts)
@@ -783,16 +784,6 @@ class DiscoveryLoop:
         self.tier0_prefilter = Tier0Prefilter()
         filtered_contexts, _ = self.tier0_prefilter.filter(valid_contexts)
         return filtered_contexts
-
-    def _process_evaluation_future(
-        self, future: Future, ctx: MoleculeContext
-    ) -> tuple[str | None, dict[str, Any] | None]:
-        """Process a completed evaluation future, returning (smiles, result) or (None, None)."""
-        try:
-            return future.result()
-        except Exception as exc:
-            log.debug("Evaluation failed for %s: %s", ctx.smiles, exc)
-            return None, None
 
     def _select_top_batch(
         self,
@@ -998,7 +989,7 @@ class DiscoveryLoop:
 
         from aurelius.scoring.oracle.xtb_single_point import XTBSinglePointOracle
 
-        oracle = XTBSinglePointOracle()
+        oracle = _LockedXTBSinglePointOracle(XTBSinglePointOracle())
         ranked = self._rank_by_xtb(contexts, scores, oracle)
         # Top decile of xTB-ranked survivors is eligible for ORCA escalation;
         # the remainder is confirmed good enough by the SP alone.
@@ -1020,9 +1011,16 @@ class DiscoveryLoop:
         estimate (small residual), then by xTB HOMO itself (deeper HOMO =
         better oxidative stability). Disagreement beyond 1.5 eV demotes the
         molecule so ORCA does not inherit a confidently-wrong ranking.
+
+        The per-molecule single points run in a thread pool — xTB subprocess
+        calls release the GIL — while preserving input order. ``oracle`` is a
+        thread-safe wrapper whose ``_persist`` (disk write of xtb_cache.json)
+        is serialised, so concurrent cold calls cannot race on the cache file.
         """
-        results: list[tuple[MoleculeContext, float, dict[str, Any]]] = []
-        for ctx, score in zip(contexts, scores, strict=True):
+        def _rank_one(
+            pair: tuple[MoleculeContext, float],
+        ) -> tuple[MoleculeContext, float, dict[str, Any]]:
+            ctx, score = pair
             sp = oracle.evaluate(ctx)
             homo_sp = sp.get("homo_eV")
             flag: dict[str, Any] = {"xtb_orca_eligible": False}
@@ -1033,7 +1031,10 @@ class DiscoveryLoop:
                 flag["homo_residual_eV"] = round(
                     float(homo_sp - predict_lone_pair_homo(ctx.mol)), 6
                 )
-            results.append((ctx, score, flag))
+            return ctx, score, flag
+
+        with ThreadPoolExecutor(max_workers=_EVAL_WORKERS) as pool:
+            results = list(pool.map(_rank_one, zip(contexts, scores, strict=True)))
         # Stable sort: agreement first, then xTB HOMO descending.
         results.sort(
             key=lambda r: (

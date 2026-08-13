@@ -41,13 +41,13 @@
         "n": 88,
         "spearman_rho": 0.93991951111468,
         "mae": 0.31350594119269815,
-        "seconds": 0.0095
+        "seconds": 0.0064
       },
       "tom": {
         "n": 88,
         "spearman_rho": 0.2555759990788422,
         "mae": 3.7846883658929302,
-        "seconds": 0.0521
+        "seconds": 0.0275
       },
       "n": 88,
       "span_eV": 8.48,
@@ -57,9 +57,9 @@
   "dielectric": {
     "verified": {
       "n": 55,
-      "spearman_rho": 0.9298508271863896,
-      "mae": 3.6538308960242647,
-      "seconds": 0.0196
+      "spearman_rho": 0.9339634554812198,
+      "mae": 3.2583742807884852,
+      "seconds": 0.0104
     },
     "commercial": {
       "n": 10,
@@ -70,8 +70,8 @@
   "bulk_properties": {
     "dielectric": {
       "n": 99,
-      "spearman_rho": 0.6641627217420779,
-      "mae": 7.186427453950568
+      "spearman_rho": 0.6651337876927255,
+      "mae": 6.774832855394474
     },
     "viscosity": {
       "n": 98,
@@ -84,7 +84,17 @@
       "mae": 18.625919135904297
     }
   },
-  "discovery": {},
+  "discovery": {
+    "rediscovery_rate": 0.0,
+    "novel_scaffold_ratio": 0.5455,
+    "known_mean_score": 72.84,
+    "top_mean_score": 100.0,
+    "score_gap": 27.16,
+    "n_known": 51,
+    "n_rediscovered": 0,
+    "n_top_scaffolds": 11,
+    "n_novel_scaffolds": 6
+  },
   "ml_baseline": {
     "HOMO": {
       "oracle_rho": 0.1096,
@@ -96,20 +106,20 @@
       "oracle_wins": false
     },
     "LUMO": {
-      "oracle_rho": 0.5256,
-      "oracle_p": 0.0,
+      "oracle_rho": 0.2911,
+      "oracle_p": 0.0131,
       "rf_rho": 0.2947,
       "rf_std": 0.2352,
-      "gap": 0.2309,
+      "gap": -0.0035,
       "n_valid": 72,
       "oracle_wins": true
     },
     "Dielectric": {
-      "oracle_rho": 0.6395,
+      "oracle_rho": 0.6417,
       "oracle_p": 0.0,
       "rf_rho": 0.6331,
       "rf_std": 0.1392,
-      "gap": 0.0064,
+      "gap": 0.0085,
       "n_valid": 69,
       "oracle_wins": true
     },
@@ -165,21 +175,21 @@
       ],
       "homo_eV": [
         -7.8094,
-        -7.7174,
+        -7.7175,
         -7.711,
         -7.604,
         -8.322,
-        -7.5384,
+        -7.5385,
         -8.2012
       ],
       "lumo_eV": [
-        -0.6287,
-        -0.6339,
-        -0.7841,
-        -0.8354,
-        0.199,
-        -0.1119,
-        -0.2608
+        -0.0651,
+        -0.0328,
+        -0.0948,
+        -0.163,
+        0.0369,
+        0.1316,
+        -0.0115
       ],
       "synergy_bonus": [
         6.0,

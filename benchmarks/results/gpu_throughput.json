@@ -1,13 +1,13 @@
 {
   "gc_batch": {
     "n_molecules": 1000,
-    "median_time_ms": 213.55120799853466,
-    "throughput_mols_per_sec": 4682.717599082192
+    "median_time_ms": 162.69124997779727,
+    "throughput_mols_per_sec": 6146.612065101667
   },
   "fp_conversion": {
     "n_molecules": 1000,
-    "median_time_ms": 7.5952920014970005,
-    "throughput_mols_per_sec": 131660.50756217196,
+    "median_time_ms": 5.713166960049421,
+    "throughput_mols_per_sec": 175034.26855765295,
     "matrix_shape": [
       1000,
       2048
@@ -16,8 +16,8 @@
   "tanimoto_mps": {
     "n_molecules": 1000,
     "backend": "GPU (MLX)",
-    "median_time_ms": 17.942334001418203,
-    "throughput_pairs_per_sec": 27839187.474746507,
+    "median_time_ms": 16.598083020653576,
+    "throughput_pairs_per_sec": 30093836.702615276,
     "matrix_shape": [
       1000,
       1000
@@ -26,8 +26,8 @@
   "oracle_batch": {
     "n_molecules": 1000,
     "backend": "GPU (MLX)",
-    "median_time_ms": 568.4510419960134,
-    "throughput_mols_per_sec": 1759.1664472786965,
+    "median_time_ms": 93207.03745802166,
+    "throughput_mols_per_sec": 10.728803610461037,
     "keys": [
       "dielectric_proxy",
       "viscosity_proxy",
@@ -38,20 +38,39 @@
       "fp",
       "homo_eV",
       "lumo_eV",
-      "gap_eV"
+      "gap_eV",
+      "ea_eV",
+      "reduction_records",
+      "sanity_warning",
+      "quantum_confidence",
+      "domain_applicable",
+      "domain_reason",
+      "domain_penalty",
+      "conformal_intervals",
+      "conformal_confidence",
+      "quantum_method"
     ]
   },
   "tom_batch": {
     "n_molecules": 1000,
     "backend": "GPU (MLX)",
-    "median_time_ms": 227.81908299657516,
-    "throughput_mols_per_sec": 4389.447920019207,
+    "median_time_ms": 269.2291249986738,
+    "throughput_mols_per_sec": 3714.3083981160134,
     "homo_mean": -4.8417,
     "lumo_mean": -1.0605
   },
+  "rg_batch": {
+    "n_molecules": 1000,
+    "median_time_ms": 8.459125005174428,
+    "throughput_mols_per_sec": 118215.53640456928
+  },
+  "mlx_variance": {
+    "n_molecules": 1000,
+    "available": false
+  },
   "single_evaluate": {
     "n_molecules": 200,
-    "total_time_ms": 826.101667014882,
-    "throughput_mols_per_sec": 242.1009519599445
+    "total_time_ms": 7255.405624979176,
+    "throughput_mols_per_sec": 27.56565385006631
   }
 }

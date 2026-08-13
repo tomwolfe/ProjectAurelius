@@ -43,6 +43,7 @@ import contextlib
 import json
 import logging
 import os
+import threading
 import time
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -123,6 +124,7 @@ class XTBSinglePointOracle:
     def __init__(self, cache_path: str = DEFAULT_CACHE_PATH) -> None:
         self._cache_path = cache_path
         self._cache: dict[str, dict[str, Any]] = {}
+        self._cache_lock = threading.Lock()
         self._hits = 0
         self._misses = 0
         self._load()
@@ -150,13 +152,15 @@ class XTBSinglePointOracle:
         mol = MoleculeContext.from_smiles(ctx).mol if isinstance(ctx, str) else ctx.mol
         key = _canonical_key(mol)
 
-        if key in self._cache:
-            self._hits += 1
-            return dict(self._cache[key])
+        with self._cache_lock:
+            if key in self._cache:
+                self._hits += 1
+                return dict(self._cache[key])
+            self._misses += 1
 
-        self._misses += 1
-        result = self._compute(mol)
-        self._cache[key] = result.to_dict()
+        result = self._compute(mol)  # expensive xTB subprocess; NO lock held
+        with self._cache_lock:
+            self._cache[key] = result.to_dict()
         return result.to_dict()
 
     def _compute(self, mol: Chem.Mol) -> XTBResult:
@@ -222,7 +226,8 @@ class XTBSinglePointOracle:
         )
 
     def _persist(self) -> None:
-        _save_cache(self._cache_path, self._cache)
+        with self._cache_lock:
+            _save_cache(self._cache_path, self._cache)
 
     def report(self) -> dict[str, Any]:
         total = self._hits + self._misses

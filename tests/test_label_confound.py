@@ -26,6 +26,7 @@ sys.path.insert(
 )
 
 from audit_label_confound import (  # noqa: E402
+    AUDIT_TARGETS,
     BETWEEN_SOURCE_LIMIT,
     CITATION_RHO_LIMIT,
     analyse,
@@ -99,6 +100,29 @@ class TestDetectorBehaviour:
         assert result is not None, "single-source targets must not be skipped"
         assert not result["confounded"]
         assert result["citation_rho"] == 0.0
+
+
+class TestAuditCoverage:
+    """The audit must cover every target the benchmark reports on."""
+
+    def test_donor_number_audited(self):
+        """Donor Number is the weakest bulk axis and must be audited.
+
+        Gap 2 (part B): donor_number (rho 0.19, n=33) was the one
+        external_property_benchmark target never audited for
+        label-provenance confounds, and its ML-baseline comparison is not
+        even significant (p=0.13). Whatever ranking signal it carries could
+        be provenance rather than chemistry, so the audit must include it.
+        """
+        assert "donor_number" in AUDIT_TARGETS["external_property_benchmark.json"], (
+            "donor_number must be audited on external_property_benchmark.json"
+        )
+        # And the audit must actually produce a row for it on the real data.
+        result = analyse(_load("external_property_benchmark.json"), "donor_number")
+        assert result is not None, (
+            "donor_number must produce a confound-audit row on the real data"
+        )
+        assert result["n"] == 33
 
 
 class TestKnownTargetStatus:

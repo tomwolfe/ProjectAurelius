@@ -53,6 +53,19 @@
       "file": "external_property_benchmark.json"
     },
     {
+      "target": "donor_number",
+      "n": 33,
+      "n_sources": 12,
+      "label_std": 5.534944503061824,
+      "citation_rho": 0.7037,
+      "citation_mae": 2.099,
+      "within_source_var": 14.2811,
+      "between_source_var": 14.80316,
+      "between_source_fraction": 0.509,
+      "confounded": true,
+      "file": "external_property_benchmark.json"
+    },
+    {
       "target": "homo_eV",
       "n": 115,
       "n_sources": 53,
@@ -122,16 +135,16 @@
     },
     {
       "target": "ea_eV",
-      "n": 40,
-      "n_sources": 1,
-      "label_std": 0.9807523690386886,
+      "n": 50,
+      "n_sources": 2,
+      "label_std": 1.4510309197256963,
       "citation_rho": 0.0,
-      "citation_mae": 0.7699,
-      "within_source_var": 0.96188,
+      "citation_mae": 1.1827,
+      "within_source_var": 2.10549,
       "between_source_var": 0.0,
       "between_source_fraction": 0.0,
       "confounded": false,
-      "note": "single measurement source (1); provenance carries no signal",
+      "note": "single measurement source (2); provenance carries no signal",
       "file": "experimental_electron_affinity.json"
     }
   ]

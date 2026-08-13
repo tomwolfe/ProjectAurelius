@@ -13,9 +13,7 @@ All stages accept a pre-parsed MoleculeContext to enforce single-point parsing.
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
@@ -161,9 +159,11 @@ class AureliusPipeline:
     def __init__(
         self,
         use_real_models: bool = True,
+        use_xtb: bool = True,
     ) -> None:
         self._filter: Filter | None = None
         self._use_real_models = use_real_models
+        self._use_xtb = use_xtb
         self._oracle: PropertyOracle | None = None
 
     def initialize(self) -> None:
@@ -178,7 +178,7 @@ class AureliusPipeline:
                 logger.warning("Tier 1 (Filter): DISABLED - %s", exc)
                 self._filter = None
 
-        self._oracle = PropertyOracle()
+        self._oracle = PropertyOracle(use_xtb=self._use_xtb)
         oracle_cache = "oracle_cache.joblib"
         if not self._oracle.load(oracle_cache):
             logger.info("Oracle (PropertyOracle): no cache found — using GC model directly.")
@@ -208,6 +208,9 @@ class AureliusPipeline:
     ) -> dict[str, Any]:
         """Run a single pre-parsed molecule through the Filter -> Oracle pipeline.
 
+        Thin single-candidate wrapper over ``screen_batch``: batch and scalar
+        screening share one implementation so the two paths can never drift.
+
         Args:
             ctx: Pre-parsed MoleculeContext.
 
@@ -226,90 +229,7 @@ class AureliusPipeline:
         if not self._oracle:
             raise RuntimeError("Pipeline not initialised. Call initialize() first.")
 
-        smiles = ctx.smiles
-        logger.info("Processing: %s", smiles)
-        pipeline_start = time.perf_counter()
-
-        t1_result = None
-        if self._filter:
-            t1_start = time.perf_counter()
-            t1_result = self._filter.screen(ctx)
-            tier_timings: dict[str, float] = {}
-            tier_timings["tier1_ms"] = (time.perf_counter() - t1_start) * 1000
-            results: dict[str, Any] = {"tier1": t1_result}
-            logger.info(
-                "Tier 1 Result: %s -> %s (time=%.1fms)",
-                smiles,
-                "VIABLE" if t1_result.get("is_viable", False) else "REJECTED",
-                t1_result.get("inference_time_ms", 0.0),
-            )
-            if not t1_result.get("is_viable", True):
-                logger.warning("Short-circuiting: %s failed Tier 1.", smiles)
-                return self._generate_failed_run(smiles, "Failed Tier 1 Structural Filter")
-        else:
-            results = {}
-            tier_timings = {}
-
-        t2_result = None
-        homo_eV = -99.0
-        lumo_eV = -99.0
-        dielectric_proxy = 0.0
-        viscosity_proxy = 99.0
-        if self._oracle:
-            t2_start = time.perf_counter()
-            oracle_result = self._oracle.evaluate(ctx)
-            tier_timings["tier2_ms"] = (time.perf_counter() - t2_start) * 1000
-
-            homo_eV = oracle_result.get("homo_eV", -99.0)
-            lumo_eV = oracle_result.get("lumo_eV", -99.0)
-            dielectric_proxy = oracle_result.get("dielectric_proxy", 0.0)
-            viscosity_proxy = oracle_result.get("viscosity_proxy", 99.0)
-            li_solvation_proxy = oracle_result.get("li_solvation_proxy", 0.0)
-
-            # Copy ALL oracle result keys, then set defaults for required fields
-            t2_result = dict(oracle_result)
-            t2_result.setdefault("homo_eV", -99.0)
-            t2_result.setdefault("lumo_eV", -99.0)
-            t2_result.setdefault("gap_eV", 0.0)
-            t2_result.setdefault("dielectric_proxy", 0.0)
-            t2_result.setdefault("viscosity_proxy", 99.0)
-            t2_result.setdefault("li_solvation_proxy", 0.0)
-            t2_result.setdefault("domain_applicable", True)
-            t2_result.setdefault("domain_reason", "")
-            t2_result.setdefault("domain_penalty", 1.0)
-            t2_result.setdefault("quantum_confidence", "unknown")
-            t2_result.setdefault("li_binding_energy_kcal", 0.0)
-            results["tier2"] = t2_result
-            logger.info(
-                "Oracle Result: %s -> HOMO=%.3f LUMO=%.3f Dielectric=%.3f Viscosity=%.3f LiSolv=%.3f",
-                smiles, homo_eV, lumo_eV, dielectric_proxy, viscosity_proxy, li_solvation_proxy,
-            )
-
-        quantum_confidence = t2_result.get("quantum_confidence", "unknown") if t2_result else "unknown"
-        ea_eV = _extract_ea(t2_result)
-        score = self._compute_score(
-            homo_eV, lumo_eV,
-            dielectric_proxy=dielectric_proxy,
-            viscosity_proxy=viscosity_proxy,
-            li_solvation_proxy=li_solvation_proxy,
-            ctx=ctx,
-            quantum_confidence=quantum_confidence,
-            ea_eV=ea_eV,
-        )
-
-        score = self._apply_domain_penalty(score, t2_result)
-        results["score"] = score
-
-        logger.debug("Scorecard:\n%s", self._format_score(score))
-
-        total_ms = (time.perf_counter() - pipeline_start) * 1000
-        timing_lines = []
-        for tier, t_ms in tier_timings.items():
-            timing_lines.append(f"    {tier}: {t_ms:.1f}ms")
-        if timing_lines:
-            logger.info("Performance: total=%.1fms | %s", total_ms, " | ".join(timing_lines))
-
-        return results
+        return self.screen_batch([ctx])[0]
 
     def screen_mixture(
         self,
@@ -677,31 +597,131 @@ class AureliusPipeline:
     def screen_batch(
         self,
         contexts: list[MoleculeContext],
-        n_workers: int = 1,
     ) -> list[dict[str, Any]]:
         """Screen a batch of pre-parsed molecules through the full pipeline.
 
+        Evaluates all Tier-1-viable molecules in ONE batch oracle call
+        (``PropertyOracle.predict_batch_properties``) so closed-form orbitals,
+        the reduction axis and the GC proxies are computed once per batch,
+        then assembles per-molecule results that are key-identical to
+        ``screen_molecule``. Results preserve input order — Tier-1-rejected
+        molecules carry a failed run — and any per-molecule assembly failure
+        falls back to the scalar ``screen_molecule`` path so a batch failure
+        never kills the caller's loop.
+
         Args:
             contexts: List of MoleculeContext objects.
-            n_workers: Number of parallel workers.
 
         Returns:
-            List of result dicts.
+            List of result dicts, one per input context, in input order.
         """
-        if n_workers < 1 or n_workers == 1:
-            return [self.screen_molecule(ctx) for ctx in contexts]
+        if not self._oracle:
+            raise RuntimeError("Pipeline not initialised. Call initialize() first.")
+        if not contexts:
+            return []
 
-        results: dict[int, dict[str, Any]] = {}
-        with ThreadPoolExecutor(max_workers=n_workers) as executor:
-            future_to_idx = {
-                executor.submit(self.screen_molecule, ctx): i
-                for i, ctx in enumerate(contexts)
-            }
-            for future in as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                results[idx] = future.result()
+        results: list[dict[str, Any] | None] = [None] * len(contexts)
+        pending: list[tuple[int, MoleculeContext, dict[str, Any] | None]] = []
 
-        return [results[i] for i in range(len(contexts))]
+        # Tier-1 gate, preserving input order (same short-circuit as the old
+        # scalar screen_molecule).
+        for i, ctx in enumerate(contexts):
+            t1_result = None
+            if self._filter:
+                t1_result = self._filter.screen(ctx)
+                if not t1_result.get("is_viable", False):
+                    results[i] = self._generate_failed_run(
+                        ctx.smiles, "Failed Tier 1 Structural Filter"
+                    )
+                    continue
+            pending.append((i, ctx, t1_result))
+
+        if pending:
+            viable_contexts = [ctx for _, ctx, _ in pending]
+            try:
+                batch = self._oracle.predict_batch_properties(viable_contexts)
+            except Exception as exc:
+                logger.warning("Batch oracle failed (%s) — falling back to scalar.", exc)
+                batch = None
+            for j, (i, ctx, t1_result) in enumerate(pending):
+                try:
+                    if batch is not None:
+                        results[i] = self._assemble_batch_result(ctx, j, batch, t1_result)
+                    else:
+                        results[i] = self.screen_molecule(ctx)
+                except Exception as exc:
+                    logger.debug(
+                        "Batch assembly failed for %s (%s) — falling back to scalar.",
+                        ctx.smiles, exc,
+                    )
+                    results[i] = self.screen_molecule(ctx)
+
+        return [r for r in results if r is not None]
+
+    def _assemble_batch_result(
+        self,
+        ctx: MoleculeContext,
+        idx: int,
+        batch: dict[str, Any],
+        t1_result: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Assemble one per-molecule pipeline result from a batch oracle response.
+
+        Mirrors the scalar ``screen_molecule`` tier-2 defaults and score
+        assembly so batch and scalar outputs are key-identical (16 scalar
+        oracle keys, ``li_binding_energy_kcal`` default, ``_extract_ea``,
+        ``_compute_score`` and ``_apply_domain_penalty``).
+        """
+        t2: dict[str, Any] = {
+            "homo_eV": round(float(batch["homo_eV"][idx]), 4),
+            "lumo_eV": round(float(batch["lumo_eV"][idx]), 4),
+            "gap_eV": round(float(batch["gap_eV"][idx]), 4),
+            "reduction_stability_proxy": batch["reduction_records"][idx],
+            "dielectric_proxy": round(float(batch["dielectric_proxy"][idx]), 4),
+            "viscosity_proxy": round(float(batch["viscosity_proxy"][idx]), 4),
+            "li_solvation_proxy": round(float(batch["li_solvation_proxy"][idx]), 4),
+            "conductivity_proxy": round(float(batch["conductivity_proxy"][idx]), 4),
+            "domain_applicable": batch["domain_applicable"][idx],
+            "domain_reason": batch["domain_reason"][idx],
+            "domain_penalty": round(float(batch["domain_penalty"][idx]), 4),
+            "quantum_method": batch["quantum_method"][idx],
+            "quantum_confidence": batch["quantum_confidence"][idx],
+            "sanity_warning": batch["sanity_warning"][idx],
+            "conformal_intervals": batch["conformal_intervals"][idx],
+            "conformal_confidence": round(float(batch["conformal_confidence"][idx]), 4),
+        }
+        # Copy ALL oracle result keys, then set defaults for required fields
+        # (identical to the scalar screen_molecule tier-2 block).
+        t2.setdefault("homo_eV", -99.0)
+        t2.setdefault("lumo_eV", -99.0)
+        t2.setdefault("gap_eV", 0.0)
+        t2.setdefault("dielectric_proxy", 0.0)
+        t2.setdefault("viscosity_proxy", 99.0)
+        t2.setdefault("li_solvation_proxy", 0.0)
+        t2.setdefault("domain_applicable", True)
+        t2.setdefault("domain_reason", "")
+        t2.setdefault("domain_penalty", 1.0)
+        t2.setdefault("quantum_confidence", "unknown")
+        t2.setdefault("li_binding_energy_kcal", 0.0)
+
+        quantum_confidence = t2.get("quantum_confidence", "unknown")
+        ea_eV = _extract_ea(t2)
+        score = self._compute_score(
+            t2["homo_eV"],
+            t2["lumo_eV"],
+            dielectric_proxy=t2["dielectric_proxy"],
+            viscosity_proxy=t2["viscosity_proxy"],
+            li_solvation_proxy=t2["li_solvation_proxy"],
+            ctx=ctx,
+            quantum_confidence=quantum_confidence,
+            ea_eV=ea_eV,
+        )
+        score = self._apply_domain_penalty(score, t2)
+
+        result: dict[str, Any] = {"tier2": t2, "score": score}
+        if t1_result is not None:
+            result["tier1"] = t1_result
+        return result
 
     def save_result(self, result: dict[str, Any], path: str) -> None:
         """Save a screening result to a JSON file.

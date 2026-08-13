@@ -23,11 +23,20 @@ import ast
 import json
 import os
 import random
+import sys
 from pathlib import Path
 
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
+
+# Import path setup (existing precedent: tests/test_label_confound.py).
+# benchmark_unified.py inserts src/ into sys.path itself at import time.
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "benchmarks")
+)
+
+from benchmark_unified import check_tolerances  # noqa: E402
 
 from aurelius.scoring.oracle.gc import predict_dielectric_proxy, predict_viscosity_proxy
 from aurelius.scoring.oracle.quantum import (
@@ -484,3 +493,37 @@ class TestNetProgress:
             f"The complexity cost ({simplicity_cost:.3f} × λ={LAMBDA}) "
             f"outweighs the discovery value ({discovery_value:.3f})."
         )
+
+
+class TestDiscoveryGates:
+    """CI regression gates for discovery must fail closed on a missing/empty section.
+
+    Gap 2: `check_tolerances` used to evaluate the rediscovery/novelty/score-gap
+    gates only `if disc:` was truthy, so `"discovery": {}` passed silently.
+    These tests pin the new hard-failure behaviour without running any pipeline.
+    """
+
+    def test_discovery_gates_require_results(self):
+        """An empty discovery section must be a hard CI failure mentioning discovery."""
+        ok, failures = check_tolerances({"discovery": {}})
+        assert ok is False
+        assert any("discovery" in f for f in failures), f"no discovery failure in: {failures}"
+        assert any("not run" in f for f in failures), f"failure must mention benchmark not run: {failures}"
+
+    def test_discovery_gates_still_work_when_populated(self):
+        """A populated discovery section is evaluated with the existing thresholds.
+
+        Passing values must produce no failure mentioning "discovery"; other
+        sections may legitimately fail on this minimal dict, so only the
+        "discovery" substring is filtered on.
+        """
+        _ok, failures = check_tolerances(
+            {
+                "discovery": {
+                    "rediscovery_rate": 0.9,
+                    "novel_scaffold_ratio": 0.9,
+                    "score_gap": 0.5,
+                }
+            }
+        )
+        assert not any("discovery" in f for f in failures), f"unexpected discovery failures: {failures}"

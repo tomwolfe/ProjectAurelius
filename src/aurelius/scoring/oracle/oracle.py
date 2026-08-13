@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 
 from aurelius.scoring.oracle.conformal import get_conformal_predictor
+from aurelius.scoring.oracle.delta_correction import get_delta_correction
 from aurelius.scoring.oracle.gc import (
     _DATA_SOURCE,
     _count_branch_points,
@@ -350,6 +351,16 @@ class PropertyOracle:
             logger.debug("Reduction oracle failed (%s).", exc)
 
         # Legacy field, retained for one release. Not a ranking input.
+        self._fill_lumo_fields(record, mol)
+
+        return record
+
+    def _fill_lumo_fields(self, record: dict[str, Any], mol: Any) -> None:
+        """Legacy LUMO fields for a reduction record, retained for one release.
+
+        Not a ranking input: the LUMO is a calibration artefact only
+        (see ADR-2026-08-10).
+        """
         try:
             from aurelius.scoring.oracle.lumo_proxy import get_lumo_proxy
 
@@ -359,9 +370,7 @@ class PropertyOracle:
         except Exception:
             record["lumo_eV"] = None
 
-        return record
-
-    def predict_batch_properties(self, contexts: list[MoleculeContext]) -> dict[str, np.ndarray[Any, np.dtype[np.float32]]]:
+    def predict_batch_properties(self, contexts: list[MoleculeContext]) -> dict[str, Any]:
         """Batch-predict properties for a list of molecules.
 
         Vectorizes fragment counting, fingerprint generation,
@@ -381,19 +390,19 @@ class PropertyOracle:
             Dict mapping property names to 1D numpy arrays.
             Keys: dielectric_proxy, viscosity_proxy, li_solvation_proxy,
                   conductivity_proxy, tpsa, mw, fp (2048-dim fingerprint matrix),
-                  homo_eV, lumo_eV, gap_eV.
+                  homo_eV, lumo_eV, gap_eV, ea_eV (float32, NaN when the
+                  reduction record has no EA), reduction_records (list of
+                  per-molecule dicts, key-identical to the scalar
+                  ``_predict_reduction_proxy`` record), and the per-molecule
+                  metadata lists/arrays screen_batch needs to assemble tier2
+                  key-identical to scalar ``evaluate()``: sanity_warning,
+                  quantum_confidence, domain_applicable, domain_reason,
+                  domain_penalty, conformal_intervals, conformal_confidence,
+                  quantum_method.
         """
         n = len(contexts)
         if n == 0:
-            return {
-                "dielectric_proxy": np.array([], dtype=np.float32),
-                "viscosity_proxy": np.array([], dtype=np.float32),
-                "li_solvation_proxy": np.array([], dtype=np.float32),
-                "conductivity_proxy": np.array([], dtype=np.float32),
-                "homo_eV": np.array([], dtype=np.float32),
-                "lumo_eV": np.array([], dtype=np.float32),
-                "gap_eV": np.array([], dtype=np.float32),
-            }
+            return self._empty_batch_result()
 
         # Batch fingerprint matrix. Kept on CPU: the result is returned to the
         # caller as numpy, and the round trip to GPU was previously discarded.
@@ -437,9 +446,28 @@ class PropertyOracle:
         li_solvation = predict_li_solvation_proxy_batch(counts, mw_values)
         conductivity = predict_ionic_conductivity_proxy_batch(dielectric, viscosity, li_solvation)
 
-        # Batch frontier orbitals: LPM HOMO + TOM LUMO (ADR-2026-08-08-01)
-        homo_array, lumo_array = predict_orbitals_batch([ctx.mol for ctx in contexts])
+        # Batch frontier orbitals: LPM HOMO + TOM LUMO (ADR-2026-08-08-01),
+        # with the same Δ-correction the scalar closed-form path applies so
+        # batch and scalar (use_xtb=False) orbitals agree.
+        mols = [ctx.mol for ctx in contexts]
+        homo_array, lumo_array = predict_orbitals_batch(mols)
+        homo_array, lumo_array = get_delta_correction().predict_corrected_batch(
+            mols, base=list(zip(homo_array.tolist(), lumo_array.tolist(), strict=True))
+        )
         gap_array = lumo_array - homo_array
+
+        # Reduction axis: per-molecule ΔSCF EA records (ADR-2026-08-10).
+        reduction_records = self._predict_reduction_proxy_batch(contexts)
+        ea_array = np.asarray(
+            [
+                float(record["ea_eV"]) if record.get("ea_eV") is not None else float("nan")
+                for record in reduction_records
+            ],
+            dtype=np.float32,
+        )
+        metadata = self._compute_batch_metadata(
+            contexts, homo_array, lumo_array, dielectric, viscosity
+        )
 
         return {
             "dielectric_proxy": dielectric,
@@ -452,6 +480,172 @@ class PropertyOracle:
             "homo_eV": homo_array,
             "lumo_eV": lumo_array,
             "gap_eV": gap_array,
+            "ea_eV": ea_array,
+            "reduction_records": reduction_records,
+            "sanity_warning": metadata["sanity_warning"],
+            "quantum_confidence": metadata["quantum_confidence"],
+            "domain_applicable": metadata["domain_applicable"],
+            "domain_reason": metadata["domain_reason"],
+            "domain_penalty": metadata["domain_penalty"],
+            "conformal_intervals": metadata["conformal_intervals"],
+            "conformal_confidence": metadata["conformal_confidence"],
+            "quantum_method": [self._closed_form_method()] * n,
+        }
+
+    def _empty_batch_result(self) -> dict[str, Any]:
+        """All-keys-empty batch result for an empty input list."""
+        empty_f32 = np.array([], dtype=np.float32)
+        return {
+            "dielectric_proxy": empty_f32,
+            "viscosity_proxy": empty_f32,
+            "li_solvation_proxy": empty_f32,
+            "conductivity_proxy": empty_f32,
+            "homo_eV": empty_f32,
+            "lumo_eV": empty_f32,
+            "gap_eV": empty_f32,
+            "ea_eV": empty_f32,
+            "tpsa": empty_f32,
+            "mw": empty_f32,
+            "fp": np.zeros((0, 2048), dtype=np.float32),
+            "reduction_records": [],
+            "sanity_warning": [],
+            "quantum_confidence": [],
+            "domain_applicable": [],
+            "domain_reason": [],
+            "domain_penalty": [],
+            "conformal_intervals": [],
+            "conformal_confidence": [],
+            "quantum_method": [],
+        }
+
+    def _closed_form_method(self) -> str:
+        """Honest method string for the closed-form orbital path.
+
+        The batch path always computes closed-form orbitals via
+        ``predict_orbitals_batch``, so ``quantum_method`` must never claim the
+        xTB backend even when ``PropertyOracle(use_xtb=True)``.
+        """
+        if getattr(self._quantum, "_use_lone_pair", True):
+            return "LPM HOMO + TOM LUMO"
+        return "TOM (Topological Orbital Model)"
+
+    def _predict_reduction_proxy_batch(
+        self, contexts: list[MoleculeContext]
+    ) -> list[dict[str, Any]]:
+        """ΔSCF electron-affinity records for a batch (ADR-2026-08-10).
+
+        When xTB is available the raw ΔSCF EAs are computed once, in parallel
+        and preserving input order, and assembled into records key-identical
+        to the scalar gas branch of ``ReductionOracle._compute``. Molecules
+        whose raw EA is None fall back to the scalar proxy. When xTB is
+        unavailable every molecule falls back to the scalar proxy (structural
+        ridge) — the batch path never probes for the xTB binary itself.
+        """
+        from aurelius.scoring.oracle.reduction import (
+            _EA_CALIBRATED_SPAN_RAW,
+            calibrate_ea,
+            compute_dscf_ea_batch,
+            has_xtb,
+        )
+
+        mols = [ctx.mol for ctx in contexts]
+        if not has_xtb():
+            return [self._predict_reduction_proxy(mol) for mol in mols]
+
+        records: list[dict[str, Any]] = []
+        for mol, raw in zip(mols, compute_dscf_ea_batch(mols), strict=True):
+            if raw is None:
+                records.append(self._predict_reduction_proxy(mol))
+                continue
+            lo, hi = _EA_CALIBRATED_SPAN_RAW
+            in_span = lo <= raw <= hi
+            record: dict[str, Any] = {
+                "ea_eV": round(calibrate_ea(raw), 4),
+                "method": "xtb_dscf",
+                "confidence": round(0.85 if in_span else 0.45, 4),
+                "in_calibrated_span": in_span,
+                "ea_raw": round(raw, 4),
+                "gas_ea_eV": None,
+                "cpu_seconds": 0.0,
+                "solvent": None,
+                "metric": "Spearman rho vs 40 experimental gas-phase EAs",
+                "sign_convention": "higher ea_eV = more easily reduced = less stable",
+            }
+            self._fill_lumo_fields(record, mol)
+            records.append(record)
+        return records
+
+    def _compute_batch_metadata(
+        self,
+        contexts: list[MoleculeContext],
+        homo_array: np.ndarray,
+        lumo_array: np.ndarray,
+        dielectric: np.ndarray,
+        viscosity: np.ndarray,
+    ) -> dict[str, Any]:
+        """Per-molecule metadata lists mirroring ``PropertyOracle.evaluate()``.
+
+        Reuses the exact scalar functions (``_apply_physical_bounds``,
+        ``compute_quantum_domain_penalty``, ``compute_gc_domain_penalty`` and
+        the conformal predictor) so batch and scalar tier-2 records stay
+        key-identical without duplicating oracle logic.
+        """
+        sanity_warning: list[list[str]] = []
+        quantum_confidence: list[str] = []
+        domain_applicable: list[bool] = []
+        domain_reason: list[str] = []
+        domain_penalty: list[float] = []
+        conformal_intervals: list[dict[str, list[float]]] = []
+        conformal_confidence: list[float] = []
+
+        cp = get_conformal_predictor()
+        for i, ctx in enumerate(contexts):
+            clamped, warnings_list = _apply_physical_bounds({
+                "dielectric_proxy": float(dielectric[i]),
+                "viscosity_proxy": float(viscosity[i]),
+                "homo_eV": float(homo_array[i]),
+                "lumo_eV": float(lumo_array[i]),
+            })
+            sanity_warning.append(warnings_list)
+
+            q_penalty, q_reason = compute_quantum_domain_penalty(ctx)
+            gc_penalty, gc_reason = compute_gc_domain_penalty(ctx)
+            d_penalty = min(q_penalty, gc_penalty)
+            reasons: list[str] = []
+            if q_penalty < 1.0:
+                reasons.append(f"quantum: {q_reason}")
+            if gc_penalty < 1.0:
+                reasons.append(f"GC: {gc_reason}")
+            domain_applicable.append(d_penalty >= 0.85)
+            domain_reason.append("; ".join(reasons) if reasons else _DATA_SOURCE)
+            domain_penalty.append(d_penalty)
+
+            intervals = {
+                "homo": cp.predict_interval("homo", clamped["homo_eV"]),
+                "lumo": cp.predict_interval("lumo", clamped["lumo_eV"]),
+                "dielectric": cp.predict_interval(
+                    "dielectric", clamped["dielectric_proxy"]
+                ),
+                "viscosity": cp.predict_interval(
+                    "viscosity", clamped["viscosity_proxy"]
+                ),
+            }
+            conformal_intervals.append({
+                prop: [round(lo, 4), round(hi, 4)]
+                for prop, (lo, hi) in intervals.items()
+            })
+            conformal_confidence.append(round(cp.confidence_discount(intervals), 4))
+
+            quantum_confidence.append(self._quantum._tom_confidence(ctx.mol))
+
+        return {
+            "sanity_warning": sanity_warning,
+            "quantum_confidence": quantum_confidence,
+            "domain_applicable": domain_applicable,
+            "domain_reason": domain_reason,
+            "domain_penalty": domain_penalty,
+            "conformal_intervals": conformal_intervals,
+            "conformal_confidence": conformal_confidence,
         }
 
     def __getstate__(self) -> dict[str, Any]:

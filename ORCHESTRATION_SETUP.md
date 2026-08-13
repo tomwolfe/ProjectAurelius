@@ -57,7 +57,30 @@ The orchestrator was dispatched on Gap 3. Outcome: **it refused to ship a bad fi
 
 **Result:** `pytest tests/test_reduction_oracle.py` → 36 passed; full suite → 351 passed, 1 failed (pre-existing, unrelated: `test_generation_loop_discovers_novel_scaffolds`), 1 skipped. Nothing committed.
 
-**Follow-up open:** Gap 3 (solution EA) remains honest-but-uncalibrated; Gap 1 (batch oracle in the loop) and Gap 2 (discovery benchmark gates) are still open in `GAP_ANALYSIS.md`.
+## Gap 1 execution (2026-08-12) — COMPLETE
+
+Second orchestrator dispatch, executed on Zen free tier. Gap 1 (batch oracle into the loop) was implemented across `oracle.py`, `pipeline.py`, `loop.py` and verified:
+
+- `predict_batch_properties` now returns the reduction axis (`ea_eV`, `reduction_records`).
+- `screen_batch` is the single implementation; `screen_molecule` is a thin wrapper (paths cannot drift).
+- Loop uses one `screen_batch` call per generation; `_rank_by_xtb` is threaded with a lock-protected cache.
+- Regression test `test_batch_screening_matches_scalar_scores` passes. Full suite: **521 passed, 8 failed (all pre-existing on clean checkout), 2 skipped** — zero new regressions.
+- Throughput with reduction axis: ~10.7 mol/s (xTB-bound). The ≥100 mol/s target remains open (needs a cheaper EA surrogate).
+
+**Follow-up open:** Gap 2 (discovery benchmark gates) in `GAP_ANALYSIS.md`; reduction-axis throughput target for Gap 1.
+
+## Gap 2 execution (2026-08-12) — COMPLETE
+
+Third orchestrator dispatch, executed on Zen free tier. Gap 2 (discovery benchmark gates + confound audit) implemented across `benchmark_unified.py`, `audit_label_confound.py`, regenerated result JSONs/MD, and verified:
+
+- `check_tolerances` now hard-fails when the `discovery` section is missing/empty ("discovery benchmark not run") instead of passing by default.
+- `donor_number` added to the audited targets; `label_confound.json` regenerated.
+- Full benchmark run without `--skip-discovery`; `unified_benchmark.json` discovery section now populated.
+- Regression tests `test_discovery_gates_require_results`, `test_donor_number_audited` pass. Full suite: **525 passed, 8 failed (same pre-existing set), 2 skipped** — zero new regressions.
+
+**Honest finding:** with the gates no longer skippable the benchmark **FAILs**: rediscovery 0.0 (0/51, canonical-SMILES verified — the loop genuinely does not reproduce known electrolytes), novelty 54.5% (< 80%), score gap +27.16 (passes). Donor Number audited as **confounded** (citation ρ 0.70, between-source fraction 0.51) — the "weak ρ 0.19" axis is partly a label artifact. Do not "fix" the FAIL by loosening gates; the fix is loop/mutation work.
+
+**All three gaps are now executed.** Gap 3 recorded as BLOCKED (rank-reversing fit, decision A applied), Gap 1 COMPLETE, Gap 2 COMPLETE-with-honest-FAIL. Nothing committed.
 
 ## Known conditions
 
