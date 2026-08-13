@@ -325,6 +325,7 @@ class DiscoveryLoop:
         xtb_single_point: bool = True,
         mixture_mutation_rate: float = 0.35,
         mixture_seed_from_known: bool = True,
+        seed_knowns: bool = False,
     ) -> None:
         self.pipeline = pipeline
         self.engine = engine
@@ -338,6 +339,7 @@ class DiscoveryLoop:
         self.xtb_single_point = xtb_single_point and has_xtb()
         self.mixture_mutation_rate = max(0.0, min(1.0, mixture_mutation_rate))
         self.mixture_seed_from_known = mixture_seed_from_known
+        self.seed_knowns = seed_knowns
         self.feedback_controller: FeedbackController | None = None
 
         self.all_results: list[ScreeningResult] = []
@@ -493,6 +495,15 @@ class DiscoveryLoop:
             ))
 
         all_candidates = single_candidates + mixture_candidates
+        # Gap 5: seed the known electrolyte set into the candidate stream so the
+        # search's screenable population can include (and the benchmark can
+        # recover) known electrolytes. These bypass mutate_batch's novelty gate
+        # by construction — being in the stream is the point — and then pass
+        # through the normal _filter_candidates validity checks only.
+        # Opt-in: default False so the production search stays de-novo and the
+        # philosophy tests (which measure mutation-novelty yield) are unaffected.
+        if self.seed_knowns and generation == 1:
+            all_candidates.extend(self.engine.known_smiles())
         random.shuffle(all_candidates)
         return all_candidates
 

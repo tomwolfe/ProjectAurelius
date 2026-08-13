@@ -236,6 +236,9 @@ class MutationEngine:
     def commercial_db_size(self) -> int:
         return len(self._commercial_fps)
 
+    def known_smiles(self) -> list[str]:
+        return list(self._known_smiles)
+
     def add_to_db(self, smiles: str) -> None:
         ctx = self._get_ctx(smiles)
         if ctx is not None:

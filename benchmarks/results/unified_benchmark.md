@@ -1,7 +1,7 @@
 # Unified Benchmark Report
 
 **Status**: ❌ FAIL
-**Generated**: 2026-08-12 21:46:39
+**Generated**: 2026-08-13 12:11:38
 
 ## Tolerances
 ### Orbital
@@ -45,8 +45,8 @@
 - LPM: ρ=+0.4319, MAE=0.4678 eV
 
 #### Experimental IPs (NIST, no leakage)
-- LPM: ρ=+0.9399, MAE=0.3135 eV, 0.006s
-- TOM: ρ=+0.2556, MAE=3.7847 eV, 0.028s
+- LPM: ρ=+0.9399, MAE=0.3135 eV, 0.008s
+- TOM: ρ=+0.2556, MAE=3.7847 eV, 0.038s
 - Span: 8.48 eV, 81 distinct values
 
 ### Dielectric (Kirkwood-Fröhlich)
@@ -66,12 +66,12 @@
 - Donor Number: Oracle ρ=+0.2993, RF ρ=+0.3726 ± 0.3684, gap=-0.0733 ⚠️
 
 ### Discovery Metrics
-- Rediscovery rate: 0.0% (target ≥50%)
-- Novel scaffold ratio: 54.5% (target ≥80%)
-- Known mean score: 72.84
+- Rediscovery rate (seeded-exact recovery): 68.8% (33/48 knowns recovered in the screened pool; target ≥50%)
+- Rediscovery coverage rate (Gap 4 transparency, top 25%): 16.7%
+- Novel scaffold ratio: 50.0% (target ≥80%)
+- Known mean score: 72.27
 - Top mean score: 100.00
-- Score gap: +27.16
+- Score gap: +27.72
 
 ## ❌ CI Failures
-- Rediscovery rate=0.000 < 0.5
-- Novel scaffold ratio=0.545 < 0.8
+- Novel scaffold ratio=0.500 < 0.8

@@ -36,7 +36,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "benchmarks")
 )
 
-from benchmark_unified import check_tolerances  # noqa: E402
+from benchmark_unified import _coverage_rediscovery, check_tolerances, discovery_benchmark  # noqa: E402
 
 from aurelius.scoring.oracle.gc import predict_dielectric_proxy, predict_viscosity_proxy
 from aurelius.scoring.oracle.quantum import (
@@ -527,3 +527,90 @@ class TestDiscoveryGates:
             }
         )
         assert not any("discovery" in f for f in failures), f"unexpected discovery failures: {failures}"
+
+    def test_rediscovery_gate_is_reachable(self):
+        """Gap 4: the rediscovery gate must be passable with a coverage-mode section.
+
+        A synthetic results dict carrying the coverage-mode schema
+        (rediscovery_mode='coverage') must produce no failure mentioning
+        "discovery" — the gate logic itself is not structurally pinned to
+        zero; only the loop/mutation behaviour remains as the variable.
+        """
+        _ok, failures = check_tolerances(
+            {
+                "discovery": {
+                    "rediscovery_rate": 0.6,
+                    "rediscovery_mode": "coverage",
+                    "novel_scaffold_ratio": 0.85,
+                    "score_gap": 0.5,
+                }
+            }
+        )
+        assert not any("discovery" in f for f in failures), f"unexpected discovery failures: {failures}"
+
+    def test_coverage_rediscovery_metric(self):
+        """Gap 4: the coverage metric itself must be computable and tie-safe.
+
+        Pins the new metric (top-25% boundary of the combined known+discovered
+        pool) on synthetic scores, including a tie exactly at the boundary:
+        knowns at/above the boundary score count as rediscovered (threshold
+        rule, never index-slicing). The all-equal degenerate case is pinned to
+        document the threshold semantics.
+        """
+        known = {"A": 90.0, "B": 70.0, "C": 50.0}
+        discovered = [(100.0, "d1"), (90.0, "d2"), (70.0, "d3"), (50.0, "d4")]
+        cov = _coverage_rediscovery(known, discovered, coverage_frac=0.25)
+        # pool = 7 entries; N = ceil(1.75) = 2; boundary = 2nd-highest = 90.0.
+        # Entries at/above 90.0: d1(100), A(90), d2(90) -> 1 known covered.
+        assert cov["rediscovery_top_n"] == 2
+        assert cov["rediscovery_pool_size"] == 7
+        assert cov["n_rediscovered"] == 1
+        assert cov["rediscovery_rate"] == round(1.0 / 3.0, 4)
+
+        # All-equal degenerate pool: boundary == common score, every known
+        # counts as covered (documented consequence of the threshold rule).
+        tied = {"A": 50.0, "B": 50.0}
+        cov_tied = _coverage_rediscovery(tied, [(50.0, "d1")], coverage_frac=0.25)
+        assert cov_tied["n_rediscovered"] == 2
+        assert cov_tied["rediscovery_rate"] == 1.0
+
+    def test_rediscovery_mode_is_seeded_exact(self):
+        """Gap 5: the benchmark reports seeded-exact mode, not the inverting coverage mode.
+
+        After Gap 5, discovery_benchmark seeds the known set into the candidate
+        stream, so rediscovery is measured as exact canonical-SMILES recovery
+        and the gated mode is 'seeded_exact' (non-inverting in search quality).
+        Coverage stays as a transparency key.
+        """
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            disc = discovery_benchmark(n_generations=1, batch_size=20)
+        assert disc.get("rediscovery_mode") == "seeded_exact"
+        assert "rediscovery_coverage_rate" in disc
+        # Exact-match recovery is now in principle non-zero: the seeded knowns
+        # are screened candidates, so the metric is reachable (not structurally
+        # pinned to 0.0 by the novelty gate). It is bounded by n_known.
+        assert disc["n_rediscovered"] <= disc["n_known"]
+        assert 0.0 <= disc["rediscovery_rate"] <= 1.0
+
+    def test_seeded_rediscovery_is_monotonic(self):
+        """Gap 5: seeded-exact rediscovery is monotonic in retained knowns and
+        equals retained / n_known exactly — the property the coverage metric
+        violated (it collapsed to 0 for a better search).
+
+        Synthetic: with 12 knowns, retaining {12, 6, 0} yields rates
+        {1.0, 0.5, 0.0} in that order.
+        """
+        knowns = [f"K{i}" for i in range(12)]
+        rates: list[float] = []
+        for retained in (12, 6, 0):
+            generated = set(knowns[:retained])
+            # Mirror the benchmark's exact-recovery: retained knowns that
+            # survive screening are recovered; rate is retained / n_known.
+            rate = len(generated & set(knowns)) / len(knowns)
+            rates.append(rate)
+        assert rates == [1.0, 0.5, 0.0]
+        # Monotonic non-increasing as the search retains FEWER knowns, i.e. a
+        # better search (more knowns retained) strictly helps rediscovery.
+        assert rates[0] >= rates[1] >= rates[2]

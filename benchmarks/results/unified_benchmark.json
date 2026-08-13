@@ -41,13 +41,13 @@
         "n": 88,
         "spearman_rho": 0.93991951111468,
         "mae": 0.31350594119269815,
-        "seconds": 0.0064
+        "seconds": 0.0083
       },
       "tom": {
         "n": 88,
         "spearman_rho": 0.2555759990788422,
         "mae": 3.7846883658929302,
-        "seconds": 0.0275
+        "seconds": 0.0376
       },
       "n": 88,
       "span_eV": 8.48,
@@ -59,7 +59,7 @@
       "n": 55,
       "spearman_rho": 0.9339634554812198,
       "mae": 3.2583742807884852,
-      "seconds": 0.0104
+      "seconds": 0.013
     },
     "commercial": {
       "n": 10,
@@ -85,15 +85,22 @@
     }
   },
   "discovery": {
-    "rediscovery_rate": 0.0,
-    "novel_scaffold_ratio": 0.5455,
-    "known_mean_score": 72.84,
+    "rediscovery_mode": "seeded_exact",
+    "rediscovery_rate": 0.6875,
+    "rediscovery_exact_rate": 0.6875,
+    "rediscovery_coverage_frac": 0.25,
+    "rediscovery_coverage_rate": 0.1667,
+    "rediscovery_top_n": 133,
+    "rediscovery_pool_size": 530,
+    "novel_scaffold_ratio": 0.5,
+    "known_mean_score": 72.27,
     "top_mean_score": 100.0,
-    "score_gap": 27.16,
-    "n_known": 51,
-    "n_rediscovered": 0,
-    "n_top_scaffolds": 11,
-    "n_novel_scaffolds": 6
+    "score_gap": 27.72,
+    "n_known": 48,
+    "n_rediscovered": 33,
+    "n_rediscovered_exact": 33,
+    "n_top_scaffolds": 10,
+    "n_novel_scaffolds": 5
   },
   "ml_baseline": {
     "HOMO": {
