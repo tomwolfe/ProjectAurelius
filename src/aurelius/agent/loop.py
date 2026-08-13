@@ -114,6 +114,9 @@ def _collect_obj_scores(
     obj_scores["homo_eV"].append(t2.get("homo_eV", -99.0))
     obj_scores["lumo_eV"].append(t2.get("lumo_eV", -99.0))
     obj_scores["sa_score"].append(score_data.get("sa_score", 5.0))
+    obj_scores["synthesis_depth"].append(
+        float(score_data.get("synthesis_depth", 3))
+    )
     obj_scores["synthesizability_complexity"].append(
         score_data.get("synthesizability_complexity", 0.5)
     )
