@@ -620,11 +620,34 @@ class AureliusPipeline:
         if not contexts:
             return []
 
+        results, pending = self._filter_tier1(contexts)
+
+        if pending:
+            viable_contexts = [ctx for _, ctx, _ in pending]
+            try:
+                batch = self._oracle.predict_batch_properties(viable_contexts)
+            except Exception as exc:
+                logger.warning("Batch oracle failed (%s) — falling back to scalar.", exc)
+                batch = None
+            batch_results = self._assemble_batch_results(pending, batch)
+            for j, (i, _, _) in enumerate(pending):
+                results[i] = batch_results[j]
+
+        return [r for r in results if r is not None]
+
+    def _filter_tier1(
+        self,
+        contexts: list[MoleculeContext],
+    ) -> tuple[list[dict[str, Any] | None], list[tuple[int, MoleculeContext, dict[str, Any] | None]]]:
+        """Tier-1 filtering loop for a batch of contexts.
+
+        Returns ``(results, pending)`` where *results* has failed-run entries
+        for Tier-1-rejected molecules (preserving input order) and *pending*
+        contains ``(index, context, t1_result)`` for viable molecules.
+        """
         results: list[dict[str, Any] | None] = [None] * len(contexts)
         pending: list[tuple[int, MoleculeContext, dict[str, Any] | None]] = []
 
-        # Tier-1 gate, preserving input order (same short-circuit as the old
-        # scalar screen_molecule).
         for i, ctx in enumerate(contexts):
             t1_result = None
             if self._filter:
@@ -636,27 +659,35 @@ class AureliusPipeline:
                     continue
             pending.append((i, ctx, t1_result))
 
-        if pending:
-            viable_contexts = [ctx for _, ctx, _ in pending]
-            try:
-                batch = self._oracle.predict_batch_properties(viable_contexts)
-            except Exception as exc:
-                logger.warning("Batch oracle failed (%s) — falling back to scalar.", exc)
-                batch = None
-            for j, (i, ctx, t1_result) in enumerate(pending):
-                try:
-                    if batch is not None:
-                        results[i] = self._assemble_batch_result(ctx, j, batch, t1_result)
-                    else:
-                        results[i] = self.screen_molecule(ctx)
-                except Exception as exc:
-                    logger.debug(
-                        "Batch assembly failed for %s (%s) — falling back to scalar.",
-                        ctx.smiles, exc,
-                    )
-                    results[i] = self.screen_molecule(ctx)
+        return results, pending
 
-        return [r for r in results if r is not None]
+    def _assemble_batch_results(
+        self,
+        pending: list[tuple[int, MoleculeContext, dict[str, Any] | None]],
+        batch: dict[str, Any] | None,
+    ) -> list[dict[str, Any] | None]:
+        """Assembly for‑loop with fallback.
+
+        For each pending molecule uses the batch oracle when available,
+        otherwise falls back to ``screen_molecule``.  Any per-molecule
+        assembly exception also falls back to scalar.
+        """
+        results: list[dict[str, Any] | None] = [None] * len(pending)
+
+        for j, (i, ctx, t1_result) in enumerate(pending):
+            try:
+                if batch is not None:
+                    results[j] = self._assemble_batch_result(ctx, j, batch, t1_result)
+                else:
+                    results[j] = self.screen_molecule(ctx)
+            except Exception as exc:
+                logger.debug(
+                    "Batch assembly failed for %s (%s) — falling back to scalar.",
+                    ctx.smiles, exc,
+                )
+                results[j] = self.screen_molecule(ctx)
+
+        return results
 
     def _assemble_batch_result(
         self,

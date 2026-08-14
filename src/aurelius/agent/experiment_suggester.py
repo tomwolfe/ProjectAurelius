@@ -1018,20 +1018,7 @@ def suggest_experiments(
     # below target. A 61-mol pool is saturated (ADR-2026-08-10-03) — random already
     # covers a third of it at budget 20. Expansion to >=200 gives diversity-based
     # acquisition room to operate.
-    if expand_pool and len(candidates) < MIN_POOL_SIZE * 2:
-        if len(candidates) >= _MIN_EXPAND_POOL:
-            expanded = expand_candidate_pool(candidates, target_size=MIN_POOL_SIZE)
-            if len(expanded) > len(candidates):
-                logger.info(
-                    "Pool expanded %d -> %d via BRICS harvesting",
-                    len(candidates), len(expanded),
-                )
-                candidates = expanded
-        else:
-            logger.debug(
-                "Pool too small for expansion (%d < %d); scoring directly.",
-                len(candidates), _MIN_EXPAND_POOL,
-            )
+    candidates = _maybe_expand_pool(candidates, expand_pool)
 
     # Pass 1: evaluate every candidate once, so the decision thresholds used by
     # the expected-impact term reflect the whole pool rather than one molecule.
@@ -1264,6 +1251,48 @@ def pareto_ucb_score(
 DECISION_BOUNDARY = 65.0  # Score threshold for "good" electrolyte
 DECISION_BOUNDARY_WIDTH = 10.0  # Width of the boundary region for soft penalty
 
+def _compute_bald_mlx(
+    evaluated: list[tuple[Any, dict[str, float], float, float, str]],
+    smiles_keys: list[str],
+    mols: list[Any],
+    gpr_model: Any | None,
+) -> dict[str, float] | None:
+    """Compute BALD scores using the MLX GPR surrogate.
+
+    Returns a dict mapping canonical SMILES to BALD score, or ``None`` when
+    the MLX path is not available (caller should fall back to the conformal
+    predictor).
+    """
+    from aurelius.scoring.oracle.mlx_surrogate import MLXGPRSurrogate
+
+    surrogate = MLXGPRSurrogate(gpr_model)
+    if not surrogate.is_available:
+        return None
+
+    _, stds = surrogate.predict_batch(mols, return_std=True)
+    if stds is None:
+        return None
+
+    _, means = surrogate.predict_batch(mols)
+    top_k = min(20, len(evaluated))
+    mean_std_pairs = list(zip(means, stds, smiles_keys))
+    mean_std_pairs.sort(key=lambda x: -x[0])  # Sort by mean descending
+    top_candidates = mean_std_pairs[:top_k]
+
+    db_boost: dict[str, float] = {}
+    for mean, std, smi in top_candidates:
+        dist_to_boundary = abs(mean - DECISION_BOUNDARY)
+        # Soft penalty: higher when closer to boundary
+        db_term = float(np.exp(-dist_to_boundary / DECISION_BOUNDARY_WIDTH))
+        db_boost[smi] = db_term
+
+    bald_scores = {
+        smi: (std / (1.0 + std)) * (0.5 + 0.5 * db_boost.get(smi, 0.0))
+        for smi, std in zip(smiles_keys, stds, strict=False)
+    }
+    return bald_scores
+
+
 def _compute_bald_scores(
     evaluated: list[tuple[Any, dict[str, float], float, float, str]],
     gpr_model: Any | None,
@@ -1285,58 +1314,59 @@ def _compute_bald_scores(
     mols = [ctx.mol for ctx, _, *_ in evaluated]
     smiles_keys = [Chem.MolToSmiles(ctx.mol) for ctx, _, *_ in evaluated]
 
-    try:
-        from aurelius.scoring.oracle.mlx_surrogate import MLXGPRSurrogate
+    bald_scores = _compute_bald_mlx(evaluated, smiles_keys, mols, gpr_model)
+    if bald_scores is not None:
+        return bald_scores
 
-        surrogate = MLXGPRSurrogate(gpr_model)
-        if surrogate.is_available:
-            _, stds = surrogate.predict_batch(mols, return_std=True)
-            if stds is not None:
-                # Compute predicted means for decision boundary term
-                _, means = surrogate.predict_batch(mols)
-                # Top-k decision boundary impact: boost candidates near score=65
-                top_k = min(20, len(evaluated))
-                # Sort by predicted mean to find top-k
-                mean_std_pairs = list(zip(means, stds, smiles_keys))
-                mean_std_pairs.sort(key=lambda x: -x[0])  # Sort by mean descending
-                top_candidates = mean_std_pairs[:top_k]
-                # Compute decision boundary boost for top-k
-                db_boost: dict[str, float] = {}
-                for mean, std, smi in top_candidates:
-                    dist_to_boundary = abs(mean - DECISION_BOUNDARY)
-                    # Soft penalty: higher when closer to boundary
-                    db_term = float(np.exp(-dist_to_boundary / DECISION_BOUNDARY_WIDTH))
-                    db_boost[smi] = db_term
-                # Combine BALD score with decision boundary boost
-                bald_scores = {
-                    smi: (std / (1.0 + std)) * (0.5 + 0.5 * db_boost.get(smi, 0.0))
-                    for smi, std in zip(smiles_keys, stds, strict=False)
-                }
-                return bald_scores
-    except Exception:
-        pass
+    # Fallback: approximate BALD via the uncertainty term from the conformal
+    # interval half-width, normalised to [0, 1].
+    from aurelius.scoring.oracle.conformal import get_conformal_predictor
 
-    try:
+    predictor = get_conformal_predictor()
+    result = {}
+    for ctx, preds, _, _, _ in evaluated:
+        total_width = 0.0
+        n_props = 0
+        for prop in MEASURABLE_PROPERTIES:
+            _, interval = predictor.predict_interval(prop, preds.get(prop, 0.0), mol=ctx.mol)
+            total_width += interval[1] - interval[0]
+            n_props += 1
+        avg_width = total_width / max(n_props, 1)
+        result[Chem.MolToSmiles(ctx.mol)] = avg_width / (1.0 + avg_width)
+    return result
 
 
-        # Fallback: approximate BALD via the uncertainty term from the conformal
-        # interval half-width, normalised to [0, 1].
-        from aurelius.scoring.oracle.conformal import get_conformal_predictor
+def _maybe_expand_pool(
+    candidates: list[str],
+    expand_pool: bool,
+) -> list[str]:
+    """Expand the candidate pool via BRICS harvesting if it is too small.
 
-        predictor = get_conformal_predictor()
-        result = {}
-        for ctx, preds, _, _, _ in evaluated:
-            total_width = 0.0
-            n_props = 0
-            for prop in MEASURABLE_PROPERTIES:
-                _, interval = predictor.predict_interval(prop, preds.get(prop, 0.0), mol=ctx.mol)
-                total_width += interval[1] - interval[0]
-                n_props += 1
-            avg_width = total_width / max(n_props, 1)
-            result[Chem.MolToSmiles(ctx.mol)] = avg_width / (1.0 + avg_width)
-        return result
-    except Exception:
-        return {}
+    If ``expand_pool`` is ``False`` the original list is returned unchanged.
+    If the pool already meets the target size it is also returned as-is.
+    Very small pools (< _MIN_EXPAND_POOL) are scored directly without
+    expansion.
+    """
+    if not expand_pool:
+        return candidates
+
+    if len(candidates) >= MIN_POOL_SIZE * 2:
+        return candidates
+
+    if len(candidates) >= _MIN_EXPAND_POOL:
+        expanded = expand_candidate_pool(candidates, target_size=MIN_POOL_SIZE)
+        if len(expanded) > len(candidates):
+            logger.info(
+                "Pool expanded %d -> %d via BRICS harvesting",
+                len(candidates), len(expanded),
+            )
+            return expanded
+
+    logger.debug(
+        "Pool too small for expansion (%d < %d); scoring directly.",
+        len(candidates), _MIN_EXPAND_POOL,
+    )
+    return candidates
 
 
 def _compute_per_property_uncertainty(
@@ -1497,6 +1527,45 @@ def _property_distance(
     return max(0.0, min(1.0, 1.0 - norm))
 
 
+def _diversify_score(
+    candidate: ExperimentSuggestion,
+    seen_molecules: dict[str, int],
+    seen_properties: dict[str, int],
+    fingerprints: dict[str, Any] | None,
+    chosen_fps: list[Any],
+    elite_predictions: dict[str, dict[str, float]] | None,
+    elite_points: dict[str, list[float]],
+) -> float:
+    """Compute the diversified adjusted-priority score for a single candidate.
+
+    Combines the exact-repetition discount, the optional structural (Tanimoto)
+    penalty, and the optional property-space distance penalty into a single
+    float score. Extracted from ``_diversify`` to keep that selector's greedy
+    loop below the cyclomatic-complexity budget.
+    """
+    penalty = _REDUNDANCY_DISCOUNT ** (
+        seen_molecules.get(candidate.smiles, 0)
+        + seen_properties.get(candidate.property_to_measure, 0)
+    )
+    if fingerprints is not None:
+        value = candidate.priority_score * penalty * _structural_penalty(
+            fingerprints.get(candidate.smiles), chosen_fps
+        )
+    else:
+        value = candidate.priority_score * penalty
+
+    # Property-space distance penalty: reduce score of candidates
+    # whose predictions are close to already-elite predictions.
+    if elite_predictions is not None:
+        prop = candidate.property_to_measure
+        point = candidate.predicted_value
+        dist = _property_distance(point, prop, {
+            p: list(vals) for p, vals in elite_points.items() if p == prop
+        })
+        value *= dist
+    return value
+
+
 def _diversify(
     ranked: list[ExperimentSuggestion],
     top_n: int,
@@ -1557,26 +1626,15 @@ def _diversify(
     while remaining and len(selected) < top_n:
         best_index, best_value = 0, -1.0
         for i, candidate in enumerate(remaining):
-            penalty = _REDUNDANCY_DISCOUNT ** (
-                seen_molecules.get(candidate.smiles, 0)
-                + seen_properties.get(candidate.property_to_measure, 0)
+            value = _diversify_score(
+                candidate,
+                seen_molecules,
+                seen_properties,
+                fingerprints,
+                chosen_fps,
+                elite_predictions,
+                elite_points,
             )
-            if fingerprints is not None:
-                value = candidate.priority_score * penalty * _structural_penalty(
-                    fingerprints.get(candidate.smiles), chosen_fps
-                )
-            else:
-                value = candidate.priority_score * penalty
-
-            # Property-space distance penalty: reduce score of candidates
-            # whose predictions are close to already-elite predictions.
-            if elite_predictions is not None:
-                prop = candidate.property_to_measure
-                point = candidate.predicted_value
-                dist = _property_distance(point, prop, {
-                    p: list(vals) for p, vals in elite_points.items() if p == prop
-                })
-                value *= dist
 
             if value > best_value:
                 best_index, best_value = i, value
