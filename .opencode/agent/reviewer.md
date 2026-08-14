@@ -1,7 +1,7 @@
 ---
 description: Read-only code reviewer for Project Aurelius. Reviews diffs against project ADRs and philosophy checks. Invoke before accepting a worker's changes.
 mode: subagent
-model: opencode/big-pickle
+model: opencode/laguna-s-2.1-free
 permission:
   edit: deny
   bash:

@@ -1,7 +1,7 @@
 ---
 description: Lead orchestrator for Project Aurelius. Plans gap-closing work, delegates tasks to analyst/worker/verifier/reviewer subagents, and drives the loop until verifiably complete.
 mode: primary
-model: opencode/deepseek-v4-flash-free
+model: opencode/laguna-s-2.1-free
 permission:
   task:
     "*": deny

@@ -1,7 +1,7 @@
 ---
 description: Read-only analysis of the Project Aurelius codebase. Produces gap analyses, bottleneck identification, and file-scoped task specs. Invoke before planning or delegating changes.
 mode: subagent
-model: opencode/big-pickle
+model: opencode/laguna-s-2.1-free
 permission:
   edit: deny
   bash:

@@ -1,7 +1,7 @@
 ---
 description: Implements exactly one task in Project Aurelius (src/, tests/) with a regression test, then runs the relevant pytest file before reporting. Use for code changes delegated by the orchestrator.
 mode: subagent
-model: opencode/deepseek-v4-flash-free
+model: opencode/laguna-s-2.1-free
 permission:
   edit: allow
   bash:

@@ -1,7 +1,7 @@
 ---
 description: Read-only verifier. Runs pytest, git status/diff, and benchmarks for Project Aurelius; reports pass/fail. Invoke after a worker completes.
 mode: subagent
-model: opencode/big-pickle
+model: opencode/laguna-s-2.1-free
 permission:
   edit: deny
   bash:
