@@ -228,6 +228,28 @@ class MutationEngine:
                     self._commercial_fps.append(cached_ctx.get_ecfp4())
                     self._known_smiles.add(canon)
 
+        # ADR-2026-08-12-001: Also compute Murcko scaffolds for known
+        # electrolytes and inject them into the scaffold novelty set.
+        # Previously, is_novel_scaffold only checked scaffolds from the seed
+        # pool, so mutations that reproduced a known electrolyte core (e.g.
+        # swapping one substituent on an EC scaffold) passed the scaffold gate
+        # and inflated the rediscovery rate at the cost of novelty. Adding
+        # these scaffolds ensures the novelty gate actively rejects any
+        # molecule whose Murcko scaffold matches a known electrolyte, forcing
+        # the search toward genuinely novel cores.
+        if MurckoScaffold is not None:
+            for smi in smiles_list:
+                cached_ctx = self._get_ctx(smi)
+                if cached_ctx is not None:
+                    try:
+                        scaffold = MurckoScaffold.MurckoScaffoldSmiles(
+                            mol=cached_ctx.mol
+                        )
+                        if scaffold:
+                            self._seed_scaffolds.add(scaffold)
+                    except Exception:
+                        continue
+
         logger.info(
             "Loaded %d known electrolyte fingerprints for global novelty checking.",
             len(self._commercial_fps),

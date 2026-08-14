@@ -122,6 +122,64 @@ class TestNovelScaffoldDiscovery:
             "EMC should be accepted with check_scaffold=False"
         )
 
+    def test_known_electrolyte_scaffolds_blocked(self):
+        """Mutations reproducing a known electrolyte's Murcko scaffold are rejected.
+
+        ADR-2026-08-12-001: known electrolyte scaffolds must be in the scaffold
+        novelty set so the gate rejects molecules sharing a known core, even when
+        the molecule itself is structurally novel (different substituents).
+        Without this, mutations like EC-scaffold + different substituent pass
+        the scaffold gate and inflate the rediscovery rate at the cost of novelty.
+        """
+        engine = MutationEngine(seed_smiles=["COC(=O)OC", "C1COCCO1"])
+
+        # The mutation engine loads known electrolytes (including EC).
+        # Verify that EC's Murcko scaffold is now tracked.
+        from rdkit.Chem.Scaffolds import MurckoScaffold
+        ec_scaffold = MurckoScaffold.MurckoScaffoldSmiles(
+            mol=Chem.MolFromSmiles("C1COC(=O)O1")
+        )
+        assert ec_scaffold is not None and len(ec_scaffold) > 0
+        assert ec_scaffold in engine._seed_scaffolds, (
+            f"EC scaffold '{ec_scaffold}' should be in seed_scaffolds after "
+            "loading known electrolytes"
+        )
+
+        # A molecule with the same scaffold as EC but a different substituent
+        # must be rejected by the scaffold novelty gate.
+        # EC is C1COC(=O)O1 (cyclic carbonate); substituting one H with a methyl
+        # gives C1COC(=O)OC1 (a spiro-like variant — still has the same core scaffold).
+        # Instead, use a molecule that definitely shares EC's Murcko scaffold:
+        # 1,2-epoxyethane (oxirane) has scaffold c1cco1 which differs, so let's
+        # use a known electrolyte that shares a scaffold with a seed.
+        # DMC (COC(=O)OC) has scaffold O=C(O)O — any molecule with that scaffold
+        # but different alkyl chains should be rejected.
+        # "CCOC(=O)OCC" (diethyl carbonate) shares DMC's scaffold.
+        dec_ctx = MoleculeContext.from_smiles("CCOC(=O)OCC")
+        assert dec_ctx is not None
+        dmc_scaffold = MurckoScaffold.MurckoScaffoldSmiles(
+            mol=Chem.MolFromSmiles("COC(=O)OC")
+        )
+        dec_scaffold = MurckoScaffold.MurckoScaffoldSmiles(
+            mol=Chem.MolFromSmiles("CCOC(=O)OCC")
+        )
+        assert dec_scaffold == dmc_scaffold, (
+            f"DEC ({dec_scaffold}) should share DMC scaffold ({dmc_scaffold})"
+        )
+        # Since DMC is a seed, DEC should be rejected as a trivial extension
+        assert engine._novelty_check(dec_ctx) is False, (
+            "DEC shares DMC's scaffold and is a trivial alkyl extension — must be rejected"
+        )
+
+        # Now verify that a truly novel scaffold still passes.
+        # A 5-membered ring with a heteroatom not in the known set:
+        # thiophene (c1ccsc1) has a novel scaffold distinct from all known electrolytes.
+        novel_ctx = MoleculeContext.from_smiles("c1ccsc1")
+        assert novel_ctx is not None
+        assert engine._novelty_check(novel_ctx) is True, (
+            "Thiophene has a novel scaffold — should be accepted"
+        )
+
 
 class TestAntiFrankenstein:
     """BRICS reassembly must reject "Frankenstein" molecules."""
@@ -329,6 +387,92 @@ class TestOracleNonlinear:
         assert gcp2 == pytest.approx(1.0, abs=1e-4), (
             f"DMC should have no GC DoA penalty (got {gcp2})"
         )
+
+    def test_quantum_doa_penalty_high_fluorine_density(self):
+        """High-fluorine-count molecules must receive a confidence downgrade.
+
+        ADR-2026-08-12-003: molecules with ≥6 fluorine atoms or high
+        heteroatom density (≥55%) are the #1 extrapolation failure mode
+        for the xTB-calibrated LPM HOMO. The downgrade is applied via
+        ``quantum_confidence`` at evaluation time (not in
+        ``compute_quantum_domain_penalty``) so the conformal calibration
+        fit is not disrupted.
+        """
+        from aurelius.scoring.oracle.quantum import _has_unreliable_homo_region
+
+        # A molecule with 6 fluorines: realistic fluorinated electrolyte
+        ctx_heavy_f = MoleculeContext.from_smiles(
+            "OCC(F)(F)C(F)(F)C(F)(F)OC"
+        )
+        assert ctx_heavy_f is not None
+        n_f = sum(
+            a.GetAtomicNum() == 9 for a in ctx_heavy_f.mol.GetAtoms()
+        )
+        assert n_f >= 6, f"Test molecule should have ≥6 F atoms (got {n_f})"
+        assert _has_unreliable_homo_region(ctx_heavy_f.mol), (
+            f"6+F molecule should be flagged unreliable (n_F={n_f})"
+        )
+
+        # A molecule with <6 F and low heteroatom density should NOT be flagged
+        ctx_normal = MoleculeContext.from_smiles("COC(=O)OC")
+        assert ctx_normal is not None
+        n_f_normal = sum(a.GetAtomicNum() == 9 for a in ctx_normal.mol.GetAtoms())
+        assert n_f_normal == 0
+        n_hetero = sum(
+            a.GetAtomicNum() in {7, 8, 9, 15, 16, 17, 35}
+            for a in ctx_normal.mol.GetAtoms()
+        )
+        hetero_frac = n_hetero / max(ctx_normal.mol.GetNumHeavyAtoms(), 1)
+        assert hetero_frac < 0.55, (
+            f"DMC should have low heteroatom fraction (got {hetero_frac:.2f})"
+        )
+        assert not _has_unreliable_homo_region(ctx_normal.mol), (
+            "DMC should not be flagged as unreliable"
+        )
+
+    def test_quantum_doa_penalty_bands_monotonic(self):
+        """The reliability threshold must be consistent as F count increases.
+
+        The ``_has_unreliable_homo_region`` function must be monotonically
+        non-decreasing in fluorine count — each additional fluorine beyond
+        the threshold must not *un-flag* an already-flagged molecule.
+        """
+        from aurelius.scoring.oracle.quantum import _has_unreliable_homo_region
+
+        # Build a series of ether molecules with increasing fluorine content
+        smi_list = [
+            "COC(=O)OC",                                # 0 F — within domain
+            "COC(=O)OCC(F)(F)F",                        # 3 F — within domain
+            "OCC(F)(F)C(F)(F)C(F)(F)OC",                # 6 F — high fluorine density
+            "OCC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)OC",  # 8 F — extreme fluorination
+            "OCC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)OC(F)F",  # 9 F — extreme fluorination
+        ]
+        flags = []
+        for smi in smi_list:
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is None:
+                continue
+            n_f = sum(a.GetAtomicNum() == 9 for a in ctx.mol.GetAtoms())
+            flag = _has_unreliable_homo_region(ctx.mol)
+            flags.append((smi, n_f, flag))
+
+        # Verify we have valid data points
+        assert len(flags) >= 3, (
+            f"Need at least 3 valid molecules for monotonicity check, got {len(flags)}"
+        )
+
+        # Flags must be monotonically non-decreasing: once flagged, always flagged
+        for i in range(1, len(flags)):
+            _, n_f_prev, flag_prev = flags[i - 1]
+            _, n_f_curr, flag_curr = flags[i]
+            assert n_f_curr > n_f_prev, (
+                f"F count should increase: {n_f_prev} -> {n_f_curr}"
+            )
+            assert flag_curr >= flag_prev, (
+                f"Flag regressed from {flag_prev} (F={n_f_prev}) to {flag_curr} "
+                f"(F={n_f_curr}) as fluorination increased — must be "
+                f"monotonically non-decreasing"
+            )
 
     def test_quantum_doa_penalty_is_continuous(self):
         """The quantum DoA penalty must vary continuously with conjugation

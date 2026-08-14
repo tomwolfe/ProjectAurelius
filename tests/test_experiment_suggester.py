@@ -16,6 +16,7 @@ from rdkit import Chem
 
 from aurelius.agent.experiment_suggester import (
     DEFAULT_WEIGHTS,
+    MIN_POOL_SIZE,
     MEASURABLE_PROPERTIES,
     ExperimentSuggestion,
     _diversify,
@@ -89,6 +90,69 @@ class TestBasicBehaviour:
         assert [(s.smiles, s.property_to_measure) for s in first] == [
             (s.smiles, s.property_to_measure) for s in second
         ]
+
+
+class TestAcquisitionBeatsRandomOnSmallPools:
+    """ADR-2026-08-12-002: acquisition must outperform random on small pools.
+
+    The closed-loop benchmark showed the suggester was statistically
+    indistinguishable from random (p=0.44) because MIN_POOL_SIZE=200 was
+    never reached and expected_impact weight was too low. These tests
+    lock in the fix.
+    """
+
+    def test_min_pool_size_lowered_for_small_pools(self):
+        """MIN_POOL_SIZE must be low enough to trigger for typical benchmark pools.
+
+        The closed-loop benchmark operates on pools of 38–167 molecules.
+        A threshold of 200 left diversity-based acquisition with no raw
+        material to work with. The fix lowers it to 64 — still large enough
+        for non-degenerate ECFP4 variation but small enough to trigger
+        on real benchmark conditions.
+        """
+        assert MIN_POOL_SIZE < 100, (
+            f"MIN_POOL_SIZE={MIN_POOL_SIZE} is too high — benchmark pools of "
+            "38–167 will never trigger expansion"
+        )
+        assert MIN_POOL_SIZE >= 30, (
+            f"MIN_POOL_SIZE={MIN_POOL_SIZE} is too low — below ~30 molecules "
+            "ECFP4 fingerprints are near-duplicate and acquisition is noise"
+        )
+
+    def test_expected_impact_weight_is_dominant(self):
+        """expected_impact must be the largest weight (≥0.35).
+
+        In the closed-loop benchmark the suggester's only statistically
+        significant signal was TKE (p=0.043, Cohen's d=0.95), driven
+        entirely by the expected_impact term. Before the fix, the weight
+        was 0.25 — too low to overcome noise in the model-centric terms.
+        """
+        assert DEFAULT_WEIGHTS["expected_impact"] >= 0.35, (
+            f"expected_impact weight={DEFAULT_WEIGHTS['expected_impact']} is too low; "
+            "must be >=0.35 to drive decision-relevance on small pools"
+        )
+        # expected_impact should be the largest single weight (excluding
+        # batch_ei which is a Phase 3 subset-level term)
+        model_centric = {
+            k: v for k, v in DEFAULT_WEIGHTS.items() if k != "batch_ei"
+        }
+        max_term = max(model_centric, key=model_centric.get)
+        assert max_term == "expected_impact", (
+            f"expected_impact ({DEFAULT_WEIGHTS['expected_impact']}) should be the "
+            f"dominant model-centric term, not '{max_term}' ({model_centric[max_term]})"
+        )
+
+    def test_uncertainty_weight_is_not_dominant(self):
+        """uncertainty must not be the largest weight.
+
+        Before ADR-2026-08-12-002, uncertainty was 0.10 (the largest
+        model-centric term besides batch_ei), which made selection collapse
+        to uncertainty sampling — near-random on small pools.
+        """
+        assert DEFAULT_WEIGHTS["uncertainty"] < DEFAULT_WEIGHTS["expected_impact"], (
+            f"uncertainty ({DEFAULT_WEIGHTS['uncertainty']}) should not dominate "
+            f"expected_impact ({DEFAULT_WEIGHTS['expected_impact']})"
+        )
 
 
 class TestInformationGainRanking:

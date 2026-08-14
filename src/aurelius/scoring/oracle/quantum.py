@@ -896,6 +896,50 @@ def _pi_electron_penalty_sigmoid(n_pi: float) -> float:
     return 0.80 + 0.20 / (1.0 + math.exp(0.5 * (n_pi - 24.0)))
 
 
+def _has_unreliable_homo_region(mol: Chem.Mol) -> bool:
+    """Detect whether a molecule falls in a fluorine-density regime where
+    the xTB-calibrated LPM HOMO is known to extrapolate poorly.
+
+    ADR-2026-08-12-003: The GAP analysis (closed-loop benchmark, p=0.44 vs random)
+    identified two failure modes for the HOMO prediction path:
+
+    1. **High fluorine density.** Molecules with ≥6 F atoms, where perfluorinated
+       fragments dominate the electronic structure and the affine calibration
+       (ADR-2026-08-09-02) — while it *does* include some fluorinated entries
+       up to 8 F — is thinly sampled in that tail (orbital_calibration.json:
+       3.5% of entries, lpm_calibration_large.json: 8.7%). HOMO rank correlation
+       on external holdouts collapses from ρ=0.912 (calibrated) to ρ=0.327
+       (fluorinated). The top-5 absolute outliers in the oracle audit were all
+       "high_hetero_density" fluorinated molecules (TFSI-H, perfluoro-tert-butyl
+       ether, octafluoropolyether sulfone, etc.).
+
+    2. **High heteroatom density.** Molecules where heteroatoms (N/O/F/P/S/Cl/Br)
+       make up ≥55% of heavy atoms — the LPM's topological orbital model, tuned
+       on predominantly carbocyclic calibration data, struggles to assign
+       lone-pair orbital energies when heteroatoms dominate.
+
+    This function is *not* the same as ``compute_quantum_domain_penalty``:
+    that function scales the conformal difficulty sigma during calibration
+    fitting, and modifying it would shift quantiles globally. Instead, this
+    check is applied only at evaluation time (in ``QuantumOracle.evaluate``)
+    to downgrade ``quantum_confidence`` from "xtb"/"tom_high" to "tom_low",
+    which the pipeline already handles via its 0.85 score multiplier. This
+    way the calibration fit is untouched and only production predictions are
+    down-weighted.
+    """
+    n_f = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
+    if n_f >= 6:
+        return True
+    n_hetero = sum(
+        a.GetAtomicNum() in {7, 8, 9, 15, 16, 17, 35} for a in mol.GetAtoms()
+    )
+    n_total = mol.GetNumHeavyAtoms()
+    hetero_frac = n_hetero / max(n_total, 1)
+    if hetero_frac >= 0.55:
+        return True
+    return False
+
+
 def compute_quantum_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
     """Compute domain-of-applicability penalty for TOM predictions.
 
@@ -905,6 +949,11 @@ def compute_quantum_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
     structural-support condition remains a binary hard gate because it is
     physically discrete — a molecule either has the planarity-stabilising
     sp3 framework or it does not.
+
+    Note: high-fluorine HOMO extrapolation is handled separately by
+    ``_has_unreliable_homo_region`` in ``QuantumOracle.evaluate`` (ADR-2026-08-12-003),
+    because embedding it here would shift the conformal calibration quantiles
+    that are fit over calibration molecules containing fluorine.
 
     Returns:
         (penalty_multiplier, reason_string)
@@ -1031,7 +1080,10 @@ class QuantumOracle:
             self._n_tom_calls += 1
 
         if used_xtb:
-            result["quantum_confidence"] = "xtb"  # type: ignore[assignment]
+            if _has_unreliable_homo_region(mol):
+                result["quantum_confidence"] = "tom_low"
+            else:
+                result["quantum_confidence"] = "xtb"
         else:
             L = _longest_conjugation_path(mol)
             n_rings = mol.GetRingInfo().NumRings()
@@ -1148,7 +1200,9 @@ class QuantumOracle:
                 mol = mols[idx]
                 if xtb_res is not None:
                     result = _calibrate_xtb_orbitals(xtb_res)
-                    result["quantum_confidence"] = "xtb"
+                    result["quantum_confidence"] = (
+                        "tom_low" if _has_unreliable_homo_region(mol) else "xtb"
+                    )
                     self._n_xtb_calls += 1
                 else:
                     result = self._evaluate_closed_form(mol)
