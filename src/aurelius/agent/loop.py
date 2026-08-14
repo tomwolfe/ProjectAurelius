@@ -61,7 +61,6 @@ from aurelius.types import (
     is_mixture_smiles,
     parse_mixture_smiles,
 )
-from aurelius.utils.chem_utils import synthesizability_complexity as _synth_complexity
 
 try:
     from rdkit.Chem.Scaffolds import MurckoScaffold

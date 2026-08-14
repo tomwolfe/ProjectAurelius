@@ -785,7 +785,7 @@ class AureliusPipeline:
         """
         import json
 
-        with open(path, 'r') as f:
+        with open(path) as f:
             result = json.load(f)
 
         # Normalize: ensure total_score is at the top level

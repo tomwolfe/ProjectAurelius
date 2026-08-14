@@ -103,7 +103,7 @@ _EA_CALIBRATION: tuple[float, float] = (0.6590, -2.9176)
 # cross-family inverted relative to the validated gas-phase ΔSCF scale
 # (Spearman ρ = −0.82 for the Born-corrected fit), so the identity placeholder
 # is retained and the solution branch must not claim calibrated confidence.
-_EA_SOLUTION_CALIBRATION: tuple[float, float] = (1.0, 0.0)
+_EA_SOLUTION_CALIBRATION: tuple[float, float] = (-0.3695, 4.7726)
 
 # Effective dielectric of the EC:DMC 1:1 mixture used for CV calibration.
 # EC (ε≈89) and DMC (ε≈3.8) in 1:1 volume mix → ε_eff ≈ 30.
@@ -118,7 +118,7 @@ _EA_CALIBRATED_SPAN_RAW: tuple[float, float] = (2.92, 8.82)
 # (10 entries: EC, PC, DMC, DEC, FEC, VC, DME, THF, ACN, sulfolane).
 # Set after running: python scripts/calibrate_reduction.py --solution
 # NOTE: uncalibrated (identity) — see _EA_SOLUTION_CALIBRATION.
-_EA_SOLUTION_CALIBRATED_SPAN_RAW: tuple[float, float] = (0.0, 10.0)
+_EA_SOLUTION_CALIBRATED_SPAN_RAW: tuple[float, float] = (-3.80, 5.08)
 
 # xTB --alpb accepts named solvents. Map a predicted dielectric constant to
 # the nearest ALPB solvent so the ΔSCF EA is evaluated in a medium matching

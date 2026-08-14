@@ -20,6 +20,7 @@ Framework" (the "fantasize-and-observe" paradigm).
 from __future__ import annotations
 
 import logging
+
 import numpy as np
 from numpy.typing import NDArray
 

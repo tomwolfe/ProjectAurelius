@@ -78,7 +78,7 @@ from typing import Any
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import AllChem, BRICS
+from rdkit.Chem import BRICS, AllChem
 
 from aurelius.types import MoleculeContext
 
