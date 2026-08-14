@@ -418,19 +418,40 @@ def discovery_benchmark(seed: int = 42, n_generations: int = 5, batch_size: int 
     n_known = len(known_scores)
     known_mean = np.mean(list(known_scores.values())) if known_scores else 0.0
 
-    # Top discoveries
+    # Top discoveries (Gap 3: top-50 must be novelty-weighted, not floodable by seed_knowns)
     scored = [(r.total_score, r.smiles) for r in all_results]
     scored.sort(key=lambda x: -x[0])
     top_results = scored[:50]
 
-    top_scaffolds = {s for _, smi in top_results if (s := _murcko_scaffold(smi))}
+    # Decouple: filter out known electrolyte SMILES from the top-50 for
+    # novelty ratio computation. The rediscovery_rate (Gap 5) measures exact-
+    # SMILES recovery across ALL screened results separately; the novel_scaffold_ratio
+    # (Gap 3) considers only novel candidates to avoid choking by seeded knowns.
+    known_smiles_set = set(known_scores.keys())
+    # Canonicalise top-50 SMILES before filtering against known_scores keys,
+    # which are canonical SMILES. Without this, raw SMILES from the EA
+    # (e.g. "C1COC(=O)O1") would not match canonical forms (e.g. "O=C1OCCO1"),
+    # causing knowns to slip through the filter.
+    novel_results = [(s, smi) for s, smi in top_results if _canonical(smi) not in known_smiles_set]
+    novel_sorted = sorted(novel_results, key=lambda x: -x[0])
+    top_novel_smi = [smi for _, smi in novel_sorted[:50]]
+
+    # Compute Murcko scaffolds from novel-top-50 only
+    top_scaffolds = set()
+    for smi in top_novel_smi:
+        s = _murcko_scaffold(smi)
+        if s is not None:
+            top_scaffolds.add(s)
+
+    # known_scaffolds from the scored known set (not the raw list), for consistency
+    known_scaffolds = {s for s in (_murcko_scaffold(smi) for smi in known_scores) if s is not None}
     novel_scaffolds = top_scaffolds - known_scaffolds
     novelty_ratio = len(novel_scaffolds) / max(len(top_scaffolds), 1)
 
     top_scores = [s for s, _ in top_results]
     top_mean = np.mean(top_scores) if top_scores else 0.0
 
-    # Rediscovery = SEEDED-EXACT (Gap 5): with seed_knowns=True the loop screens
+    # Rediscovery = SEEDED-EXACT (Gap 5): with seed_knowns=False the loop screens
     # the known electrolyte set as part of its gen-1 candidate stream, so
     # rediscovery is measured as exact canonical-SMILES recovery among all
     # screened results. This is non-inverting: a better search retains more

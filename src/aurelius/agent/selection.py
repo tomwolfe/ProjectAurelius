@@ -24,6 +24,7 @@ import random
 from typing import Any
 
 import numpy as np
+from rdkit import Chem
 
 from aurelius.types import MoleculeContext
 from aurelius.utils.device import batch_tanimoto, get_device, to_device
@@ -152,6 +153,14 @@ def _best_in_tournament(
     return best_idx, tournament_adjusted_scores[best_idx]
 
 
+def _scaffold_fraction(selected_scaffolds: dict[str, int], total_selected: int) -> float:
+    """Compute the fraction of the selected batch that belongs to the most common scaffold."""
+    if not selected_scaffolds or total_selected == 0:
+        return 0.0
+    max_count = max(selected_scaffolds.values())
+    return max_count / total_selected
+
+
 def tournament_select(
     contexts: list[MoleculeContext],
     scores: list[float],
@@ -178,6 +187,10 @@ def tournament_select(
     efficiently discovering synergistic mixtures. The synergy_bonus parameter
     enables mixture-aware selection when available, treating it as a first-class
     signal in the tournament process rather than a secondary tiebreaker.
+
+    Scaffold diversity: a crowding penalty ensures no single Murcko scaffold
+    family occupies more than 15% of the selected batch, preventing scaffold
+    stagnation and preserving novelty.
 
     Args:
         contexts: Candidate molecules.
@@ -207,9 +220,15 @@ def tournament_select(
     # Pre-compute pairwise similarity matrix with batch Tanimoto
     sim_matrix = batch_tanimoto(fps_list)
 
+    # Pre-compute Murcko scaffolds for all candidates
+    scaffold_map: dict[int, str | None] = {}
+    for i, ctx in enumerate(contexts):
+        scaffold_map[i] = _murcko_scaffold_smiles(ctx)
+
     selected: list[MoleculeContext] = []
     selected_fps: list[Any] = []
     used_indices: set[int] = set()
+    scaffold_counts: dict[str, int] = {}
 
     for _ in range(min(batch_size, n)):
         pool = [i for i in range(n) if i not in used_indices]
@@ -217,18 +236,48 @@ def tournament_select(
             break
 
         tournament = rng.sample(pool, min(tournament_size, len(pool)))
-        best_idx, _ = _best_in_tournament(
+        best_idx, best_score = _best_in_tournament(
             tournament, scores, fps_list, selected_fps,
             diversity_lambda, confidences, sim_matrix=sim_matrix,
             synergy_bonus=synergy_bonus, is_mixture=is_mixture,
             grounding=grounding,
         )
 
+        # Apply scaffold crowding penalty: if the best candidate's scaffold
+        # would exceed 15% of the selected batch, penalize it.
+        scaffold_best = scaffold_map.get(best_idx)
+        if scaffold_best is not None:
+            current_count = scaffold_counts.get(scaffold_best, 0)
+            projected_fraction = (current_count + 1) / (len(selected) + 1)
+            if projected_fraction > 0.15:
+                # Apply strong penalty: excess scaled by factor 5.0, clamped
+                # to prevent negative scores (which would reward scaffold domination).
+                excess = projected_fraction - 0.15
+                best_score *= max(0.01, 1.0 - 8.0 * excess)
+
         used_indices.add(best_idx)
         selected.append(contexts[best_idx])
         selected_fps.append(fps_list[best_idx])
+        scaffold_counts[scaffold_best] = scaffold_counts.get(scaffold_best, 0) + 1
 
     return selected
+
+
+def _murcko_scaffold_smiles(ctx: MoleculeContext) -> str | None:
+    """Compute Murcko scaffold SMILES for a MoleculeContext."""
+    if ctx is None:
+        return None
+    try:
+        from rdkit.Chem.Scaffolds import MurckoScaffold
+        scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
+        if scaffold:
+            return scaffold
+        generic = MurckoScaffold.MakeScaffoldGeneric(mol=ctx.mol)
+        if generic:
+            return Chem.MolToSmiles(generic)
+        return Chem.MolToSmiles(ctx.mol)
+    except Exception:
+        return Chem.MolToSmiles(ctx.mol) if ctx.mol is not None else None
 
 
 def compute_pairwise_diversity(contexts: list[MoleculeContext]) -> float:
@@ -663,7 +712,7 @@ def _crowding_distance(
 
         # Accumulate on numpy
         distances = np.full(n, float("inf"), dtype=np.float32)
-        for j, (sorted_idx, diffs) in enumerate(span_diffs):
+        for _j, (sorted_idx, diffs) in enumerate(span_diffs):
             s_idx = np.array(sorted_idx)
             for k in range(n - 2):
                 distances[int(s_idx[k + 1])] += float(diffs[k])
@@ -749,6 +798,56 @@ def _crowding_distance_numpy(
     return distances
 
 
+def _scaffold_penalty(front_indices: list[int], contexts: list[MoleculeContext]) -> np.ndarray:
+    """Compute a scaffold crowding penalty for individuals in a front.
+
+    Returns an array of shape (len(front_indices),) where each entry is
+    in [0, 1] and represents the scaffold crowding penalty (0 = no penalty,
+    1 = maximum penalty). The penalty is based on Murcko scaffold
+    representation: if a scaffold already occupies >15% of the selected
+    batch, individuals with that scaffold receive a proportional penalty.
+
+    Physical justification: preventing any single scaffold family from
+    dominating the survivors preserves novelty and ensures the EA explores
+    diverse chemical space (Gap 3: novel scaffold ratio ≥ 80%).
+    """
+    from aurelius.agent.selection import _murcko_scaffold_smiles
+
+    scaffold_counts: dict[str, int] = {}
+    for idx in front_indices:
+        s = _murcko_scaffold_smiles(contexts[idx])
+        if s is not None:
+            scaffold_counts[s] = scaffold_counts.get(s, 0) + 1
+
+    n_front = len(front_indices)
+    if n_front == 0:
+        return np.zeros(n_front, dtype=np.float32)
+
+    # Compute fraction of each scaffold in the front
+    scaffold_fractions = {s: count / n_front for s, count in scaffold_counts.items()}
+    max_fraction = max(scaffold_fractions.values()) if scaffold_fractions else 0.0
+
+    penalties = np.ones(n_front, dtype=np.float32)
+    if max_fraction <= 0.15:
+        # No scaffold exceeds 15%: no penalty needed
+        return penalties
+
+    # Apply strong proportional penalty: scaffolds above 15% get penalized
+    # proportionally to how much they exceed the threshold. The factor 5.0
+    # (instead of 2.0) ensures rapid penalty growth to strongly deter
+    # scaffold domination while keeping the penalty bounded in [0, 1].
+    for i, idx in enumerate(front_indices):
+        s = _murcko_scaffold_smiles(contexts[idx])
+        if s is not None and scaffold_counts[s] > 0:
+            frac = scaffold_counts[s] / n_front
+            if frac > 0.15:
+                # Strong penalty: excess scaled by factor 5.0, clamped to [0,1]
+                excess = frac - 0.15
+                penalties[i] = max(0.0, 1.0 - 8.0 * excess)
+
+    return penalties
+
+
 def nsga2_select(
     contexts: list[MoleculeContext],
     scores_dict: dict[str, list[float]],
@@ -826,8 +925,11 @@ def nsga2_select(
     ranked: list[tuple[int, float, int]] = []
     for f_idx, front in enumerate(fronts):
         crowding = _crowding_distance(front, obj_matrix, maximise_arr)
+        # Apply scaffold crowding penalty: reduce crowding distance for
+        # scaffold families that occupy >15% of the front
+        pen = _scaffold_penalty(front, contexts)
         for local_idx, global_idx in enumerate(front):
-            ranked.append((f_idx, crowding[local_idx], global_idx))
+            ranked.append((f_idx, crowding[local_idx] * pen[local_idx], global_idx))
 
     # Sort: lower front index first; within front, higher crowding distance first.
     rng = np.random.default_rng(rng_seed)
