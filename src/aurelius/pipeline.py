@@ -674,7 +674,7 @@ class AureliusPipeline:
         """
         results: list[dict[str, Any] | None] = [None] * len(pending)
 
-        for j, (i, ctx, t1_result) in enumerate(pending):
+        for j, (_i, ctx, t1_result) in enumerate(pending):
             try:
                 if batch is not None:
                     results[j] = self._assemble_batch_result(ctx, j, batch, t1_result)
@@ -767,9 +767,8 @@ class AureliusPipeline:
         normalized = dict(result)
 
         # If result has a 'score' dict with 'total_score', extract it
-        if "score" in normalized and isinstance(normalized["score"], dict):
-            if "total_score" not in normalized:
-                normalized["total_score"] = normalized["score"].get("total_score")
+        if "score" in normalized and isinstance(normalized["score"], dict) and "total_score" not in normalized:
+            normalized["total_score"] = normalized["score"].get("total_score")
 
         with open(path, 'w') as f:
             json.dump(normalized, f, indent=2)

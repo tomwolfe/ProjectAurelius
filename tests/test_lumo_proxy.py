@@ -7,7 +7,6 @@ Validates the Δ-learning LUMO correction layer:
   - Integration with PropertyOracle
 """
 
-import warnings
 
 import numpy as np
 from rdkit import Chem

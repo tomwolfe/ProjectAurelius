@@ -74,6 +74,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import random
@@ -116,10 +117,7 @@ def _load_calibration(path: str = "orbital_calibration.json") -> list[dict[str, 
     """
     with open(os.path.join(DATA_DIR, path)) as f:
         data = json.load(f)
-    if isinstance(data, dict):
-        raw = data.get("entries", [])
-    else:
-        raw = data
+    raw = data.get("entries", []) if isinstance(data, dict) else data
     return [e for e in raw if Chem.MolFromSmiles(e["smiles"]) is not None]
 
 
@@ -194,8 +192,8 @@ class _EAGPRModel:
     def __init__(self, calib: list[dict[str, float]]) -> None:
         from sklearn.gaussian_process import GaussianProcessRegressor
         from sklearn.gaussian_process.kernels import (
-            ConstantKernel,
             RBF,
+            ConstantKernel,
             WhiteKernel,
         )
 
@@ -233,10 +231,7 @@ class _EAGPRModel:
         fp = np.zeros((1, 2048), dtype=np.float64)
         for bit in ctx.get_ecfp4().GetOnBits():
             fp[0, bit] = 1.0
-        if getattr(self._homo_model, "X_train_", None) is not None:
-            pred = self._homo_model.predict(fp)[0]
-        else:
-            pred = 0.0
+        pred = self._homo_model.predict(fp)[0] if getattr(self._homo_model, "X_train_", None) is not None else 0.0
         return float(pred), 0.0
 
 
@@ -677,7 +672,7 @@ def _run_sabotage_curve(
             picked = _acquire_suggester(unmeasured, k, delta_correction=refit)
 
         measured: list[dict[str, float]] = []
-        for i, e in enumerate(picked):
+        for _, e in enumerate(picked):
             total_attempted += 1
             # Apply drift if enabled
             if drift:
@@ -1106,10 +1101,8 @@ def _acquire_ea_greedy_shuffled(
 
     # Apply the same decision-relevance blend as the real acquisition so the
     # sabotage control isolates the *scoring signal* rather than the mechanism.
-    try:
+    with contextlib.suppress(Exception):
         permuted = _ea_decision_blend(gpr, X_pool, permuted, 0.5)
-    except Exception:
-        pass
 
     chosen: list[dict[str, float]] = []
     chosen_fps: list[Any] = []
@@ -1155,10 +1148,7 @@ def _top_k_enrichment(
         return 0.0
     k = min(k, len(pool))
     ranked = sorted(pool, key=lambda e: e.get(property_key, 0.0))
-    if minimise:
-        true_top_k = {id(e) for e in ranked[:k]}
-    else:
-        true_top_k = {id(e) for e in ranked[-k:]}
+    true_top_k = {id(e) for e in ranked[:k]} if minimise else {id(e) for e in ranked[-k:]}
     picked_ids = {id(e) for e in picked}
     return len(true_top_k & picked_ids) / k
 
@@ -1436,7 +1426,6 @@ def main() -> int:
                 )
             )
 
-    sabotage: dict[str, object] | None = None
     if args.sabotage:
         print("\n" + "=" * 74)
         print("  SABOTAGE MODE — realistic lab noise")
@@ -1464,7 +1453,6 @@ def main() -> int:
                     f"{p['mae_eV']:>10.4f} "
                     f"{p['mae_eV'] - sc['baseline']['mae_eV']:>+10.4f}"
                 )
-        sabotage = {"curves": sabotage_curves}
         sab_improved = [c for c in sabotage_curves if c["delta_mae"] < 0]
         print(
             f"\n  Sabotage curves with MAE reduction: "

@@ -17,6 +17,7 @@ import csv
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any, cast
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -69,14 +70,14 @@ def _load_known_electrolytes() -> list[str]:
         return []
 
 
-def _ecfp4(smi: str) -> object | None:
+def _ecfp4(smi: str) -> Any | None:
     mol = Chem.MolFromSmiles(smi)
     if mol is None:
         return None
     return AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
 
 
-def _tanimoto(a: object, b: object) -> float:
+def _tanimoto(a: Any, b: Any) -> float:
     if TanimotoSimilarity is None:
         return 0.0
     return float(TanimotoSimilarity(a, b))
@@ -86,7 +87,7 @@ def _find_nearest_known(
     candidate_smi: str,
     known: list[str],
     top_n: int = 3,
-) -> list[dict[str, object]]:
+) -> list[dict[str, Any]]:
     """Nearest known commercial electrolytes by Tanimoto similarity."""
     if not known or TanimotoSimilarity is None:
         return []
@@ -179,7 +180,7 @@ CANDIDATE_FIELDS = [
     "synthesis_hints", "risk_flags", "sa_score", "dielectric_proxy",
     "viscosity_proxy", "diversity_penalty", "combined_grounding_score",
     "synthesizability_complexity", "domain_penalty", "is_viable",
-    "dft_grounding_score", "dft_final_energy_eV", "dft_method",
+    "synthesis_depth", "dft_grounding_score", "dft_final_energy_eV", "dft_method",
 ]
 
 
@@ -207,7 +208,7 @@ class ReportingEngine:
         known: list[str],
         skip_dft: bool = False,
         dft_cache_path: str = DFT_CACHE_PATH,
-    ) -> dict[str, object] | None:
+    ) -> dict[str, Any] | None:
         """Convert a single discovery-loop result into a candidate dict."""
         smiles = getattr(result, "smiles", None)
         if not smiles:
@@ -243,7 +244,7 @@ class ReportingEngine:
             dft_final_energy_eV = float("nan")
             dft_method = "skipped (--skip-dft)"
         else:
-            dft_result = dft_geometry_optimize(mol, cache_path=dft_cache_path)
+            dft_result: dict[str, Any] = dft_geometry_optimize(mol, cache_path=dft_cache_path)
             dft_grounding_score = float(dft_result.get("dft_grounding_score", 1.0))
             dft_final_energy_eV = dft_result.get("dft_final_energy_eV", float("nan"))
             dft_method = dft_result.get("dft_method", "unknown")
@@ -267,6 +268,7 @@ class ReportingEngine:
             "smiles": smiles,
             "total_score": float(getattr(result, "total_score", 0.0)),
             "synthesis_feasibility": round(synthesis_feas, 4),
+            "synthesizability_complexity": round(float(synthesis_feas), 4),
             "conformal_confidence": round(float(conformal_conf), 4),
             "novelty_to_seed": round(float(novelty), 4),
             "homo_eV": homo,
@@ -296,7 +298,7 @@ class ReportingEngine:
         self,
         n_generations: int = DEFAULT_N_GENERATIONS,
         batch_size: int = DEFAULT_BATCH_SIZE,
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         """Execute a discovery loop and return its raw results."""
         cfg = AgentConfig(
             max_generations=n_generations,
@@ -310,9 +312,9 @@ class ReportingEngine:
 
     def _apply_cascade(
         self,
-        candidates: list[dict[str, object]],
+        candidates: list[dict[str, Any]],
         skip_dft: bool = False,
-    ) -> tuple[list[dict[str, object]], dict[str, int]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, int]]:
         """Apply the wet-lab cascade filter.
 
         When ``skip_dft`` is False (the default), an additional DFT geometry-
@@ -328,7 +330,7 @@ class ReportingEngine:
                 ),
             )
         rejection_log: dict[str, int] = {}
-        selected: list[dict[str, object]] = []
+        selected: list[dict[str, Any]] = []
 
         remaining = list(candidates)
         for key, threshold, _desc in cascade_stages:
@@ -342,8 +344,8 @@ class ReportingEngine:
 
     def _render_markdown(
         self,
-        candidates: list[dict[str, object]],
-        selected: list[dict[str, object]],
+        candidates: list[dict[str, Any]],
+        selected: list[dict[str, Any]],
         rejection_log: dict[str, int],
     ) -> str:
         """Render the standardized markdown handoff report."""
@@ -424,7 +426,7 @@ class ReportingEngine:
 
     def _render_csv(
         self,
-        candidates: list[dict[str, object]],
+        candidates: list[dict[str, Any]],
         output_path: str,
     ) -> None:
         """Write candidates to CSV in legacy-compatible format."""
@@ -448,9 +450,9 @@ class ReportingEngine:
 
     def _run_dft_validation(
         self,
-        candidates: list[dict[str, object]],
+        candidates: list[dict[str, Any]],
         cache_path: str = "dft_cache.json",
-    ) -> dict[str, object] | None:
+    ) -> dict[str, Any] | None:
         """Optional ORCA wB97X-D3/def2-SVP re-ranking of the top-N."""
         try:
             from aurelius.scoring.oracle.dft_validator import DFTValidator, has_orca
@@ -476,7 +478,11 @@ class ReportingEngine:
                 cand["dft_composite"] = None
         return validator.validate_ranking(
             [float(c.get("adjusted_score", c.get("total_score", 0.0))) for c in top_n],
-            [MoleculeContext.from_smiles(str(c["smiles"])).mol for c in top_n if MoleculeContext.from_smiles(str(c["smiles"])) is not None],
+            [
+                ctx.mol
+                for c in top_n
+                if (ctx := MoleculeContext.from_smiles(str(c["smiles"]))) is not None
+            ],
         )
 
     def generate_report(
@@ -489,7 +495,7 @@ class ReportingEngine:
         dft: bool = False,
         dft_cache: str = DFT_CACHE_PATH,
         skip_dft: bool = False,
-    ) -> tuple[list[dict[str, object]], str]:
+    ) -> tuple[list[dict[str, Any]], str]:
         """Run a discovery loop and emit standardized wet-lab handoff artifacts.
 
         Returns ``(selected_candidates, report_markdown)`` and writes:
@@ -504,7 +510,9 @@ class ReportingEngine:
         """
         print(f"Running {n_generations}-generation discovery loop...")
         results = self.run_discovery(n_generations=n_generations, batch_size=batch_size)
-        all_results = getattr(results, "all_results", results.get("all_results", [])) if isinstance(results, dict) else getattr(results, "all_results", [])
+        all_results: list[dict[str, Any]] = cast(
+            list[dict[str, Any]], results.get("all_results", [])
+        )
         getattr(results, "discoveries", results.get("discoveries", [])) if isinstance(results, dict) else getattr(results, "discoveries", [])
 
         known = _load_known_electrolytes()
@@ -545,7 +553,7 @@ class ReportingEngine:
         return csv_candidates, report
 
 
-def _passes_stage(candidate: dict[str, object], key: str, threshold: object) -> bool:
+def _passes_stage(candidate: dict[str, Any], key: str, threshold: object) -> bool:
     value = candidate.get(key)
     if key == "is_viable":
         return bool(value)
@@ -575,7 +583,7 @@ def generate_report(
     output_dir: str = ".",
     dft: bool = False,
     skip_dft: bool = False,
-) -> tuple[list[dict[str, object]], str]:
+) -> tuple[list[dict[str, Any]], str]:
     """Module-level convenience entry point for ``aurelius report``."""
     engine = ReportingEngine()
     return engine.generate_report(

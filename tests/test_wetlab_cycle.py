@@ -19,7 +19,6 @@ from aurelius.agent.experiment_suggester import suggest_experiments
 from aurelius.agent.experimental_ingestion import ingest_experimental_results
 from aurelius.scoring.oracle.delta_correction import DeltaCorrection
 
-
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "src", "aurelius", "data")
 
@@ -27,10 +26,7 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 def _load_calibration(path: str = "orbital_calibration.json") -> list[dict]:
     with open(os.path.join(DATA_DIR, path)) as f:
         data = json.load(f)
-    if isinstance(data, dict):
-        raw = data.get("entries", [])
-    else:
-        raw = data
+    raw = data.get("entries", []) if isinstance(data, dict) else data
     return [e for e in raw if Chem.MolFromSmiles(e["smiles"]) is not None]
 
 

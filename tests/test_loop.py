@@ -20,7 +20,7 @@ import pytest
 from aurelius.agent.loop import DiscoveryLoop, ScreeningResult
 from aurelius.agent.state import LoopState
 from aurelius.pipeline import AureliusPipeline
-from aurelius.scoring.oracle.xtb_single_point import XTBSinglePointOracle, XTBResult
+from aurelius.scoring.oracle.xtb_single_point import XTBResult, XTBSinglePointOracle
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)

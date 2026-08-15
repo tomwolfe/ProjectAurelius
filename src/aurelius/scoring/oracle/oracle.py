@@ -252,8 +252,8 @@ class PropertyOracle:
             return self._cache[smiles]
 
         quantum_result = self._quantum.evaluate(ctx.mol)
-        homo = quantum_result["homo_eV"]
-        lumo = quantum_result["lumo_eV"]
+        homo = float(quantum_result["homo_eV"])
+        lumo = float(quantum_result["lumo_eV"])
 
         # ADR-2026-08-10: Reduction stability is now the ΔSCF electron
         # affinity, validated against 40 experimental gas-phase EAs

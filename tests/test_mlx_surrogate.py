@@ -94,9 +94,9 @@ class TestMLXSurrogate:
         homo_batch, lumo_batch = correction.predict_corrected_batch(sample_mols)
 
         for i, mol in enumerate(sample_mols):
-            h, l = correction.predict_corrected(mol)
+            h, lumo = correction.predict_corrected(mol)
             assert abs(homo_batch[i] - h) < 1e-3
-            assert abs(lumo_batch[i] - l) < 1e-3
+            assert abs(lumo_batch[i] - lumo) < 1e-3
 
     def test_batch_corrected_with_base(self, correction, sample_mols):
         """Batch correction uses provided base predictions."""
@@ -130,8 +130,8 @@ class TestPredictVarianceBatchMLX:
     def test_variance_matches_sklearn(self, correction, sample_mols):
         """MLX variance must match sklearn within 1e-4."""
         from aurelius.scoring.oracle.mlx_surrogate import (
-            predict_variance_batch_mlx,
             _predict_deltas_batch_sklearn,
+            predict_variance_batch_mlx,
         )
 
         mlx_var = predict_variance_batch_mlx(correction._homo_model, sample_mols)
@@ -178,13 +178,9 @@ class TestRadiusOfGyrationBatch:
     def test_batch_cache_hits(self):
         """Repeated molecules hit the cache — no recomputation."""
         from aurelius.scoring.oracle.quantum import (
-            _compute_radius_of_gyration_batch,
             _RG_CACHE,
+            _compute_radius_of_gyration_batch,
         )
-
-        smi = "C1COC(=O)O1"
-        mol = Chem.MolFromSmiles(smi)
-        mols = [mol, mol, mol]
 
         # Use a unique molecule so cache state from other tests doesn't interfere
         unique_smi = "CCCCCCCCCCCCCCCCO"  # long alkyl chain, likely not cached
@@ -202,7 +198,6 @@ class TestRadiusOfGyrationBatch:
         """Batch with many unique molecules runs via ThreadPoolExecutor."""
         from aurelius.scoring.oracle.quantum import (
             _compute_radius_of_gyration_batch,
-            _RG_CACHE,
         )
 
         # Use valid SMILES that are unlikely to be in cache

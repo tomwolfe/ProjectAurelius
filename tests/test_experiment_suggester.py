@@ -16,8 +16,8 @@ from rdkit import Chem
 
 from aurelius.agent.experiment_suggester import (
     DEFAULT_WEIGHTS,
-    MIN_POOL_SIZE,
     MEASURABLE_PROPERTIES,
+    MIN_POOL_SIZE,
     ExperimentSuggestion,
     _diversify,
     _doa_proximity_score,
@@ -682,8 +682,8 @@ class TestBALDAndParetoUCB:
     def test_bald_returns_in_unit_range_with_model(self):
         """BALD score is in [0, 1] when a GPR model is available."""
         mol = Chem.MolFromSmiles("COC(=O)OC")
-        from aurelius.scoring.oracle.conformal import get_conformal_predictor
         from aurelius.agent.experiment_suggester import _gpr_model_from_predictor
+        from aurelius.scoring.oracle.conformal import get_conformal_predictor
 
         predictor = get_conformal_predictor()
         gpr = _gpr_model_from_predictor(predictor)
@@ -769,8 +769,9 @@ class TestBatchEI:
 
     def test_batch_ei_not_constant(self):
         """Batch EI scores vary across candidates (not all identical) when a model is provided."""
-        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
         import os
+
+        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
         data_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius", "data")
         with open(os.path.join(data_dir, "orbital_calibration.json")) as f:
             all_entries = json.load(f)
@@ -784,13 +785,14 @@ class TestBatchEI:
 
     def test_batch_ei_weight_affects_ranking(self):
         """batch_ei weight must affect the pre-diversification ranking."""
+        import os
+
         from aurelius.agent.experiment_suggester import (
             _compute_batch_ei_scores,
             _evaluate_candidates,
             _load_calibration_fingerprints,
         )
         from aurelius.scoring.oracle.delta_correction import DeltaCorrection
-        import os
         data_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius", "data")
         with open(os.path.join(data_dir, "orbital_calibration.json")) as f:
             all_entries = json.load(f)
@@ -817,15 +819,15 @@ class TestBatchEI:
 
     def test_batch_ei_prefers_diverse_uncertainty_reducers(self):
         """Batch EI scores a diverse, uncertain candidate higher than a redundant one."""
+        # Fit a DeltaCorrection on a small calibration set (like the benchmark does)
+        import os
+
         from aurelius.agent.experiment_suggester import (
             _compute_batch_ei_scores,
             _evaluate_candidates,
             _load_calibration_fingerprints,
         )
         from aurelius.scoring.oracle.delta_correction import DeltaCorrection
-
-        # Fit a DeltaCorrection on a small calibration set (like the benchmark does)
-        import os
         data_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius", "data")
         with open(os.path.join(data_dir, "orbital_calibration.json")) as f:
             all_entries = json.load(f)
@@ -852,8 +854,9 @@ class TestBatchEI:
 
     def test_suggester_uses_delta_correction(self):
         """suggest_experiments accepts a delta_correction parameter for model-aware acquisition."""
-        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
         import os
+
+        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
         data_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius", "data")
         with open(os.path.join(data_dir, "orbital_calibration.json")) as f:
             all_entries = json.load(f)

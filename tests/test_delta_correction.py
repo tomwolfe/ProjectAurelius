@@ -117,7 +117,8 @@ class TestDeltaCorrection:
             if mol is None:
                 continue
             raw_h, raw_l = predict_tom_orbitals(mol)
-            corr_h, corr_l = model.predict_corrected(mol, base=(raw_h, raw_l))
+            lpm_h = predict_lone_pair_homo(mol)
+            corr_h, corr_l = model.predict_corrected(mol, base=(lpm_h, raw_l))
             raw_homo.append(raw_h)
             corr_homo.append(corr_h)
             exp_homo.append(entry["homo_eV"])
@@ -219,7 +220,8 @@ class TestDeltaCorrection:
             if mol is None:
                 continue
             raw_h, raw_l = predict_tom_orbitals(mol)
-            corr_h, _ = model.predict_corrected(mol, base=(raw_h, raw_l))
+            lpm_h = predict_lone_pair_homo(mol)
+            corr_h, _ = model.predict_corrected(mol, base=(lpm_h, raw_l))
             corrected.append(corr_h)
             raw.append(raw_h)
             reference.append(entry["homo_eV"])

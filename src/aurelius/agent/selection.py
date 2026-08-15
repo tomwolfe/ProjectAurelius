@@ -228,7 +228,7 @@ def tournament_select(
     selected: list[MoleculeContext] = []
     selected_fps: list[Any] = []
     used_indices: set[int] = set()
-    scaffold_counts: dict[str, int] = {}
+    scaffold_counts: dict[str | None, int] = {}
 
     for _ in range(min(batch_size, n)):
         pool = [i for i in range(n) if i not in used_indices]
@@ -453,6 +453,9 @@ def _compute_dominance(adjusted: np.ndarray) -> tuple[list[set[int]], np.ndarray
     solutions that *i* dominates and ``dominated_count[j]`` is the number of
     solutions that dominate *j*.
     """
+    return _compute_dominance_vectorized(adjusted)
+
+
 def _compute_dominance_vectorized(adjusted: np.ndarray) -> tuple[list[set[int]], np.ndarray]:
     """Compute the domination relationship for all pairs of solutions (vectorized).
 
@@ -488,7 +491,7 @@ def _compute_dominance_vectorized(adjusted: np.ndarray) -> tuple[list[set[int]],
         i_dominates = mx.logical_and(i_better, i_strictly)  # shape: (n_pop, n_pop)
         j_dominates = mx.logical_and(j_better, j_strictly)  # shape: (n_pop, n_pop)
 
-        i_mask = mx.triu(mx.ones((n_pop, n_pop), dtype=bool), k=1)
+        i_mask = mx.triu(mx.ones((n_pop, n_pop), dtype=bool), k=1)  # type: ignore[arg-type]
         j_mask = mx.logical_not(i_mask)
 
         i_final = mx.logical_and(i_dominates, i_mask)
@@ -497,7 +500,7 @@ def _compute_dominance_vectorized(adjusted: np.ndarray) -> tuple[list[set[int]],
         i_final_np = np.array(i_final)
         np.array(j_final)
 
-        dominates = [set() for _ in range(n_pop)]
+        dominates = [set[int]() for _ in range(n_pop)]
         dominated_count = np.zeros(n_pop, dtype=int)
 
         for i in range(n_pop):
@@ -560,7 +563,7 @@ def _compute_dominance_mlx(adjusted: np.ndarray, n_pop: int) -> tuple[list[set[i
     i_better = mx.all(diff_matrix <= 0, axis=2)
     i_strictly = mx.any(diff_matrix < 0, axis=2)
 
-    i_final = mx.logical_and(mx.logical_and(i_better, i_strictly), mx.triu(mx.ones((n_pop, n_pop), dtype=bool), k=1))
+    i_final = mx.logical_and(mx.logical_and(i_better, i_strictly), mx.triu(mx.ones((n_pop, n_pop), dtype=bool), k=1))  # type: ignore[arg-type]
 
     i_final_np = np.array(i_final)
 
@@ -689,7 +692,7 @@ def _crowding_distance(
                 adj_mlx[:, j] = -adj_mlx[:, j]
 
         n_obj = adjusted.shape[1]
-        span_diffs = []
+        span_diffs: list[tuple[Any, Any]] = []
         for j in range(n_obj):
             obj_vals = adj_mlx[:, j]
             sorted_idx = mx.argsort(obj_vals)
@@ -722,43 +725,6 @@ def _crowding_distance(
     # Default: numpy implementation (fast enough for typical batch sizes 200-500;
     # 0.2ms for n=100, 3 objectives on M5 Pro)
     return _crowding_distance_numpy(front_indices, objectives, maximise)
-
-
-def _crowding_distance_numpy(
-    front_indices: list[int],
-    objectives: np.ndarray,
-    maximise: np.ndarray,
-) -> np.ndarray:
-    """NumPy implementation of crowding distance (fallback/standalone)."""
-
-    n = len(front_indices)
-    if n <= 2:
-        return np.full(n, float("inf"), dtype=np.float32)
-
-    # Work in the maximisation domain (larger is better for all objectives).
-    adjusted = objectives[front_indices].copy()
-    for j in range(objectives.shape[1]):
-        if maximise[j]:
-            adjusted[:, j] = -adjusted[:, j]
-
-    n_obj = adjusted.shape[1]
-    distances = np.full(n, float("inf"), dtype=np.float32)
-
-    # Vectorized crowding distance calculation
-    for j in range(n_obj):
-        obj_vals = adjusted[:, j]
-        sorted_local = np.argsort(obj_vals)
-        span = obj_vals[sorted_local[-1]] - obj_vals[sorted_local[0]]
-        if span == 0:
-            continue
-
-        # Interior points: accumulate normalized differences
-        for k in range(1, n - 1):
-            distances[sorted_local[k]] += (
-                obj_vals[sorted_local[k + 1]] - obj_vals[sorted_local[k - 1]]
-            ) / span
-
-    return distances
 
 
 def _crowding_distance_numpy(

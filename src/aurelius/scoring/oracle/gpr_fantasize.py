@@ -105,10 +105,7 @@ def rank1_cholesky_update(L: NDArray[np.float64], k_star: NDArray[np.float64], k
     w = np.linalg.solve(L, k_star)
     # Residual variance
     residual = k_diag + noise_var - np.dot(w, w)
-    if residual <= 0:
-        r = 1e-10
-    else:
-        r = np.sqrt(residual)
+    r = 1e-10 if residual <= 0 else np.sqrt(residual)
 
     L_new = np.zeros((n + 1, n + 1), dtype=np.float64)
     L_new[:n, :n] = L

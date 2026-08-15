@@ -23,6 +23,7 @@ import sys
 import time
 import warnings
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from rdkit import Chem, RDLogger
@@ -39,7 +40,11 @@ logging.getLogger("aurelius").setLevel(logging.WARNING)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from aurelius.scoring.oracle.gc import predict_dielectric_constant, predict_viscosity_proxy, predict_li_solvation_proxy
+from aurelius.scoring.oracle.gc import (  # noqa: E402
+    predict_dielectric_constant,
+    predict_li_solvation_proxy,
+    predict_viscosity_proxy,
+)
 
 TOP_N = 20
 
@@ -239,7 +244,7 @@ def run_evaluations(candidate_smiles: list[str], n_eval: int, strategy_name: str
         # If we didn't get enough diverse candidates, fill rest randomly
         if len(selected) < n_eval:
             selected_smiles_set = {s for s, _ in selected}
-            remaining = [s for s in all_scores.keys() if s not in selected_smiles_set]
+            remaining = [s for s in all_scores if s not in selected_smiles_set]
             while len(selected) < n_eval and remaining:
                 choice = rng.choice(remaining)
                 remaining.remove(choice)

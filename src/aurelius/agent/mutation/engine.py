@@ -154,7 +154,7 @@ class MutationEngine:
         if seed_smiles is None:
             import json
             tier0_path = files("aurelius.data") / "tier0_seed_smiles.json"
-            with open(tier0_path) as f:
+            with open(str(tier0_path)) as f:
                 seed_smiles = json.load(f)
         pool = list(set(seed_smiles))
         contexts = []
@@ -207,7 +207,7 @@ class MutationEngine:
 
         json_path = files("aurelius.data") / "known_electrolytes.json"
         try:
-            with open(json_path) as f:
+            with open(str(json_path)) as f:
                 smiles_list = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             return
@@ -640,7 +640,27 @@ class MutationEngine:
 
         n = len(components)
 
-        def target_function(frac_array):
+        # Per-component dielectric / viscosity proxies are independent of the
+        # optimised fractions, so compute them once before the optimiser loop.
+        from aurelius.scoring.oracle.gc import (
+            mixture_synergy_bonus_n,
+            predict_dielectric_proxy,
+            predict_viscosity_proxy,
+        )
+        from aurelius.types import MoleculeContext
+
+        contexts: list[MoleculeContext] = []
+        for smi in components:
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is not None:
+                contexts.append(ctx)
+        if len(contexts) != n:
+            return self._perturb_fractions(components, fracs)
+
+        ds = [predict_dielectric_proxy(ctx) for ctx in contexts]
+        vs = [predict_viscosity_proxy(ctx) for ctx in contexts]
+
+        def target_function(frac_array: np.ndarray) -> float:
             # Ensure fractions are positive and sum to 1
             frac_array = np.maximum(frac_array, 0.0)
             frac_sum = np.sum(frac_array)
@@ -648,22 +668,7 @@ class MutationEngine:
                 return float('inf')
             frac_array = frac_array / frac_sum
 
-            # Calculate synergy bonus
-            from aurelius.scoring.oracle.gc import mixture_synergy_bonus_n
-            from aurelius.types import MoleculeContext
-
-            contexts = []
-            for smi in components:
-                ctx = MoleculeContext.from_smiles(smi)
-                if ctx is not None:
-                    contexts.append(ctx)
-
-            if len(contexts) != n:
-                return float('inf')
-
-            synergy = mixture_synergy_bonus_n(contexts, frac_array.tolist())
-
-            # Maximize synergy, so minimize negative synergy
+            synergy = mixture_synergy_bonus_n(ds, vs, frac_array.tolist())
             return -float(synergy)
 
         # Initial guess from current fractions
@@ -846,7 +851,7 @@ class MutationEngine:
 
         json_path = files("aurelius.data") / "known_electrolytes.json"
         try:
-            with open(json_path) as f:
+            with open(str(json_path)) as f:
                 entries = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             return []

@@ -168,12 +168,13 @@ class TestSabotageRobustness:
 
     def test_sabotage_helpers_exist(self):
         """The sabotage helper functions must be importable and functional."""
+        import random as rng_module
+
         from benchmarks.benchmark_closed_loop import (
             _drift_noise,
             _maybe_fail,
             _maybe_mislabel,
         )
-        import random as rng_module
 
         rng = rng_module.Random(42)
         entry = {"smiles": "COC(=O)OC", "homo_eV": -7.8, "lumo_eV": -0.5}
@@ -247,7 +248,6 @@ class TestAcquisitionIsNotRedundant:
         something other than random sampling).
         """
         from aurelius.agent.experiment_suggester import suggest_experiments
-        from aurelius.scoring.oracle.delta_correction import DeltaCorrection
         from aurelius.utils.device import batch_tanimoto
 
         entries = _load_entries()

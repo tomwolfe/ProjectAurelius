@@ -15,6 +15,8 @@ always available.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
 
@@ -49,7 +51,7 @@ def get_device() -> str:
     return "cpu"
 
 
-def to_device(array: np.ndarray, device: str) -> np.ndarray:
+def to_device(array: np.ndarray, device: str) -> Any:
     """Move a numpy array to the target device backend.
 
     Args:
@@ -71,7 +73,7 @@ def to_device(array: np.ndarray, device: str) -> np.ndarray:
     return array
 
 
-def batch_tanimoto(fps: list, device: str | None = None) -> np.ndarray:
+def batch_tanimoto(fps: list[Any], device: str | None = None) -> np.ndarray:
     """Compute pairwise Tanimoto similarity matrix using the best backend.
 
     Wraps the existing ``batch_tanimoto_similarity`` from oracle.py

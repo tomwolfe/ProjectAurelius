@@ -22,6 +22,9 @@ from aurelius.scoring.oracle.gc import (
     predict_li_solvation_proxy_batch,
     predict_viscosity_proxy_batch,
 )
+from aurelius.scoring.oracle.mlx_surrogate import (
+    predict_variance_batch_mlx,
+)
 from aurelius.scoring.oracle.oracle import (
     PropertyOracle,
     _fp_batch_to_numpy,
@@ -29,11 +32,8 @@ from aurelius.scoring.oracle.oracle import (
     batch_tanimoto_similarity,
 )
 from aurelius.scoring.oracle.quantum import (
-    predict_tom_orbitals_batch,
     _compute_radius_of_gyration_batch,
-)
-from aurelius.scoring.oracle.mlx_surrogate import (
-    predict_variance_batch_mlx,
+    predict_tom_orbitals_batch,
 )
 from aurelius.types import MoleculeContext
 
@@ -203,7 +203,7 @@ def benchmark_rg_batch(contexts: list[MoleculeContext]) -> dict[str, float]:
     times: list[float] = []
     for _ in range(N_REPEATS):
         start = time.perf_counter()
-        rgs = _compute_radius_of_gyration_batch(mols)
+        _compute_radius_of_gyration_batch(mols)
         elapsed = time.perf_counter() - start
         times.append(elapsed)
 
@@ -231,8 +231,8 @@ def benchmark_mlx_variance(contexts: list[MoleculeContext]) -> dict[str, float]:
     Phase 4: Wire MLX variance into BALD acquisition. Verifies MLX variance
     matches sklearn within 1e-4.
     """
-    from aurelius.scoring.oracle.conformal import get_conformal_predictor
     from aurelius.agent.experiment_suggester import _gpr_model_from_predictor
+    from aurelius.scoring.oracle.conformal import get_conformal_predictor
 
     predictor = get_conformal_predictor()
     gpr_model = _gpr_model_from_predictor(predictor)
@@ -284,7 +284,6 @@ def benchmark_single_evaluate(contexts: list[MoleculeContext]) -> dict[str, floa
     Measures the realistic per-molecule cost when processing a stream of
     novel candidates (no cache hits). Includes Δ-correction GPR prediction.
     """
-    from aurelius.scoring.oracle.quantum import QuantumOracle
 
     oracle = PropertyOracle(use_xtb=False)
     oracle._quantum.warmup()
