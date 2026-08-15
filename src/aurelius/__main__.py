@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import sys
+from typing import Any
 
 import click
 
@@ -477,7 +478,7 @@ def dft_rerank_cmd(
         sys.exit(1)
 
     click.echo(f"Computing DFT single points for {len(mols)} molecules...")
-    results = []
+    results: list[dict[str, Any]] = []
     for i, (smi, mol) in enumerate(zip(valid_smiles, mols, strict=False)):
         if i > 0 and i % 5 == 0:
             click.echo(f"  Progress: {i}/{len(mols)}...")
@@ -496,7 +497,7 @@ def dft_rerank_cmd(
             discoveries = summary.get("discoveries", [])
             score_map = {d["smiles"]: d["total_score"] for d in discoveries}
             scores = [score_map.get(r["smiles"], 0.0) for r in results]
-            dft_composites = [-(r["homo_eV"] + r["lumo_eV"]) / 2.0 for r in results]
+            dft_composites = [-(float(r["homo_eV"]) + float(r["lumo_eV"])) / 2.0 for r in results]
             from aurelius.scoring.oracle.dft_validator import spearman_correlation
             rho, p = spearman_correlation(scores, dft_composites)
             click.echo(f"\nSpearman rho (Aurelius vs DFT composite) = {rho:.4f} (p={p:.4f})")
@@ -687,7 +688,7 @@ def report_cmd(
         with open(summary) as f:
             loaded = _json.load(f)
         entries = loaded.get("discoveries", []) or loaded.get("all_results", [])
-        results: list = []
+        results: list[ScreeningResult] = []
         for e in entries:
             try:
                 results.append(ScreeningResult(**{k: e.get(k) for k in ScreeningResult.__dataclass_fields__}))

@@ -128,7 +128,7 @@ def _validate_mixture_inputs(
         raise ValueError(f"Fractions must sum to 1.0, got {sum(fractions):.6f}")
 
 
-def _mix_properties(component_results: list[dict]) -> tuple[list[float], list[float], list[float], list[float], list[float], list[float]]:
+def _mix_properties(component_results: list[dict[str, float]]) -> tuple[list[float], list[float], list[float], list[float], list[float], list[float]]:
     """Extract per-component property arrays for mixing."""
     ds = [r.get("dielectric_proxy", 0.0) for r in component_results]
     vs = [r.get("viscosity_proxy", 99.0) for r in component_results]

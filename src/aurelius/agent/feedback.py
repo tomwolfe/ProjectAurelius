@@ -339,7 +339,7 @@ class FeedbackController:
 
         # Build new calibration set: original + EA feedback residuals
         # where experimental values are available.
-        new_calib: list[dict[str, float]] = list(dc._calib) if dc._calib else []
+        new_calib: list[dict[str, float | str]] = list(dc._calib) if dc._calib else []  # type: ignore[arg-type]
         new_calib_smiles: list[str] = list(dc._calib_smiles) if dc._calib_smiles else []
 
         added = 0
@@ -360,7 +360,7 @@ class FeedbackController:
         if added > 0:
             # Re-instantiate the model with expanded calibration
             self._delta_correction = DeltaCorrection(
-                calib=new_calib, calib_smiles=new_calib_smiles
+                calib=new_calib, calib_smiles=new_calib_smiles  # type: ignore[arg-type]
             )
             loo_after = self._delta_correction.loo_mae()
         else:

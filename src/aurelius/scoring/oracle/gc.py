@@ -1431,6 +1431,7 @@ def check_mixture_miscibility(
     if max_diff <= threshold:
         return True, max_diff, f"miscible (max Δδ={max_diff:.1f} < {threshold})"
     else:
+        assert worst_pair is not None
         i, j = worst_pair
         return False, max_diff, f"immiscible: components {i},{j} Δδ={max_diff:.1f} > {threshold}"
 

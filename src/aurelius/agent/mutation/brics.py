@@ -24,10 +24,10 @@ from aurelius.types import MoleculeContext
 _MAX_HARVESTED_FRAGMENTS = 200
 
 
-_COMMERCIAL_PRECURSORS_PATH = Path(files("aurelius.data")) / "commercial_precursors.json"
+_COMMERCIAL_PRECURSORS_PATH = Path(str(files("aurelius.data"))) / "commercial_precursors.json"
 
 
-def _load_all_precursors():
+def _load_all_precursors() -> tuple[Chem.Mol, ...]:
     """Load commercial precursors from both constants and JSON file.
 
     Returns:

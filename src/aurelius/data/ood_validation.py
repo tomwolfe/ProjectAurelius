@@ -7,11 +7,12 @@ for testing oracle robustness.
 import json
 from importlib.resources import files
 from pathlib import Path
+from typing import Any
 
-_OOD_VALIDATION_PATH = Path(files("aurelius.data")) / "ood_validation.json"
+_OOD_VALIDATION_PATH = Path(str(files("aurelius.data"))) / "ood_validation.json"
 
 
-def get_ood_molecules():
+def get_ood_molecules() -> list[dict[str, Any]]:
     """Load and return the OOD validation molecules.
 
     Returns:

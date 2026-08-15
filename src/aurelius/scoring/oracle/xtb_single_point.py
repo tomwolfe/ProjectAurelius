@@ -45,6 +45,7 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -149,7 +150,13 @@ class XTBSinglePointOracle:
         Keys: ``homo_eV``, ``lumo_eV``, ``dipole_D``, ``xtb_method``,
         ``convergence``, ``cpu_seconds``, ``source``.
         """
-        mol = MoleculeContext.from_smiles(ctx).mol if isinstance(ctx, str) else ctx.mol
+        if isinstance(ctx, str):
+            mc = MoleculeContext.from_smiles(ctx)
+            if mc is None:
+                return {}
+            mol = mc.mol
+        else:
+            mol = ctx.mol
         key = _canonical_key(mol)
 
         with self._cache_lock:
@@ -174,6 +181,12 @@ class XTBSinglePointOracle:
 
         xyz = _generate_xyz(mol)
         xtb_bin = _find_xtb_binary()
+        if xtb_bin is None:
+            return XTBResult(
+                homo_eV=None, lumo_eV=None, dipole_D=0.0,
+                xtb_method="GFN2-xTB", convergence="xtb_unavailable",
+                cpu_seconds=0.0, source="xtb_unavailable",
+            )
         start = time.perf_counter()
         try:
             result = self._run_sp(xtb_bin, xyz, mol)
@@ -246,7 +259,7 @@ class XTBSinglePointOracle:
 
 
 @contextlib.contextmanager
-def temporary_oracle(temp_dir: str) -> XTBSinglePointOracle:
+def temporary_oracle(temp_dir: str) -> Iterator[XTBSinglePointOracle]:
     """Oracle backed by an on-disk cache in a throwaway directory.
 
     Convenience for tests that should not touch the user's real

@@ -99,11 +99,14 @@ _EA_CALIBRATION: tuple[float, float] = (0.6590, -2.9176)
 #   python scripts/calibrate_reduction.py --solution
 # Fitted values; refresh with the script whenever the calibration set changes.
 #
-# NOTE (2026-08-12): no trusted fit exists yet. The 10 CV-onset labels are
-# cross-family inverted relative to the validated gas-phase ΔSCF scale
-# (Spearman ρ = −0.82 for the Born-corrected fit), so the identity placeholder
-# is retained and the solution branch must not claim calibrated confidence.
-_EA_SOLUTION_CALIBRATION: tuple[float, float] = (-0.3695, 4.7726)
+# NOTE (2026-08-12): no trusted fit exists yet. The attempted affine fit of the
+# Born-corrected gas-phase ΔSCF EA onto the 10 CV-onset labels was rank-reversing
+# (Spearman ρ = −0.82 vs the validated gas-phase ΔSCF axis, ρ = +0.91), so the
+# identity placeholder (1.0, 0.0) is retained: the validated gas-phase ranking +
+# additive Born correction is passed through without rank-reversing warping.
+# Calibrate with: python scripts/calibrate_reduction.py --solution
+#   -- only once a trusted (rank-preserving) fit is obtained.
+_EA_SOLUTION_CALIBRATION: tuple[float, float] = (1.0, 0.0)
 
 # Effective dielectric of the EC:DMC 1:1 mixture used for CV calibration.
 # EC (ε≈89) and DMC (ε≈3.8) in 1:1 volume mix → ε_eff ≈ 30.
@@ -184,7 +187,7 @@ def _cavity_radius(mol: Chem.Mol) -> float:
     guards against unrealistically small cavities for diatomics and ensures
     the Born energy stays finite.
     """
-    mol_h = Chem.AddHs(mol) if not mol.GetNumAtoms() == mol.GetNumHeavyAtoms() else mol
+    mol_h = Chem.AddHs(mol) if mol.GetNumAtoms() != mol.GetNumHeavyAtoms() else mol
     vol_a3 = sum(
         (4.0 / 3.0) * np.pi * (_VDW_RADII.get(a.GetSymbol(), 1.6) ** 3)
         for a in mol_h.GetAtoms()
@@ -728,7 +731,7 @@ class ReductionOracle:
                         solvent=self._solvent,
                     )
             else:
-                raw = compute_dscf_ea(mol, solvent=None, threads=self._threads)
+                raw = compute_dscf_ea(mol, solvent=None, threads=self._threads)  # type: ignore[assignment]
                 if raw is not None:
                     lo, hi = _EA_CALIBRATED_SPAN_RAW
                     in_span = lo <= raw <= hi

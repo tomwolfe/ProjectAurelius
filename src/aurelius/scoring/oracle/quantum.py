@@ -42,6 +42,7 @@ import os
 import re
 import subprocess
 import tempfile
+from typing import Any
 
 import numpy as np
 from rdkit import Chem
@@ -132,7 +133,7 @@ def _generate_xyz(mol: Chem.Mol) -> str:
     return "\n".join(lines)
 
 
-def _load_tom_params() -> dict:
+def _load_tom_params() -> dict[str, float]:
     """Load TOM parameters from JSON file, with fallback to defaults."""
     params_path = os.path.join(
         os.path.dirname(__file__), "..", "..", "data", "tom_params.json"
@@ -157,7 +158,7 @@ def _load_tom_params() -> dict:
         return default_params
 
 
-def _get_tom_params() -> dict:
+def _get_tom_params() -> dict[str, float]:
     """Get TOM parameters, loading from JSON file if available."""
     if not hasattr(_get_tom_params, '_cached_params'):
         _get_tom_params._cached_params = _load_tom_params()
@@ -282,13 +283,13 @@ _XTB_HOMO_CALIBRATION: tuple[float, float] = (0.331, -3.640)
 _XTB_LUMO_CALIBRATION: tuple[float, float] = (0.152, 0.843)
 
 
-def _calibrate_xtb_orbitals(result: dict[str, float]) -> dict[str, float]:
+def _calibrate_xtb_orbitals(result: dict[str, float | str]) -> dict[str, float | str]:
     """Map raw GFN2-xTB orbital energies onto the DFT reference scale."""
     homo_a, homo_b = _XTB_HOMO_CALIBRATION
     lumo_a, lumo_b = _XTB_LUMO_CALIBRATION
     calibrated = dict(result)
-    calibrated["homo_eV"] = homo_a * result["homo_eV"] + homo_b
-    calibrated["lumo_eV"] = lumo_a * result["lumo_eV"] + lumo_b
+    calibrated["homo_eV"] = homo_a * float(result["homo_eV"]) + homo_b
+    calibrated["lumo_eV"] = lumo_a * float(result["lumo_eV"]) + lumo_b
     return calibrated
 
 
@@ -558,8 +559,8 @@ def _compute_radius_of_gyration_batch(mols: list[Chem.Mol]) -> np.ndarray:
             _RG_CACHE[key] = value
 
     for i in unresolved:
-        key = keys[i]
-        if key is not None and key in _RG_CACHE:
+        cache_key: str | None = keys[i]
+        if cache_key is not None and cache_key in _RG_CACHE:
             result[i] = _RG_CACHE[key]
         else:
             result[i] = _compute_radius_of_gyration(mols[i])
@@ -615,9 +616,9 @@ def _compute_radius_of_gyration(mol: Chem.Mol) -> float:
         sum_mass_r2 = 0.0
         for i in range(n_atoms):
             atom = mol_copy.GetAtomWithIdx(i)
-            mass = atom.GetAtomicNum()
-            if mass == 0:
-                mass = 12.0
+        mass: float = atom.GetAtomicNum()
+        if mass == 0:
+            mass = 12.0
 
             pos = conf.GetAtomPosition(i)
             r2 = pos.x * pos.x + pos.y * pos.y + pos.z * pos.z
@@ -935,9 +936,7 @@ def _has_unreliable_homo_region(mol: Chem.Mol) -> bool:
     )
     n_total = mol.GetNumHeavyAtoms()
     hetero_frac = n_hetero / max(n_total, 1)
-    if hetero_frac >= 0.55:
-        return True
-    return False
+    return hetero_frac >= 0.55
 
 
 def compute_quantum_domain_penalty(ctx: MoleculeContext) -> tuple[float, str]:
@@ -1020,7 +1019,7 @@ class QuantumOracle:
     ) -> None:
         self._use_xtb = use_xtb and _HAS_XTB
         self._use_lone_pair = use_lone_pair
-        self._cache: dict[str, dict[str, float]] = {}
+        self._cache: dict[str, dict[str, float | str]] = {}
         self._n_xtb_calls = 0
         self._n_tom_calls = 0
         self._use_delta_correction = use_delta_correction
@@ -1058,12 +1057,12 @@ class QuantumOracle:
     def n_quantum_calls(self) -> int:
         return self._n_xtb_calls + self._n_tom_calls
 
-    def evaluate(self, mol: Chem.Mol) -> dict[str, float]:
+    def evaluate(self, mol: Chem.Mol) -> dict[str, float | str]:
         smiles = Chem.MolToSmiles(mol)
         if smiles in self._cache:
             return dict(self._cache[smiles])
 
-        result: dict[str, float] | None = None
+        result: dict[str, Any] | None = None
         used_xtb = False
         if self._use_xtb:
             xyz = _generate_xyz(mol)
@@ -1071,7 +1070,7 @@ class QuantumOracle:
             if result is not None:
                 self._n_xtb_calls += 1
                 used_xtb = True
-                result = _calibrate_xtb_orbitals(result)
+                result = _calibrate_xtb_orbitals(result)  # type: ignore[arg-type]
             else:
                 logger.warning("QuantumOracle: xTB calculation failed — falling back to TOM.")
 
@@ -1089,12 +1088,12 @@ class QuantumOracle:
             n_rings = mol.GetRingInfo().NumRings()
             # ADR-2026-06-02: L > 8 or n_rings > 2 indicates topological complexity where
             # the 1-D particle-in-a-box model diverges from 3D reality, warranting epistemic humility.
-            result["quantum_confidence"] = "tom_high" if L <= 8 and n_rings <= 2 else "tom_low"  # type: ignore[assignment]
+            result["quantum_confidence"] = "tom_high" if L <= 8 and n_rings <= 2 else "tom_low"
 
         self._cache[smiles] = result
         return dict(result)
 
-    def _evaluate_closed_form(self, mol: Chem.Mol) -> dict[str, float]:
+    def _evaluate_closed_form(self, mol: Chem.Mol) -> dict[str, float | str]:
         """Closed-form orbital estimate used when xTB is unavailable or fails.
 
         HOMO from the Lone-Pair Orbital Model (ADR-2026-08-08-01), LUMO from
@@ -1130,7 +1129,7 @@ class QuantumOracle:
         self,
         mols: list[Chem.Mol],
         max_workers: int | None = None,
-    ) -> list[dict[str, float]]:
+    ) -> list[dict[str, float | str]]:
         """Evaluate a batch of molecules, parallelizing xTB subprocess calls.
 
         xTB subprocess calls release the GIL, so ThreadPoolExecutor gives
@@ -1142,25 +1141,25 @@ class QuantumOracle:
         results, xtb_indices, xtb_inputs = self._prepare_batch(mols)
         self._run_xtb_parallel(results, xtb_indices, xtb_inputs, mols, max_workers)
         self._fill_fallbacks(results, xtb_indices, mols)
-        return [r if r is not None else self._evaluate_closed_form(mols[i]) for i, r in enumerate(results)]
+        return [r if r is not None else self._evaluate_closed_form(mols[i]) for i, r in enumerate(results)]  # type: ignore[misc]
 
     def _prepare_batch(
         self, mols: list[Chem.Mol]
-    ) -> tuple[list[dict[str, float] | None], list[int], list[tuple[str, str]]]:
+    ) -> tuple[list[dict[str, float | str] | None], list[int], list[tuple[str, str]]]:
         """Separate cached, xTB, and closed-form molecules for batch evaluation."""
-        results: list[dict[str, float] | None] = [None] * len(mols)
+        results: list[dict[str, float | str] | None] = [None] * len(mols)
         xtb_indices: list[int] = []
         xtb_inputs: list[tuple[str, str]] = []
         for i, mol in enumerate(mols):
             smiles = Chem.MolToSmiles(mol)
             if smiles in self._cache:
-                results[i] = dict(self._cache[smiles])
+                results[i] = self._cache[smiles]
                 continue
             if self._use_xtb:
                 xtb_indices.append(i)
                 xtb_inputs.append((smiles, _generate_xyz(mol)))
             else:
-                result = self._evaluate_closed_form(mol)
+                result: dict[str, Any] = self._evaluate_closed_form(mol)
                 result["quantum_confidence"] = self._tom_confidence(mol)
                 results[i] = result
                 self._cache[smiles] = result
@@ -1168,7 +1167,7 @@ class QuantumOracle:
 
     def _run_xtb_parallel(
         self,
-        results: list[dict[str, float] | None],
+        results: list[dict[str, float | str] | None],
         xtb_indices: list[int],
         xtb_inputs: list[tuple[str, str]],
         mols: list[Chem.Mol],
@@ -1182,9 +1181,9 @@ class QuantumOracle:
             return
         import concurrent.futures
 
-        def _run_one(item: tuple[int, tuple[str, str]]) -> tuple[int, dict[str, float] | None]:
+        def _run_one(item: tuple[int, tuple[str, str]]) -> tuple[int, dict[str, float | str] | None]:
             idx, (_smi, xyz) = item
-            return idx, _run_xtb(xyz)
+            return idx, _run_xtb(xyz)  # type: ignore[return-value]
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_idx = {
@@ -1192,14 +1191,13 @@ class QuantumOracle:
                 for xi, xin in zip(xtb_indices, xtb_inputs, strict=True)
             }
             for future in concurrent.futures.as_completed(future_to_idx):
-                orig_idx = future_to_idx[future]
                 try:
                     idx, xtb_res = future.result()
                 except Exception:
                     continue
                 mol = mols[idx]
                 if xtb_res is not None:
-                    result = _calibrate_xtb_orbitals(xtb_res)
+                    result: dict[str, Any] = _calibrate_xtb_orbitals(xtb_res)  # type: ignore[arg-type]
                     result["quantum_confidence"] = (
                         "tom_low" if _has_unreliable_homo_region(mol) else "xtb"
                     )
@@ -1213,14 +1211,14 @@ class QuantumOracle:
 
     def _fill_fallbacks(
         self,
-        results: list[dict[str, float] | None],
+        results: list[dict[str, float | str] | None],
         xtb_indices: list[int],
         mols: list[Chem.Mol],
     ) -> None:
         """Fill any remaining None results with closed-form evaluation."""
         for i in xtb_indices:
             if results[i] is None:
-                result = self._evaluate_closed_form(mols[i])
+                result: dict[str, float | str] = self._evaluate_closed_form(mols[i])
                 result["quantum_confidence"] = self._tom_confidence(mols[i])
                 results[i] = result
                 self._cache[Chem.MolToSmiles(mols[i])] = result

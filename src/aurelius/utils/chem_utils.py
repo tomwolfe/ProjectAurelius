@@ -60,7 +60,7 @@ def _canonical_smiles_lru(smiles: str) -> str:
     return Chem.MolToSmiles(mol)
 
 
-def _smiles_persistent_store() -> shelve.Shelf | None:
+def _smiles_persistent_store() -> shelve.Shelf[str] | None:
     """Open the persistent SMILES cache shelve, or return None on failure."""
     try:
         return shelve.open(_SMILES_PERSISTENT_PATH, writeback=False)
@@ -384,7 +384,7 @@ def synthesizability_complexity(ctx: Any) -> float:
     # --- Component 2: Functional-group complexity ---
     # Count distinct electron-accepting / donating motifs from the SA rule set.
     # Each motif contributes proportionally, so more diverse chemistry = harder.
-    fg_count = 0
+    fg_count: float = 0
     n_rules_triggered = 0
     for _name, rule_fn in _SA_RULES:
         delta = abs(rule_fn(ctx))

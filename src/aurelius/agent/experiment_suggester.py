@@ -1275,12 +1275,12 @@ def _compute_bald_mlx(
 
     _, means = surrogate.predict_batch(mols)
     top_k = min(20, len(evaluated))
-    mean_std_pairs = list(zip(means, stds, smiles_keys))
+    mean_std_pairs = list(zip(means, stds, smiles_keys, strict=True))  # type: ignore[arg-type]
     mean_std_pairs.sort(key=lambda x: -x[0])  # Sort by mean descending
     top_candidates = mean_std_pairs[:top_k]
 
     db_boost: dict[str, float] = {}
-    for mean, std, smi in top_candidates:
+    for mean, _std, smi in top_candidates:
         dist_to_boundary = abs(mean - DECISION_BOUNDARY)
         # Soft penalty: higher when closer to boundary
         db_term = float(np.exp(-dist_to_boundary / DECISION_BOUNDARY_WIDTH))
@@ -1328,8 +1328,8 @@ def _compute_bald_scores(
         total_width = 0.0
         n_props = 0
         for prop in MEASURABLE_PROPERTIES:
-            _, interval = predictor.predict_interval(prop, preds.get(prop, 0.0), mol=ctx.mol)
-            total_width += interval[1] - interval[0]
+            _, interval = predictor.predict_interval(prop, preds.get(prop, 0.0), mol=ctx.mol)  # type: ignore[misc]
+            total_width += interval[1] - interval[0]  # type: ignore
             n_props += 1
         avg_width = total_width / max(n_props, 1)
         result[Chem.MolToSmiles(ctx.mol)] = avg_width / (1.0 + avg_width)
@@ -1471,7 +1471,7 @@ def _compute_batch_ei_scores(
     if s_max <= 0:
         return {smi: 0.0 for smi in smiles_list}
     normed = scores / s_max
-    return {smi: float(v) for smi, v in zip(smiles_list, normed)}
+    return {smi: float(v) for smi, v in zip(smiles_list, normed, strict=True)}
 
 
 # Each additional suggestion for an already-chosen molecule or property is
@@ -1520,10 +1520,7 @@ def _property_distance(
     # Normalise: assume property range of ~10 eV (HOMO/LUMO) or ~80 units
     # (dielectric/viscosity) for a rough scale; a distance of 1.0 eV or
     # 10 units is "close".
-    if prop in ("homo_eV", "lumo_eV"):
-        norm = min_dist / 1.0
-    else:
-        norm = min_dist / 10.0
+    norm = min_dist / 1.0 if prop in ("homo_eV", "lumo_eV") else min_dist / 10.0
     return max(0.0, min(1.0, 1.0 - norm))
 
 

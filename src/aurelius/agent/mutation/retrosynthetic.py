@@ -8,6 +8,7 @@ for Gap 2: Synthesizable outputs.
 import json
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from rdkit import Chem
 from rdkit.Chem import BRICS
@@ -15,7 +16,7 @@ from rdkit.Chem import BRICS
 
 def _data_path(filename: str) -> Path:
     from importlib.resources import files
-    return Path(files("aurelius.data")) / filename
+    return Path(str(files("aurelius.data"))) / filename
 
 
 COMMERCIAL_PRECURSORS_PATH = _data_path("commercial_precursors.json")
@@ -207,7 +208,7 @@ def _has_functional_group(mol: Chem.Mol, templates: list[tuple[str, str]]) -> bo
     return False
 
 
-def _ring_aware_query_params():
+def _ring_aware_query_params() -> Chem.AdjustQueryParameters:
     """Query parameters that forbid a chain atom matching a ring atom.
 
     ADR-2026-08-10-02: plain ``HasSubstructMatch`` is topology-blind, so the
@@ -235,7 +236,7 @@ def as_ring_aware_query(mol: Chem.Mol) -> Chem.Mol:
         return mol
 
 
-def _load_precursors():
+def _load_precursors() -> tuple[Chem.Mol, ...]:
     """Load commercial precursors from JSON and pre-compile to Mol objects.
 
     Returns:
@@ -626,7 +627,7 @@ def _decomposition_efficiency(mol: Chem.Mol, fragments: list[str]) -> float:
     return 0.10
 
 
-def get_commercial_precursors() -> list[dict]:
+def get_commercial_precursors() -> list[dict[str, Any]]:
     """Get the commercial precursors data with metadata.
 
     Returns:

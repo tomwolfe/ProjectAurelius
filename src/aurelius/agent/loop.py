@@ -30,14 +30,6 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-# Use all available cores for parallel molecule evaluation, but cap at 8 to
-# avoid oversubscription on a machine that may also be running the host UI
-# and xTB subprocesses.
-_EVAL_WORKERS = min(multiprocessing.cpu_count(), 8)
-
-if TYPE_CHECKING:
-    from aurelius.scoring.oracle.xtb_single_point import XTBSinglePointOracle
-
 import numpy as np
 
 from aurelius.agent.feedback import FeedbackController
@@ -66,6 +58,14 @@ try:
     from rdkit.Chem.Scaffolds import MurckoScaffold
 except ImportError:
     MurckoScaffold = None  # type: ignore[assignment]
+
+# Use all available cores for parallel molecule evaluation, but cap at 8 to
+# avoid oversubscription on a machine that may also be running the host UI
+# and xTB subprocesses.
+_EVAL_WORKERS = min(multiprocessing.cpu_count(), 8)
+
+if TYPE_CHECKING:
+    from aurelius.scoring.oracle.xtb_single_point import XTBSinglePointOracle
 
 log = logging.getLogger(__name__)
 
@@ -454,7 +454,7 @@ class DiscoveryLoop:
         tier0_path = files("aurelius.data") / "tier0_seed_smiles.json"
         if not tier0_path.exists():
             return
-        with open(tier0_path) as f:
+        with open(str(tier0_path)) as f:
             all_seeds = json.load(f)
         existing = set(self.engine.seed_pool)
         unused = [s for s in all_seeds if s not in existing]
@@ -759,7 +759,7 @@ class DiscoveryLoop:
 
             # Collect per-candidate objective scores for NSGA-II
             _collect_obj_scores(
-                obj_scores, total_score, t2, score_data, conformal_conf, novelty
+                obj_scores, total_score, t2, score_data, conformal_conf, novelty or 0.0
             )
 
             # W6: Accumulate feedback for experimental/oracle refinement
@@ -1003,7 +1003,7 @@ class DiscoveryLoop:
         from aurelius.scoring.oracle.xtb_single_point import XTBSinglePointOracle
 
         oracle = _LockedXTBSinglePointOracle(XTBSinglePointOracle())
-        ranked = self._rank_by_xtb(contexts, scores, oracle)
+        ranked = self._rank_by_xtb(contexts, scores, oracle._wrapped)
         # Top decile of xTB-ranked survivors is eligible for ORCA escalation;
         # the remainder is confirmed good enough by the SP alone.
         decile = max(1, len(ranked) // 10)

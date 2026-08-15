@@ -5,8 +5,9 @@ conjugation. It systematically mis-estimates HOMO/LUMO for molecules whose
 electronic structure is not captured by a single conjugation length (branched
 pi-systems, through-bond coupling, hyperconjugation from C–F / C–O sigma
 bonds, conformational averaging). These errors are structured, not random,
-so a residual model trained on the difference between TOM and reference
-values can correct them while keeping the interpretable TOM as the base model.
+so a residual model trained on the difference between the base model and
+reference values can correct them while keeping the interpretable base model
+(LPM for HOMO, TOM for LUMO) intact.
 
 ADR-2026-08-09-02: HOMO and LUMO use *different* calibration sets:
   * HOMO residuals are trained on ``orbital_calibration.json`` (115 DFT-B3LYP
@@ -18,7 +19,7 @@ ADR-2026-08-09-02: HOMO and LUMO use *different* calibration sets:
     come from the *same* quantum-chemical method, so the set is free of
     between-source confound (verified: citation-only ρ = 0.0).
 
-The residual (Δ = reference − TOM) is regressed from ECFP4 fingerprints with a
+    The residual (Δ = reference − base) is regressed from ECFP4 fingerprints with a
 Gaussian Process Regressor (GPR) using an RBF + WhiteKernel covariance.
 GPR is preferred over kernel ridge because:
 
@@ -33,7 +34,7 @@ GPR is preferred over kernel ridge because:
 
 Molecules with fingerprints far from every calibration molecule get a residual
 near zero (GPR posterior mean → prior mean ≈ 0), so out-of-domain predictions
-degrade gracefully back to raw TOM.
+degrade gracefully back to the base model (LPM for HOMO, TOM for LUMO).
 """
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ from sklearn.gaussian_process.kernels import (
     WhiteKernel,
 )
 
+from aurelius.scoring.oracle.lone_pair import predict_lone_pair_homo
 from aurelius.scoring.oracle.quantum import predict_tom_orbitals
 
 logger = logging.getLogger(__name__)
@@ -218,11 +220,14 @@ class DeltaCorrection:
         ood_entries: list[dict[str, float]],
         value_key: str,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Build ECFP4 feature matrix and TOM residual vector.
+        """Build ECFP4 feature matrix and base residual vector.
 
-        ``value_key`` is ``"homo_eV"`` or ``"lumo_eV"``; the TOM orbital of
-        the same name is subtracted to produce the residual target. OOD entries
-        are duplicated for 2× weight. Entries with unparseable SMILES are skipped.
+        ``value_key`` is ``"homo_eV"`` or ``"lumo_eV"``; the base orbital of
+        the same name (LPM for HOMO, TOM for LUMO) is subtracted to produce the
+        residual target. This keeps the training base identical to the base the
+        production oracle (oracle.py / quantum.py) passes at evaluation time,
+        closing the train/eval base mismatch (ADR-2026-08-11-02). OOD entries are
+        duplicated for 2× weight. Entries with unparseable SMILES are skipped.
         """
         all_entries = base_entries + ood_entries + ood_entries
         valid = [e for e in all_entries
@@ -232,10 +237,13 @@ class DeltaCorrection:
         y = np.zeros(n, dtype=np.float64)
         for i, entry in enumerate(valid):
             mol = Chem.MolFromSmiles(entry["smiles"])
-            tom_homo, tom_lumo = predict_tom_orbitals(mol)
-            ref_val = entry[value_key] - (tom_homo if value_key == "homo_eV" else tom_lumo)
+            base_val = (
+                predict_lone_pair_homo(mol)
+                if value_key == "homo_eV"
+                else predict_tom_orbitals(mol)[1]
+            )
+            y[i] = entry[value_key] - base_val
             X[i] = _ecfp4_vector(mol)
-            y[i] = ref_val
         return X, y
 
     def predict_deltas(self, mol: Chem.Mol) -> tuple[float, float]:
@@ -338,26 +346,28 @@ class DeltaCorrection:
         d_homo, d_lumo, std_homo, std_lumo = self.predict_deltas_batch(mols, return_std=True)
 
         if base is None:
+            from aurelius.scoring.oracle.lone_pair import predict_lone_pair_homo_batch
             from aurelius.scoring.oracle.quantum import predict_tom_orbitals_batch
-            homo_base, lumo_base = predict_tom_orbitals_batch(mols)
+            _, lumo_base = predict_tom_orbitals_batch(mols)
+            homo_base = np.asarray(predict_lone_pair_homo_batch(mols), dtype=np.float32)
         else:
             homo_base = np.array([b[0] for b in base], dtype=np.float32)
             lumo_base = np.array([b[1] for b in base], dtype=np.float32)
 
-        var_prior_homo = self._prior_std_homo ** 2
-        var_prior_lumo = self._prior_std_lumo ** 2
-        conf_homo = var_prior_homo / (var_prior_homo + std_homo ** 2)
-        conf_lumo = var_prior_lumo / (var_prior_lumo + std_lumo ** 2)
+        var_prior_homo = self._prior_std_homo ** 2  # type: ignore[operator]
+        var_prior_lumo = self._prior_std_lumo ** 2  # type: ignore[operator]
+        conf_homo = var_prior_homo / (var_prior_homo + std_homo ** 2)  # type: ignore[operator]
+        conf_lumo = var_prior_lumo / (var_prior_lumo + std_lumo ** 2)  # type: ignore[operator]
 
-        return homo_base + d_homo * conf_homo, lumo_base + d_lumo * conf_lumo
+        return homo_base + d_homo * conf_homo, lumo_base + d_lumo * conf_lumo  # type: ignore[operator]
 
     def predict_corrected(
         self, mol: Chem.Mol, base: tuple[float, float] | None = None
     ) -> tuple[float, float]:
         """Return corrected (homo_eV, lumo_eV) for a molecule.
 
-        Falls back to raw TOM predictions if ``base`` is not supplied.
-        Out-of-domain corrections are damped using the GPR uncertainty: when σ
+        Falls back to the base model (LPM HOMO + TOM LUMO) if ``base`` is not
+        supplied.  Out-of-domain corrections are damped using the GPR uncertainty: when σ
         is large the residual is shrunk toward zero so the result reverts to
         raw TOM.
 
@@ -388,10 +398,14 @@ class DeltaCorrection:
         that trained on its own evaluation molecules; see
         test_ood_spearman_improvement.
         """
-        tom_homo, tom_lumo = base if base is not None else predict_tom_orbitals(mol)
+        if base is not None:
+            tom_homo, tom_lumo = base
+        else:
+            _, tom_lumo = predict_tom_orbitals(mol)
+            tom_homo = predict_lone_pair_homo(mol)
         d_homo, d_lumo, std_homo, std_lumo = self.predict_deltas_with_uncertainty(mol)
-        var_prior_homo = self._prior_std_homo ** 2
-        var_prior_lumo = self._prior_std_lumo ** 2
+        var_prior_homo = self._prior_std_homo ** 2  # type: ignore[operator]
+        var_prior_lumo = self._prior_std_lumo ** 2  # type: ignore[operator]
         conf_homo = var_prior_homo / (var_prior_homo + std_homo ** 2)
         conf_lumo = var_prior_lumo / (var_prior_lumo + std_lumo ** 2)
         return tom_homo + d_homo * conf_homo, tom_lumo + d_lumo * conf_lumo
@@ -438,16 +452,17 @@ class DeltaCorrection:
         Uses the analytical LOO formula for GPR instead of brute-force
         refitting, reducing cost from O(n⁴) to O(n³).
 
-        HOMO LOO uses the DFT calibration set; LUMO LOO uses the xTB set
-        (ADR-2026-08-09-02). Each model is evaluated on its own calibration
-        molecules.
+        HOMO LOO uses the DFT calibration set and the LPM base; LUMO LOO uses
+        the xTB set and the TOM base (ADR-2026-08-09-02). Each model is evaluated
+        on its own calibration molecules, against the same base the production
+        oracle applies the correction to.
         """
         errors = []
         specs = [
             ("homo", self._y_homo, self._X_homo, self._calib, 0),
             ("lumo", self._y_lumo, self._X_lumo, self._lumo_calib, 1),
         ]
-        for name, y, X, ref_entries, idx in specs:
+        for name, y, X, ref_entries, _idx in specs:
             n = len(X)
             if n == 0:
                 continue
@@ -468,10 +483,13 @@ class DeltaCorrection:
             for i in range(n):
                 d_loo = float(loo_pred[i])
                 mol = Chem.MolFromSmiles(ref_entries[i]["smiles"])
-                tom_homo, tom_lumo = predict_tom_orbitals(mol)
-                tom_val = tom_homo if name == "homo" else tom_lumo
+                base_val = (
+                    predict_lone_pair_homo(mol)
+                    if name == "homo"
+                    else predict_tom_orbitals(mol)[1]
+                )
                 ref_val = ref_entries[i]["homo_eV" if name == "homo" else "lumo_eV"]
-                pred_val = tom_val + d_loo
+                pred_val = base_val + d_loo
                 errors.append(abs(pred_val - ref_val))
 
         return float(np.mean(errors)) if errors else 0.0
@@ -529,7 +547,8 @@ def compute_ood_spearman(
         if mol is None:
             continue
         raw_h, raw_l = predict_tom_orbitals(mol)
-        corr_h, corr_l = model.predict_corrected(mol, base=(raw_h, raw_l))
+        base_homo = predict_lone_pair_homo(mol)
+        corr_h, corr_l = model.predict_corrected(mol, base=(base_homo, raw_l))
         preds.append(corr_h)
         refs.append(ref_homo)
 

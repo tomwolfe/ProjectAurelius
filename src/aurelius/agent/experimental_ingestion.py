@@ -321,7 +321,7 @@ def ingest_experimental_results(
     # consumes. Bulk properties are validated and recorded for provenance but
     # cannot currently drive a refit, and saying so is better than implying
     # they do.
-    orbital = {"homo_eV": {}, "lumo_eV": {}}
+    orbital: dict[str, dict[str, float]] = {"homo_eV": {}, "lumo_eV": {}}
     # Bulk properties tracked for systematic-bias detection (ADR-2026-08-07-09)
     bulk: dict[str, dict[str, float]] = {
         "dielectric_constant": {},

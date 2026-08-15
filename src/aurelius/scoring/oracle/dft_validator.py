@@ -211,7 +211,7 @@ class DFTValidator:
 
         parsed = _parse_orca_output(output)
         if parsed is not None:
-            parsed["dft_method"] = self.METHOD  # type: ignore[dict-item]
+            parsed["dft_method"] = self.METHOD  # type: ignore
             self._n_calls += 1
         return parsed
 
@@ -365,7 +365,7 @@ def dft_geometry_optimize(
     else:
         result = _run_xtb_optimization(mol, xtb_bin, timeout)
 
-    _DFT_GEOM_CACHE[smiles] = result
+    _DFT_GEOM_CACHE[smiles] = result  # type: ignore[assignment]
     file_cache[smiles] = result
     _write_geom_cache(cache_path, file_cache)
     return dict(result)
