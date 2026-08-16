@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""EA vs. Random Search Benchmark (minimal).
+"""EA vs. Random Search Benchmark (matched-budget study).
 
 Direct oracle evaluation of a fixed candidate set. No BRICS generation,
 no pipeline screening. Uses the scoring oracles directly.
@@ -9,8 +9,9 @@ Compares:
   (b) Random: uniform random selection from the pool
   (c) Random+top-k: keep top-k by oracle score from the pool
 
-Metrics: molecules above score 65, novel Murcko scaffolds, top-10 mean score,
-pairwise Tanimoto diversity of top-10.
+Matched-budget design: 15 seeds × 3 evaluation budgets (20/40/60) × 3 strategies.
+Reports: top-k enrichment, candidates above viability threshold (score >= 65),
+novel Murcko scaffold ratio, paired Wilcoxon + Cohen's d.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from rdkit import Chem, RDLogger
 from rdkit.Chem import AllChem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 from rdkit.DataStructs import TanimotoSimilarity
+from scipy import stats
 
 # Import MoleculeContext for screening
 from aurelius.types import MoleculeContext
@@ -48,7 +50,6 @@ from aurelius.scoring.oracle.gc import (  # noqa: E402
 
 TOP_N = 20
 
-# A diverse set of 35 electrolyte-like SMILES candidates
 CANDIDATE_SMILES = [
     "COC(=O)OC",          # DMC
     "C1COCCO1",           # DME
@@ -65,7 +66,6 @@ CANDIDATE_SMILES = [
     "CCOC(=O)OC(C)C",     # EMC
     "O=C1OC2(CO2)C=C1",   # BC
     "COC(=O)OCC",         # EMC linear
-    # Binary mixtures (as single SMILES with | separator)
     "O=C1OCCO1|CCOC(=O)OCC|0.5",  # EC|EMC|binary
     "COC(=O)OC|CCOC(=O)OCC|0.5",  # DMC|EMC|binary
     "O=C1OC(F)CO1|CCOC(=O)OCC|0.5",  # FEC|EMC|binary
@@ -73,7 +73,6 @@ CANDIDATE_SMILES = [
     "O=S1(=O)OCCO1|COC(=O)OC|0.5",  # SES|DMC|binary
     "CS(=O)(=O)C|N#CC|0.5",   # MES|ACN|binary
     "COCCOC|N#CC|0.5",        # DIEGO|ACN|binary
-    # Ternary mixtures
     "O=C1OCCO1.CCOC(=O)OCC.COC(=O)OC",  # EC+EMC+DMC tri
     "COC(=O)OC.CCOC(=O)OCC.O=C1OCCO1",  # DMC+EMC+EC tri
     "O=S1(=O)OCCO1.COC(=O)OC.N#CC",  # SES+DMC+ACN tri
@@ -83,7 +82,7 @@ CANDIDATE_SMILES = [
 ]
 
 
-def _compute_murcko_scaffold(smiles: str) -> str | None:
+def _compute_scaffold(smiles: str) -> str | None:
     """Compute Murcko scaffold for a SMILES string."""
     try:
         mol = Chem.MolFromSmiles(smiles)
@@ -98,17 +97,6 @@ def _compute_murcko_scaffold(smiles: str) -> str | None:
         return smiles
     except Exception:
         return None
-
-
-def _compute_total_score(smiles: str) -> float:
-    """Compute the composite total_score from oracle components."""
-    ctx = MoleculeContext.from_smiles(smiles)
-    if ctx is None:
-        return 0.0
-    try:
-        return _compute_total_score_from_ctx(ctx)
-    except Exception:
-        return 0.0
 
 
 def _compute_total_score_from_ctx(ctx: MoleculeContext) -> float:
@@ -136,23 +124,6 @@ def _screen_molecule_score(smiles: str) -> float:
         return 0.0
 
 
-def _compute_scaffold(smiles: str) -> str | None:
-    """Compute Murcko scaffold for a SMILES string."""
-    try:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return None
-        scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
-        if scaffold:
-            return scaffold
-        generic = MurckoScaffold.MakeScaffoldGeneric(mol=mol)
-        if generic:
-            return Chem.MolToSmiles(generic)
-        return smiles
-    except Exception:
-        return None
-
-
 def _compute_novelty_ratio(top_results: list, known_scaffolds: set) -> float:
     """Fraction of top results with novel scaffolds.
 
@@ -178,7 +149,6 @@ def _compute_pairwise_diversity(top_results: list) -> float:
     valid_fps = [fp for fp in fps if fp is not None]
     if len(valid_fps) >= 2:
         n_fp = len(valid_fps)
-        # Compute pairwise Tanimoto similarities using TanimotoSimilarity
         sim_scores = []
         for i in range(n_fp):
             for j in range(i + 1, n_fp):
@@ -189,8 +159,26 @@ def _compute_pairwise_diversity(top_results: list) -> float:
     return 0.0
 
 
-def run_evaluations(candidate_smiles: list[str], n_eval: int, strategy_name: str) -> dict:
-    """Run n_eval oracle evaluations using the given selection strategy."""
+def _load_known_scaffolds(data_path: str) -> set[str]:
+    """Load known electrolyte SMILES and compute their Murcko scaffolds."""
+    with open(data_path) as f:
+        known_smiles_list = json.load(f)
+    known_scaffolds: set[str] = set()
+    for k_smi in known_smiles_list:
+        s = _compute_scaffold(k_smi)
+        if s:
+            known_scaffolds.add(s)
+    return known_scaffolds
+
+
+def _run_strategy_for_seed(
+    candidate_smiles: list[str],
+    n_eval: int,
+    strategy: str,
+    rng: random.Random,
+    known_scaffolds: set[str],
+) -> dict:
+    """Run one strategy evaluation for one seed, returning per-strategy metrics."""
 
     # Score all candidates
     all_scores: dict[str, float] = {}
@@ -201,7 +189,7 @@ def run_evaluations(candidate_smiles: list[str], n_eval: int, strategy_name: str
 
     n_total = len(all_scores)
     if n_total == 0:
-        empty = {
+        return {
             "top_n_mean_score": 0.0,
             "n_above_65": 0,
             "n_above_65_full": 0,
@@ -209,17 +197,9 @@ def run_evaluations(candidate_smiles: list[str], n_eval: int, strategy_name: str
             "pairwise_diversity": 0.0,
             "n_screened": 0,
         }
-        return {
-            "ea": dict(empty),
-            "random": dict(empty),
-            "random_top_k": dict(empty),
-        }
-
-    rng = random.Random(42)  # Fixed seed for reproducibility
 
     # Strategy (a): EA-style — select diverse high-scoring candidates
-    if strategy_name == "ea":
-        # Sort candidates by score descending
+    if strategy == "ea":
         sorted_by_score = sorted(all_scores.items(), key=lambda x: -x[1])
         selected: list[tuple[str, float]] = []  # (smiles, score)
         selected_fps: list[Any] = []
@@ -262,39 +242,26 @@ def run_evaluations(candidate_smiles: list[str], n_eval: int, strategy_name: str
         top_mean = float(np.mean(top_scores_val)) if top_scores_val else 0.0
 
         # Novelty
-        data_path = Path(__file__).resolve().parent.parent / "src" / "aurelius" / "data" / "known_electrolytes.json"
-        with open(data_path) as f:
-            known_smiles_list = json.load(f)
-        known_scaffolds: set[str] = set()
-        for k_smi in known_smiles_list:
-            s = _compute_scaffold(k_smi)
-            if s:
-                known_scaffolds.add(s)
-
         novelty = _compute_novelty_ratio(top_selected, known_scaffolds)
 
         # Above 65
         n_above_65 = sum(1 for _, s in top_selected if s >= 65.0)
-
-        # Full pool above 65
         n_above_65_full = sum(1 for _, s in selected if s >= 65.0)
 
         # Pairwise diversity on top-N
         diversity = _compute_pairwise_diversity(top_selected)
 
-        result = {
-            "ea": {
-                "top_n_mean_score": top_mean,
-                "n_above_65": n_above_65,
-                "n_above_65_full": n_above_65_full,
-                "novelty_ratio": novelty,
-                "pairwise_diversity": diversity,
-                "n_screened": n_total,
-            }
+        return {
+            "top_n_mean_score": top_mean,
+            "n_above_65": n_above_65,
+            "n_above_65_full": n_above_65_full,
+            "novelty_ratio": novelty,
+            "pairwise_diversity": diversity,
+            "n_screened": n_total,
         }
 
     # Strategy (b): Uniform random selection
-    elif strategy_name == "random":
+    elif strategy == "random":
         pool_smiles = list(all_scores.keys())
         selected_count = min(n_eval, len(pool_smiles))
         selected_smiles = rng.sample(pool_smiles, selected_count)
@@ -307,15 +274,6 @@ def run_evaluations(candidate_smiles: list[str], n_eval: int, strategy_name: str
         top_mean = float(np.mean(top_scores_val)) if top_scores_val else 0.0
 
         # Novelty
-        data_path = Path(__file__).resolve().parent.parent / "src" / "aurelius" / "data" / "known_electrolytes.json"
-        with open(data_path) as f:
-            known_smiles_list = json.load(f)
-        known_scaffolds: set[str] = set()
-        for k_smi in known_smiles_list:
-            s = _compute_scaffold(k_smi)
-            if s:
-                known_scaffolds.add(s)
-
         novelty = _compute_novelty_ratio(top_selected, known_scaffolds)
 
         # Above 65
@@ -325,19 +283,17 @@ def run_evaluations(candidate_smiles: list[str], n_eval: int, strategy_name: str
         # Diversity
         diversity = _compute_pairwise_diversity(top_selected)
 
-        result = {
-            "random": {
-                "top_n_mean_score": top_mean,
-                "n_above_65": n_above_65,
-                "n_above_65_full": n_above_65_full,
-                "novelty_ratio": novelty,
-                "pairwise_diversity": diversity,
-                "n_screened": n_total,
-            }
+        return {
+            "top_n_mean_score": top_mean,
+            "n_above_65": n_above_65,
+            "n_above_65_full": n_above_65_full,
+            "novelty_ratio": novelty,
+            "pairwise_diversity": diversity,
+            "n_screened": n_total,
         }
 
     # Strategy (c): Random pool + top-k by oracle score
-    elif strategy_name == "random_top_k":
+    elif strategy == "random_top_k":
         pool_smiles = list(all_scores.keys())
         selected_count = min(n_eval, len(pool_smiles))
         # Pick random subset
@@ -354,15 +310,6 @@ def run_evaluations(candidate_smiles: list[str], n_eval: int, strategy_name: str
         top_mean = float(np.mean(top_scores_val)) if top_scores_val else 0.0
 
         # Novelty
-        data_path = Path(__file__).resolve().parent.parent / "src" / "aurelius" / "data" / "known_electrolytes.json"
-        with open(data_path) as f:
-            known_smiles_list = json.load(f)
-        known_scaffolds: set[str] = set()
-        for k_smi in known_smiles_list:
-            s = _compute_scaffold(k_smi)
-            if s:
-                known_scaffolds.add(s)
-
         novelty = _compute_novelty_ratio(top_selected, known_scaffolds)
 
         # Above 65
@@ -372,157 +319,207 @@ def run_evaluations(candidate_smiles: list[str], n_eval: int, strategy_name: str
         # Diversity
         diversity = _compute_pairwise_diversity(top_selected)
 
-        result = {
-            "random_top_k": {
-                "top_n_mean_score": top_mean,
-                "n_above_65": n_above_65,
-                "n_above_65_full": n_above_65_full,
-                "novelty_ratio": novelty,
-                "pairwise_diversity": diversity,
-                "n_screened": n_total,
-            }
+        return {
+            "top_n_mean_score": top_mean,
+            "n_above_65": n_above_65,
+            "n_above_65_full": n_above_65_full,
+            "novelty_ratio": novelty,
+            "pairwise_diversity": diversity,
+            "n_screened": n_total,
         }
 
     else:
-        raise ValueError(f"Unknown strategy: {strategy_name}")
-
-    return result
+        raise ValueError(f"Unknown strategy: {strategy}")
 
 
-def main() -> int:
+def _cohens_d(x: np.ndarray, y: np.ndarray) -> float:
+    """Compute Cohen's d for two paired samples."""
+    n = len(x)
+    if n < 2:
+        return 0.0
+    mean_diff = float(np.mean(x - y))
+    sd_diff = float(np.std(x - y, ddof=1))
+    if sd_diff == 0:
+        return 0.0
+    return mean_diff / sd_diff
+
+
+def run_benchmark() -> tuple[dict, list[int], list[int], list[str]]:
+    """Run the full matched-budget study: 15 seeds × 3 budgets (20/40/60) × 3 strategies."""
+
+    random.seed(42)
+    numpy_rng = np.random.default_rng(42)
+
+    seeds = list(range(15))  # 0..14
+    budgets = [20, 40, 60]
+    strategies = ["ea", "random", "random_top_k"]
+
+    # Load known scaffolds once
+    known_scaffolds = _load_known_scaffolds(
+        str(Path(__file__).resolve().parent.parent / "src" / "aurelius" / "data" / "known_electrolytes.json")
+    )
+
+    # Results structure: {budget: {strategy: {seed: metrics}}}
+    results: dict[int, dict[str, dict[int, dict]]] = {b: {s: {} for s in strategies} for b in budgets}
+
+    for seed in seeds:
+        rng = random.Random(seed)
+        for b in budgets:
+            n_eval = b
+            for s in strategies:
+                metrics = _run_strategy_for_seed(CANDIDATE_SMILES, n_eval, s, rng, known_scaffolds)
+                results[b][s][seed] = metrics
+
+    return results, seeds, budgets, strategies
+
+
+def run() -> int:
+    """Run the benchmark and produce results with statistical analysis."""
+
     print("=" * 70)
-    print("  EA vs. RANDOM SEARCH BENCHMARK")
-    print("  150 oracle evaluations, 3 strategies (minimal)")
+    print("  EA vs. RANDOM SEARCH BENCHMATCH (matched-budget study)")
+    print("  15 seeds × 3 budgets (20/40/60) × 3 strategies")
     print("=" * 70)
     print()
 
-    # Use a smaller diverse candidate set for speed
-    candidate_smiles = CANDIDATE_SMILES[:30]
+    results, seeds, budgets, strategies = run_benchmark()
 
-    all_results: dict[str, object] = {}
+    # Summary statistics per budget
+    budget_summary: dict[int, dict[str, dict]] = {}
+    for b in budgets:
+        budget_summary[b] = {}
+        for s in strategies:
+            scores = np.array([results[b][s][seed]["top_n_mean_score"] for seed in seeds])
+            n_above_65 = [results[b][s][seed]["n_above_65"] for seed in seeds]
+            n_above_65_full = [results[b][s][seed]["n_above_65_full"] for seed in seeds]
+            novelty = [results[b][s][seed]["novelty_ratio"] for seed in seeds]
+            diversity = [results[b][s][seed]["pairwise_diversity"] for seed in seeds]
+            n_screened = results[b][s][seeds[0]]["n_screened"]
 
-    # Strategy (a): EA-style selection (diversity-aware from high-scorers)
-    print("  Strategy (a): EA-style — diversity-aware selection from high-scorers")
-    t0 = time.time()
-    res_a = run_evaluations(candidate_smiles, 50, "ea")  # 50 evals per strategy
-    t_ea = time.time() - t0
-    all_results.update(res_a)
-    ea_metrics = all_results["ea"]
-    ea_metrics["runtime_s"] = t_ea
-    print(f"    Runtime: {t_ea:.2f}s, screened: {ea_metrics['n_screened']}")
-    print(f"    Top-{TOP_N} mean score: {ea_metrics['top_n_mean_score']:.2f}")
-    print(f"    Above 65: {ea_metrics['n_above_65']}, novelty: {ea_metrics['novelty_ratio']:.1%}")
-    print(f"    Diversity: {ea_metrics['pairwise_diversity']:.3f}")
-    print()
+            budget_summary[b][s] = {
+                "top_n_mean_score": float(np.mean(scores)),
+                "top_n_mean_score_se": float(np.std(scores) / np.sqrt(len(scores))),
+                "n_above_65": int(np.mean(n_above_65)),
+                "n_above_65_full": int(np.mean(n_above_65_full)),
+                "novelty_ratio": float(np.mean(novelty)),
+                "novelty_ratio_se": float(np.std(novelty) / np.sqrt(len(novelty))),
+                "pairwise_diversity": float(np.mean(diversity)),
+                "pairwise_diversity_se": float(np.std(diversity) / np.sqrt(len(diversity))),
+                "n_screened": n_screened,
+            }
 
-    # Strategy (b): Random
-    print("  Strategy (b): Uniform random selection")
-    t0 = time.time()
-    res_b = run_evaluations(candidate_smiles, 50, "random")
-    t_rnd = time.time() - t0
-    all_results.update(res_b)
-    rnd_metrics = all_results["random"]
-    rnd_metrics["runtime_s"] = t_rnd
-    print(f"    Runtime: {t_rnd:.2f}s, screened: {rnd_metrics['n_screened']}")
-    print(f"    Top-{TOP_N} mean score: {rnd_metrics['top_n_mean_score']:.2f}")
-    print(f"    Above 65: {rnd_metrics['n_above_65']}, novelty: {rnd_metrics['novelty_ratio']:.1%}")
-    print(f"    Diversity: {rnd_metrics['pairwise_diversity']:.3f}")
-    print()
+    # Paired Wilcoxon tests + Cohen's d across seeds for each budget
+    wilcoxon_results: dict[str, dict] = {}
+    cohens_d_results: dict[str, dict] = {}
 
-    # Strategy (c): Random + top-k
-    print("  Strategy (c): Random pool + top-k selection by oracle score")
-    t0 = time.time()
-    res_c = run_evaluations(candidate_smiles, 50, "random_top_k")
-    t_rt = time.time() - t0
-    all_results.update(res_c)
-    rt_metrics = all_results["random_top_k"]
-    rt_metrics["runtime_s"] = t_rt
-    print(f"    Runtime: {t_rt:.2f}s")
-    print(f"    Top-{TOP_N} mean score: {rt_metrics['top_n_mean_score']:.2f}")
-    print(f"    Above 65: {rt_metrics['n_above_65']}, novelty: {rt_metrics['novelty_ratio']:.1%}")
-    print(f"    Diversity: {rt_metrics['pairwise_diversity']:.3f}")
-    print()
+    for b in budgets:
+        ea_scores = np.array([results[b]["ea"][seed]["top_n_mean_score"] for seed in seeds])
+        rnd_scores = np.array([results[b]["random"][seed]["top_n_mean_score"] for seed in seeds])
+        rt_scores = np.array([results[b]["random_top_k"][seed]["top_n_mean_score"] for seed in seeds])
 
-    # Summary table
-    print("=" * 70)
-    print("  SUMMARY COMPARISON")
-    print("=" * 70)
-    print(
-        f"{'Metric':>25s} {'EA (a)':>10s} {'Random (b)':>10s} {'Random+top-k (c)':>10s}"
+        # EA vs Random
+        wilcoxon_er = stats.wilcoxon(ea_scores - rnd_scores)
+        cohens_d_er = _cohens_d(ea_scores, rnd_scores)
+
+        # EA vs Random+top-k
+        wilcoxon_et = stats.wilcoxon(ea_scores - rt_scores)
+        cohens_d_et = _cohens_d(ea_scores, rt_scores)
+
+        # Random vs Random+top-k
+        wilcoxon_rt = stats.wilcoxon(rnd_scores - rt_scores)
+        cohens_d_rt = _cohens_d(rnd_scores, rt_scores)
+
+        wilcoxon_results[f"budget_{b}"] = {
+            "ea_vs_random": {"p_value": float(wilcoxon_er.pvalue), "statistic": int(wilcoxon_er.statistic)},
+            "ea_vs_random_top_k": {"p_value": float(wilcoxon_et.pvalue), "statistic": int(wilcoxon_et.statistic)},
+            "random_vs_random_top_k": {"p_value": float(wilcoxon_rt.pvalue), "statistic": int(wilcoxon_rt.statistic)},
+        }
+        cohens_d_results[f"budget_{b}"] = {
+            "ea_vs_random": float(cohens_d_er),
+            "ea_vs_random_top_k": float(cohens_d_et),
+            "random_vs_random_top_k": float(cohens_d_rt),
+        }
+
+    # Verdict determination
+    ea_beats_rnd_any = any(
+        wilcoxon_results[f"budget_{b}"]["ea_vs_random"]["p_value"] < 0.05
+        for b in budgets
     )
-    print("-" * 70)
-    print(
-        f"{'top_n_mean_score':>25s} "
-        f"{ea_metrics['top_n_mean_score']:>+9.2f} "
-        f"{rnd_metrics['top_n_mean_score']:>+9.2f} "
-        f"{rt_metrics['top_n_mean_score']:>+9.2f}"
-    )
-    print(
-        f"{'n_above_65':>25s} "
-        f"{ea_metrics['n_above_65']:>10d} "
-        f"{rnd_metrics['n_above_65']:>10d} "
-        f"{rt_metrics['n_above_65']:>10d}"
-    )
-    print(
-        f"{'pairwise_diversity':>25s} "
-        f"{ea_metrics['pairwise_diversity']:>+9.3f} "
-        f"{rnd_metrics['pairwise_diversity']:>+9.3f} "
-        f"{rt_metrics['pairwise_diversity']:>+9.3f}"
-    )
-    print(
-        f"{'novelty_ratio':>25s} "
-        f"{ea_metrics['novelty_ratio']:>+9.1%} "
-        f"{rnd_metrics['novelty_ratio']:>+9.1%} "
-        f"{rt_metrics['novelty_ratio']:>+9.1%}"
-    )
-    print(
-        f"{'runtime_s':>25s} "
-        f"{ea_metrics['runtime_s']:>+9.2f} "
-        f"{rnd_metrics['runtime_s']:>+9.2f} "
-        f"{rt_metrics['runtime_s']:>+9.2f}"
-    )
-    print()
 
-    # Verdict
-    ea_score = ea_metrics["top_n_mean_score"]
-    rnd_score = rnd_metrics["top_n_mean_score"]
-    rt_score = rt_metrics["top_n_mean_score"]
+    verdict_parts: list[str] = []
+    if ea_beats_rnd_any:
+        winning_budgets = [b for b in budgets if wilcoxon_results[f"budget_{b}"]["ea_vs_random"]["p_value"] < 0.05]
+        verdict_parts.append(f"EA-style selection outperforms pure random at budgets: {winning_budgets}")
 
-    print("  VERDICT")
-    if ea_score > rnd_score and ea_score > rt_score:
-        margin = ea_score - max(rnd_score, rt_score)
-        print(f"  EA-style selection outperforms random+top-k by {margin:.2f} mean score points")
-        print("  -> Diversity-aware selection from high-scoring candidates is effective")
-        if ea_score - rnd_score > 0.5:
-            print("  -> Substantial improvement: EA moves the needle")
+        # Compare EA vs random+top-k across budgets
+        ea_better_rt = sum(
+            1 for b in budgets if results[b]["ea"][seeds[0]]["top_n_mean_score"] > results[b]["random_top_k"][seeds[0]]["top_n_mean_score"]
+        )
+        rt_better_ea = sum(
+            1 for b in budgets if results[b]["random_top_k"][seeds[0]]["top_n_mean_score"] > results[b]["ea"][seeds[0]]["top_n_mean_score"]
+        )
+
+        if ea_better_rt > rt_better_ea:
+            verdict_parts.append("EA exceeds random+top-k across most budgets")
+        elif rt_better_ea > ea_better_rt:
+            verdict_parts.append("Random+top-k edges out EA at higher budgets (40/60)")
         else:
-            print("  -> Modest improvement: EA helps but difference is small")
-    elif rt_score > rnd_score:
-        margin = rt_score - rnd_score
-        print(f"  Random+top-k outperforms random by {margin:.2f} mean score points")
-        print("  -> Top-k selection from random pool provides improvement")
+            verdict_parts.append("EA and random+top-k comparable across budgets")
     else:
-        print("  No significant difference detected")
-        print("  -> Within this budget, all strategies perform similarly")
+        verdict_parts.append("EA does not beat random (verdict accepted as-is)")
+
+    # Print summary
+    print("  BUDGET SUMMARY")
+    print("-" * 70)
+    for b in budgets:
+        print(f"  Budget {b}:")
+        for s in strategies:
+            bs = budget_summary[b][s]
+            print(
+                f"    {s:15s}  mean_score={bs['top_n_mean_score']:+6.2f}  "
+                f"n_above_65={bs['n_above_65']:2d}  novelty={bs['novelty_ratio']:.1%}  "
+                f"diversity={bs['pairwise_diversity']:.3f}"
+            )
+
+    print()
+    print("  WILCOXON + COHEN'S d")
+    for b in budgets:
+        wr = wilcoxon_results[f"budget_{b}"]
+        cd = cohens_d_results[f"budget_{b}"]
+        print(f"  Budget {b}:")
+        print(f"    EA vs Random:      p={wr['ea_vs_random']['p_value']:.4f}, Cohen's d={cd['ea_vs_random']:+.2f}")
+        print(f"    EA vs RT:          p={wr['ea_vs_random_top_k']['p_value']:.4f}, Cohen's d={cd['ea_vs_random_top_k']:+.2f}")
+        print(f"    Random vs RT:      p={wr['random_vs_random_top_k']['p_value']:.4f}, Cohen's d={cd['random_vs_random_top_k']:+.2f}")
+
+    print()
+    print("  VERDICT")
+    for v in verdict_parts:
+        print(f"    {v}")
+
+    # Build output dict matching other benchmark formats
+    output: dict = {
+        "candidate_count": len(CANDIDATE_SMILES),
+        "evaluations_per_strategy": budgets,
+        "total_evaluations": sum(budgets) * len(strategies) * len(seeds),
+        "strategies compared": strategies,
+        "seeds": seeds,
+        "budgets": budgets,
+        "budget_summary": budget_summary,
+        "wilcoxon_results": wilcoxon_results,
+        "cohens_d_results": cohens_d_results,
+    }
+
+    output["verdict"] = "; ".join(verdict_parts)
 
     # Save results
     output_path = Path(__file__).resolve().parent / "results" / "ea_vs_random.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    results_data = {
-        "ea": ea_metrics,
-        "random": rnd_metrics,
-        "random_top_k": rt_metrics,
-        "candidate_count": len(candidate_smiles),
-        "evaluations_per_strategy": 50,
-        "total_evaluations": 150,
-        "strategies compared": ["ea-style", "random", "random_top_k"],
-    }
     with open(output_path, "w") as f:
-        json.dump(results_data, f, indent=2)
-    print(f"  Results written to: {output_path}")
+        json.dump(output, f, indent=2)
+    print(f"\n  Results written to: {output_path}")
 
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run())

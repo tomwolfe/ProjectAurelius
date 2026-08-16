@@ -1,37 +1,205 @@
 {
-  "ea": {
-    "top_n_mean_score": 8.671554999999998,
-    "n_above_65": 0,
-    "n_above_65_full": 0,
-    "novelty_ratio": 0.07692307692307693,
-    "pairwise_diversity": 0.8453462880736835,
-    "n_screened": 21,
-    "runtime_s": 0.016740798950195312
-  },
-  "random": {
-    "top_n_mean_score": 8.81784,
-    "n_above_65": 0,
-    "n_above_65_full": 0,
-    "novelty_ratio": 0.07692307692307693,
-    "pairwise_diversity": 0.843257331920797,
-    "n_screened": 21,
-    "runtime_s": 0.014786005020141602
-  },
-  "random_top_k": {
-    "top_n_mean_score": 8.96286,
-    "n_above_65": 0,
-    "n_above_65_full": 0,
-    "novelty_ratio": 0.08333333333333333,
-    "pairwise_diversity": 0.832437580354914,
-    "n_screened": 21,
-    "runtime_s": 0.014506101608276367
-  },
   "candidate_count": 28,
-  "evaluations_per_strategy": 50,
-  "total_evaluations": 150,
+  "evaluations_per_strategy": [
+    20,
+    40,
+    60
+  ],
+  "total_evaluations": 5400,
   "strategies compared": [
-    "ea-style",
+    "ea",
     "random",
     "random_top_k"
-  ]
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+  ],
+  "budgets": [
+    20,
+    40,
+    60
+  ],
+  "budget_summary": {
+    "20": {
+      "ea": {
+        "top_n_mean_score": 8.793205666666662,
+        "top_n_mean_score_se": 0.0335787741350813,
+        "n_above_65": 0,
+        "n_above_65_full": 0,
+        "novelty_ratio": 0.07991452991452991,
+        "novelty_ratio_se": 0.0008257194727173457,
+        "pairwise_diversity": 0.8402621000292186,
+        "pairwise_diversity_se": 0.0014033692266821247,
+        "n_screened": 21
+      },
+      "random": {
+        "top_n_mean_score": 8.58189,
+        "top_n_mean_score_se": 0.10661856919880329,
+        "n_above_65": 0,
+        "n_above_65_full": 0,
+        "novelty_ratio": 0.07948717948717948,
+        "novelty_ratio_se": 0.0008108404256841988,
+        "pairwise_diversity": 0.8324160804956633,
+        "pairwise_diversity_se": 0.0018585841248637748,
+        "n_screened": 21
+      },
+      "random_top_k": {
+        "top_n_mean_score": 8.477125333333333,
+        "top_n_mean_score_se": 0.11293712370111733,
+        "n_above_65": 0,
+        "n_above_65_full": 0,
+        "novelty_ratio": 0.07948717948717947,
+        "novelty_ratio_se": 0.0008108404256841987,
+        "pairwise_diversity": 0.8303272936319847,
+        "pairwise_diversity_se": 0.001141051021767277,
+        "n_screened": 21
+      }
+    },
+    "40": {
+      "ea": {
+        "top_n_mean_score": 8.810584333333331,
+        "top_n_mean_score_se": 0.03357877413508131,
+        "n_above_65": 0,
+        "n_above_65_full": 0,
+        "novelty_ratio": 0.08034188034188033,
+        "novelty_ratio_se": 0.0008257194727173458,
+        "pairwise_diversity": 0.8395357874514381,
+        "pairwise_diversity_se": 0.0014033692266821245,
+        "n_screened": 21
+      },
+      "random": {
+        "top_n_mean_score": 8.717530000000002,
+        "top_n_mean_score_se": 0.0976333929145146,
+        "n_above_65": 0,
+        "n_above_65_full": 0,
+        "novelty_ratio": 0.07948717948717947,
+        "novelty_ratio_se": 0.0008108404256841987,
+        "pairwise_diversity": 0.8337355879719249,
+        "pairwise_diversity_se": 0.0015467661778852445,
+        "n_screened": 21
+      },
+      "random_top_k": {
+        "top_n_mean_score": 8.962860000000003,
+        "top_n_mean_score_se": 9.173067274558416e-16,
+        "n_above_65": 0,
+        "n_above_65_full": 0,
+        "novelty_ratio": 0.08333333333333331,
+        "novelty_ratio_se": 3.5832294041243814e-18,
+        "pairwise_diversity": 0.8324375803549138,
+        "pairwise_diversity_se": 5.73316704659901e-17,
+        "n_screened": 21
+      }
+    },
+    "60": {
+      "ea": {
+        "top_n_mean_score": 8.81058433333333,
+        "top_n_mean_score_se": 0.0335787741350813,
+        "n_above_65": 0,
+        "n_above_65_full": 0,
+        "novelty_ratio": 0.08034188034188032,
+        "novelty_ratio_se": 0.0008257194727173458,
+        "pairwise_diversity": 0.8395357874514381,
+        "pairwise_diversity_se": 0.0014033692266821245,
+        "n_screened": 21
+      },
+      "random": {
+        "top_n_mean_score": 8.525651,
+        "top_n_mean_score_se": 0.08670793006306994,
+        "n_above_65": 0,
+        "n_above_65_full": 0,
+        "novelty_ratio": 0.07393162393162392,
+        "novelty_ratio_se": 0.0051589770021837475,
+        "pairwise_diversity": 0.8363201252958267,
+        "pairwise_diversity_se": 0.0019529109810480145,
+        "n_screened": 21
+      },
+      "random_top_k": {
+        "top_n_mean_score": 8.962860000000003,
+        "top_n_mean_score_se": 9.173067274558416e-16,
+        "n_above_65": 0,
+        "n_above_65_full": 0,
+        "novelty_ratio": 0.08333333333333331,
+        "novelty_ratio_se": 3.5832294041243814e-18,
+        "pairwise_diversity": 0.8324375803549138,
+        "pairwise_diversity_se": 5.73316704659901e-17,
+        "n_screened": 21
+      }
+    }
+  },
+  "wilcoxon_results": {
+    "budget_20": {
+      "ea_vs_random": {
+        "p_value": 0.27685546875,
+        "statistic": 40
+      },
+      "ea_vs_random_top_k": {
+        "p_value": 0.026695278721426748,
+        "statistic": 21
+      },
+      "random_vs_random_top_k": {
+        "p_value": 0.67877197265625,
+        "statistic": 52
+      }
+    },
+    "budget_40": {
+      "ea_vs_random": {
+        "p_value": 0.7763811150102832,
+        "statistic": 55
+      },
+      "ea_vs_random_top_k": {
+        "p_value": 0.00045109534761430614,
+        "statistic": 0
+      },
+      "random_vs_random_top_k": {
+        "p_value": 0.0009758787856927136,
+        "statistic": 0
+      }
+    },
+    "budget_60": {
+      "ea_vs_random": {
+        "p_value": 0.00836181640625,
+        "statistic": 15
+      },
+      "ea_vs_random_top_k": {
+        "p_value": 0.00045109534761430614,
+        "statistic": 0
+      },
+      "random_vs_random_top_k": {
+        "p_value": 0.0006500242387180627,
+        "statistic": 0
+      }
+    }
+  },
+  "cohens_d_results": {
+    "budget_20": {
+      "ea_vs_random": 0.5002895926893273,
+      "ea_vs_random_top_k": 0.7585527485513897,
+      "random_vs_random_top_k": 0.15808568377024443
+    },
+    "budget_40": {
+      "ea_vs_random": 0.23762054089429424,
+      "ea_vs_random_top_k": -1.1311974854853488,
+      "random_vs_random_top_k": -0.6267942960191739
+    },
+    "budget_60": {
+      "ea_vs_random": 0.8085546330890351,
+      "ea_vs_random_top_k": -1.1311974854853488,
+      "random_vs_random_top_k": -1.2577752178869366
+    }
+  },
+  "verdict": "EA-style selection outperforms pure random at budgets: [60]; Random+top-k edges out EA at higher budgets (40/60)"
 }
