@@ -152,6 +152,76 @@ def _parse_ood_set(
     return entries, smiles
 
 
+def _robust_outlier_mask(
+    residuals: np.ndarray, k: float = 3.0, max_iter: int = 10
+) -> np.ndarray:
+    """Iteratively flag extreme residual outliers via median/MAD re-estimation.
+
+    Gap-2 robustness (sabotage): a refit calibration set can contain poisoned
+    labels (mislabeled, drifted or failed measurements). A single-pass median/
+    MAD gate fails because a systematically drifted cohort *inflates* the MAD
+    and hides its own outliers. Iterating recomputes the robust centre (median)
+    and scale (MAD) on the surviving points and re-gates the whole set, so the
+    scale estimate peels back to the clean core and the drifted/mislabeled tail
+    is flagged. Returns a boolean mask over ``residuals``.
+    """
+    keep = np.ones(len(residuals), dtype=bool)
+    for _ in range(max_iter):
+        med = float(np.median(residuals[keep]))
+        mad = float(np.median(np.abs(residuals[keep] - med)))
+        threshold = k * max(mad, 0.1)
+        new_keep = np.abs(residuals - med) <= threshold
+        if np.array_equal(new_keep, keep):
+            break
+        keep = new_keep
+        if int(keep.sum()) < 3:
+            break
+    return keep
+
+
+def _drop_outlier_entries(
+    entries: list[dict[str, float]],
+    value_key: str,
+    k: float = 3.0,
+    max_iter: int = 10,
+) -> list[dict[str, float]]:
+    """Drop calibration entries whose base residual is a robust outlier.
+
+    The refit path (``DeltaCorrection.__init__`` and
+    ``FeedbackController._refit_delta_correction``) appends feedback
+    measurements into the GPR calibration set. Mislabeled, systematically
+    drifted or otherwise poisoned labels produce residual outliers that, if
+    kept, can push holdout MAE up (Gap 2). Entries whose residual deviates
+    from the robust centre by more than ``k`` MADs are excluded from the
+    training set; entries with unparseable SMILES are also dropped (they
+    cannot be trained on anyway).
+    """
+    if len(entries) < 8:
+        return entries
+    scored: list[tuple[dict[str, float], float]] = []
+    for entry in entries:
+        mol = Chem.MolFromSmiles(entry.get("smiles", ""))
+        if mol is None:
+            continue
+        base_val = (
+            predict_lone_pair_homo(mol)
+            if value_key == "homo_eV"
+            else predict_tom_orbitals(mol)[1]
+        )
+        scored.append((entry, entry[value_key] - base_val))
+    if len(scored) < 8:
+        return [e for e, _ in scored]
+    residuals = np.asarray([v for _, v in scored], dtype=np.float64)
+    keep = _robust_outlier_mask(residuals, k, max_iter)
+    n_dropped = int((~keep).sum())
+    if n_dropped:
+        logger.warning(
+            "Delta-correction: excluded %d/%d poisoned calibration entries (%s)",
+            n_dropped, len(scored), value_key,
+        )
+    return [e for (e, _), k_ in zip(scored, keep) if k_]
+
+
 class DeltaCorrection:
     """GPR residual model mapping ECFP4 fingerprints to TOM HOMO/LUMO errors.
 
@@ -181,18 +251,24 @@ class DeltaCorrection:
         ood_calibration_set: list[dict[str, float]] | None = None,
     ) -> None:
         self._calib = calib if calib is not None else _load_calibration()
-        self._calib_smiles = calib_smiles if calib_smiles is not None else [
-            Chem.MolToSmiles(Chem.MolFromSmiles(entry["smiles"])) for entry in self._calib
-            if Chem.MolFromSmiles(entry["smiles"]) is not None
-        ]
-
         self._lumo_calib = lumo_calib if lumo_calib is not None else _load_lumo_calibration_xtb()
-        self._lumo_calib_smiles = lumo_calib_smiles if lumo_calib_smiles is not None else [
-            Chem.MolToSmiles(Chem.MolFromSmiles(entry["smiles"])) for entry in self._lumo_calib
-            if Chem.MolFromSmiles(entry["smiles"]) is not None
+        ood_entries, ood_smiles = _parse_ood_set(ood_calibration_set)
+
+        # Gap-2 robustness: refitting on feedback measurements can inject
+        # poisoned labels (mislabeled, drifted, failed). Exclude extreme
+        # residual outliers so they cannot corrupt the GPR training set.
+        self._calib = _drop_outlier_entries(self._calib, "homo_eV")
+        self._lumo_calib = _drop_outlier_entries(self._lumo_calib, "lumo_eV")
+
+        self._calib_smiles = [
+            Chem.MolToSmiles(Chem.MolFromSmiles(e["smiles"])) for e in self._calib
+            if Chem.MolFromSmiles(e["smiles"]) is not None
+        ]
+        self._lumo_calib_smiles = [
+            Chem.MolToSmiles(Chem.MolFromSmiles(e["smiles"])) for e in self._lumo_calib
+            if Chem.MolFromSmiles(e["smiles"]) is not None
         ]
 
-        ood_entries, ood_smiles = _parse_ood_set(ood_calibration_set)
         self._all_smiles = list(self._calib_smiles) + ood_smiles + ood_smiles
 
         self._X_homo, self._y_homo = self._build_features_targets(

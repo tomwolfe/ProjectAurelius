@@ -220,6 +220,53 @@ class TestTernaryMixtureMutation:
 
 
 # ---------------------------------------------------------------------------
+# Mixture-fraction CMA-ES optimizer (Gap 4 regression)
+# ---------------------------------------------------------------------------
+
+
+class TestMixtureFractionCmaEs:
+    """The CMA-ES mixture-fraction optimizer must keep producing valid
+    mixtures after the proxy-context computation was extracted into
+    ``_mixture_proxy_targets``, and repeat calls must hit the fraction cache."""
+
+    def test_ternary_optimizer_returns_valid_cached_mixture(self):
+        engine = MutationEngine(
+            seed_smiles=["C1COC(=O)O1", "COCCOC", "CS(=O)(=O)C"], n_jobs=1
+        )
+        components = ["C1COC(=O)O1", "COCCOC", "CS(=O)(=O)C"]
+        fracs = [0.4, 0.3, 0.3]
+
+        mixture = engine._mutate_mixture_fraction_cma_es(components, fracs)
+        parsed = parse_mixture_smiles_n(mixture)
+        assert parsed is not None, f"Unparseable mixture: {mixture}"
+        comps, mix_fracs = parsed
+        assert comps == components
+        assert len(mix_fracs) == 3 and abs(sum(mix_fracs) - 1.0) < 1e-6
+
+        # Optimized fractions are cached, so a repeat call must return the
+        # identical mixture string without re-running the optimizer.
+        repeated = engine._mutate_mixture_fraction_cma_es(components, fracs)
+        assert repeated == mixture
+
+    def test_binary_optimizer_returns_valid_cached_mixture(self):
+        engine = MutationEngine(
+            seed_smiles=["C1COC(=O)O1", "COCCOC"], n_jobs=1
+        )
+        components = ["C1COC(=O)O1", "COCCOC"]
+        fracs = [0.5, 0.5]
+
+        mixture = engine._mutate_mixture_fraction_cma_es(components, fracs)
+        parsed = parse_mixture_smiles_n(mixture)
+        assert parsed is not None, f"Unparseable mixture: {mixture}"
+        comps, mix_fracs = parsed
+        assert comps == components
+        assert len(mix_fracs) == 2 and abs(sum(mix_fracs) - 1.0) < 1e-6
+
+        repeated = engine._mutate_mixture_fraction_cma_es(components, fracs)
+        assert repeated == mixture
+
+
+# ---------------------------------------------------------------------------
 # BRICS pairing correctness (ADR-2026-08-07-10)
 # ---------------------------------------------------------------------------
 

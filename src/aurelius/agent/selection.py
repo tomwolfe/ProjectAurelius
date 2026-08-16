@@ -36,6 +36,29 @@ GROUNDING_SELECTION_LAMBDA = 0.5
 candidate (grounding = 0). A fully grounded candidate (grounding = 1) is
 unpenalised. See ``_grounding_weight``."""
 
+SCAFFOLD_CAP = 0.10
+"""Maximum fraction of a selected batch (or NSGA-II front) that may belong to a
+single Murcko scaffold family before the crowding penalty activates.
+
+Lowered from 0.15 (Gap 3: the discovery benchmark's novel scaffold ratio must
+reach >= 0.8; a looser per-family cap lets known-scaffold families flood the
+top-50 screened results)."""
+
+SCAFFOLD_PENALTY_FACTOR = 12.0
+"""Growth factor of the scaffold crowding penalty above ``SCAFFOLD_CAP``.
+
+Raised from 8.0 so that family dominance is penalised much faster once the cap
+is exceeded, further suppressing scaffold stagnation (Gap 3)."""
+
+KNOWN_SCAFFOLD_PENALTY = 0.5
+"""Multiplier applied to candidates whose Murcko scaffold already appears in
+``known_electrolytes.json``.
+
+Novel scaffolds keep full selection weight; known-scaffold candidates are
+demoted so the EA is pushed toward genuinely novel chemistry and the top-50
+screened results reach >= 80% novel scaffolds (Gap 3). Mixtures are exempt —
+their novelty is the combination, not the component scaffold."""
+
 
 def _fp_to_numpy(fp: Any, n_bits: int = 2048) -> np.ndarray:
     """Convert a single RDKit fingerprint to a 1D numpy array."""
@@ -122,6 +145,7 @@ def _best_in_tournament(
     synergy_bonus: list[float] | None = None,
     is_mixture: list[bool] | None = None,
     grounding: list[float] | None = None,
+    scaffold_penalties: list[float] | None = None,
 ) -> tuple[int, float]:
     """Find the best candidate in a tournament, adjusted for diversity and optionally confidence.
 
@@ -133,6 +157,9 @@ def _best_in_tournament(
     Synthesizability grounding is applied as a first-class multiplicative signal
     alongside conformal confidence, so unmakeable candidates lose tournaments
     outright instead of being filtered downstream (ADR-2026-08-08-04).
+
+    ``scaffold_penalties`` demotes candidates whose Murcko scaffold is already
+    covered by ``known_electrolytes.json`` (novel-scaffold bonus, Gap 3).
     """
     tournament_adjusted_scores = {}
     for i in tournament:
@@ -147,6 +174,8 @@ def _best_in_tournament(
         base_score = scores[i] * conf * (1.0 - diversity_lambda * max_sim)
         base_score *= _grounding_weight(grounding, i)
         base_score = _mixture_synergy_boost(base_score, synergy_bonus, is_mixture, i)
+        if scaffold_penalties is not None and i < len(scaffold_penalties):
+            base_score *= scaffold_penalties[i]
         tournament_adjusted_scores[i] = base_score
 
     best_idx = max(tournament, key=lambda i: tournament_adjusted_scores[i])
@@ -159,6 +188,90 @@ def _scaffold_fraction(selected_scaffolds: dict[str, int], total_selected: int) 
         return 0.0
     max_count = max(selected_scaffolds.values())
     return max_count / total_selected
+
+
+_KNOWN_SCAFFOLDS_CACHE: frozenset[str] | None = None
+
+
+def _known_scaffolds() -> frozenset[str]:
+    """Murcko scaffolds of the known electrolyte set (cached for the process).
+
+    Gap 3: selection must demote candidates whose Murcko scaffold is already
+    covered by ``known_electrolytes.json`` so that genuinely novel scaffolds
+    win the top-50 screened results. Scaffolds are computed via
+    ``_scaffold_specific_or_self`` (specific Murcko scaffold, or canonical
+    SMILES for acyclic molecules) so unrelated acyclic molecules never collide
+    through the all-carbon generic scaffold. The set is computed once and
+    cached for the process lifetime. Any load failure degrades to an empty set
+    (no demotion) rather than raising inside the selection hot path.
+    """
+    global _KNOWN_SCAFFOLDS_CACHE
+    if _KNOWN_SCAFFOLDS_CACHE is not None:
+        return _KNOWN_SCAFFOLDS_CACHE
+    scaffolds: set[str] = set()
+    try:
+        import json
+        from importlib.resources import files
+
+        raw = json.loads(
+            files("aurelius.data").joinpath("known_electrolytes.json").read_text(encoding="utf-8")
+        )
+    except Exception:
+        _KNOWN_SCAFFOLDS_CACHE = frozenset()
+        return _KNOWN_SCAFFOLDS_CACHE
+    for smi in raw:
+        ctx = MoleculeContext.from_smiles(smi)
+        s = _scaffold_specific_or_self(ctx) if ctx is not None else None
+        if s is not None:
+            scaffolds.add(s)
+    _KNOWN_SCAFFOLDS_CACHE = frozenset(scaffolds)
+    return _KNOWN_SCAFFOLDS_CACHE
+
+
+def _scaffold_novelty_penalties(
+    scaffold_map: dict[int, str | None],
+    n: int,
+    is_mixture: list[bool] | None,
+) -> list[float]:
+    """Per-candidate novelty multiplier: ``KNOWN_SCAFFOLD_PENALTY`` for known scaffolds.
+
+    Candidates whose Murcko scaffold is absent from ``known_electrolytes.json``
+    keep multiplier 1.0 (full weight); known-scaffold candidates are demoted.
+    Mixture candidates are exempt — their novelty is the combination, not the
+    component scaffold (Gap 3).
+    """
+    known_scafs = _known_scaffolds()
+    if not known_scafs:
+        return [1.0] * n
+    penalties = [1.0] * n
+    for i in range(n):
+        if is_mixture and i < len(is_mixture) and is_mixture[i]:
+            continue
+        s = scaffold_map.get(i)
+        if s is not None and s in known_scafs:
+            penalties[i] = KNOWN_SCAFFOLD_PENALTY
+    return penalties
+
+
+def _scaffold_novelty_objective(
+    contexts: list[MoleculeContext],
+) -> tuple[list[str | None], np.ndarray]:
+    """Per-candidate Murcko scaffolds plus a binary novel-scaffold objective.
+
+    Returns ``(scaffolds, is_novel)`` where ``is_novel[i]`` is 1.0 when the
+    candidate's scaffold is absent from ``known_electrolytes.json`` and 0.0
+    otherwise. The binary column is appended to the NSGA-II objective matrix so
+    that known-scaffold candidates are pushed to later Pareto fronts instead of
+    flooding the top of the ranking (Gap 3).
+    """
+    known_scafs = _known_scaffolds()
+    scaffolds: list[str | None] = []
+    is_novel: list[float] = []
+    for ctx in contexts:
+        s = _scaffold_specific_or_self(ctx)
+        scaffolds.append(s)
+        is_novel.append(1.0 if (s is not None and s not in known_scafs) else 0.0)
+    return scaffolds, np.asarray(is_novel, dtype=float)
 
 
 def tournament_select(
@@ -189,8 +302,10 @@ def tournament_select(
     signal in the tournament process rather than a secondary tiebreaker.
 
     Scaffold diversity: a crowding penalty ensures no single Murcko scaffold
-    family occupies more than 15% of the selected batch, preventing scaffold
-    stagnation and preserving novelty.
+    family occupies more than ``SCAFFOLD_CAP`` (10%) of the selected batch,
+    preventing scaffold stagnation. Candidates whose scaffold is already in
+    ``known_electrolytes.json`` are additionally demoted (novel-scaffold bonus,
+    Gap 3) so the top screened results skew toward novel scaffolds.
 
     Args:
         contexts: Candidate molecules.
@@ -220,10 +335,15 @@ def tournament_select(
     # Pre-compute pairwise similarity matrix with batch Tanimoto
     sim_matrix = batch_tanimoto(fps_list)
 
-    # Pre-compute Murcko scaffolds for all candidates
+    # Pre-compute Murcko scaffolds for all candidates (specific scaffold, or
+    # canonical SMILES for acyclic molecules — see ``_scaffold_specific_or_self``)
     scaffold_map: dict[int, str | None] = {}
     for i, ctx in enumerate(contexts):
-        scaffold_map[i] = _murcko_scaffold_smiles(ctx)
+        scaffold_map[i] = _scaffold_specific_or_self(ctx)
+
+    # Novelty bonus (Gap 3): demote candidates whose scaffold is already in the
+    # known electrolyte set so the selected batch pushes toward novel scaffolds.
+    scaffold_penalties = _scaffold_novelty_penalties(scaffold_map, n, is_mixture)
 
     selected: list[MoleculeContext] = []
     selected_fps: list[Any] = []
@@ -240,20 +360,21 @@ def tournament_select(
             tournament, scores, fps_list, selected_fps,
             diversity_lambda, confidences, sim_matrix=sim_matrix,
             synergy_bonus=synergy_bonus, is_mixture=is_mixture,
-            grounding=grounding,
+            grounding=grounding, scaffold_penalties=scaffold_penalties,
         )
 
         # Apply scaffold crowding penalty: if the best candidate's scaffold
-        # would exceed 15% of the selected batch, penalize it.
+        # would exceed SCAFFOLD_CAP of the selected batch, penalize it.
         scaffold_best = scaffold_map.get(best_idx)
         if scaffold_best is not None:
             current_count = scaffold_counts.get(scaffold_best, 0)
             projected_fraction = (current_count + 1) / (len(selected) + 1)
-            if projected_fraction > 0.15:
-                # Apply strong penalty: excess scaled by factor 5.0, clamped
-                # to prevent negative scores (which would reward scaffold domination).
-                excess = projected_fraction - 0.15
-                best_score *= max(0.01, 1.0 - 8.0 * excess)
+            if projected_fraction > SCAFFOLD_CAP:
+                # Apply strong penalty: excess scaled by SCAFFOLD_PENALTY_FACTOR,
+                # clamped to prevent negative scores (which would reward scaffold
+                # domination).
+                excess = projected_fraction - SCAFFOLD_CAP
+                best_score *= max(0.01, 1.0 - SCAFFOLD_PENALTY_FACTOR * excess)
 
         used_indices.add(best_idx)
         selected.append(contexts[best_idx])
@@ -278,6 +399,27 @@ def _murcko_scaffold_smiles(ctx: MoleculeContext) -> str | None:
         return Chem.MolToSmiles(ctx.mol)
     except Exception:
         return Chem.MolToSmiles(ctx.mol) if ctx.mol is not None else None
+
+
+def _scaffold_specific_or_self(ctx: MoleculeContext) -> str | None:
+    """Specific Murcko scaffold, or the canonical SMILES for acyclic molecules.
+
+    Unlike ``_murcko_scaffold_smiles``, the all-carbon *generic* scaffold is
+    never used as a fallback: generic skeletons collapse unrelated molecules
+    (e.g. ethanol ``CCO`` and acetonitrile ``CC#N`` both generify to ``CCC``),
+    which would falsely mark innocent candidates as known-scaffold families.
+    Acyclic molecules are identified by their canonical SMILES instead.
+    """
+    if ctx is None or ctx.mol is None:
+        return None
+    try:
+        from rdkit.Chem.Scaffolds import MurckoScaffold
+        scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
+        if scaffold:
+            return scaffold
+        return Chem.MolToSmiles(ctx.mol)
+    except Exception:
+        return Chem.MolToSmiles(ctx.mol)
 
 
 def compute_pairwise_diversity(contexts: list[MoleculeContext]) -> float:
@@ -770,18 +912,19 @@ def _scaffold_penalty(front_indices: list[int], contexts: list[MoleculeContext])
     Returns an array of shape (len(front_indices),) where each entry is
     in [0, 1] and represents the scaffold crowding penalty (0 = no penalty,
     1 = maximum penalty). The penalty is based on Murcko scaffold
-    representation: if a scaffold already occupies >15% of the selected
-    batch, individuals with that scaffold receive a proportional penalty.
+    representation: if a scaffold already occupies more than ``SCAFFOLD_CAP``
+    of the selected batch, individuals with that scaffold receive a
+    proportional penalty.
 
     Physical justification: preventing any single scaffold family from
     dominating the survivors preserves novelty and ensures the EA explores
     diverse chemical space (Gap 3: novel scaffold ratio ≥ 80%).
     """
-    from aurelius.agent.selection import _murcko_scaffold_smiles
+    from aurelius.agent.selection import _scaffold_specific_or_self
 
     scaffold_counts: dict[str, int] = {}
     for idx in front_indices:
-        s = _murcko_scaffold_smiles(contexts[idx])
+        s = _scaffold_specific_or_self(contexts[idx])
         if s is not None:
             scaffold_counts[s] = scaffold_counts.get(s, 0) + 1
 
@@ -794,22 +937,24 @@ def _scaffold_penalty(front_indices: list[int], contexts: list[MoleculeContext])
     max_fraction = max(scaffold_fractions.values()) if scaffold_fractions else 0.0
 
     penalties = np.ones(n_front, dtype=np.float32)
-    if max_fraction <= 0.15:
-        # No scaffold exceeds 15%: no penalty needed
+    if max_fraction <= SCAFFOLD_CAP:
+        # No scaffold exceeds the cap: no penalty needed
         return penalties
 
-    # Apply strong proportional penalty: scaffolds above 15% get penalized
-    # proportionally to how much they exceed the threshold. The factor 5.0
-    # (instead of 2.0) ensures rapid penalty growth to strongly deter
-    # scaffold domination while keeping the penalty bounded in [0, 1].
+    # Apply strong proportional penalty: scaffolds above SCAFFOLD_CAP get
+    # penalized proportionally to how much they exceed the threshold. The
+    # SCAFFOLD_PENALTY_FACTOR (raised from 8.0 to 12.0) ensures rapid penalty
+    # growth to strongly deter scaffold domination while keeping the penalty
+    # bounded in [0, 1] (Gap 3).
     for i, idx in enumerate(front_indices):
-        s = _murcko_scaffold_smiles(contexts[idx])
+        s = _scaffold_specific_or_self(contexts[idx])
         if s is not None and scaffold_counts[s] > 0:
             frac = scaffold_counts[s] / n_front
-            if frac > 0.15:
-                # Strong penalty: excess scaled by factor 5.0, clamped to [0,1]
-                excess = frac - 0.15
-                penalties[i] = max(0.0, 1.0 - 8.0 * excess)
+            if frac > SCAFFOLD_CAP:
+                # Strong penalty: excess scaled by SCAFFOLD_PENALTY_FACTOR,
+                # clamped to [0,1]
+                excess = frac - SCAFFOLD_CAP
+                penalties[i] = max(0.0, 1.0 - SCAFFOLD_PENALTY_FACTOR * excess)
 
     return penalties
 
@@ -881,6 +1026,14 @@ def nsga2_select(
         obj_columns.append(conf_arr)
         maximise.append(True)
 
+    # Scaffold-novelty objective (Gap 3): 1.0 for candidates whose Murcko
+    # scaffold is absent from known_electrolytes.json, 0.0 otherwise. Novelty
+    # is treated as a genuine (maximise) objective so known-scaffold candidates
+    # are pushed to later Pareto fronts instead of flooding the top ranking.
+    scaffolds, scaffold_is_novel = _scaffold_novelty_objective(contexts)
+    obj_columns.append(scaffold_is_novel)
+    maximise.append(True)
+
     obj_matrix = np.column_stack(obj_columns)
     maximise_arr = np.array(maximise, dtype=bool)
 
@@ -888,14 +1041,26 @@ def nsga2_select(
     fronts = _non_dominated_sort(obj_matrix, maximise_arr)
 
     # --- Build ranked list: (front_index, crowding_dist, candidate_index) ---
+    known_scafs = _known_scaffolds()
     ranked: list[tuple[int, float, int]] = []
     for f_idx, front in enumerate(fronts):
         crowding = _crowding_distance(front, obj_matrix, maximise_arr)
         # Apply scaffold crowding penalty: reduce crowding distance for
-        # scaffold families that occupy >15% of the front
+        # scaffold families that occupy more than SCAFFOLD_CAP of the front
         pen = _scaffold_penalty(front, contexts)
         for local_idx, global_idx in enumerate(front):
-            ranked.append((f_idx, crowding[local_idx] * pen[local_idx], global_idx))
+            # Known-scaffold candidates are demoted further (novel-scaffold
+            # bonus) so novel scaffolds win ties within a front.
+            s = scaffolds[global_idx]
+            novelty_mult = (
+                KNOWN_SCAFFOLD_PENALTY if (s is not None and s in known_scafs) else 1.0
+            )
+            # Boundary candidates have infinite crowding distance; a boundary
+            # member of an over-cap family would produce inf * 0 = NaN, which
+            # must not corrupt the ranking — collapse it to 0 so the family
+            # penalty still demotes it to the bottom of its front.
+            cd = crowding[local_idx] * pen[local_idx] * novelty_mult
+            ranked.append((f_idx, float(np.nan_to_num(cd, nan=0.0)), global_idx))
 
     # Sort: lower front index first; within front, higher crowding distance first.
     rng = np.random.default_rng(rng_seed)

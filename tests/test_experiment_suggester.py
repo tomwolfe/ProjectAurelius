@@ -869,3 +869,74 @@ class TestBatchEI:
         out_with = suggest_experiments(CANDIDATES, top_n=5, properties=["homo"], delta_correction=model)
         batch_ei_with = [s.components.get("batch_ei", 0.0) for s in out_with]
         assert any(v > 0 for v in batch_ei_with), "batch_ei is zero even with delta_correction"
+
+
+class TestAcquisitionBeatsRandomTopK:
+    """ADR-2026-08-15-001: at budget 15 the suggester must beat random top-k
+    acquisition on the frozen closed-loop splits.
+
+    The closed-loop decision metric (``_top_k_enrichment`` in
+    ``benchmarks/benchmark_closed_loop.py``) asks: of the *true* top-k holdout
+    molecules (highest HOMO), what fraction did the acquisition pick? Random
+    acquisition scores ~k/pool by construction; the suggester wins only if it
+    ranks the predicted top-k first and the prediction correlates with truth.
+
+    Regression history: with boundary-peaking expected_impact
+    (``2·min(P(y>t), P(y≤t))``) the suggester was indistinguishable from random
+    (3/5 seeds non-loss, mean TKE edge +0.14, p=0.44). The monotone membership
+    form ``P(y > threshold)`` on the single-axis ``["homo"]`` shortlist enriches
+    the true top-k on every seed. This test locks in the gate behaviour at
+    unit-test speed (no full closed-loop refit loop).
+    """
+
+    def test_single_property_homo_acquisition_enriches_true_top_k(self):
+        import os
+        import random
+
+        from benchmarks.benchmark_closed_loop import _fit, _split, _top_k_enrichment
+
+        data_dir = os.path.join(os.path.dirname(__file__), "..", "src", "aurelius", "data")
+        with open(os.path.join(data_dir, "orbital_calibration.json")) as f:
+            all_entries = json.load(f)
+        entries = [
+            e for e in all_entries if Chem.MolFromSmiles(e["smiles"]) is not None
+        ]
+
+        budget = 15
+        non_loss = 0
+        edges = []
+        for seed in range(5):
+            _holdout, seed_calib, unmeasured = _split(entries, seed)
+            refit = _fit(seed_calib)
+            by_canonical = {
+                Chem.MolToSmiles(Chem.MolFromSmiles(e["smiles"])): e
+                for e in unmeasured
+            }
+            suggestions = suggest_experiments(
+                [e["smiles"] for e in unmeasured],
+                top_n=budget,
+                properties=["homo"],
+                delta_correction=refit,
+                expand_pool=False,
+            )
+            picked = [by_canonical[s.smiles] for s in suggestions if s.smiles in by_canonical]
+            if len(picked) < budget:
+                seen = {id(e) for e in picked}
+                picked += [e for e in unmeasured if id(e) not in seen][: budget - len(picked)]
+            picked = picked[:budget]
+
+            rnd = random.Random(seed).sample(unmeasured, budget)
+            top_k = min(budget, max(5, len(unmeasured) // 5))
+            tke_sug = _top_k_enrichment(picked, unmeasured, top_k)
+            tke_rnd = _top_k_enrichment(rnd, unmeasured, top_k)
+            non_loss += int(tke_sug >= tke_rnd)
+            edges.append(tke_sug - tke_rnd)
+
+        assert non_loss >= 4, (
+            f"acquisition beat random on only {non_loss}/5 seeds "
+            f"(edges {[round(e, 3) for e in edges]})"
+        )
+        assert sum(edges) / len(edges) > 0.1, (
+            f"mean TKE edge {sum(edges) / len(edges):.3f} not above 0.1 "
+            f"(edges {[round(e, 3) for e in edges]})"
+        )

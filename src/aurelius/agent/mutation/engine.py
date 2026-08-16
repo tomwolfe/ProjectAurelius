@@ -57,6 +57,27 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _mixture_proxy_targets(
+    components: list[str],
+) -> list[MoleculeContext] | None:
+    """Build the ``MoleculeContext`` list backing per-component GC proxies.
+
+    The dielectric/viscosity proxies of each component are independent of the
+    optimised fractions, so the contexts are computed once before the
+    optimiser loop in ``_mutate_mixture_fraction_cma_es``.  Returns ``None``
+    when any component cannot be parsed, in which case the caller falls back
+    to fraction perturbation.
+    """
+    contexts: list[MoleculeContext] = []
+    for smi in components:
+        ctx = MoleculeContext.from_smiles(smi)
+        if ctx is not None:
+            contexts.append(ctx)
+    if len(contexts) != len(components):
+        return None
+    return contexts
+
+
 class MutationEngine:
     """Multi-strategy molecule mutation engine for battery electrolytes.
 
@@ -647,14 +668,9 @@ class MutationEngine:
             predict_dielectric_proxy,
             predict_viscosity_proxy,
         )
-        from aurelius.types import MoleculeContext
 
-        contexts: list[MoleculeContext] = []
-        for smi in components:
-            ctx = MoleculeContext.from_smiles(smi)
-            if ctx is not None:
-                contexts.append(ctx)
-        if len(contexts) != n:
+        contexts = _mixture_proxy_targets(components)
+        if contexts is None:
             return self._perturb_fractions(components, fracs)
 
         ds = [predict_dielectric_proxy(ctx) for ctx in contexts]

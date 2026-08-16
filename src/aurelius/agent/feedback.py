@@ -40,7 +40,10 @@ from typing import Any
 
 from rdkit import Chem
 
-from aurelius.scoring.oracle.delta_correction import DeltaCorrection
+from aurelius.scoring.oracle.delta_correction import (
+    DeltaCorrection,
+    _drop_outlier_entries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -358,6 +361,11 @@ class FeedbackController:
             added += 1
 
         if added > 0:
+            # Gap-2 robustness: exclude poisoned feedback labels (mislabeled,
+            # drifted or failed measurements) whose residuals are extreme
+            # outliers so they cannot push holdout MAE up during the refit.
+            new_calib = _drop_outlier_entries(new_calib, "homo_eV")  # type: ignore[arg-type]
+            added = max(len(new_calib) - len(dc._calib), 0)
             # Re-instantiate the model with expanded calibration
             self._delta_correction = DeltaCorrection(
                 calib=new_calib, calib_smiles=new_calib_smiles  # type: ignore[arg-type]

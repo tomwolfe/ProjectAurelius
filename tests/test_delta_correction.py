@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import warnings
 
 import numpy as np
 import pytest
@@ -284,4 +285,78 @@ class TestDeltaCorrection:
         assert in_domain_change >= -0.05, (
             f"In-domain ρ should not degrade by more than 0.05: "
             f"baseline={baseline_in_domain:.4f}, improved={improved_in_domain:.4f}"
+        )
+
+    def test_refit_survives_poisoned_calibration_labels(self):
+        """Refitting on a calibration set with mislabeled/outlier points must
+        not degrade holdout MAE (Gap 2: sabotage robustness).
+
+        Mirrors the closed-loop sabotage harness in miniature: a clean seed
+        model is compared against a model refit on the seed plus poisoned
+        measurements (systematic drift + mislabeled + failed labels). The
+        outlier filter must reject the poison so the refit still improves
+        held-out MAE instead of degrading it.
+        """
+        calib = _load_json(CALIBRATION_PATH)
+        idx = list(range(len(calib)))
+        random.Random(0).shuffle(idx)
+        n_hold = int(0.30 * len(calib))
+        holdout = [calib[i] for i in idx[:n_hold]]
+        pool = [calib[i] for i in idx[n_hold:]]
+        seed_calib = pool[:20]
+        unmeasured = pool[20:]
+
+        def _fit(entries) -> DeltaCorrection:
+            smiles = [
+                Chem.MolToSmiles(Chem.MolFromSmiles(e["smiles"])) for e in entries
+            ]
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return DeltaCorrection(calib=entries, calib_smiles=smiles)
+
+        def _holdout_mae(model: DeltaCorrection) -> float:
+            pred, ref = [], []
+            for entry in holdout:
+                homo, _ = model.predict_corrected(Chem.MolFromSmiles(entry["smiles"]))
+                pred.append(homo)
+                ref.append(entry["homo_eV"])
+            return float(np.mean(np.abs(np.asarray(pred) - np.asarray(ref))))
+
+        # Poison the ingested measurements exactly like the sabotage harness:
+        # linear drift (0.02 eV/measurement) + Gaussian noise + mislabels
+        # (label swap with a random pool molecule) + failures (dropped).
+        rng = random.Random(0)
+        poisoned: list[dict[str, float]] = []
+        for i, entry in enumerate(unmeasured[:30]):
+            drift = 0.02 * (i + 1)
+            measured = {
+                **entry,
+                "homo_eV": entry["homo_eV"] + drift + rng.gauss(0.0, 0.2),
+                "lumo_eV": entry["lumo_eV"] + drift + rng.gauss(0.0, 0.2),
+            }
+            if rng.random() < 0.2:  # mislabel 20% of measurements
+                swap = rng.choice(unmeasured)
+                measured = {
+                    **measured,
+                    "homo_eV": swap["homo_eV"],
+                    "lumo_eV": swap["lumo_eV"],
+                }
+            if rng.random() < 0.2:  # 20% of measurements fail outright
+                continue
+            poisoned.append(measured)
+        assert len(poisoned) > 10, "poisoned set too small to be meaningful"
+
+        mae_before = _holdout_mae(_fit(seed_calib))
+        refit_model = _fit(seed_calib + poisoned)
+        mae_after = _holdout_mae(refit_model)
+
+        assert mae_after < mae_before, (
+            "Refit with poisoned labels must still reduce holdout MAE "
+            f"(before={mae_before:.4f}, after={mae_after:.4f}). "
+            "The outlier filter is not rejecting the poisoned points."
+        )
+        assert len(refit_model._calib) < len(seed_calib) + len(poisoned), (
+            "The refit must actually exclude the poisoned outlier labels "
+            f"(kept {len(refit_model._calib)} of "
+            f"{len(seed_calib) + len(poisoned)} entries)."
         )

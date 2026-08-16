@@ -9,6 +9,7 @@ from aurelius.agent.selection import (
     nsga2_select,
 )
 from aurelius.agent.selection import (
+    _scaffold_specific_or_self,
     tournament_select as _real_tournament_select,
 )
 from aurelius.types import MoleculeContext
@@ -97,6 +98,58 @@ class TestTournamentSelection:
 
         assert len(selected_low) == 3
         assert len(selected_high) == 3
+
+    def test_known_scaffold_family_capped_in_batch(self):
+        """A >15% known-scaffold family must stay <=15% of the selected batch.
+
+        Gap 3 regression: the benchmark's novel scaffold ratio must reach
+        >= 0.8 in the top-50 screened results. Commit 2857de6's penalty
+        (cap 0.15, factor 8.0) capped the ratio at 0.60, so the cap was
+        tightened to ``SCAFFOLD_CAP`` (0.10) with factor 12.0 and known-
+        scaffold candidates are demoted. A population with a dominant
+        ethylene-carbonate family (scaffold "O=C1OCCO1", present in
+        known_electrolytes.json) must not flood the selected batch.
+        """
+        ec_family = [
+            "O=C1OCCO1", "CC1COC(=O)O1", "CCOC1COC(=O)O1", "CCC1COC(=O)O1",
+            "CC(C)OC1COC(=O)O1", "CC1OC(=O)OC1", "CCC1OC(=O)OC1",
+            "CCCCOC1COC(=O)O1", "CCOC1COC(=O)OC1C", "CC1COC(=O)OC1C",
+            "CC(C)C1COC(=O)O1", "C(C)(C)OC1COC(=O)O1",
+        ]
+        novel = [
+            "c1ccccc1", "C1CCCCC1", "c1ccncc1", "C1CCOCC1", "C1CC1", "C1CCC1",
+            "C1CCCC1", "C1CCCCCC1", "C1CCCCCCC1", "c1ccc2ccccc2c1", "Cc1ccccc1",
+            "c1ccccc1O", "Nc1ccccc1", "C1CCCCCCCC1", "c1ccoc1", "c1ccsc1",
+            "C1CCNCC1", "C1COCCN1", "C1CCCCC1O", "c1ccncc1C", "C1CC2CCC1C2",
+            "C1C2CC3CC1CC3C2", "C1CCC2CCCCC2C1", "C1CC2C3CCCCC3CC2C1",
+            "C1=CC=CC=C1", "C1CCOC1O", "CC1CCCCC1", "C1CC2CCCC2C1",
+        ]
+        smiles = ec_family + novel
+        contexts = [_valid_context(s) for s in smiles]
+        scores = [100.0] * len(ec_family) + [90.0] * len(novel)
+
+        # Sanity: without scaffold pressure, the family dominates the top-20.
+        greedy = sorted(range(len(smiles)), key=lambda i: -scores[i])[:20]
+        greedy_ec = sum(
+            1 for i in greedy
+            if _scaffold_specific_or_self(contexts[i]) == "O=C1OCCO1"
+        )
+        assert greedy_ec / len(greedy) > 0.15, (
+            f"Population setup broken: greedy top-20 only {greedy_ec}/20 EC family"
+        )
+
+        # Scaffold-aware selection must cap the family at <= 15% of the batch.
+        selected = _real_tournament_select(
+            contexts, scores, batch_size=20, diversity_lambda=0.0, rng_seed=42,
+        )
+        selected_ec = sum(
+            1 for c in selected
+            if _scaffold_specific_or_self(c) == "O=C1OCCO1"
+        )
+        assert selected_ec / len(selected) <= 0.15, (
+            f"Known EC family flooded the batch: {selected_ec}/{len(selected)} "
+            f"({selected_ec / len(selected):.0%}), greedy would take {greedy_ec}/20"
+        )
 
     def test_mixture_with_synergy_beats_pure_higher_score(self):
         """A mixture with synergy=2.0 must beat a pure component with 10% higher base score."""
@@ -264,6 +317,30 @@ class TestNSGA2Selection:
         assert len(selected) == 1
         # Best (lowest viscosity = index 1) should be selected
         assert selected[0] == contexts[1]
+
+    def test_novel_scaffolds_preferred_over_known_with_equal_physics(self):
+        """With identical physics, the novel-scaffold objective must win.
+
+        Gap 3 regression: NSGA-II selection must not let known-scaffold
+        candidates (EC, THF, dioxolane — all in known_electrolytes.json)
+        flood the batch when a genuinely novel scaffold ties on every physical
+        objective. A binary maximise objective (1.0 = scaffold absent from
+        known_electrolytes.json) pushes known-scaffold candidates to a later
+        Pareto front.
+        """
+        smiles = ["O=C1OCCO1", "C1CCOC1", "C1COCCO1",
+                  "c1ccccc1", "C1CCCCC1", "c1ccncc1"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {
+            "dielectric_proxy": [50.0] * 6,
+            "viscosity_proxy": [2.0] * 6,
+        }
+        objectives = [("dielectric_proxy", "max"), ("viscosity_proxy", "min")]
+        selected = nsga2_select(contexts, scores_dict, objectives, batch_size=3)
+        assert {c.smiles for c in selected} == {"c1ccccc1", "C1CCCCC1", "c1ccncc1"}, (
+            "Known-scaffold candidates beat novel scaffolds on equal physics: "
+            f"{[c.smiles for c in selected]}"
+        )
 
 
 class TestNSGA2CompositeObjectives:

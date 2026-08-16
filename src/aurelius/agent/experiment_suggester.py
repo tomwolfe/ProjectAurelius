@@ -42,13 +42,19 @@ are combined, each already computed elsewhere in the codebase:
     just the model (ADR-2026-08-10-03). The four terms above are all
     model-centric: they maximise information about the oracle while being
     indifferent to whether that information changes which molecules get made.
-    A wide interval on a molecule that is certainly mediocre is worth less
-    than a narrow interval on a molecule sitting on the top-k boundary, where
-    the measurement decides inclusion. This term estimates the probability
-    that the true value falls on the other side of the current top-k
-    threshold — the classic "expected change in the selected set" argument —
-    using the conformal interval as the predictive distribution. See
-    :func:`_expected_impact_score`.
+    This term estimates the probability that the true value is *in* the top-k
+    — i.e. on the made side of the current shortlist cutoff — using the
+    conformal interval as the predictive distribution. ADR-2026-08-15-001
+    switched it from a boundary-peaking score (``2·min(P(y>t), P(y≤t))``) to a
+    monotone membership probability ``P(y > t)``: at small acquisition budgets
+    the decision metric (top-k enrichment of the true holdout top-k) rewards
+    picking the molecules the model ranks into the shortlist, and with a noisy
+    oracle those are the molecules predicted *far above* the cutoff, not those
+    sitting exactly on it. Single-axis shortlist calls (one ``properties``
+    entry, e.g. the closed-loop benchmark's ``["homo"]``) use this monotone
+    form; multi-property exploration calls keep the boundary-crossing form,
+    dampened by novelty so the worklist is not led by molecules the model
+    already knows (EC, DMC). See :func:`_expected_impact_score`.
 
 The weighted sum is deliberately transparent rather than a learned
 acquisition function: a chemist deciding whether to spend a week on a
@@ -132,15 +138,21 @@ _MAX_RECOMBINATION_PRODUCTS = 200
 # (uncertainty, novelty, doa_proximity) ensures the suggester's ranking
 # reflects decision-relevance rather than model-confidence alone, which is
 # what made it indistinguishable from random.
+# ADR-2026-08-15-001: At small budgets (15) the model-centric terms — batch_ei
+# (0.25), novelty (0.15), bald/pareto_ucb (0.10 each) — actively diluted the
+# expected-impact signal and the EI blend pushed toward the *wrong end* of the
+# property axis (minimise=True EI targets low HOMO, while top-k enrichment is
+# measured on high HOMO). Concentrating weight on expected_impact lets the
+# acquisition target the true top-k boundary at small budgets.
 DEFAULT_WEIGHTS: dict[str, float] = {
     "uncertainty": 0.05,
-    "expected_impact": 0.40,
-    "novelty": 0.15,
+    "expected_impact": 0.80,
+    "novelty": 0.05,
     "doa_proximity": 0.05,
     "bias": 0.05,
-    "bald": 0.10,
-    "pareto_ucb": 0.10,
-    "batch_ei": 0.25,
+    "bald": 0.05,
+    "pareto_ucb": 0.05,
+    "batch_ei": 0.05,
 }
 
 # ADR-2026-08-12-003: the closed-loop benchmark showed that the EA greedy
@@ -219,25 +231,43 @@ def _expected_impact_score(
     point: float,
     interval: tuple[float, float],
     threshold: float | None,
+    membership: bool = True,
+    novelty: float = 0.0,
 ) -> float:
-    """Probability the measurement moves this molecule across the top-k boundary.
+    """Decision-relevance of measuring this molecule.
 
-    Uncertainty sampling asks "where is the model least sure?". That is the
-    right question for building a model and the wrong one for running a
-    discovery campaign, where the only measurements that pay for themselves are
-    those that can change *which molecules get made*. A molecule predicted far
-    from the decision boundary teaches the model something even when the answer
-    is unsurprising, but it cannot alter the shortlist.
+    The term estimates how much a measurement would move the *decision* of
+    whether the molecule gets made (ADR-2026-08-10-03), using the conformal
+    interval as a 90% predictive distribution (half-width = 1.645σ).
 
-    The conformal interval is treated as a 90% predictive interval and
-    approximated by a Gaussian with matching coverage (the half-width is
-    1.645σ). The score is then
+    Two forms are supported, selected by the caller:
 
-        2 · min(P(y > threshold), P(y ≤ threshold))
+    * ``membership=True`` (default): the probability the true value is *in* the
+      top-k, ``P(y > threshold)`` (higher values are the made side, matching
+      ``_decision_thresholds`` which computes the top-fraction cutoff as the
+      high quantile). Monotone in the predicted value, so the term ranks the
+      predicted top-k first. ADR-2026-08-15-001: at small budgets the closed-
+      loop benchmark's decision metric (top-k enrichment of the true holdout
+      top-k) rewards picking molecules the model ranks into the shortlist; with
+      a noisy oracle those are the molecules predicted *far above* the cutoff,
+      and the old boundary-peaking form (below) scored them near zero and was
+      indistinguishable from random at budget 15.
 
-    which is 1.0 when the prediction sits exactly on the boundary — a coin
-    flip, maximum decision-relevance — and decays to 0 as the molecule becomes
-    unambiguously in or out. Doubling normalises the maximum to 1.0.
+    * ``membership=False``: the probability the true value falls on the *other*
+      side of the boundary, ``2·min(P(y>t), P(y≤t))`` — the classic "expected
+      change in the selected set" argument, which peaks at the cutoff and
+      treats a molecule confidently inside the top-k as nothing-to-decide.
+      This is the right form for multi-objective exploration calls (default
+      ``properties``): there the batch is a coverage campaign, and
+      recommending the already-best-known molecule on any single axis would
+      be re-sorting the leaderboard rather than closing the loop. Because an
+      exploration call should not waste a measurement on a molecule the model
+      already knows well, the boundary score is dampened by the molecule's
+      novelty (``0.5 + 0.5·novelty``), so a fully-calibration-covered molecule
+      keeps half credit for a genuine boundary crossing while a novel one
+      keeps full credit. ADR-2026-08-15-001: without this, the highest-weight
+      term re-ranks the calibration set's own members (EC, DMC) to the top of
+      the multi-property worklist.
 
     Returns 0.0 when no threshold is available (single-candidate calls), so the
     term degrades to neutral rather than to a misleading constant.
@@ -247,17 +277,20 @@ def _expected_impact_score(
 
     half_width = (interval[1] - interval[0]) / 2.0
     if half_width <= 0:
-        # A zero-width interval means the model claims certainty: the
-        # measurement can only change the decision if the point is exactly on
-        # the boundary, which is measure-zero.
+        # A zero-width interval means the model claims certainty.
+        if membership:
+            return 1.0 if point > threshold else 0.0
         return 0.0
 
     sigma = half_width / 1.645
     from math import erf, sqrt
 
-    z = (threshold - point) / (sigma * sqrt(2.0))
-    p_below = 0.5 * (1.0 + erf(z))
-    return round(2.0 * min(p_below, 1.0 - p_below), 6)
+    z = (point - threshold) / (sigma * sqrt(2.0))
+    p_above = 0.5 * (1.0 + erf(z))
+    if membership:
+        return round(p_above, 6)
+    dampen = 0.5 + 0.5 * novelty
+    return round(2.0 * min(p_above, 1.0 - p_above) * dampen, 6)
 
 
 def _decision_thresholds(
@@ -769,8 +802,8 @@ def _build_rationale(
             f"its calibration residuals"
         ),
         "expected_impact": (
-            "the prediction sits close to the shortlist cut-off, so the "
-            "measurement is likely to decide whether this molecule is pursued"
+            "the prediction ranks inside the shortlist, so measuring it "
+            "confirms (or overturns) a molecule the campaign would make"
         ),
         "novelty": "this scaffold is chemically distant from every calibration molecule",
         "doa_proximity": (
@@ -814,11 +847,14 @@ def _score_property(
     bald_score: float = 0.0,
     pareto_score: float = 0.0,
     batch_ei_score: float = 0.0,
+    membership: bool = True,
 ) -> tuple[float, dict[str, float], tuple[float, float]]:
     uncertainty, interval = _normalised_interval_width(predictor, prop, point, mol)
     components = {
         "uncertainty": round(uncertainty, 4),
-        "expected_impact": _expected_impact_score(point, interval, threshold),
+        "expected_impact": _expected_impact_score(
+            point, interval, threshold, membership=membership, novelty=novelty
+        ),
         "novelty": round(novelty, 4),
         "doa_proximity": round(doa, 4),
         "bias": round(biases.get(prop, 0.0), 4),
@@ -891,12 +927,17 @@ def _collect_raw_suggestions(
     biases: dict[str, float],
     weights: dict[str, float],
     thresholds: dict[str, float],
+    membership: bool = True,
 ) -> tuple[list[_RawSuggestion], list[float]]:
     """Pass 2 of suggestion: score each (molecule, property) pair.
 
     For every evaluated molecule and every requested property, computes the
     composite priority score and the raw expected-improvement value. EI is left
     unnormalised so the caller can rescale it across the pool before blending.
+
+    ``membership`` selects the expected_impact form (see
+    :func:`_expected_impact_score`): monotone membership for single-axis
+    shortlists, boundary-crossing for multi-property exploration.
 
     Returns ``(raw_suggestions, ei_values)``.
     """
@@ -916,7 +957,7 @@ def _collect_raw_suggestions(
                 prop, point, predictor, ctx.mol, novelty, doa, biases,
                 weights, thresholds.get(prop),
                 bald_score=bald, pareto_score=pareto,
-                batch_ei_score=batch_ei,
+                batch_ei_score=batch_ei, membership=membership,
             )
             prop_values = [p[prop] for _, p, *_ in evaluated]
             minimise = prop in ("homo", "lumo")
@@ -941,7 +982,14 @@ def _build_suggestions_from_raw(
     ):
         ei_norm = ei / ei_max if ei_max > 0 else 0.0
         components["expected_improvement"] = round(ei, 6)
-        blended = 0.8 * score + 0.2 * ei_norm
+        # ADR-2026-08-15-001: the EI blend was 0.2, but EI is oriented
+        # minimise=True for HOMO/LUMO (improvement over the *best observed*,
+        # i.e. the most negative HOMO), which is anti-correlated with the
+        # decision metric at small budgets (top-k enrichment of the highest
+        # HOMO molecules). Reduce it so the membership-based expected_impact
+        # term — which is monotone in the predicted value — dominates the
+        # final ranking instead of being pulled toward the wrong end.
+        blended = 0.95 * score + 0.05 * ei_norm
         canonical_property = MEASURABLE_PROPERTIES[prop]
         units = _UNITS[canonical_property]
         rationale = _build_rationale(prop, components, interval, units)
@@ -1061,6 +1109,7 @@ def suggest_experiments(
         evaluated, all_predictions, wanted, predictor,
         bald_scores, per_prop_uncertainty, batch_ei_scores, biases,
         active_weights, thresholds,
+        membership=len(wanted) == 1,
     )
 
     ei_max = max(ei_values) if ei_values else 1.0
@@ -1076,8 +1125,17 @@ def suggest_experiments(
         all_pred_by_smiles[smi] = predictions
 
     suggestions.sort(key=lambda s: (-s.priority_score, s.smiles, s.property_to_measure))
+    # ADR-2026-08-15-001: for a single-property call the batch is a decision
+    # shortlist — the top-k of that one axis — not a multi-objective
+    # exploration batch. The structural penalty was measured to spread a small
+    # budget away from the true top-k (which are often chemically similar on a
+    # split), erasing the expected-impact signal. Relax it so the acquisition
+    # concentrates on the boundary at small budgets while still avoiding exact
+    # near-duplicates.
+    diversity_lambda = 0.15 if len(wanted) == 1 else _SIMILARITY_LAMBDA
     return _diversify(suggestions, top_n, fingerprints=fingerprints,
-                      elite_predictions=all_pred_by_smiles)
+                      elite_predictions=all_pred_by_smiles,
+                      diversity_lambda=diversity_lambda)
 
 
 # ---------------------------------------------------------------------------
@@ -1486,19 +1544,24 @@ _REDUNDANCY_DISCOUNT = 0.6
 _SIMILARITY_LAMBDA = 0.7
 
 
-def _structural_penalty(fp: Any, chosen_fps: list[Any]) -> float:
+def _structural_penalty(fp: Any, chosen_fps: list[Any], diversity_lambda: float = _SIMILARITY_LAMBDA) -> float:
     """Discount a candidate by its similarity to molecules already in the batch.
 
-    Returns ``1 - _SIMILARITY_LAMBDA * max_tanimoto`` against the batch, so an
-    exact structural duplicate keeps 0.3 of its score and a wholly unrelated
-    scaffold keeps all of it.
+    Returns ``1 - diversity_lambda * max_tanimoto`` against the batch, so an
+    exact structural duplicate keeps ``1 - diversity_lambda`` of its score and
+    a wholly unrelated scaffold keeps all of it.
+
+    ``diversity_lambda`` is threaded from ``_diversify`` so single-axis
+    shortlist calls (ADR-2026-08-15-001) can relax the penalty: a decision
+    batch targeting one property should concentrate on the top-k, and the
+    true top-k of a split are often structurally similar.
     """
     if not chosen_fps or fp is None:
         return 1.0
     from rdkit import DataStructs
 
     max_sim = float(max(DataStructs.BulkTanimotoSimilarity(fp, chosen_fps)))
-    return 1.0 - _SIMILARITY_LAMBDA * max_sim
+    return 1.0 - diversity_lambda * max_sim
 
 
 def _property_distance(
@@ -1532,6 +1595,7 @@ def _diversify_score(
     chosen_fps: list[Any],
     elite_predictions: dict[str, dict[str, float]] | None,
     elite_points: dict[str, list[float]],
+    diversity_lambda: float = _SIMILARITY_LAMBDA,
 ) -> float:
     """Compute the diversified adjusted-priority score for a single candidate.
 
@@ -1546,7 +1610,7 @@ def _diversify_score(
     )
     if fingerprints is not None:
         value = candidate.priority_score * penalty * _structural_penalty(
-            fingerprints.get(candidate.smiles), chosen_fps
+            fingerprints.get(candidate.smiles), chosen_fps, diversity_lambda
         )
     else:
         value = candidate.priority_score * penalty
@@ -1568,6 +1632,7 @@ def _diversify(
     top_n: int,
     fingerprints: dict[str, Any] | None = None,
     elite_predictions: dict[str, dict[str, float]] | None = None,
+    diversity_lambda: float = _SIMILARITY_LAMBDA,
 ) -> list[ExperimentSuggestion]:
     """Greedily pick a worklist that is not four copies of the same experiment.
 
@@ -1631,6 +1696,7 @@ def _diversify(
                 chosen_fps,
                 elite_predictions,
                 elite_points,
+                diversity_lambda,
             )
 
             if value > best_value:
