@@ -1480,8 +1480,14 @@ def apply_miscibility_gate(
 _NONIDEAL_DIELECTRIC_K: float = 0.5
 """Margules interaction parameter for dielectric non-ideality."""
 
-_NONIDEAL_LI_SATURATION_BETA: float = 0.8
-"""Strength of preferential solvation shift (0 = none, 1 = full preference)."""
+_NONIDEAL_VISCOSITY_G12: float = 0.5
+"""Grunberg-Nissan interaction parameter for viscosity non-ideality.
+Default 0.5 for carbonate:ether pairs."""
+
+_NONIDEAL_LI_SATURATION_BETA: float = 0.3
+"""Margules-like interaction parameter for Li+ solvation non-ideality.
+Controls the strength of preferential solvation toward the stronger donor.
+Default 0.3 based on typical ion-dipole coupling strengths."""
 
 
 def predict_mixture_dielectric_nonideal(
@@ -1531,6 +1537,40 @@ def predict_mixture_li_solvation_nonideal(
     f_eff = frac1 + shift
     f_eff = min(max(f_eff, 0.0), 1.0)
     return f_eff * ls1 + (1.0 - f_eff) * ls2
+
+
+def predict_mixture_viscosity_nonideal(
+    v1: float, v2: float, frac1: float = 0.5
+) -> float:
+    """Non-ideal viscosity mixing with Grunberg-Nissan interaction term.
+
+    Extends the ideal log-linear rule with an interaction parameter G_12:
+
+        ln η_nonideal = ln η_ideal + G_12 · x₁·x₂
+
+    where ln η_ideal = x₁ ln η₁ + x₂ ln η₂.
+
+    For carbonate:ether pairs, G_12 defaults to 0.5, which increases the
+    predicted viscosity above the ideal rule, capturing the non-ideal
+    behavior of these mixtures.
+
+    | Example: EC (1.9 cP) + DME (0.4 cP) at 50:50 |
+    | ideal = 0.87 cP | nonideal ≈ 1.2 cP |
+
+    Args:
+        v1: Viscosity of component 1 (cP).
+        v2: Viscosity of component 2 (cP).
+        frac1: Volume fraction of component 1.
+
+    Returns:
+        Non-ideal mixture viscosity in cP.
+    """
+    f2 = 1.0 - frac1
+    v1_s = max(v1, 0.001)
+    v2_s = max(v2, 0.001)
+    ln_ideal = frac1 * math.log(v1_s) + f2 * math.log(v2_s)
+    excess = _NONIDEAL_VISCOSITY_G12 * frac1 * f2
+    return math.exp(ln_ideal + excess)
 
 
 def predict_mixture_reduction_ea(

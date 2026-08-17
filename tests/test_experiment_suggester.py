@@ -667,12 +667,14 @@ class TestPoolExpansionBeforeScoring:
 
 
 class TestBALDAndParetoUCB:
-    def test_default_weights_contain_bald_and_pareto_ucb(self):
-        """DEFAULT_WEIGHTS must include bald and pareto_ucb keys."""
+    def test_default_weights_have_bald_and_pareto_ucb_keys(self):
+        """DEFAULT_WEIGHTS must include bald and pareto_ucb keys (set to 0.0)."""
+        from aurelius.agent.experiment_suggester import DEFAULT_WEIGHTS
         assert "bald" in DEFAULT_WEIGHTS
         assert "pareto_ucb" in DEFAULT_WEIGHTS
-        assert DEFAULT_WEIGHTS["bald"] > 0.0
-        assert DEFAULT_WEIGHTS["pareto_ucb"] > 0.0
+        # ADR-2026-08-16: Simplified acquisition - these are set to 0.0
+        assert DEFAULT_WEIGHTS["bald"] == 0.0
+        assert DEFAULT_WEIGHTS["pareto_ucb"] == 0.0
 
     def test_bald_returns_zero_without_model(self):
         """BALD returns 0.0 when no GPR model is available."""

@@ -378,7 +378,7 @@ class DiscoveryLoop:
             # Reset xtb escalation counter for new generation
             self._xtb_escalation_count = 0
 
-            force_exploration = self.state.has_scaffold_stagnation(2)
+            force_exploration = self.state.has_scaffold_stagnation(1)
             if force_exploration:
                 log.info("Generation %d: Scaffold stagnation detected — pivoting to BRICS-only exploration.", generation)
                 self._inject_tier0_seeds()
@@ -886,6 +886,84 @@ class DiscoveryLoop:
             self.engine.seed_pool = self.engine.seed_pool[-200:]
         self.state.seed_pool_size = len(self.engine.seed_pool)
 
+    def _rotate_seed_pool(self, generation: int) -> None:
+        """Seed rotation: every 3 generations, replace bottom 20% of seed pool with top novel-scaffold candidates.
+
+        Gap 3 (G1): Prevents the seed pool from calcifying around early discoveries
+        by injecting novel-scaffold candidates from the current generation's results.
+        """
+        if generation % 3 != 0:
+            return
+        if not self.all_results:
+            return
+
+        pool_size = len(self.engine.seed_pool)
+        if pool_size == 0:
+            return
+
+        n_replace = max(1, int(0.20 * pool_size))
+
+        # Get known scaffolds from the seed pool
+        known_scaffolds = set()
+        for smi in self.engine.seed_pool:
+            ctx = MoleculeContext.from_smiles(smi)
+            if ctx is not None:
+                try:
+                    from rdkit.Chem.Scaffolds import MurckoScaffold
+                    scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
+                    if scaffold:
+                        known_scaffolds.add(scaffold)
+                except Exception:
+                    pass
+
+        # Find novel-scaffold candidates from all_results not in pool, sorted by score
+        existing_pool = set(self.engine.seed_pool)
+        novel_candidates = []
+        for r in self.all_results:
+            if r.smiles in existing_pool:
+                continue
+            if r.total_score < 65.0:
+                continue
+            if is_mixture_smiles(r.smiles):
+                continue
+            ctx = MoleculeContext.from_smiles(r.smiles)
+            if ctx is None:
+                continue
+            try:
+                from rdkit.Chem.Scaffolds import MurckoScaffold
+                scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
+                if scaffold and scaffold not in known_scaffolds:
+                    novel_candidates.append((r.total_score, r.smiles, scaffold))
+            except Exception:
+                pass
+
+        novel_candidates.sort(key=lambda x: -x[0])
+        top_novel = novel_candidates[:n_replace]
+
+        if not top_novel:
+            return
+
+        # Replace bottom 20% of seed pool (lowest scored)
+        # Score the current seed pool
+        pool_scored = []
+        for smi in self.engine.seed_pool:
+            scored_results = [r for r in self.all_results if r.smiles == smi]
+            score = scored_results[0].total_score if scored_results else 0.0
+            pool_scored.append((score, smi))
+
+        pool_scored.sort(key=lambda x: x[0])
+        to_remove = [smi for _, smi in pool_scored[:n_replace]]
+        new_pool = [smi for smi in self.engine.seed_pool if smi not in to_remove]
+        new_pool.extend([smi for _, smi, _ in top_novel])
+
+        self.engine.seed_pool = new_pool[-200:]
+        self.state.seed_pool_size = len(self.engine.seed_pool)
+
+        log.info(
+            "  Generation %d: Seed rotation replaced %d molecules with novel scaffolds %s",
+            generation, len(top_novel), [s for _, _, s in top_novel]
+        )
+
     def _record_scaffolds(self, batch_contexts: list[MoleculeContext]) -> None:
         if MurckoScaffold is None:
             return
@@ -911,6 +989,7 @@ class DiscoveryLoop:
         """Record batch results, update state, and evolve seeds/fragments."""
         batch_viable = sum(1 for s in batch_scores if s >= DISCOVERY_THRESHOLD)
         self._evolve_seed_pool(batch_contexts, batch_scores)
+        self._rotate_seed_pool(generation)
         self._record_scaffolds(batch_contexts)
         self.state.record_batch(batch_scores, batch_viable)
 

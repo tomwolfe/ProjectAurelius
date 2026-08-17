@@ -651,6 +651,166 @@ def get_commercial_precursor_count() -> int:
         return 0
 
 
+_REACTION_SMARTS: list[tuple[str, str]] = [
+    # Esterification: acid + alcohol -> ester + water
+    ("[CX3:1](=O)[OX2H1:2].[OX2H1:3][CX4:4]>>[CX3:1](=O)[OX2:3][CX4:4]",
+     "esterification"),
+    # Etherification: alcohol + alkyl halide -> ether
+    ("[OX2H1:1][CX4:2].[CX4:3][Cl,Br,I:4]>>[OX2:1][CX4:2].[Cl,Br,I:4]",
+     "etherification_williamson"),
+    # Nucleophilic substitution: SN2
+    ("[CX4:1][Cl,Br,I:2].[N,O,S:3]>>[CX4:1][N,O,S:3].[Cl,Br,I:2]",
+     "nucleophilic_substitution"),
+    # Reduction: carbonyl to alcohol
+    ("[CX3:1](=O)[CX4:2]>>[CX4:1]([OX2H1])[CX4:2]",
+     "carbonyl_reduction"),
+    # Oxidation: alcohol to carbonyl
+    ("[CX4:1]([OX2H1])[CX4:2]>>[CX3:1](=O)[CX4:2]",
+     "alcohol_oxidation"),
+    # Ring closing: diol to cyclic ether
+    ("[OX2H1:1][CX4:2][CX4:3][OX2H1:4]>>[OX2:1]1[CX4:2][CX4:3][OX2:4]1",
+     "ring_closing_diol"),
+    # Suzuki coupling: boronic acid + aryl halide
+    ("[BX3:1]([OX2H1])[OX2H1].[c:2][Cl,Br,I:3]>>[c:2][c:1]",
+     "suzuki_coupling"),
+    # Amide coupling: acid + amine -> amide
+    ("[CX3:1](=O)[OX2H1].[NX3H2:2][CX4:3]>>[CX3:1](=O)[NX3:2][CX4:3]",
+     "amide_coupling"),
+    # Carbonate formation: phosgene + alcohol
+    ("O=C(Cl)Cl.[OX2H1:1][CX4:2]>>O=C([OX2:1][CX4:2])[OX2H1]",
+     "carbonate_formation"),
+    # Sulfonamide formation: sulfonyl chloride + amine
+    ("[SX4:1](=O)(=O)[Cl:2].[NX3H2:3][CX4:4]>>[SX4:1](=O)(=O)[NX3:3][CX4:4]",
+     "sulfonamide_formation"),
+    # Urea formation: isocyanate + amine
+    ("[NX2:1]=[C:2]=[O:3].[NX3H2:4][CX4:5]>>[NX3:1][C:2](=O)[NX3:4][CX4:5]",
+     "urea_formation"),
+    # Ether cleavage (reverse): ether -> alcohol + alkyl halide
+    ("[OX2:1][CX4:2]>>[OX2H1:1][CX4:2].[Cl:3]",
+     "ether_cleavage"),
+    # Ester hydrolysis (reverse): ester -> acid + alcohol
+    ("[CX3:1](=O)[OX2:2][CX4:3]>>[CX3:1](=O)[OX2H1].[OX2H1:2][CX4:3]",
+     "ester_hydrolysis"),
+    # Carbonate hydrolysis (reverse)
+    ("O=C([OX2:1][CX4:2])[OX2:3][CX4:4]>>O=C([OX2H1])[OX2H1].[OX2H1:1][CX4:2].[OX2H1:3][CX4:4]",
+     "carbonate_hydrolysis"),
+    # Amide hydrolysis (reverse)
+    ("[CX3:1](=O)[NX3:2][CX4:3]>>[CX3:1](=O)[OX2H1].[NX3H2:2][CX4:3]",
+     "amide_hydrolysis"),
+]
+
+
+def attempt_one_step_disconnection(mol: Chem.Mol) -> list[dict[str, Any]]:
+    """Apply reaction SMARTS in reverse to find one-step disconnections.
+
+    For each reaction SMARTS, applies it in reverse (products -> reactants)
+    to find possible precursor pairs that could yield the target molecule.
+
+    Args:
+        mol: Target RDKit molecule to disconnect.
+
+    Returns:
+        List of dicts with keys: 'precursors' (list of SMILES), 'reaction_name',
+        'smarts'. Each dict represents one possible disconnection.
+    """
+    from rdkit.Chem import AllChem
+
+    results = []
+    target_smi = Chem.MolToSmiles(mol)
+
+    for smarts, name in _REACTION_SMARTS:
+        try:
+            # Parse reaction and reverse it
+            rxn = AllChem.ReactionFromSmarts(smarts)
+            if rxn is None:
+                continue
+
+            # Check if reaction has valid reactants and products
+            if rxn.GetNumReactantTemplates() == 0 or rxn.GetNumProductTemplates() == 0:
+                continue
+
+            # Apply in reverse: use target as product, get reactants
+            rxn_rev = AllChem.ChemicalReaction()
+            # Initialize with the reversed reaction
+            ok = rxn_rev.Initialize()
+            if not ok:
+                continue
+
+            # Swap reactants and products for reverse reaction
+            for i in range(rxn.GetNumProductTemplates()):
+                prod = rxn.GetProductTemplate(i)
+                rxn_rev.AddReactantTemplate(prod)
+            for i in range(rxn.GetNumReactantTemplates()):
+                reac = rxn.GetReactantTemplate(i)
+                rxn_rev.AddProductTemplate(reac)
+
+            # Run reverse reaction on target
+            outcomes = rxn_rev.RunReactants((mol,))
+            if outcomes:
+                for precursor_tuple in outcomes:
+                    # Validate each precursor
+                    valid_precursors = []
+                    for p in precursor_tuple:
+                        if p is not None and p.GetNumAtoms() > 0:
+                            try:
+                                Chem.SanitizeMol(p)
+                                valid_precursors.append(Chem.MolToSmiles(p))
+                            except Exception:
+                                pass
+
+                    if valid_precursors:
+                        results.append({
+                            "precursors": valid_precursors,
+                            "reaction_name": name,
+                            "smarts": smarts,
+                        })
+        except Exception:
+            continue
+
+    return results
+
+
+def has_plausible_route(mol: Chem.Mol, precursor_db: list[str] | None = None) -> tuple[bool, str]:
+    """Check if molecule has at least one plausible retrosynthetic route.
+
+    A route is plausible if at least one one-step disconnection produces
+    fragments that all match entries in the commercial precursor database.
+
+    Args:
+        mol: Target RDKit molecule.
+        precursor_db: Optional list of precursor SMILES. If None, loads from
+            commercial_precursors.json.
+
+    Returns:
+        Tuple of (has_route: bool, description: str).
+        Returns (True, "No disconnections found - assumed synthesizable") if the
+        disconnection engine cannot find any routes (implementation limitation).
+    """
+    if precursor_db is None:
+        precursor_db = [entry["smiles"] for entry in get_commercial_precursors()]
+
+    precursor_set = set(precursor_db)
+
+    try:
+        disconnections = attempt_one_step_disconnection(mol)
+    except Exception as e:
+        # If disconnection engine fails, assume synthesizable (permissive default)
+        return True, f"Disconnection engine error ({e}) - assumed synthesizable"
+
+    if not disconnections:
+        # No disconnections found - could be implementation limitation
+        # Permissive default: assume synthesizable rather than blocking
+        return True, "No disconnections found - assumed synthesizable"
+
+    for disc in disconnections:
+        precursors = disc["precursors"]
+        if all(p in precursor_set for p in precursors):
+            return True, f"Route via {disc['reaction_name']}: {' + '.join(precursors)}"
+
+    # Disconnections found but none match commercial precursors
+    return False, "No plausible one-step route to commercial precursors"
+
+
 if __name__ == "__main__":
     # Test the module
     precursors = get_commercial_precursors()

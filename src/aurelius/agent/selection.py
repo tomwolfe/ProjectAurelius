@@ -36,28 +36,34 @@ GROUNDING_SELECTION_LAMBDA = 0.5
 candidate (grounding = 0). A fully grounded candidate (grounding = 1) is
 unpenalised. See ``_grounding_weight``."""
 
-SCAFFOLD_CAP = 0.10
+SCAFFOLD_CAP = 0.05
 """Maximum fraction of a selected batch (or NSGA-II front) that may belong to a
 single Murcko scaffold family before the crowding penalty activates.
 
-Lowered from 0.15 (Gap 3: the discovery benchmark's novel scaffold ratio must
-reach >= 0.8; a looser per-family cap lets known-scaffold families flood the
-top-50 screened results)."""
+Lowered from 0.10 (Gap 3: ADR-2026-08-14-001) to activate the crowding penalty
+sooner, preventing known-scaffold families from dominating the top-50 screened
+results even when they have high physics scores."""
 
-SCAFFOLD_PENALTY_FACTOR = 12.0
+SCAFFOLD_PENALTY_FACTOR = 15.0
 """Growth factor of the scaffold crowding penalty above ``SCAFFOLD_CAP``.
 
-Raised from 8.0 so that family dominance is penalised much faster once the cap
-is exceeded, further suppressing scaffold stagnation (Gap 3)."""
+Increased from 12.0 (Gap 3: ADR-2026-08-14-001) so that family dominance is
+penalised even more strongly once the cap is exceeded, further suppressing
+scaffold stagnation and pushing the novel scaffold ratio past 80%."""
 
-KNOWN_SCAFFOLD_PENALTY = 0.5
+KNOWN_SCAFFOLD_PENALTY = 0.3
 """Multiplier applied to candidates whose Murcko scaffold already appears in
 ``known_electrolytes.json``.
 
 Novel scaffolds keep full selection weight; known-scaffold candidates are
 demoted so the EA is pushed toward genuinely novel chemistry and the top-50
 screened results reach >= 80% novel scaffolds (Gap 3). Mixtures are exempt —
-their novelty is the combination, not the component scaffold."""
+their novelty is the combination, not the component scaffold.
+
+Decreased from 0.5 (Gap 3: ADR-2026-08-14-001) to push the novel scaffold ratio
+past the 80% threshold; combined with the scaffold-stagnation pivot (WP1),
+known EC scaffolds are now penalised more heavily during tournament selection
+and NSGA-II crowding-distance breaks."""
 
 
 def _fp_to_numpy(fp: Any, n_bits: int = 2048) -> np.ndarray:
@@ -967,6 +973,7 @@ def nsga2_select(
     rng_seed: int = 42,
     confidences: list[float] | None = None,
     top_fraction: float = 0.5,
+    novel_scaffold_quota: float = 0.30,
 ) -> list[MoleculeContext]:
     """Select a diverse, Pareto-optimal batch using NSGA-II.
 
@@ -1069,4 +1076,44 @@ def nsga2_select(
     ranked.sort(key=lambda r: (r[0], -r[1] - jitter[r[2]]))
 
     selected_indices = [r[2] for r in ranked[:batch_size]]
+
+    # Enforce novel scaffold quota (Gap 3: G1).
+    # If fewer than quota * batch_size of the selected candidates have a Murcko
+    # scaffold absent from known_electrolytes.json, swap the lowest-ranked
+    # known-scaffold candidates with the highest-ranked novel-scaffold
+    # candidates from the remaining pool.
+    min_novel = int(np.ceil(novel_scaffold_quota * batch_size))
+    known_scafs = _known_scaffolds()
+
+    def _is_novel(idx: int) -> bool:
+        s = scaffolds[idx]
+        return s is not None and s not in known_scafs
+
+    selected_novel = sum(1 for idx in selected_indices if _is_novel(idx))
+
+    if selected_novel < min_novel:
+        # Find known-scaffold candidates in selection (lowest ranked first)
+        known_in_selection = [(rank, idx) for rank, idx in enumerate(selected_indices) if not _is_novel(idx)]
+        known_in_selection.sort(key=lambda x: -x[0])  # lowest ranked first
+
+        # Find novel-scaffold candidates outside selection (highest ranked first)
+        remaining_indices = [r[2] for r in ranked[batch_size:]]
+        novel_outside = [(rank, idx) for rank, idx in enumerate(remaining_indices) if _is_novel(idx)]
+        novel_outside.sort(key=lambda x: x[0])  # highest ranked first
+
+        swaps = 0
+        for (sel_rank, sel_idx), (out_rank, out_idx) in zip(known_in_selection, novel_outside):
+            if swaps >= min_novel - selected_novel:
+                break
+            # Swap in the selection
+            selected_indices[sel_rank] = out_idx
+            swaps += 1
+            log.info(
+                "Novel scaffold quota swap: replaced %s (scaffold=%s) with %s (scaffold=%s)",
+                contexts[sel_idx].smiles,
+                scaffolds[sel_idx],
+                contexts[out_idx].smiles,
+                scaffolds[out_idx],
+            )
+
     return [contexts[i] for i in selected_indices]

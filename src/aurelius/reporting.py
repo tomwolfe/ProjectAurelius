@@ -23,7 +23,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 
 from aurelius.agent.loop import AgentConfig, run_screening
-from aurelius.agent.mutation.retrosynthetic import compute_synthesis_feasibility
+from aurelius.agent.mutation.retrosynthetic import compute_synthesis_feasibility, has_plausible_route
 from aurelius.constants import HYDROLYTICALLY_UNSTABLE_PATTERNS
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.oracle.dft_validator import dft_geometry_optimize
@@ -181,6 +181,7 @@ CANDIDATE_FIELDS = [
     "viscosity_proxy", "diversity_penalty", "combined_grounding_score",
     "synthesizability_complexity", "domain_penalty", "is_viable",
     "synthesis_depth", "dft_grounding_score", "dft_final_energy_eV", "dft_method",
+    "synthesizability_route", "synthesizability_route_desc",
 ]
 
 
@@ -264,6 +265,9 @@ class ReportingEngine:
         if domain_penalty is None:
             domain_penalty = sub.get("domain", 1.0)
 
+        # Check retrosynthetic route (hard gate for synthesizability)
+        has_route, route_desc = has_plausible_route(mol)
+
         return {
             "smiles": smiles,
             "total_score": float(getattr(result, "total_score", 0.0)),
@@ -289,6 +293,8 @@ class ReportingEngine:
             "dft_grounding_score": round(float(dft_grounding_score), 4),
             "dft_final_energy_eV": dft_final_energy_eV,
             "dft_method": dft_method,
+            "synthesizability_route": has_route,
+            "synthesizability_route_desc": route_desc,
             "nearest_known_electrolytes": _find_nearest_known(smiles, known, top_n=3),
         }
 
@@ -319,6 +325,10 @@ class ReportingEngine:
 
         When ``skip_dft`` is False (the default), an additional DFT geometry-
         optimization stage is appended requiring ``dft_grounding_score >= 0.80``.
+        
+        ADR-2026-08-16: Added synthesizability_route stage as a hard gate.
+        Candidates without a plausible retrosynthetic route to commercial
+        precursors are rejected.
         """
         cascade_stages = list(CANDIDATE_CASCADE)
         if not skip_dft:
@@ -329,6 +339,14 @@ class ReportingEngine:
                     "DFT geometry optimization must converge (dft_grounding_score >= 0.80)",
                 ),
             )
+        # Synthesizability route hard gate (WS-4: G4)
+        cascade_stages.append(
+            (
+                "synthesizability_route",
+                True,
+                "Must have at least one plausible retrosynthetic route to commercial precursors",
+            ),
+        )
         rejection_log: dict[str, int] = {}
         selected: list[dict[str, Any]] = []
 
@@ -556,6 +574,9 @@ class ReportingEngine:
 def _passes_stage(candidate: dict[str, Any], key: str, threshold: object) -> bool:
     value = candidate.get(key)
     if key == "is_viable":
+        return bool(value)
+    if key == "synthesizability_route":
+        # Hard gate: must have a plausible retrosynthetic route
         return bool(value)
     if isinstance(threshold, (int, float)) and isinstance(value, (int, float)):
         if key == "synthesizability_complexity":

@@ -117,26 +117,43 @@ def _extract_ea(tier2_result: dict[str, Any] | None) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
+# Weight constants for the composite score.
+# ADR-2026-08-15: li_solvation_reward (donor number) de-rated from 0.20 to 0.05
+# due to poor rank correlation (ρ ≈ 0.19). Freed weight redistributed to
+# reduction_stability_reward (ΔSCF EA, ρ = 0.91) and dielectric_reward.
+# LUMO axis (lumo_eV) is not used as a scoring objective — it was replaced by
+# the ΔSCF electron affinity axis (reduction_stability_reward) per ADR-2026-08-10.
+# The constant SCORE_WEIGHT_LUMO (0.23) now drives the validated EA axis.
+_SCORE_WEIGHT_REDUCTION_STABILITY: float = 0.305  # was 0.23 (SCORE_WEIGHT_LUMO) + 0.075
+_SCORE_WEIGHT_HOMO: float = 0.17
+_SCORE_WEIGHT_DIELECTRIC: float = 0.245  # was 0.17 + 0.075
+_SCORE_WEIGHT_VISCOSITY: float = 0.14
+_SCORE_WEIGHT_LI_SOLVATION: float = 0.05  # de-rated from 0.20
+_SCORE_WEIGHT_SA: float = 0.01
+
 _OBJECTIVES: list[Objective] = [
     # ADR-2026-08-10: reduction stability is ranked by ΔSCF electron affinity
     # (rho = 0.91 against 40 measured gas-phase EAs), not by the frontier LUMO
     # it replaces (rho = 0.34 against a 0.31 permutation bar).
-    Objective("reduction_stability_reward", "ea_eV", SCORE_WEIGHT_LUMO,
+    # LUMO axis provenance-confounded (audit_label_confound.py);
+    # de-rated pending single-method calibration.
+    Objective("reduction_stability_reward", "ea_eV", _SCORE_WEIGHT_REDUCTION_STABILITY,
               lambda v: _gaussian(v, EA_TARGET, EA_SIGMA),
               failure_reason_template="EA={value:.3f}eV (reduction-unstable)"),
-    Objective("homo_penalty", "homo_eV", SCORE_WEIGHT_HOMO,
+    Objective("homo_penalty", "homo_eV", _SCORE_WEIGHT_HOMO,
               lambda v: _sigmoid(v, HOMO_THRESHOLD, 5.0, False),
               failure_reason_template="HOMO={value:.3f}eV (oxidative instability)"),
-    Objective("dielectric_reward", "dielectric_proxy", SCORE_WEIGHT_DIELECTRIC,
+    Objective("dielectric_reward", "dielectric_proxy", _SCORE_WEIGHT_DIELECTRIC,
               lambda v: _sigmoid(v, DIELECTRIC_TARGET, 1.5),
               failure_reason_template="dielectric_proxy={value:.3f} (poor salt dissolution)"),
-    Objective("viscosity_penalty", "viscosity_proxy", SCORE_WEIGHT_VISCOSITY,
+    Objective("viscosity_penalty", "viscosity_proxy", _SCORE_WEIGHT_VISCOSITY,
               lambda v: _sigmoid(v, VISCOSITY_THRESHOLD, 2.0, False),
               failure_reason_template="viscosity_proxy={value:.3f} (poor ion mobility)"),
-    Objective("li_solvation_reward", "li_solvation_proxy", SCORE_WEIGHT_LI_SOLVATION,
+    # Donor-number axis ρ ≈ 0.19; de-rated to exploratory.
+    Objective("li_solvation_reward", "li_solvation_proxy", _SCORE_WEIGHT_LI_SOLVATION,
               lambda v: _gaussian(v, LI_SOLVATION_TARGET, 1.0),
               failure_reason_template="li_solvation_proxy={value:.3f} (poor Li+ binding)"),
-    Objective("sa_penalty", "sa_score", SCORE_WEIGHT_SA,
+    Objective("sa_penalty", "sa_score", _SCORE_WEIGHT_SA,
               lambda v: _sigmoid(v, SA_THRESHOLD, 2.0, False),
               failure_reason_template="SA score={value:.2f} (hard to synthesize)"),
     Objective("synthesizability_reward", "sa_score", 0.20,

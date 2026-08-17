@@ -144,15 +144,19 @@ _MAX_RECOMBINATION_PRODUCTS = 200
 # property axis (minimise=True EI targets low HOMO, while top-k enrichment is
 # measured on high HOMO). Concentrating weight on expected_impact lets the
 # acquisition target the true top-k boundary at small budgets.
+# ADR-2026-08-16: Simplified acquisition to expected_impact + novelty only.
+# BALD, Pareto UCB, and batch_ei are set to 0.0 (code kept but not computed
+# unless weight > 0). Structural diversity constraint: no two suggested
+# candidates may have Tanimoto > 0.85.
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "uncertainty": 0.05,
-    "expected_impact": 0.80,
-    "novelty": 0.05,
-    "doa_proximity": 0.05,
-    "bias": 0.05,
-    "bald": 0.05,
-    "pareto_ucb": 0.05,
-    "batch_ei": 0.05,
+    "uncertainty": 0.0,
+    "expected_impact": 0.85,
+    "novelty": 0.15,
+    "doa_proximity": 0.0,
+    "bias": 0.0,
+    "bald": 0.0,
+    "pareto_ucb": 0.0,
+    "batch_ei": 0.0,
 }
 
 # ADR-2026-08-12-003: the closed-loop benchmark showed that the EA greedy
@@ -1669,6 +1673,10 @@ def _diversify(
     very different predicted HOMO values provide complementary information
     about the decision boundary, so they should not both be selected.
 
+    ADR-2026-08-16: Hard structural diversity constraint — no two suggested
+    candidates may have Tanimoto > 0.85. Candidates exceeding this threshold
+    against any already-selected candidate are skipped entirely.
+
     This is a re-ordering only: nothing new enters the list, and the adjusted
     score is recorded on each suggestion so the effect is auditable.
     """
@@ -1685,9 +1693,23 @@ def _diversify(
         for prop in elite_predictions:
             elite_points[prop] = list(elite_predictions[prop].values())
 
+    # Hard diversity constraint: Tanimoto threshold above which candidates
+    # are rejected (ADR-2026-08-16).
+    MAX_TANIMOTO = 0.85
+
     while remaining and len(selected) < top_n:
         best_index, best_value = 0, -1.0
         for i, candidate in enumerate(remaining):
+            # Hard diversity filter: skip candidates too similar to already
+            # selected molecules (Tanimoto > 0.85).
+            if fingerprints is not None:
+                fp = fingerprints.get(candidate.smiles)
+                if fp is not None and chosen_fps:
+                    from rdkit import DataStructs
+                    max_sim = float(max(DataStructs.BulkTanimotoSimilarity(fp, chosen_fps)))
+                    if max_sim > MAX_TANIMOTO:
+                        continue
+
             value = _diversify_score(
                 candidate,
                 seen_molecules,

@@ -1492,5 +1492,120 @@ def main() -> int:
     return 0 if ok else 1
 
 
+def run_full_loop_in_silico(
+    n_rounds: int = 5,
+    budget: int = 15,
+    seed: int = 42,
+    calibration_file: str = "orbital_calibration.json",
+) -> dict:
+    """Run the full closed loop in silico with existing calibration data.
+
+    Split orbital_calibration.json into seed (20), pool, and holdout (30%).
+    Run n_rounds of suggest -> "measure" (reveal true value) -> refit.
+    Track held-out MAE and top-k enrichment per round.
+
+    Args:
+        n_rounds: Number of acquisition/refit rounds.
+        budget: Number of candidates to "measure" per round.
+        seed: Random seed for splitting.
+        calibration_file: Calibration data file to use.
+
+    Returns:
+        Dict with per-round metrics including held-out MAE and top-k enrichment.
+    """
+    from aurelius.agent.feedback import FeedbackController
+    from aurelius.scoring.oracle.delta_correction import get_delta_correction
+
+    entries = _load_calibration(calibration_file)
+    holdout, seed_calib, unmeasured = _split(entries, seed, ea_mode=False)
+
+    # Limit holdout to 30% of entries
+    n_hold = max(20, int(0.30 * len(entries)))
+    if len(holdout) > n_hold:
+        holdout = holdout[:n_hold]
+
+    results = {"rounds": [], "seed": seed, "calibration_file": calibration_file}
+    
+    # Create a DeltaCorrection with the seed calibration
+    delta_correction = _fit(seed_calib)
+    
+    # Create FeedbackController for refitting
+    feedback_controller = FeedbackController(
+        delta_correction=delta_correction,
+        refit_interval=1,  # Refit every round
+    )
+
+    for round_idx in range(1, n_rounds + 1):
+        # Baseline evaluation on holdout
+        baseline_metrics = _evaluate(delta_correction, holdout)
+
+        # Suggest experiments using the current model
+        suggestions = _acquire_suggester(
+            unmeasured, budget, delta_correction=delta_correction
+        )
+
+        # "Measure" = reveal true HOMO values from calibration data
+        measured = suggestions[:budget]
+
+        # Track top-k enrichment: how many of the true top-k holdout molecules
+        # appeared in the suggested batch
+        top_k = min(budget, max(5, len(unmeasured) // 5))
+        true_top_k = sorted(holdout, key=lambda e: e["homo_eV"])[-top_k:]
+        true_top_k_ids = {id(e) for e in true_top_k}
+        suggested_ids = {id(e) for e in measured}
+        topk_enrichment = len(true_top_k_ids & suggested_ids) / top_k
+
+        # Accumulate feedback and refit
+        for m in measured:
+            # Get the TOM prediction for this molecule
+            from rdkit import Chem
+            mol = Chem.MolFromSmiles(m["smiles"])
+            homo_pred, lumo_pred = delta_correction.predict_corrected(mol)
+            
+            feedback_controller.accumulate(
+                smiles=Chem.MolToSmiles(mol),
+                homo_prediction=homo_pred,
+                lumo_prediction=lumo_pred,
+                homo_corrected=m["homo_eV"],
+                lumo_corrected=m["lumo_eV"],
+                total_score=0.0,  # not used for orbital refit
+                conformal_confidence=1.0,
+                generation=round_idx,
+                experimental_homo=m["homo_eV"],
+                experimental_lumo=m["lumo_eV"],
+            )
+        
+        # Force refit
+        feedback_controller.maybe_refit(round_idx)
+        
+        # Get the refitted model
+        delta_correction = feedback_controller._delta_correction
+
+        # Evaluate on holdout after refit
+        after_metrics = _evaluate(delta_correction, holdout)
+
+        round_result = {
+            "round": round_idx,
+            "ingested": len(measured),
+            "heldout_mae_before": baseline_metrics["mae_eV"],
+            "heldout_mae_after": after_metrics["mae_eV"],
+            "heldout_rho_before": baseline_metrics["spearman_rho"],
+            "heldout_rho_after": after_metrics["spearman_rho"],
+            "mae_improvement": after_metrics["mae_eV"] - baseline_metrics["mae_eV"],
+            "rho_improvement": after_metrics["spearman_rho"] - baseline_metrics["spearman_rho"],
+            "top_k_enrichment": topk_enrichment,
+        }
+        results["rounds"].append(round_result)
+
+        # Remove measured from unmeasured pool
+        measured_ids = {id(e) for e in measured}
+        unmeasured = [e for e in unmeasured if id(e) not in measured_ids]
+
+        if not unmeasured:
+            break
+
+    return results
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
