@@ -51,7 +51,7 @@ Increased from 12.0 (Gap 3: ADR-2026-08-14-001) so that family dominance is
 penalised even more strongly once the cap is exceeded, further suppressing
 scaffold stagnation and pushing the novel scaffold ratio past 80%."""
 
-KNOWN_SCAFFOLD_PENALTY = 0.3
+KNOWN_SCAFFOLD_PENALTY = 0.2
 """Multiplier applied to candidates whose Murcko scaffold already appears in
 ``known_electrolytes.json``.
 
@@ -60,10 +60,10 @@ demoted so the EA is pushed toward genuinely novel chemistry and the top-50
 screened results reach >= 80% novel scaffolds (Gap 3). Mixtures are exempt —
 their novelty is the combination, not the component scaffold.
 
-Decreased from 0.5 (Gap 3: ADR-2026-08-14-001) to push the novel scaffold ratio
-past the 80% threshold; combined with the scaffold-stagnation pivot (WP1),
-known EC scaffolds are now penalised more heavily during tournament selection
-and NSGA-II crowding-distance breaks."""
+Decreased from 0.3 (Gap 3: ADR-2026-08-14-001) so that known-scaffold
+candidates keep only 20% of their score instead of 30%, further suppressing
+scaffold stagnation and pushing the novel scaffold ratio past the 80%
+threshold."""
 
 
 def _fp_to_numpy(fp: Any, n_bits: int = 2048) -> np.ndarray:
@@ -965,6 +965,154 @@ def _scaffold_penalty(front_indices: list[int], contexts: list[MoleculeContext])
     return penalties
 
 
+def _build_nsga2_objective_matrix(
+    scores_dict: dict[str, list[float]],
+    objectives: _NSGAIObjectiveSpec,
+    confidences: list[float] | None,
+    contexts: list[MoleculeContext],
+) -> tuple[np.ndarray, np.ndarray, list[str | None]]:
+    """Stack the NSGA-II objective matrix from scores, confidences and novelty.
+
+    Returns ``(obj_matrix, maximise_arr, scaffolds)``: each column of
+    ``obj_matrix`` corresponds to one objective, ``maximise_arr`` marks which
+    objectives are maximised, and ``scaffolds`` holds the per-candidate Murcko
+    scaffolds (reused later for ranking and quota enforcement).
+    """
+    # Assemble the objective matrix.
+    obj_columns: list[np.ndarray] = []
+    maximise: list[bool] = []
+    for key, direction in objectives:
+        obj_columns.append(np.asarray(scores_dict[key], dtype=float))
+        maximise.append(direction == "max")
+
+    # Optionally add conformal confidence as a final maximise objective.
+    if confidences is not None:
+        obj_columns.append(np.asarray(confidences, dtype=float))
+        maximise.append(True)
+
+    # Scaffold-novelty objective (Gap 3): 1.0 for candidates whose Murcko
+    # scaffold is absent from known_electrolytes.json, 0.0 otherwise. Novelty
+    # is treated as a genuine (maximise) objective so known-scaffold candidates
+    # are pushed to later Pareto fronts instead of flooding the top ranking.
+    # The weight of this objective is increased to 0.15 of the total objective set,
+    # increasing pressure toward novel scaffolds in the selected batch.
+    scaffolds, scaffold_is_novel = _scaffold_novelty_objective(contexts)
+    # Scale to give the novelty objective ~0.15 influence among ~7 total objectives.
+    scaffold_is_novel = scaffold_is_novel * 1.05
+    obj_columns.append(scaffold_is_novel)
+    maximise.append(True)
+
+    obj_matrix = np.column_stack(obj_columns)
+    maximise_arr = np.array(maximise, dtype=bool)
+    return obj_matrix, maximise_arr, scaffolds
+
+
+def _rank_nsga2_fronts(
+    fronts: list[list[int]],
+    obj_matrix: np.ndarray,
+    maximise_arr: np.ndarray,
+    contexts: list[MoleculeContext],
+    scaffolds: list[str | None],
+    known_scafs: frozenset[str],
+) -> list[tuple[int, float, int]]:
+    """Build the ``(front_index, crowding_dist, candidate_index)`` ranked list.
+
+    Crowding distance is combined with the scaffold crowding penalty
+    (``_scaffold_penalty``) and the known-scaffold demotion multiplier
+    (``KNOWN_SCAFFOLD_PENALTY``) so that novel scaffolds win ties within a
+    front (Gap 3).
+    """
+    ranked: list[tuple[int, float, int]] = []
+    for f_idx, front in enumerate(fronts):
+        crowding = _crowding_distance(front, obj_matrix, maximise_arr)
+        # Apply scaffold crowding penalty: reduce crowding distance for
+        # scaffold families that occupy more than SCAFFOLD_CAP of the front
+        pen = _scaffold_penalty(front, contexts)
+        for local_idx, global_idx in enumerate(front):
+            # Known-scaffold candidates are demoted further (novel-scaffold
+            # bonus) so novel scaffolds win ties within a front.
+            s = scaffolds[global_idx]
+            novelty_mult = (
+                KNOWN_SCAFFOLD_PENALTY if (s is not None and s in known_scafs) else 1.0
+            )
+            # Boundary candidates have infinite crowding distance; a boundary
+            # member of an over-cap family would produce inf * 0 = NaN, which
+            # must not corrupt the ranking — collapse it to 0 so the family
+            # penalty still demotes it to the bottom of its front.
+            cd = crowding[local_idx] * pen[local_idx] * novelty_mult
+            ranked.append((f_idx, float(np.nan_to_num(cd, nan=0.0)), global_idx))
+    return ranked
+
+
+def _is_novel_scaffold(scaffold: str | None, known_scafs: frozenset[str]) -> bool:
+    """True when ``scaffold`` is non-None and absent from the known set."""
+    return scaffold is not None and scaffold not in known_scafs
+
+
+def _enforce_novel_scaffold_quota(
+    selected_indices: list[int],
+    ranked: list[tuple[int, float, int]],
+    scaffolds: list[str | None],
+    known_scafs: frozenset[str],
+    novel_scaffold_quota: float,
+    batch_size: int,
+    contexts: list[MoleculeContext],
+) -> list[int]:
+    """Enforce the novel scaffold quota by swapping known-scaffold selections.
+
+    Gap 3 (G1): if fewer than ``quota * batch_size`` of the selected candidates
+    have a Murcko scaffold absent from ``known_electrolytes.json``, swap the
+    lowest-ranked known-scaffold candidates with the highest-ranked
+    novel-scaffold candidates from the remaining pool.
+    """
+    # Enforce novel scaffold quota (Gap 3: G1).
+    # If fewer than quota * batch_size of the selected candidates have a Murcko
+    # scaffold absent from known_electrolytes.json, swap the lowest-ranked
+    # known-scaffold candidates with the highest-ranked novel-scaffold
+    # candidates from the remaining pool.
+    min_novel = int(np.ceil(novel_scaffold_quota * batch_size))
+    selected_novel = sum(
+        1 for idx in selected_indices if _is_novel_scaffold(scaffolds[idx], known_scafs)
+    )
+
+    if selected_novel >= min_novel:
+        return selected_indices
+
+    # Find known-scaffold candidates in selection (lowest ranked first)
+    known_in_selection = [
+        (rank, idx)
+        for rank, idx in enumerate(selected_indices)
+        if not _is_novel_scaffold(scaffolds[idx], known_scafs)
+    ]
+    known_in_selection.sort(key=lambda x: -x[0])  # lowest ranked first
+
+    # Find novel-scaffold candidates outside selection (highest ranked first)
+    remaining_indices = [r[2] for r in ranked[batch_size:]]
+    novel_outside = [
+        (rank, idx)
+        for rank, idx in enumerate(remaining_indices)
+        if _is_novel_scaffold(scaffolds[idx], known_scafs)
+    ]
+    novel_outside.sort(key=lambda x: x[0])  # highest ranked first
+
+    swaps = 0
+    result = list(selected_indices)
+    for (sel_rank, sel_idx), (out_rank, out_idx) in zip(known_in_selection, novel_outside):
+        if swaps >= min_novel - selected_novel:
+            break
+        # Swap in the selection
+        result[sel_rank] = out_idx
+        swaps += 1
+        log.info(
+            "Novel scaffold quota swap: replaced %s (scaffold=%s) with %s (scaffold=%s)",
+            contexts[sel_idx].smiles,
+            scaffolds[sel_idx],
+            contexts[out_idx].smiles,
+            scaffolds[out_idx],
+        )
+    return result
+
+
 def nsga2_select(
     contexts: list[MoleculeContext],
     scores_dict: dict[str, list[float]],
@@ -1019,55 +1167,19 @@ def nsga2_select(
     if n <= batch_size:
         return list(contexts)
 
-    # Assemble the objective matrix.
-    obj_columns = []
-    maximise = []
-    for key, direction in objectives:
-        col = np.asarray(scores_dict[key], dtype=float)
-        obj_columns.append(col)
-        maximise.append(direction == "max")
-
-    # Optionally add conformal confidence as a final maximise objective.
-    if confidences is not None:
-        conf_arr = np.asarray(confidences, dtype=float)
-        obj_columns.append(conf_arr)
-        maximise.append(True)
-
-    # Scaffold-novelty objective (Gap 3): 1.0 for candidates whose Murcko
-    # scaffold is absent from known_electrolytes.json, 0.0 otherwise. Novelty
-    # is treated as a genuine (maximise) objective so known-scaffold candidates
-    # are pushed to later Pareto fronts instead of flooding the top ranking.
-    scaffolds, scaffold_is_novel = _scaffold_novelty_objective(contexts)
-    obj_columns.append(scaffold_is_novel)
-    maximise.append(True)
-
-    obj_matrix = np.column_stack(obj_columns)
-    maximise_arr = np.array(maximise, dtype=bool)
+    # Stack physics/confidence/novelty objectives into the objective matrix.
+    obj_matrix, maximise_arr, scaffolds = _build_nsga2_objective_matrix(
+        scores_dict, objectives, confidences, contexts
+    )
 
     # --- Fast non-dominated sorting ---
     fronts = _non_dominated_sort(obj_matrix, maximise_arr)
 
     # --- Build ranked list: (front_index, crowding_dist, candidate_index) ---
     known_scafs = _known_scaffolds()
-    ranked: list[tuple[int, float, int]] = []
-    for f_idx, front in enumerate(fronts):
-        crowding = _crowding_distance(front, obj_matrix, maximise_arr)
-        # Apply scaffold crowding penalty: reduce crowding distance for
-        # scaffold families that occupy more than SCAFFOLD_CAP of the front
-        pen = _scaffold_penalty(front, contexts)
-        for local_idx, global_idx in enumerate(front):
-            # Known-scaffold candidates are demoted further (novel-scaffold
-            # bonus) so novel scaffolds win ties within a front.
-            s = scaffolds[global_idx]
-            novelty_mult = (
-                KNOWN_SCAFFOLD_PENALTY if (s is not None and s in known_scafs) else 1.0
-            )
-            # Boundary candidates have infinite crowding distance; a boundary
-            # member of an over-cap family would produce inf * 0 = NaN, which
-            # must not corrupt the ranking — collapse it to 0 so the family
-            # penalty still demotes it to the bottom of its front.
-            cd = crowding[local_idx] * pen[local_idx] * novelty_mult
-            ranked.append((f_idx, float(np.nan_to_num(cd, nan=0.0)), global_idx))
+    ranked = _rank_nsga2_fronts(
+        fronts, obj_matrix, maximise_arr, contexts, scaffolds, known_scafs
+    )
 
     # Sort: lower front index first; within front, higher crowding distance first.
     rng = np.random.default_rng(rng_seed)
@@ -1078,42 +1190,14 @@ def nsga2_select(
     selected_indices = [r[2] for r in ranked[:batch_size]]
 
     # Enforce novel scaffold quota (Gap 3: G1).
-    # If fewer than quota * batch_size of the selected candidates have a Murcko
-    # scaffold absent from known_electrolytes.json, swap the lowest-ranked
-    # known-scaffold candidates with the highest-ranked novel-scaffold
-    # candidates from the remaining pool.
-    min_novel = int(np.ceil(novel_scaffold_quota * batch_size))
-    known_scafs = _known_scaffolds()
-
-    def _is_novel(idx: int) -> bool:
-        s = scaffolds[idx]
-        return s is not None and s not in known_scafs
-
-    selected_novel = sum(1 for idx in selected_indices if _is_novel(idx))
-
-    if selected_novel < min_novel:
-        # Find known-scaffold candidates in selection (lowest ranked first)
-        known_in_selection = [(rank, idx) for rank, idx in enumerate(selected_indices) if not _is_novel(idx)]
-        known_in_selection.sort(key=lambda x: -x[0])  # lowest ranked first
-
-        # Find novel-scaffold candidates outside selection (highest ranked first)
-        remaining_indices = [r[2] for r in ranked[batch_size:]]
-        novel_outside = [(rank, idx) for rank, idx in enumerate(remaining_indices) if _is_novel(idx)]
-        novel_outside.sort(key=lambda x: x[0])  # highest ranked first
-
-        swaps = 0
-        for (sel_rank, sel_idx), (out_rank, out_idx) in zip(known_in_selection, novel_outside):
-            if swaps >= min_novel - selected_novel:
-                break
-            # Swap in the selection
-            selected_indices[sel_rank] = out_idx
-            swaps += 1
-            log.info(
-                "Novel scaffold quota swap: replaced %s (scaffold=%s) with %s (scaffold=%s)",
-                contexts[sel_idx].smiles,
-                scaffolds[sel_idx],
-                contexts[out_idx].smiles,
-                scaffolds[out_idx],
-            )
+    selected_indices = _enforce_novel_scaffold_quota(
+        selected_indices,
+        ranked,
+        scaffolds,
+        known_scafs,
+        novel_scaffold_quota,
+        batch_size,
+        contexts,
+    )
 
     return [contexts[i] for i in selected_indices]

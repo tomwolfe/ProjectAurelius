@@ -156,7 +156,7 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "bias": 0.0,
     "bald": 0.0,
     "pareto_ucb": 0.0,
-    "batch_ei": 0.0,
+    "batch_ei": 0.15,
 }
 
 # ADR-2026-08-12-003: the closed-loop benchmark showed that the EA greedy
@@ -1547,6 +1547,11 @@ _REDUNDANCY_DISCOUNT = 0.6
 # convention used by ``selection.tournament_select``.
 _SIMILARITY_LAMBDA = 0.7
 
+# Hard structural diversity constraint (ADR-2026-08-16): candidates whose
+# Tanimoto similarity against any already-selected candidate exceeds this
+# threshold are rejected entirely, not merely discounted.
+_MAX_TANIMOTO = 0.85
+
 
 def _structural_penalty(fp: Any, chosen_fps: list[Any], diversity_lambda: float = _SIMILARITY_LAMBDA) -> float:
     """Discount a candidate by its similarity to molecules already in the batch.
@@ -1631,6 +1636,63 @@ def _diversify_score(
     return value
 
 
+def _initial_elite_points(
+    elite_predictions: dict[str, dict[str, float]] | None,
+) -> dict[str, list[float]]:
+    """Pre-seed the property-space elite-point tracker from predictions.
+
+    Keys are property names; values are lists of predicted points from
+    already-measured candidates. When no predictions are supplied the tracker
+    starts empty and grows as candidates are selected.
+    """
+    elite_points: dict[str, list[float]] = {}
+    if elite_predictions:
+        for prop in elite_predictions:
+            elite_points[prop] = list(elite_predictions[prop].values())
+    return elite_points
+
+
+def _hard_diversity_pass(
+    fingerprints: dict[str, Any] | None,
+    candidate: ExperimentSuggestion,
+    chosen_fps: list[Any],
+    max_tanimoto: float = _MAX_TANIMOTO,
+) -> bool:
+    """Return False when ``candidate`` is too similar to an already-chosen one.
+
+    Hard structural diversity constraint (ADR-2026-08-16): a candidate whose
+    fingerprint exceeds ``max_tanimoto`` Tanimoto similarity against any
+    already-selected candidate fails the filter and is skipped entirely, rather
+    than merely discounted.
+    """
+    if fingerprints is not None:
+        fp = fingerprints.get(candidate.smiles)
+        if fp is not None and chosen_fps:
+            from rdkit import DataStructs
+
+            max_sim = float(
+                max(DataStructs.BulkTanimotoSimilarity(fp, chosen_fps))
+            )
+            if max_sim > max_tanimoto:
+                return False
+    return True
+
+
+def _record_chosen_fingerprint(
+    chosen: ExperimentSuggestion,
+    selected: list[ExperimentSuggestion],
+    fingerprints: dict[str, Any] | None,
+    chosen_fps: list[Any],
+) -> None:
+    """Append the chosen candidate's fingerprint to the batch set, once."""
+    if fingerprints is not None and chosen.smiles not in {
+        s.smiles for s in selected
+    }:
+        fp = fingerprints.get(chosen.smiles)
+        if fp is not None:
+            chosen_fps.append(fp)
+
+
 def _diversify(
     ranked: list[ExperimentSuggestion],
     top_n: int,
@@ -1688,27 +1750,15 @@ def _diversify(
     # Track predicted property values of selected candidates for property-space
     # diversification. Keys are property names; values are lists of predicted
     # points from chosen suggestions.
-    elite_points: dict[str, list[float]] = {}
-    if elite_predictions:
-        for prop in elite_predictions:
-            elite_points[prop] = list(elite_predictions[prop].values())
-
-    # Hard diversity constraint: Tanimoto threshold above which candidates
-    # are rejected (ADR-2026-08-16).
-    MAX_TANIMOTO = 0.85
+    elite_points = _initial_elite_points(elite_predictions)
 
     while remaining and len(selected) < top_n:
         best_index, best_value = 0, -1.0
         for i, candidate in enumerate(remaining):
             # Hard diversity filter: skip candidates too similar to already
-            # selected molecules (Tanimoto > 0.85).
-            if fingerprints is not None:
-                fp = fingerprints.get(candidate.smiles)
-                if fp is not None and chosen_fps:
-                    from rdkit import DataStructs
-                    max_sim = float(max(DataStructs.BulkTanimotoSimilarity(fp, chosen_fps)))
-                    if max_sim > MAX_TANIMOTO:
-                        continue
+            # selected molecules (Tanimoto > _MAX_TANIMOTO).
+            if not _hard_diversity_pass(fingerprints, candidate, chosen_fps):
+                continue
 
             value = _diversify_score(
                 candidate,
@@ -1728,12 +1778,7 @@ def _diversify(
         seen_properties[chosen.property_to_measure] = (
             seen_properties.get(chosen.property_to_measure, 0) + 1
         )
-        if fingerprints is not None and chosen.smiles not in {
-            s.smiles for s in selected
-        }:
-            fp = fingerprints.get(chosen.smiles)
-            if fp is not None:
-                chosen_fps.append(fp)
+        _record_chosen_fingerprint(chosen, selected, fingerprints, chosen_fps)
         # Track this candidate's prediction for future property-space checks
         prop = chosen.property_to_measure
         if prop not in elite_points:

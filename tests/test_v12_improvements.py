@@ -207,6 +207,46 @@ class TestV12ClosedLoop:
 class TestV12Retrosynthesis:
     """Test retrosynthetic disconnection and route finding."""
 
+    def test_attempt_disconnection_helper_extraction_regression(self):
+        """The extracted helpers must behave exactly like the legacy inline code.
+
+        Regression guard for the cyclomatic-complexity refactor of
+        ``attempt_one_step_disconnection`` (16 -> 8): the reverse-reaction
+        builder must return None for unusable templates AND for templates
+        whose ``Initialize`` call does not return truthy (matching the legacy
+        ``if not ok: continue`` skip), and the precursor sanitizer must only
+        keep valid, non-empty molecules.
+        """
+        from rdkit.Chem import AllChem
+
+        from aurelius.agent.mutation.retrosynthetic import (
+            _build_reverse_reaction,
+            _sanitize_precursors,
+            attempt_one_step_disconnection,
+        )
+
+        # Legacy behavior: Initialize() on a hand-built ChemicalReaction
+        # returns a falsy value, so the original inline code always skipped
+        # the reverse reaction. The helper must reproduce that skip.
+        rxn = AllChem.ReactionFromSmarts(
+            "[CX3:1](=O)[OX2H1:2].[OX2H1:3][CX4:4]>>[CX3:1](=O)[OX2:3][CX4:4]"
+        )
+        assert rxn is not None
+        assert _build_reverse_reaction(rxn) is None
+
+        # Template with no reactants/products -> None (legacy skip).
+        assert _build_reverse_reaction(AllChem.ReactionFromSmarts(">>")) is None
+
+        # Overall behavior unchanged: disconnection yields no results for a
+        # carbonate ester, exactly as before the refactor.
+        ec = Chem.MolFromSmiles("O=C1OCCO1")
+        assert attempt_one_step_disconnection(ec) == []
+
+        # Sanitizer keeps valid molecules and drops None/empty/invalid ones.
+        assert _sanitize_precursors((Chem.MolFromSmiles("CO"),)) == ["CO"]
+        assert _sanitize_precursors((None,)) == []
+        assert _sanitize_precursors((Chem.MolFromSmiles(""),)) == []
+
     def test_attempt_disconnection_finds_route_for_ec(self):
         """EC should disconnect to valid precursors."""
         from rdkit import Chem

@@ -88,6 +88,19 @@ _GPR_KWARGS: dict[str, Any] = {
     "random_state": 42,
 }
 
+# Below this calibration-set size the median/MAD outlier gate is disabled.
+# The k·MAD rule needs a stable scale estimate: on small samples it flags a
+# large fraction of *legitimate* residuals (measured: 3/20 seed entries and
+# 5/30 seed+measured entries dropped in the wet-lab cycle), deleting exactly
+# the hard molecules the residual model is meant to correct and erasing the
+# holdout-MAE gain from ingesting fresh measurements (0.3202 → 0.3205 eV
+# instead of → 0.3091 eV). Robust MAD statistics only become reliable at
+# n ≳ 30, so below 32 entries the gate leaves the calibration untouched and
+# lets the GPR fit the full (small) set. The sabotage-protection purpose of
+# the gate is unaffected: refit paths that can carry poisoned labels combine
+# the full calibration with the measured batch and always exceed 32 entries.
+_MIN_OUTLIER_GATE_SIZE = 32
+
 
 def _load_calibration() -> list[dict[str, float]]:
     """Load the DFT HOMO calibration set (orbital_calibration.json)."""
@@ -195,8 +208,13 @@ def _drop_outlier_entries(
     from the robust centre by more than ``k`` MADs are excluded from the
     training set; entries with unparseable SMILES are also dropped (they
     cannot be trained on anyway).
+
+    The gate only runs on sets of at least ``_MIN_OUTLIER_GATE_SIZE``
+    entries. On smaller sets the median/MAD scale estimate is too noisy and
+    the k·MAD rule flags legitimate residuals (hard molecules the correction
+    exists to model), which destroys the refit gain instead of protecting it.
     """
-    if len(entries) < 8:
+    if len(entries) < _MIN_OUTLIER_GATE_SIZE:
         return entries
     scored: list[tuple[dict[str, float], float]] = []
     for entry in entries:
@@ -209,7 +227,7 @@ def _drop_outlier_entries(
             else predict_tom_orbitals(mol)[1]
         )
         scored.append((entry, entry[value_key] - base_val))
-    if len(scored) < 8:
+    if len(scored) < _MIN_OUTLIER_GATE_SIZE:
         return [e for e, _ in scored]
     residuals = np.asarray([v for _, v in scored], dtype=np.float64)
     keep = _robust_outlier_mask(residuals, k, max_iter)

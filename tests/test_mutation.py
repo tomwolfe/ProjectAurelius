@@ -170,6 +170,66 @@ class TestStagnationPivot:
             assert ctx is not None, f"Invalid SMILES in exploration results: {smi}"
 
 
+class TestMutationBudgetSplit:
+    """Regression tests for the ``brics_ratio`` budget split in ``mutate``.
+
+    The WIP budget logic (``brics_ratio``: fraction of the batch allocated to
+    BRICS, the rest to SMARTS) was extracted into ``_apply_smarts_budgeted`` /
+    ``_apply_brics_budgeted`` to keep ``mutate`` under the cyclomatic-complexity
+    budget. These tests pin the extracted behaviour.
+    """
+
+    def test_mutate_accepts_brics_ratio(self):
+        """mutate() should accept brics_ratio with default 0.6."""
+        import inspect
+
+        sig = inspect.signature(MutationEngine.mutate)
+        assert "brics_ratio" in sig.parameters
+        assert sig.parameters["brics_ratio"].default == 0.6
+
+    def test_mutate_extreme_brics_ratio_does_not_crash(self):
+        """brics_ratio 0.0 / 1.0 must not crash mutate()."""
+        engine = MutationEngine(seed_smiles=["COC(=O)OC"])
+        for ratio in (0.0, 1.0):
+            result = engine.mutate("COC(=O)OC", batch_size=10, brics_ratio=ratio)
+            assert isinstance(result, list)
+
+    def test_smarts_budgeted_respects_limit(self):
+        """A budget of 1 must stop after the first producing reaction.
+
+        The budget is applied between reactions (the first reaction may still
+        yield several products), so the budgeted run must be a subset of the
+        unbudgeted run.
+        """
+        engine = MutationEngine(seed_smiles=["COC(=O)OC"])
+        ctx = engine._get_ctx("COC(=O)OC")
+        assert ctx is not None
+        limited = engine._apply_smarts_budgeted(ctx, smarts_budget=1, force_exploration=False)
+        unlimited = engine._apply_smarts_budgeted(ctx, smarts_budget=1000, force_exploration=False)
+        assert len(limited) <= len(unlimited)
+        assert set(limited) <= set(unlimited)
+
+    def test_brics_budgeted_exploration_delegates_to_pool(self):
+        """In force_exploration mode the budgeted BRICS path uses the full pool."""
+        engine = MutationEngine(seed_smiles=["C1COCCO1"])
+        ctx = engine._get_ctx("C1COCCO1")
+        assert ctx is not None
+        results = engine._apply_brics_budgeted(
+            "C1COCCO1", brics_budget=2, force_exploration=True, ctx=ctx
+        )
+        assert isinstance(results, list)
+
+    def test_brics_budgeted_seed_path_returns_list(self):
+        """The seed-fragment budgeted path must return a list without crashing."""
+        engine = MutationEngine(seed_smiles=["C1COCCO1"])
+        ctx = engine._get_ctx("C1COCCO1")
+        assert ctx is not None
+        results = engine._apply_brics_budgeted(
+            "C1COCCO1", brics_budget=2, force_exploration=False, ctx=ctx
+        )
+        assert isinstance(results, list)
+
+
 # ---------------------------------------------------------------------------
 # Ternary mixture mutation operators
 # ---------------------------------------------------------------------------
@@ -349,3 +409,82 @@ class TestBricsComplementaryPairs:
         assert total > 0, (
             "BRICS pathway produced no candidates across six seeds"
         )
+
+
+# ---------------------------------------------------------------------------
+# Budget-limited mutation helpers (extracted from ``mutate``)
+# ---------------------------------------------------------------------------
+
+
+class TestMutationBudgetHelpers:
+    """The budget-limited SMARTS/BRICS helpers extracted from ``mutate`` must
+    behave exactly like the legacy inline loops.
+
+    Regression guard for the cyclomatic-complexity refactor of ``mutate``
+    (25 -> 9): the SMARTS loop must cap accepted products at the budget, the
+    BRICS helper must delegate to the full pool pathway in exploration mode,
+    and both must keep producing valid, non-identity molecules.
+    """
+
+    def test_smarts_budget_helper_caps_products(self):
+        """``_apply_smarts_budgeted`` must stop attempting new reactions once
+        the budget is met and be monotone in the budget: a smaller budget must
+        accept a subset of the products a larger budget accepts."""
+        engine = MutationEngine(seed_smiles=["COC(=O)OC"], n_jobs=1)
+        ctx = engine._get_ctx("COC(=O)OC")
+        assert ctx is not None
+
+        small = engine._apply_smarts_budgeted(ctx, 2, force_exploration=False)
+        large = engine._apply_smarts_budgeted(ctx, 50, force_exploration=False)
+
+        assert set(small) <= set(large)
+        for smi in large:
+            parsed = MoleculeContext.from_smiles(smi)
+            assert parsed is not None, f"Invalid SMARTS product: {smi}"
+
+    def test_brics_budget_helper_exploration_matches_pool_path(self):
+        """In exploration mode ``_apply_brics_budgeted`` must delegate to the
+        full ``_brics_from_pool`` pathway, exactly like the legacy inline code."""
+        engine = MutationEngine(seed_smiles=["COC(=O)OC", "C1COCCO1"], n_jobs=1)
+        ctx = engine._get_ctx("COC(=O)OC")
+        assert ctx is not None
+
+        from_helper = engine._apply_brics_budgeted(
+            "COC(=O)OC", brics_budget=5, force_exploration=True, ctx=ctx
+        )
+        from_pool = engine._brics_from_pool(ctx, force_exploration=True)
+        assert set(from_helper) == set(from_pool)
+
+    def test_brics_budget_helper_drops_identity_products(self):
+        """The budgeted BRICS path must not return the seed molecule itself."""
+        engine = MutationEngine(seed_smiles=["COC(=O)OC", "C1COCCO1"], n_jobs=1)
+        ctx = engine._get_ctx("COC(=O)OC")
+        assert ctx is not None
+
+        products = engine._apply_brics_budgeted(
+            "COC(=O)OC", brics_budget=10, force_exploration=False, ctx=ctx
+        )
+        assert "COC(=O)OC" not in products
+        for smi in products:
+            parsed = MoleculeContext.from_smiles(smi)
+            assert parsed is not None, f"Invalid BRICS product: {smi}"
+
+    def test_mutate_budget_ratio_respected(self):
+        """The brics_ratio budget split must survive the helper extraction:
+        pure-SMARTS allocation (ratio=0.0) must not crash and pure-BRICS
+        allocation (ratio=1.0) must not emit SMARTS-marker products."""
+        engine = MutationEngine(seed_smiles=["COC(=O)OC"], n_jobs=1)
+
+        smarts_heavy = engine.mutate("COC(=O)OC", batch_size=20, brics_ratio=0.0)
+        brics_heavy = engine.mutate("COC(=O)OC", batch_size=20, brics_ratio=1.0)
+
+        smarts_marker_smiles = {"COC(=O)OC(F)(F)F", "COC(=O)OCC"}
+        brics_smarts_hits = sum(
+            1 for smi in brics_heavy if smi in smarts_marker_smiles
+        )
+        assert brics_smarts_hits == 0, (
+            f"Pure-BRICS allocation produced SMARTS products: {brics_heavy}"
+        )
+        for smi in [*smarts_heavy, *brics_heavy]:
+            parsed = MoleculeContext.from_smiles(smi)
+            assert parsed is not None, f"Invalid mutant: {smi}"

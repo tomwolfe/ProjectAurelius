@@ -343,6 +343,195 @@ class TestNSGA2Selection:
         )
 
 
+class TestNSGA2ExtractedHelpers:
+    """Regression tests for the helpers extracted from ``nsga2_select``.
+
+    The refactor (complexity 21 -> 5) must preserve behaviour exactly,
+    including the WIP tuning: the novelty objective scaled by 1.05 and the
+    ``KNOWN_SCAFFOLD_PENALTY`` demotion of known-scaffold candidates.
+    """
+
+    def test_objective_matrix_stacks_novelty_scaled(self):
+        """Novelty column must be appended, maximised, and scaled by 1.05."""
+        from aurelius.agent.selection import (
+            _build_nsga2_objective_matrix,
+            _scaffold_novelty_objective,
+        )
+
+        smiles = ["CCO", "CCCO", "CCCCO", "c1ccccc1"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {"dielectric_proxy": [10.0, 20.0, 30.0, 40.0]}
+        objectives = [("dielectric_proxy", "max")]
+        obj_matrix, maximise_arr, scaffolds = _build_nsga2_objective_matrix(
+            scores_dict, objectives, None, contexts
+        )
+        # 2 columns: dielectric + scaled novelty
+        assert obj_matrix.shape == (4, 2)
+        assert maximise_arr.tolist() == [True, True]
+        _, raw_novelty = _scaffold_novelty_objective(contexts)
+        np.testing.assert_allclose(obj_matrix[:, 1], raw_novelty * 1.05)
+        assert len(scaffolds) == 4
+
+    def test_objective_matrix_appends_confidences(self):
+        """Confidence multipliers become an extra maximise column."""
+        from aurelius.agent.selection import (
+            _build_nsga2_objective_matrix,
+            _scaffold_novelty_objective,
+        )
+
+        smiles = ["CCO", "CCCO"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {"dielectric_proxy": [10.0, 20.0]}
+        objectives = [("dielectric_proxy", "max")]
+        obj_matrix, maximise_arr, _ = _build_nsga2_objective_matrix(
+            scores_dict, objectives, [0.5, 0.9], contexts
+        )
+        # Columns: dielectric, confidence, scaled novelty.
+        assert obj_matrix.shape == (2, 3)
+        assert maximise_arr.tolist() == [True, True, True]
+        np.testing.assert_allclose(obj_matrix[:, 1], [0.5, 0.9])
+        _, raw_novelty = _scaffold_novelty_objective(contexts)
+        np.testing.assert_allclose(obj_matrix[:, 2], raw_novelty * 1.05)
+
+    def test_rank_fronts_demotes_known_scaffolds(self):
+        """Ranked crowding = raw crowding * penalty * novelty multiplier."""
+        from aurelius.agent.selection import (
+            KNOWN_SCAFFOLD_PENALTY,
+            _build_nsga2_objective_matrix,
+            _crowding_distance,
+            _known_scaffolds,
+            _non_dominated_sort,
+            _rank_nsga2_fronts,
+            _scaffold_penalty,
+        )
+
+        # EC and dioxolane are in known_electrolytes.json; benzene and
+        # cyclohexane are not. All four are mutually non-dominated on physics.
+        smiles = ["O=C1OCCO1", "c1ccccc1", "C1COCCO1", "C1CCCCC1"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {
+            "dielectric_proxy": [50.0, 40.0, 45.0, 42.0],
+            "viscosity_proxy": [2.0, 1.0, 1.5, 1.2],
+        }
+        objectives = [("dielectric_proxy", "max"), ("viscosity_proxy", "min")]
+        obj_matrix, maximise_arr, scaffolds = _build_nsga2_objective_matrix(
+            scores_dict, objectives, None, contexts
+        )
+        known_scafs = _known_scaffolds()
+        fronts = _non_dominated_sort(obj_matrix, maximise_arr)
+
+        ranked = _rank_nsga2_fronts(
+            fronts, obj_matrix, maximise_arr, contexts, scaffolds, known_scafs
+        )
+        ranked_by_idx = {g: (f, cd) for f, cd, g in ranked}
+        assert set(ranked_by_idx) == {0, 1, 2, 3}
+
+        applied_penalty = False
+        applied_full = False
+        for i in range(4):
+            f, cd = ranked_by_idx[i]
+            crowding = _crowding_distance(fronts[f], obj_matrix, maximise_arr)
+            pen = _scaffold_penalty(fronts[f], contexts)
+            local = fronts[f].index(i)
+            s = scaffolds[i]
+            mult = (
+                KNOWN_SCAFFOLD_PENALTY if (s is not None and s in known_scafs) else 1.0
+            )
+            if mult == KNOWN_SCAFFOLD_PENALTY:
+                applied_penalty = True
+            else:
+                applied_full = True
+            expected = float(np.nan_to_num(crowding[local] * pen[local] * mult, nan=0.0))
+            assert abs(cd - expected) < 1e-6, (
+                f"candidate {i}: ranked cd {cd} != expected {expected} "
+                f"(mult={mult}, raw={crowding[local] * pen[local]})"
+            )
+        assert applied_penalty, "No known-scaffold candidate received the demotion"
+        assert applied_full, "No novel-scaffold candidate kept full weight"
+
+    def test_enforce_quota_swaps_known_for_novel(self):
+        """Quota helper swaps lowest-ranked known scaffolds for novel ones."""
+        from aurelius.agent.selection import (
+            _enforce_novel_scaffold_quota,
+            _known_scaffolds,
+            _scaffold_novelty_objective,
+        )
+
+        smiles = ["O=C1OCCO1", "C1COCCO1", "c1ccccc1", "c1ccncc1"]
+        contexts = [_valid_context(s) for s in smiles]
+        scaffolds, _ = _scaffold_novelty_objective(contexts)
+        known_scafs = _known_scaffolds()
+        # Selection = [0 (known), 1 (known)]; pool = [2 (novel), 3 (novel)].
+        ranked = [(0, 1.0, 0), (0, 0.9, 1), (0, 0.8, 2), (0, 0.7, 3)]
+        result = _enforce_novel_scaffold_quota(
+            [0, 1], ranked, scaffolds, known_scafs,
+            novel_scaffold_quota=0.5, batch_size=2, contexts=contexts,
+        )
+        # min_novel = ceil(0.5 * 2) = 1 -> swap the lowest-ranked known (idx 1)
+        # for the highest-ranked novel (idx 2).
+        assert result == [0, 2]
+
+    def test_enforce_quota_noop_when_met(self):
+        """Quota helper leaves selection untouched when the quota is met."""
+        from aurelius.agent.selection import (
+            _enforce_novel_scaffold_quota,
+            _known_scaffolds,
+            _scaffold_novelty_objective,
+        )
+
+        smiles = ["O=C1OCCO1", "c1ccccc1"]
+        contexts = [_valid_context(s) for s in smiles]
+        scaffolds, _ = _scaffold_novelty_objective(contexts)
+        known_scafs = _known_scaffolds()
+        ranked = [(0, 1.0, 0), (0, 0.9, 1)]
+        # Selection = [1 (novel), 0 (known)] -> 1 novel of 2 selected >= quota.
+        result = _enforce_novel_scaffold_quota(
+            [1, 0], ranked, scaffolds, known_scafs,
+            novel_scaffold_quota=0.5, batch_size=2, contexts=contexts,
+        )
+        assert result == [1, 0]
+
+    def test_nsga2_select_matches_helper_pipeline(self):
+        """nsga2_select must produce the same result as the extracted helpers."""
+        from aurelius.agent.selection import (
+            _build_nsga2_objective_matrix,
+            _enforce_novel_scaffold_quota,
+            _known_scaffolds,
+            _non_dominated_sort,
+            _rank_nsga2_fronts,
+        )
+
+        smiles = ["CCO", "CCCO", "CCCCO", "CCCCCO", "O=C1OCCO1", "c1ccccc1"]
+        contexts = [_valid_context(s) for s in smiles]
+        scores_dict = {
+            "dielectric_proxy": [30, 40, 50, 60, 55, 45],
+            "viscosity_proxy": [5, 4, 3, 2, 2.5, 3.5],
+        }
+        objectives = [("dielectric_proxy", "max"), ("viscosity_proxy", "min")]
+        batch_size, rng_seed = 4, 42
+        selected = nsga2_select(
+            contexts, scores_dict, objectives,
+            batch_size=batch_size, rng_seed=rng_seed,
+        )
+
+        obj_matrix, maximise_arr, scaffolds = _build_nsga2_objective_matrix(
+            scores_dict, objectives, None, contexts
+        )
+        fronts = _non_dominated_sort(obj_matrix, maximise_arr)
+        known_scafs = _known_scaffolds()
+        ranked = _rank_nsga2_fronts(
+            fronts, obj_matrix, maximise_arr, contexts, scaffolds, known_scafs
+        )
+        rng = np.random.default_rng(rng_seed)
+        jitter = rng.uniform(-1e-9, 1e-9, size=len(ranked))
+        ranked.sort(key=lambda r: (r[0], -r[1] - jitter[r[2]]))
+        indices = [r[2] for r in ranked[:batch_size]]
+        indices = _enforce_novel_scaffold_quota(
+            indices, ranked, scaffolds, known_scafs, 0.30, batch_size, contexts
+        )
+        assert [c.smiles for c in selected] == [contexts[i].smiles for i in indices]
+
+
 class TestNSGA2CompositeObjectives:
     """Tests for the 4-composite objective consolidation (Task 4)."""
 

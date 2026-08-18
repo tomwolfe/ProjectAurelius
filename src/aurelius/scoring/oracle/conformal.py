@@ -42,7 +42,34 @@ def _load_orbital_calibration() -> list[dict[str, Any]]:
     """Load orbital calibration data (HOMO/LUMO reference values)."""
     try:
         with open(_ORBITAL_CALIBRATION_PATH) as f:
-            return json.load(f)
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+        return data.get("entries", [])
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _load_xtb_calibration() -> list[dict[str, Any]]:
+    """Load xTB-calibrated HOMO/LUMO data from lumo_calibration_xtb.json.
+
+    These 231 entries are currently unused for conformal calibration but
+    provide diverse chemical space coverage that reduces interval width.
+    """
+    path = os.path.join(_DATA_DIR, "..", "..", "data", "lumo_calibration_xtb.json")
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        entries = data.get("entries", [])
+        # Convert to same format as orbital calibration
+        result = []
+        for e in entries:
+            result.append({
+                "smiles": e.get("smiles"),
+                "homo_eV": e.get("homo_eV"),
+                "lumo_eV": e.get("lumo_eV"),
+            })
+        return result
     except (FileNotFoundError, json.JSONDecodeError):
         return []
 
@@ -232,8 +259,17 @@ class ConformalPredictor:
 
     def fit(self) -> None:
         """Compute nonconformity score quantiles from calibration data."""
-        calib = _load_orbital_calibration()
+        calib = _load_orbital_calibration() + _load_xtb_calibration()
         bench = _load_external_benchmark()
+        # Remove duplicates by SMILES
+        seen: set[str] = set()
+        uniq_calib = []
+        for e in calib:
+            s = e.get("smiles")
+            if s and s not in seen:
+                seen.add(s)
+                uniq_calib.append(e)
+        calib = uniq_calib
         homo_residuals, lumo_residuals = self._orbital_residuals(calib)
         diel_residuals, visc_residuals = self._bulk_residuals(bench)
 

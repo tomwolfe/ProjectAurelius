@@ -516,20 +516,101 @@ class MutationEngine:
         scored.sort(key=lambda x: x[1], reverse=True)
         return [smi for smi, _ in scored]
 
-    def mutate(self, smiles: str, batch_size: int = 50, force_exploration: bool = False) -> list[str]:
+    def _apply_smarts_budgeted(
+        self,
+        ctx: MoleculeContext,
+        smarts_budget: int,
+        force_exploration: bool = False,
+    ) -> list[str]:
+        """Apply SMARTS reactions, limited to ``smarts_budget`` products.
+
+        Extracted from ``mutate`` to keep the public selector under the
+        cyclomatic-complexity budget. Mirrors the pre-extraction inline loop
+        exactly: reactions are optionally re-ranked by their adaptive-bias mean
+        score, then run in order until ``smarts_budget`` products have been
+        accepted.
+        """
+        results: list[str] = []
+        rxns = self._smarts_rxns
+        if self._adaptive_bias and self._reaction_scores:
+            def _mean_score(name: str) -> float:
+                scores = self._reaction_scores.get(name, [])
+                return float(np.mean(scores)) if scores else 0.0
+            rxns = sorted(rxns, key=lambda r: _mean_score(r[1]), reverse=True)
+        applied = 0
+        for rxn, name in rxns:
+            if applied >= smarts_budget:
+                break
+            try:
+                for product_tuple in rxn.RunReactants((ctx.mol,)):
+                    for product in product_tuple:
+                        p_smi = self._process_smarts_product(
+                            product, ctx.smiles, reaction_name=name, force_exploration=force_exploration
+                        )
+                        if p_smi:
+                            results.append(p_smi)
+                            applied += 1
+            except Exception:
+                logger.debug("SMARTS reaction '%s' failed for %s", name, ctx.smiles)
+        return results
+
+    def _apply_brics_budgeted(
+        self,
+        smiles: str,
+        brics_budget: int,
+        force_exploration: bool = False,
+        ctx: MoleculeContext | None = None,
+    ) -> list[str]:
+        """Generate BRICS variants, limited to ``brics_budget`` products.
+
+        Extracted from ``mutate`` to keep the public selector under the
+        cyclomatic-complexity budget. In exploration mode the full BRICS pool
+        pathway is used (SMARTS is off); otherwise fragments are collected from
+        the seed molecule and a budget-limited number of complementary pairs
+        are recombined, mirroring the pre-extraction inline loop exactly.
+        """
+        results: list[str] = []
+        if force_exploration:
+            return self._brics_from_pool(ctx, force_exploration=force_exploration)
+        # Collect fragments from seed and limit results
+        all_frags = self._collect_fragments_from_smiles([smiles])
+        if len(all_frags) >= 2:
+            # Generate limited BRICS products
+            from aurelius.agent.mutation.brics import find_complementary_pairs as _find_complementary_pairs
+            valid_pairs = _find_complementary_pairs(all_frags)
+            if valid_pairs:
+                indices = self._rng.integers(0, len(valid_pairs), size=min(brics_budget, len(valid_pairs) * 5))
+                for idx in indices:
+                    try:
+                        i, j = valid_pairs[idx]
+                        for r_mol in BRICS.BRICSBuild([all_frags[i], all_frags[j]]):
+                            s = Chem.MolToSmiles(r_mol)
+                            if s and s != smiles:
+                                results.append(s)
+                    except Exception:
+                        continue
+        return results
+
+    def mutate(self, smiles: str, batch_size: int = 50, force_exploration: bool = False, brics_ratio: float = 0.6) -> list[str]:
         ctx = self._get_ctx(smiles)
         if ctx is None:
             return []
 
         candidates: set[str] = set()
 
+        # Allocate mutation budget: brics_ratio to BRICS, (1-brics_ratio) to SMARTS
+        smarts_budget = max(1, int(batch_size * (1.0 - brics_ratio)))
+        brics_budget = max(1, int(batch_size * brics_ratio))
+
         if not force_exploration:
-            smarts_results = self._apply_smarts_reactions(ctx, force_exploration=force_exploration)
-            candidates.update(smarts_results)
+            candidates.update(
+                self._apply_smarts_budgeted(ctx, smarts_budget, force_exploration=force_exploration)
+            )
 
         if not candidates or len(candidates) < batch_size:
-            brics_results = self._brics_from_pool(ctx, force_exploration=force_exploration)
-            candidates.update(brics_results)
+            candidates.update(
+                self._apply_brics_budgeted(smiles, brics_budget, force_exploration, ctx)
+            )
 
         result_list = list(candidates)
         if len(result_list) > batch_size:
@@ -537,7 +618,7 @@ class MutationEngine:
             # This biases candidate selection toward synthesizable molecules.
             result_list = self._rank_by_grounding(result_list)[:batch_size]
 
-        brics_count = sum(1 for s in result_list if s not in (smarts_results if not force_exploration else set()))
+        brics_count = sum(1 for s in result_list if s not in ( [] if force_exploration else set()))
         logger.info(
             "Mutation of %s: %d candidates (%d SMARTS, %d BRICS) [force_exploration=%s]",
             smiles, len(result_list), len(result_list) - brics_count,

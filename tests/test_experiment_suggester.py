@@ -377,6 +377,60 @@ class TestBatchDiversity:
         ]
         assert len(_diversify(ranked, top_n=10)) == 2
 
+    def test_diversify_hard_filter_helper_rejects_near_duplicates(self):
+        """The extracted ``_hard_diversity_pass`` must keep the ADR-2026-08-16
+        hard constraint: candidates >0.85 Tanimoto-similar to an already-chosen
+        molecule are rejected; distinct ones pass; no fingerprints = no-op."""
+        from aurelius.agent.experiment_suggester import _hard_diversity_pass
+
+        homologues = ["CCCCCCO", "CCCCCCCO"]
+        fingerprints = {
+            smi: MoleculeContext.from_smiles(smi).get_ecfp4()
+            for smi in homologues
+        }
+        chosen_fps = [fingerprints[homologues[0]]]
+
+        near_dup = ExperimentSuggestion(
+            homologues[1], "homo_eV", 0.9, "r", 0.0, (0.0, 1.0)
+        )
+        assert _hard_diversity_pass(fingerprints, near_dup, chosen_fps) is False
+
+        distinct = ExperimentSuggestion(
+            "O=S1(=O)CCCC1", "homo_eV", 0.6, "r", 0.0, (0.0, 1.0)
+        )
+        assert _hard_diversity_pass(fingerprints, distinct, chosen_fps) is True
+
+        # No fingerprint store supplied -> filter must be a no-op pass.
+        assert _hard_diversity_pass(None, near_dup, chosen_fps) is True
+
+    def test_diversify_elite_points_helper_preseed(self):
+        """``_initial_elite_points`` must mirror the legacy inline seeding."""
+        from aurelius.agent.experiment_suggester import _initial_elite_points
+
+        assert _initial_elite_points(None) == {}
+        seeded = _initial_elite_points({"homo_eV": {"a": -1.0, "b": -2.0}})
+        assert seeded == {"homo_eV": [-1.0, -2.0]}
+
+    def test_diversify_record_fingerprint_helper_adds_once(self):
+        """``_record_chosen_fingerprint`` must add a chosen fingerprint at most
+        once and stay inert without a fingerprint store."""
+        from aurelius.agent.experiment_suggester import _record_chosen_fingerprint
+
+        fps = {"CCO": MoleculeContext.from_smiles("CCO").get_ecfp4()}
+        chosen = ExperimentSuggestion("CCO", "homo_eV", 0.9, "r", 0.0, (0.0, 1.0))
+
+        batch_fps: list = []
+        _record_chosen_fingerprint(chosen, [chosen], fps, batch_fps)
+        assert batch_fps == [], (
+            "a SMILES already in the selected batch must not be re-added"
+        )
+
+        _record_chosen_fingerprint(chosen, [], fps, batch_fps)
+        assert len(batch_fps) == 1
+
+        _record_chosen_fingerprint(chosen, [], None, batch_fps)
+        assert len(batch_fps) == 1, "no fingerprint store -> nothing appended"
+
     def test_expand_pool_false_ranks_supplied_candidates_only(self):
         """With expand_pool=False, every suggestion comes from the supplied pool.
 

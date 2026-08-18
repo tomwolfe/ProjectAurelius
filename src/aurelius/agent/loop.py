@@ -902,22 +902,53 @@ class DiscoveryLoop:
             return
 
         n_replace = max(1, int(0.20 * pool_size))
+        existing_pool = set(self.engine.seed_pool)
 
-        # Get known scaffolds from the seed pool
+        # Find novel-scaffold candidates from all_results not in pool, sorted by score
+        known_scaffolds = self._collect_known_scaffolds()
+        novel_candidates = self._find_novel_scaffold_candidates(existing_pool, known_scaffolds)
+        top_novel = novel_candidates[:n_replace]
+
+        if not top_novel:
+            return
+
+        # Replace bottom 20% of seed pool (lowest scored)
+        pool_scored = self._score_seed_pool()
+        to_remove = [smi for _, smi in pool_scored[:n_replace]]
+        new_pool = [smi for smi in self.engine.seed_pool if smi not in to_remove]
+        new_pool.extend([smi for _, smi, _ in top_novel])
+
+        self.engine.seed_pool = new_pool[-200:]
+        self.state.seed_pool_size = len(self.engine.seed_pool)
+
+        log.info(
+            "  Generation %d: Seed rotation replaced %d molecules with novel scaffolds %s",
+            generation, len(top_novel), [s for _, _, s in top_novel]
+        )
+
+    def _collect_known_scaffolds(self) -> set[str]:
+        """Collect the Murcko scaffolds already present in the seed pool."""
+        if MurckoScaffold is None:
+            return set()
         known_scaffolds = set()
         for smi in self.engine.seed_pool:
             ctx = MoleculeContext.from_smiles(smi)
-            if ctx is not None:
-                try:
-                    from rdkit.Chem.Scaffolds import MurckoScaffold
-                    scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
-                    if scaffold:
-                        known_scaffolds.add(scaffold)
-                except Exception:
-                    pass
+            if ctx is None:
+                continue
+            try:
+                scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
+                if scaffold:
+                    known_scaffolds.add(scaffold)
+            except Exception:
+                pass
+        return known_scaffolds
 
-        # Find novel-scaffold candidates from all_results not in pool, sorted by score
-        existing_pool = set(self.engine.seed_pool)
+    def _find_novel_scaffold_candidates(
+        self, existing_pool: set[str], known_scaffolds: set[str]
+    ) -> list[tuple[float, str, str]]:
+        """Return scored novel-scaffold candidates from current results, sorted by descending score."""
+        if MurckoScaffold is None:
+            return []
         novel_candidates = []
         for r in self.all_results:
             if r.smiles in existing_pool:
@@ -930,39 +961,23 @@ class DiscoveryLoop:
             if ctx is None:
                 continue
             try:
-                from rdkit.Chem.Scaffolds import MurckoScaffold
                 scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
                 if scaffold and scaffold not in known_scaffolds:
                     novel_candidates.append((r.total_score, r.smiles, scaffold))
             except Exception:
                 pass
-
         novel_candidates.sort(key=lambda x: -x[0])
-        top_novel = novel_candidates[:n_replace]
+        return novel_candidates
 
-        if not top_novel:
-            return
-
-        # Replace bottom 20% of seed pool (lowest scored)
-        # Score the current seed pool
+    def _score_seed_pool(self) -> list[tuple[float, str]]:
+        """Score each seed-pool molecule with its best available result, ascending."""
         pool_scored = []
         for smi in self.engine.seed_pool:
             scored_results = [r for r in self.all_results if r.smiles == smi]
             score = scored_results[0].total_score if scored_results else 0.0
             pool_scored.append((score, smi))
-
         pool_scored.sort(key=lambda x: x[0])
-        to_remove = [smi for _, smi in pool_scored[:n_replace]]
-        new_pool = [smi for smi in self.engine.seed_pool if smi not in to_remove]
-        new_pool.extend([smi for _, smi, _ in top_novel])
-
-        self.engine.seed_pool = new_pool[-200:]
-        self.state.seed_pool_size = len(self.engine.seed_pool)
-
-        log.info(
-            "  Generation %d: Seed rotation replaced %d molecules with novel scaffolds %s",
-            generation, len(top_novel), [s for _, _, s in top_novel]
-        )
+        return pool_scored
 
     def _record_scaffolds(self, batch_contexts: list[MoleculeContext]) -> None:
         if MurckoScaffold is None:

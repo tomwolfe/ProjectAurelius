@@ -700,6 +700,58 @@ _REACTION_SMARTS: list[tuple[str, str]] = [
 ]
 
 
+def _build_reverse_reaction(rxn: Any) -> Any:
+    """Build the reversed (products -> reactants) form of a reaction template.
+
+    Applies the same lifecycle as the legacy inline code: the reversed
+    reaction must have both reactants and products, survive ``Initialize``,
+    and have its templates swapped (products become reactants and vice
+    versa). Returns ``None`` when the template is unusable.
+
+    Args:
+        rxn: Parsed forward reaction template.
+
+    Returns:
+        Reversed reaction, or None if it cannot be initialized.
+    """
+    from rdkit.Chem import AllChem
+
+    if rxn.GetNumReactantTemplates() == 0 or rxn.GetNumProductTemplates() == 0:
+        return None
+
+    rxn_rev = AllChem.ChemicalReaction()
+    ok = rxn_rev.Initialize()
+    if not ok:
+        return None
+
+    # Swap reactants and products for reverse reaction
+    for i in range(rxn.GetNumProductTemplates()):
+        rxn_rev.AddReactantTemplate(rxn.GetProductTemplate(i))
+    for i in range(rxn.GetNumReactantTemplates()):
+        rxn_rev.AddProductTemplate(rxn.GetReactantTemplate(i))
+    return rxn_rev
+
+
+def _sanitize_precursors(precursor_tuple: tuple[Chem.Mol, ...]) -> list[str]:
+    """Return canonical SMILES for every valid, sanitizable precursor.
+
+    Args:
+        precursor_tuple: Raw product molecules produced by the reverse reaction.
+
+    Returns:
+        List of canonical SMILES; empty if none survive sanitization.
+    """
+    valid_precursors = []
+    for p in precursor_tuple:
+        if p is not None and p.GetNumAtoms() > 0:
+            try:
+                Chem.SanitizeMol(p)
+                valid_precursors.append(Chem.MolToSmiles(p))
+            except Exception:
+                pass
+    return valid_precursors
+
+
 def attempt_one_step_disconnection(mol: Chem.Mol) -> list[dict[str, Any]]:
     """Apply reaction SMARTS in reverse to find one-step disconnections.
 
@@ -716,54 +768,31 @@ def attempt_one_step_disconnection(mol: Chem.Mol) -> list[dict[str, Any]]:
     from rdkit.Chem import AllChem
 
     results = []
-    target_smi = Chem.MolToSmiles(mol)
 
     for smarts, name in _REACTION_SMARTS:
         try:
-            # Parse reaction and reverse it
             rxn = AllChem.ReactionFromSmarts(smarts)
             if rxn is None:
                 continue
 
-            # Check if reaction has valid reactants and products
-            if rxn.GetNumReactantTemplates() == 0 or rxn.GetNumProductTemplates() == 0:
-                continue
-
             # Apply in reverse: use target as product, get reactants
-            rxn_rev = AllChem.ChemicalReaction()
-            # Initialize with the reversed reaction
-            ok = rxn_rev.Initialize()
-            if not ok:
+            rxn_rev = _build_reverse_reaction(rxn)
+            if rxn_rev is None:
                 continue
-
-            # Swap reactants and products for reverse reaction
-            for i in range(rxn.GetNumProductTemplates()):
-                prod = rxn.GetProductTemplate(i)
-                rxn_rev.AddReactantTemplate(prod)
-            for i in range(rxn.GetNumReactantTemplates()):
-                reac = rxn.GetReactantTemplate(i)
-                rxn_rev.AddProductTemplate(reac)
 
             # Run reverse reaction on target
             outcomes = rxn_rev.RunReactants((mol,))
-            if outcomes:
-                for precursor_tuple in outcomes:
-                    # Validate each precursor
-                    valid_precursors = []
-                    for p in precursor_tuple:
-                        if p is not None and p.GetNumAtoms() > 0:
-                            try:
-                                Chem.SanitizeMol(p)
-                                valid_precursors.append(Chem.MolToSmiles(p))
-                            except Exception:
-                                pass
+            if not outcomes:
+                continue
 
-                    if valid_precursors:
-                        results.append({
-                            "precursors": valid_precursors,
-                            "reaction_name": name,
-                            "smarts": smarts,
-                        })
+            for precursor_tuple in outcomes:
+                valid_precursors = _sanitize_precursors(precursor_tuple)
+                if valid_precursors:
+                    results.append({
+                        "precursors": valid_precursors,
+                        "reaction_name": name,
+                        "smarts": smarts,
+                    })
         except Exception:
             continue
 
