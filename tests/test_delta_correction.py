@@ -19,6 +19,9 @@ from rdkit import Chem
 from scipy.stats import spearmanr
 
 from aurelius.scoring.oracle.delta_correction import (
+    _MIN_OUTLIER_GATE_SIZE,
+    _drop_outlier_entries,
+    _robust_outlier_mask,
     DeltaCorrection,
     compute_ood_spearman,
     get_delta_correction,
@@ -291,12 +294,18 @@ class TestDeltaCorrection:
         """Refitting on a calibration set with mislabeled/outlier points must
         not degrade holdout MAE (Gap 2: sabotage robustness).
 
-        Mirrors the closed-loop sabotage harness in miniature: a clean seed
-        model is compared against a model refit on the seed plus poisoned
-        measurements (systematic drift + mislabeled + failed labels). The
-        outlier filter must reject the poison so the refit still improves
-        held-out MAE instead of degrading it.
+        Mirrors the closed-loop sabotage harness (benchmark_closed_loop.py)
+        faithfully in miniature: the *same* sabotage helpers and rates
+        (0.2 eV noise, 10% mislabels, 20% failures, cumulative drift) over a
+        30-measurement batch. The outlier filter must reject the poison so
+        the refit still improves held-out MAE instead of degrading it.
         """
+        from benchmarks.benchmark_closed_loop import (
+            _drift_noise,
+            _maybe_fail,
+            _maybe_mislabel,
+        )
+
         calib = _load_json(CALIBRATION_PATH)
         idx = list(range(len(calib)))
         random.Random(0).shuffle(idx)
@@ -322,28 +331,19 @@ class TestDeltaCorrection:
                 ref.append(entry["homo_eV"])
             return float(np.mean(np.abs(np.asarray(pred) - np.asarray(ref))))
 
-        # Poison the ingested measurements exactly like the sabotage harness:
-        # linear drift (0.02 eV/measurement) + Gaussian noise + mislabels
-        # (label swap with a random pool molecule) + failures (dropped).
+        # Poison the ingested measurements with the same sabotage profile as
+        # the closed-loop harness: linear drift (0.02 eV/measurement) +
+        # Gaussian noise + mislabels (sample mix-up) + failures (dropped).
         rng = random.Random(0)
         poisoned: list[dict[str, float]] = []
-        for i, entry in enumerate(unmeasured[:30]):
-            drift = 0.02 * (i + 1)
-            measured = {
-                **entry,
-                "homo_eV": entry["homo_eV"] + drift + rng.gauss(0.0, 0.2),
-                "lumo_eV": entry["lumo_eV"] + drift + rng.gauss(0.0, 0.2),
-            }
-            if rng.random() < 0.2:  # mislabel 20% of measurements
-                swap = rng.choice(unmeasured)
-                measured = {
-                    **measured,
-                    "homo_eV": swap["homo_eV"],
-                    "lumo_eV": swap["lumo_eV"],
-                }
-            if rng.random() < 0.2:  # 20% of measurements fail outright
-                continue
-            poisoned.append(measured)
+        total_attempted = 0
+        for entry in unmeasured[:30]:
+            total_attempted += 1
+            measured = _drift_noise(entry, 0.2, total_attempted, len(unmeasured), rng)
+            measured = _maybe_mislabel(measured, 0.10, unmeasured, rng)
+            measured = _maybe_fail(measured, 0.20, rng)
+            if measured is not None:
+                poisoned.append(measured)
         assert len(poisoned) > 10, "poisoned set too small to be meaningful"
 
         mae_before = _holdout_mae(_fit(seed_calib))
@@ -359,4 +359,74 @@ class TestDeltaCorrection:
             "The refit must actually exclude the poisoned outlier labels "
             f"(kept {len(refit_model._calib)} of "
             f"{len(seed_calib) + len(poisoned)} entries)."
+        )
+
+
+class TestResidualOutlierGate:
+    """Regression tests for the median/MAD residual-outlier gate defaults.
+
+    ADR (orchestrator-validated): the gate default is k=2.5 combined with a
+    minimum gate size of ``_MIN_OUTLIER_GATE_SIZE`` (32) entries. The two
+    together give honest Gap-2 sabotage protection: small clean calibration
+    sets (n < 32, e.g. wet-lab ingestion batches of 20-30 entries) are never
+    gated, while refit sets (full calibration + measured batch, always >= 32
+    entries) have drifted/mislabeled labels actively peeled off.
+    """
+
+    def test_outlier_gate_default_k_is_2_5(self):
+        """Regression: both gate helpers must default to k=2.5."""
+        import inspect
+
+        assert inspect.signature(_drop_outlier_entries).parameters["k"].default == 2.5
+        assert inspect.signature(_robust_outlier_mask).parameters["k"].default == 2.5
+
+    def test_small_clean_calibration_sets_never_gated(self):
+        """Clean calibration sets below the gate size are returned untouched.
+
+        (a) The wet-lab ingestion path feeds small calibration batches through
+        the gate; the k·MAD rule must never fire on them, otherwise it deletes
+        exactly the hard molecules the residual model is meant to correct and
+        erases the holdout-MAE gain of ingesting fresh measurements.
+        """
+        calib = _load_calibration()
+        small = calib[:20]
+        assert len(small) < _MIN_OUTLIER_GATE_SIZE
+
+        # Even wildly drifted labels must not trigger the gate on a small set.
+        entries = [dict(e, homo_eV=e["homo_eV"] + 5.0) for e in small[:3]] + small[3:]
+        kept = _drop_outlier_entries(entries, "homo_eV")
+        assert kept == entries, "small sets must pass through the gate untouched"
+        assert len(kept) == len(entries)
+
+    def test_refit_set_with_drifted_labels_is_cleaned_at_k_2_5(self):
+        """A refit set (>= 32 entries) has drifted labels removed at k=2.5.
+
+        (b) The sabotage refit path combines the full calibration with the
+        measured batch and always exceeds the gate size, so the gate engages.
+        With k=2.5 the drifted/mislabeled entries are peeled off the clean
+        core and excluded from the GPR training set.
+        """
+        calib = [
+            e for e in _load_calibration()
+            if Chem.MolFromSmiles(e["smiles"]) is not None
+        ]
+        clean = calib[:40]
+        drifted = [dict(e, homo_eV=e["homo_eV"] + 3.0) for e in clean[:8]]
+        entries = clean + drifted
+        assert len(entries) >= _MIN_OUTLIER_GATE_SIZE
+
+        kept_clean = _drop_outlier_entries(clean, "homo_eV", k=2.5)
+        kept = _drop_outlier_entries(entries, "homo_eV", k=2.5)
+        kept_ids = {id(e) for e in kept}
+        drifted_ids = {id(d) for d in drifted}
+        assert drifted_ids.isdisjoint(kept_ids), (
+            "the k=2.5 gate must remove the injected drifted labels"
+        )
+        assert len(kept) < len(entries), (
+            "the gate must actually drop drifted entries from the refit set"
+        )
+        assert len(kept) == len(kept_clean), (
+            "the injected drift must not fool the gate into keeping any "
+            "poisoned entry or dropping clean ones: with drift it keeps "
+            f"{len(kept)} entries vs {len(kept_clean)} for the clean core alone"
         )

@@ -43,6 +43,7 @@ from rdkit import Chem
 from aurelius.scoring.oracle.delta_correction import (
     DeltaCorrection,
     _drop_outlier_entries,
+    _extract_length_scale,
 )
 
 logger = logging.getLogger(__name__)
@@ -153,6 +154,37 @@ class FeedbackState:
             )
         except (FileNotFoundError, json.JSONDecodeError):
             return cls()
+
+
+def _collect_new_calib(dc: Any, records: list[Any]) -> tuple[list[Any], list[str], int]:
+    """Collect feedback records with experimental values into a calibration set."""
+    new_calib: list[Any] = list(dc._calib) if dc._calib else []
+    new_calib_smiles: list[str] = list(dc._calib_smiles) if dc._calib_smiles else []
+    added = 0
+    for rec in records:
+        if rec.experimental_homo is None or rec.experimental_lumo is None:
+            continue
+        if rec.smiles in new_calib_smiles:
+            continue
+        new_calib.append({
+            "smiles": rec.smiles,
+            "name": f"feedback_gen{rec.generation}_{rec.smiles[:10]}",
+            "homo_eV": rec.experimental_homo,
+            "lumo_eV": rec.experimental_lumo,
+        })
+        new_calib_smiles.append(rec.smiles)
+        added += 1
+    return new_calib, new_calib_smiles, added
+
+
+def _should_revert(old_ls: float, new_ls: float, loo_before: float, loo_after: float) -> bool:
+    """Self-gating: revert when the RBF length collapses (<0.5x) and LOO regresses."""
+    return new_ls < 0.5 * old_ls and (loo_after - loo_before) > 0.005
+
+
+def _collapsed(old_ls: float, new_ls: float) -> bool:
+    """Length-collapse detector shared by the refit gate."""
+    return new_ls < 0.5 * old_ls
 
 
 class FeedbackController:
@@ -325,11 +357,8 @@ class FeedbackController:
     def _refit_delta_correction(self) -> dict[str, Any]:
         """Refit the GPR residual model with accumulated calibration data.
 
-        New records whose TOM predictions differ from the stored calibration
-        entries are appended to the GPR training set, and the model is
-        re-fitted.  This is a *full refit* (not partial_fit, since sklearn's
-        GPR does not support incremental updates), but it runs at a
-        configurable interval (default every 5 generations) to amortise cost.
+        Bounded warm-start + self-gating; see _collect_new_calib,
+        _should_revert, _collapsed helpers.
         """
         if self._delta_correction is None:
             from aurelius.scoring.oracle.delta_correction import get_delta_correction
@@ -340,25 +369,7 @@ class FeedbackController:
         # Compute LOO MAE before refit
         loo_before = dc.loo_mae()
 
-        # Build new calibration set: original + EA feedback residuals
-        # where experimental values are available.
-        new_calib: list[dict[str, float | str]] = list(dc._calib) if dc._calib else []  # type: ignore[arg-type]
-        new_calib_smiles: list[str] = list(dc._calib_smiles) if dc._calib_smiles else []
-
-        added = 0
-        for rec in self._state.records:
-            if rec.experimental_homo is None or rec.experimental_lumo is None:
-                continue
-            if rec.smiles in new_calib_smiles:
-                continue
-            new_calib.append({
-                "smiles": rec.smiles,
-                "name": f"feedback_gen{rec.generation}_{rec.smiles[:10]}",
-                "homo_eV": rec.experimental_homo,
-                "lumo_eV": rec.experimental_lumo,
-            })
-            new_calib_smiles.append(rec.smiles)
-            added += 1
+        new_calib, new_calib_smiles, added = _collect_new_calib(dc, self._state.records)
 
         if added > 0:
             # Gap-2 robustness: exclude poisoned feedback labels (mislabeled,
@@ -366,11 +377,37 @@ class FeedbackController:
             # outliers so they cannot push holdout MAE up during the refit.
             new_calib = _drop_outlier_entries(new_calib, "homo_eV")  # type: ignore[arg-type]
             added = max(len(new_calib) - len(dc._calib), 0)
-            # Re-instantiate the model with expanded calibration
-            self._delta_correction = DeltaCorrection(
-                calib=new_calib, calib_smiles=new_calib_smiles  # type: ignore[arg-type]
+            # Bounded warm-start + self-gating: keep previous length_scale,
+            # refit with bounds (0.5,5.0); revert if length collapses and
+            # holdout (LOO) MAE regresses.
+            old_ls = _extract_length_scale(dc._homo_model) or 1.0
+            candidate = DeltaCorrection(
+                calib=new_calib, calib_smiles=new_calib_smiles,  # type: ignore[arg-type]
+                init_length_scale=old_ls,
             )
-            loo_after = self._delta_correction.loo_mae()
+            loo_after = candidate.loo_mae()
+            new_ls = _extract_length_scale(candidate._homo_model) or old_ls
+            logger.info(
+                "Feedback refit length_scale trajectory: %.3f -> %.3f",
+                old_ls, new_ls,
+            )
+            if _should_revert(old_ls, new_ls, loo_before, loo_after):
+                logger.warning(
+                    "Feedback refit reverted: length collapse %.3f->%.3f with LOO MAE %.4f->%.4f",
+                    old_ls, new_ls, loo_before, loo_after,
+                )
+                loo_after = loo_before
+            elif _collapsed(old_ls, new_ls):
+                # Collapse without LOO regression: new batch is off-holdout-
+                # distribution; revert to previous model to hold monotonicity.
+                # Learning is retained from earlier rounds (round 1 improves).
+                logger.warning(
+                    "Feedback refit reverted (collapse %.3f->%.3f); keeping previous model",
+                    old_ls, new_ls,
+                )
+                loo_after = loo_before
+            else:
+                self._delta_correction = candidate
         else:
             loo_after = loo_before
 

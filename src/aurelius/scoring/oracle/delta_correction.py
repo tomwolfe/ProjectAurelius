@@ -77,8 +77,11 @@ _LUMO_CALIBRATION_PATH = os.path.join(
 )
 
 _GPR_KERNEL = ConstantKernel(1.0) * RBF(
-    length_scale=1.0, length_scale_bounds=(1e-2, 1e2)
+    length_scale=1.0, length_scale_bounds=(0.5, 5.0)
 ) + WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-5, 1e1))
+
+# Length-scale trajectory log for bounded warm-start diagnostics.
+LENGTH_SCALE_TRAJECTORY: list[float] = []
 
 _GPR_KWARGS: dict[str, Any] = {
     "kernel": _GPR_KERNEL,
@@ -165,8 +168,36 @@ def _parse_ood_set(
     return entries, smiles
 
 
+def _build_kernel(init_length: float = 1.0) -> Any:
+    """Build bounded RBF kernel warm-started at ``init_length`` (clipped to bounds)."""
+    init = float(np.clip(init_length, 0.5, 5.0))
+    return ConstantKernel(1.0) * RBF(
+        length_scale=init, length_scale_bounds=(0.5, 5.0)
+    ) + WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-5, 1e1))
+
+
+def _extract_length_scale(model: Any) -> float | None:
+    """Best-effort extraction of the RBF length_scale from a fitted GPR."""
+    try:
+        k = model.kernel_
+        for attr in ("k1", "k2"):
+            sub = getattr(k, attr, None)
+            if sub is not None:
+                inner = getattr(sub, "k2", sub)
+                ls = getattr(inner, "length_scale", None)
+                if ls is not None:
+                    return float(np.asarray(ls).flat[0])
+        params = k.get_params() if hasattr(k, "get_params") else {}
+        for key in ("k1__k2__length_scale", "k2__length_scale"):
+            if key in params:
+                return float(np.asarray(params[key]).flat[0])
+    except Exception:
+        return None
+    return None
+
+
 def _robust_outlier_mask(
-    residuals: np.ndarray, k: float = 3.0, max_iter: int = 10
+    residuals: np.ndarray, k: float = 2.5, max_iter: int = 10
 ) -> np.ndarray:
     """Iteratively flag extreme residual outliers via median/MAD re-estimation.
 
@@ -195,7 +226,7 @@ def _robust_outlier_mask(
 def _drop_outlier_entries(
     entries: list[dict[str, float]],
     value_key: str,
-    k: float = 3.0,
+    k: float = 2.5,
     max_iter: int = 10,
 ) -> list[dict[str, float]]:
     """Drop calibration entries whose base residual is a robust outlier.
@@ -213,6 +244,10 @@ def _drop_outlier_entries(
     entries. On smaller sets the median/MAD scale estimate is too noisy and
     the k·MAD rule flags legitimate residuals (hard molecules the correction
     exists to model), which destroys the refit gain instead of protecting it.
+    With the default k=2.5 the tighter threshold actively peels drifted or
+    mislabeled labels off refit sets (which combine the full calibration with
+    the measured batch and always exceed the gate size), while small clean
+    calibration sets stay below the gate and are never touched.
     """
     if len(entries) < _MIN_OUTLIER_GATE_SIZE:
         return entries
@@ -267,6 +302,7 @@ class DeltaCorrection:
         lumo_calib: list[dict[str, float]] | None = None,
         lumo_calib_smiles: list[str] | None = None,
         ood_calibration_set: list[dict[str, float]] | None = None,
+        init_length_scale: float | None = None,
     ) -> None:
         self._calib = calib if calib is not None else _load_calibration()
         self._lumo_calib = lumo_calib if lumo_calib is not None else _load_lumo_calibration_xtb()
@@ -298,12 +334,19 @@ class DeltaCorrection:
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            self._homo_model = GaussianProcessRegressor(**_GPR_KWARGS).fit(
+            kw = dict(_GPR_KWARGS)
+            if init_length_scale is not None:
+                kw["kernel"] = _build_kernel(init_length_scale)
+            self._homo_model = GaussianProcessRegressor(**kw).fit(
                 self._X_homo, self._y_homo
             )
-            self._lumo_model = GaussianProcessRegressor(**_GPR_KWARGS).fit(
+            self._lumo_model = GaussianProcessRegressor(**kw).fit(
                 self._X_lumo, self._y_lumo
             )
+        ls = _extract_length_scale(self._homo_model)
+        if ls is not None:
+            LENGTH_SCALE_TRAJECTORY.append(ls)
+            logger.info("DeltaCorrection GPR length_scale=%.3f", ls)
 
         self._prior_std_homo = float(np.std(self._y_homo)) or 1.0
         self._prior_std_lumo = float(np.std(self._y_lumo)) or 1.0
