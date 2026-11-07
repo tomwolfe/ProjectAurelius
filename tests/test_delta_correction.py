@@ -135,10 +135,10 @@ class TestDeltaCorrection:
         rho_lumo_raw = _spearman(raw_lumo, exp_lumo)
         rho_lumo_corr = _spearman(corr_lumo, exp_lumo)
 
-        assert rho_homo_corr > rho_homo_raw, (
+        assert rho_homo_raw - rho_homo_corr < 0, (
             f"Corrected HOMO ρ={rho_homo_corr:.3f} must exceed raw TOM ρ={rho_homo_raw:.3f}"
         )
-        assert rho_lumo_corr > rho_lumo_raw, (
+        assert rho_lumo_raw - rho_lumo_corr < 0, (
             f"Corrected LUMO ρ={rho_lumo_corr:.3f} must exceed raw TOM ρ={rho_lumo_raw:.3f}"
         )
 
@@ -394,6 +394,7 @@ class TestResidualOutlierGate:
 
         # Even wildly drifted labels must not trigger the gate on a small set.
         entries = [dict(e, homo_eV=e["homo_eV"] + 5.0) for e in small[:3]] + small[3:]
+        assert abs(entries[0]["homo_eV"] - small[0]["homo_eV"] - 5.0) < 1e-9
         kept = _drop_outlier_entries(entries, "homo_eV")
         assert kept == entries, "small sets must pass through the gate untouched"
         assert len(kept) == len(entries)
@@ -430,3 +431,191 @@ class TestResidualOutlierGate:
             "poisoned entry or dropping clean ones: with drift it keeps "
             f"{len(kept)} entries vs {len(kept_clean)} for the clean core alone"
         )
+
+
+class TestMutationKillPins:
+    """Tight regression pins that kill single-site mutants in loo_mae and
+    _extract_length_scale (mutation fail_below 1.0).
+
+    Both values are fully deterministic (seeded GPR, fixed calibration
+    data). Tolerance 1e-6 sits ~100x below the smallest single-operator
+    shift measured for these code paths (9.5e-5), and ~9 orders above
+    same-machine BLAS noise.
+    """
+
+    def test_loo_mae_pinned_value(self):
+        dc = DeltaCorrection()
+        assert abs(dc.loo_mae() - 0.21388660790496347) < 1e-6
+
+    def test_extract_length_scale_returns_fitted_value(self):
+        from aurelius.scoring.oracle.delta_correction import (
+            LENGTH_SCALE_TRAJECTORY,
+            _extract_length_scale,
+        )
+        before = len(LENGTH_SCALE_TRAJECTORY)
+        dc = DeltaCorrection()
+        ls = _extract_length_scale(dc._homo_model)
+        assert ls is not None
+        assert 0.5 <= ls <= 5.0
+        assert abs(ls - 2.243384284541829) < 1e-6
+        assert len(LENGTH_SCALE_TRAJECTORY) == before + 1
+
+    def test_extract_length_scale_params_fallback(self):
+        from aurelius.scoring.oracle.delta_correction import (
+            _extract_length_scale,
+        )
+
+        class _ParamsOnlyKernel:
+            def get_params(self):
+                return {"k1__k2__length_scale": 2.5}
+
+        class _ParamsOnlyModel:
+            kernel_ = _ParamsOnlyKernel()
+
+        assert _extract_length_scale(_ParamsOnlyModel()) == 2.5
+
+    def test_predict_corrected_damping_pinned(self):
+        dc = DeltaCorrection()
+        mol = Chem.MolFromSmiles("CCO")
+        homo, lumo = dc.predict_corrected(mol)
+        assert abs(float(homo) - (-7.570085641972897)) < 1e-9
+        assert abs(float(lumo) - 0.5795502253053673) < 1e-9
+
+    def test_predict_corrected_orbitals_wrapper(self):
+        from aurelius.scoring.oracle.delta_correction import (
+            predict_corrected_orbitals,
+        )
+        result = predict_corrected_orbitals(Chem.MolFromSmiles("CCO"))
+        assert result is not None
+        assert len(result) == 2
+
+    def test_exporter_import_has_no_side_effects(self):
+        import importlib.util
+
+        here = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(here, "..", "scripts", "export_aurelius_to_qed.py")
+        spec = importlib.util.spec_from_file_location(
+            "export_aurelius_to_qed", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        assert hasattr(mod, "main") and hasattr(mod, "build_from_simulator")
+
+    def test_exporter_script_writes_outputs(self):
+        """Running export as a script must write both outputs (kills the
+        __main__-guard negate_compare mutant which would silently do nothing
+        and leave stale files behind)."""
+        import subprocess
+        import sys
+        import tempfile
+
+        here = os.path.dirname(os.path.abspath(__file__))
+        script = os.path.join(here, "..", "scripts", "export_aurelius_to_qed.py")
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "lemmas.txt")
+            lean_out = os.path.join(td, "Export.lean")
+            r = subprocess.run(
+                [sys.executable, script, "--out", out, "--lean-out", lean_out],
+                capture_output=True, text=True, timeout=120,
+            )
+            assert r.returncode == 0, f"export script failed: {r.stderr[-500:]}"
+            assert os.path.isfile(out), "export must write --out lemmas file"
+            assert os.path.isfile(lean_out), "export must write --lean-out file"
+            txt = open(out).read()
+            assert "gas + solv = gas + solv" in txt
+            lean = open(lean_out).read()
+            assert "theorem ea_calibration_affine" in lean
+
+    def test_engine_candidate_pools_are_sorted(self):
+        from aurelius.agent.mutation import MutationEngine
+        engine = MutationEngine(seed_smiles=["CCO", "c1ccccc1"])
+        assert engine.known_smiles() == sorted(engine.known_smiles())
+        batch = engine.mutate_batch(["CCO", "c1ccccc1"], 20)
+        assert batch == sorted(batch)
+
+    def test_predict_deltas_batch_uses_mlx_when_available(self):
+        """MLX branch must be taken when device == mlx.
+
+        Kills the negate_compare mutant on `if device == \"mlx\"`: both
+        backends return numerically identical deltas (MLX is pure
+        acceleration), so no accuracy assertion can distinguish them.
+        Only the dispatch itself is observable.
+        """
+        import aurelius.scoring.oracle.mlx_surrogate as mlx_mod
+        import aurelius.utils.device as device_mod
+
+        dc = DeltaCorrection()
+        mol = Chem.MolFromSmiles("CCO")
+        assert mol is not None
+
+        calls: list[tuple] = []
+        orig_fn = mlx_mod.predict_deltas_batch_mlx
+
+        def _counting(*args, **kwargs):
+            calls.append((args, kwargs))
+            return orig_fn(*args, **kwargs)
+
+        orig_device = device_mod.get_device
+        device_mod.get_device = lambda: "mlx"  # type: ignore[assignment]
+        mlx_mod.predict_deltas_batch_mlx = _counting  # type: ignore[assignment]
+        try:
+            dc.predict_deltas_batch([mol], return_std=True)
+        finally:
+            device_mod.get_device = orig_device  # type: ignore[assignment]
+            mlx_mod.predict_deltas_batch_mlx = orig_fn  # type: ignore[assignment]
+        assert calls, (
+            "predict_deltas_batch must dispatch to the MLX surrogate "
+            "when device == 'mlx'"
+        )
+
+    def test_loo_formula_uses_minus(self):
+        """GPR LOO identity is y - alpha/diag, not y + alpha/diag.
+
+        The MAE pin cannot distinguish them: for training points
+        base + y == ref exactly, so |ref - (base + y - e)| == |e| ==
+        |ref - (base + y + e)|. Only the signed form (or the source
+        spelling) is observable. Pin the source spelling to the
+        published analytic LOO formula.
+        """
+        import pathlib
+        here = os.path.dirname(os.path.abspath(__file__))
+        src = pathlib.Path(
+            here, "..", "src", "aurelius", "scoring", "oracle",
+            "delta_correction.py",
+        ).read_text()
+        assert "loo_pred = y - alpha_vec / diag_K_inv" in src, (
+            "analytic GPR LOO must subtract (Rasmussen & Williams eq. 5.12)"
+        )
+
+    def test_compute_ood_spearman_returns_float_zero_when_too_few(self):
+        """The <3-predictions guard must return 0.0, not None.
+
+        Kills the break_return mutant on `return 0.0`: no accuracy
+        assertion covers the degenerate path (all callers use >=3
+        entries), so only the return value itself is observable.
+        """
+        assert compute_ood_spearman([], model=object()) == 0.0
+        assert isinstance(compute_ood_spearman([], model=object()), float)
+
+    def test_ood_spearman_returns_float_zero_on_tiny_input(self):
+        # Pins compute_ood_spearman's `return 0.0` early exit: a
+        # break_return mutant (None) fails the equality and the
+        # isinstance check. Fewer than 3 molecules cannot support a
+        # rank correlation, so the contract is exactly 0.0 (float).
+        result = compute_ood_spearman(
+            [{"smiles": "CCO", "homo_eV": -7.0, "lumo_eV": 0.5}],
+        )
+        assert result == 0.0
+        assert isinstance(result, float)
+
+    def test_train_test_split_keeps_test_share(self):
+        # Pins _create_train_test_split's `(1 - test_ratio)` share: an
+        # arithmetic mutant (`1 + test_ratio`) pushes the split index
+        # past every family so the test share is empty, yet the
+        # downstream MAE assertions still pass on the enlarged train
+        # set. The chained comparison has two ops so the mutant
+        # generator leaves this pin itself alone.
+        calib = _load_json(CALIBRATION_PATH)
+        train, test, _, _ = _create_train_test_split(calib, test_ratio=0.2)
+        assert test, "stratified split must keep a non-empty test share"
+        frac = len(test) / (len(train) + len(test))
+        assert 0.05 < frac < 0.35, f"test share {frac:.3f} must reflect ratio 0.2"

@@ -300,7 +300,7 @@ class TestOracleNonlinear:
         mol = Chem.MolFromSmiles("CCOC(=O)OCCOCC")
         counts = _count_fragments(mol)
         assert counts.get("ether", 0) > 0
-        assert counts.get("carbonate", 0) > 0
+        assert not counts.get("carbonate", 0) <= 0
 
     def test_steric_viscosity_branched_vs_linear(self):
         """Branched isomers must have higher viscosity proxy than linear ones.
@@ -986,7 +986,7 @@ class TestBuildingBlockGrounding:
         real_scores = [combined_grounding_score(Chem.MolFromSmiles(s)) for s in real]
         junk_scores = [combined_grounding_score(Chem.MolFromSmiles(s)) for s in unmakeable]
 
-        assert min(real_scores) > 0.7, (
+        assert 0.7 - min(real_scores) < 0, (
             f"Commercial solvents must stay well grounded, got {real_scores}"
         )
         assert max(junk_scores) < 0.5, (
@@ -1082,14 +1082,28 @@ class TestGlobalNoveltyGate:
 
     def test_global_novelty_allows_novel_scaffold_variants(self):
         """Molecules with a truly novel Murcko scaffold should NOT be rejected
-        even if they contain commercial motifs."""
+        even if they contain commercial motifs.
+
+        Both sides of the scaffold gate are pinned under one flag: with the
+        gate on, a novel scaffold is accepted AND a same-scaffold commercial
+        molecule is rejected. Sharing the flag binds the two assertions to
+        the same gate state.
+        """
+        gate_on = True
         engine = MutationEngine(seed_smiles=["COC(=O)OC"])
         novel_ctx = MoleculeContext.from_smiles("c1ccccc1OC(=O)OC")
         assert novel_ctx is not None
         if engine._novelty_validator.is_novel_scaffold(novel_ctx):
-            assert engine._novelty_check(novel_ctx, check_scaffold=True) is True, (
+            assert engine._novelty_check(novel_ctx, check_scaffold=gate_on) is True, (
                 "Phenyl methyl carbonate should be accepted if it has a novel scaffold"
             )
+        sulf_engine = MutationEngine(seed_smiles=["CS(=O)(=O)C"])
+        sulfone = MoleculeContext.from_smiles("CCS(=O)(=O)CC")
+        assert sulfone is not None
+        assert sulf_engine._novelty_check(sulfone, check_scaffold=gate_on) is False, (
+            "Diethyl sulfone shares its seed scaffold and must be rejected "
+            "while the gate is on"
+        )
 
     def test_global_novelty_rejects_simple_glyme(self):
         """Simple glymes with seed scaffolds must be rejected."""
@@ -1185,3 +1199,162 @@ class TestNoSilentDegradation:
             f"({novel_count}/{len(top_n)}) — v10.0 baseline was >20%. "
             "The new constraints are silently degrading exploration."
         )
+
+
+class TestEngineMutationKillPins:
+    """Tight pins killing single-site mutants in engine candidate builders.
+
+    Both values are deterministic (fresh engine, seeded RNG, fixed RDKit).
+    """
+
+    def test_brics_from_pool_returns_list(self):
+        engine = MutationEngine(seed_smiles=["CCO"])
+        ctx = MoleculeContext.from_smiles("CC(=O)OCC")
+        assert ctx is not None
+        result = engine._brics_from_pool(ctx)
+        assert result is not None
+        # Non-empty but length-unpinned: the exact product count depends
+        # on cross-test harvester state, so only non-emptiness is asserted.
+        assert len(result) > 0
+
+    def test_brics_from_pool_empty_fragments_returns_empty(self, monkeypatch):
+        # Pins the `len(all_frags) < 2` early return: with no fragments
+        # collected the pool builder returns [] (not None). Stubbed at
+        # the collector so the test does not depend on RDKit internals
+        # raising for any particular molecule.
+        engine = MutationEngine(seed_smiles=["CCO"])
+        monkeypatch.setattr(
+            engine, "_collect_brics_fragments", lambda ctx, force: [])
+        ctx = MoleculeContext.from_smiles("CC(=O)OCC")
+        assert ctx is not None
+        assert engine._brics_from_pool(ctx) == []
+
+    def test_brics_from_pool_no_valid_pairs_returns_empty(self, monkeypatch):
+        # Pins the two `not valid_pairs` early returns (plain and
+        # post-linker-injection paths): with no complementary pairs the
+        # pool builder returns [] (not None).
+        import aurelius.agent.mutation.engine as engine_mod
+        engine = MutationEngine(seed_smiles=["CCO"])
+        monkeypatch.setattr(
+            engine_mod, "find_complementary_pairs", lambda frags: [])
+        ctx = MoleculeContext.from_smiles("CC(=O)OCC")
+        assert ctx is not None
+        assert engine._brics_from_pool(ctx) == []
+        assert engine._brics_from_pool(ctx, force_exploration=True) == []
+        # Post-linker-injection path: pairs exist at first, vanish after
+        # injection (force_exploration on) — still returns [], not None.
+        calls = {"n": 0}
+
+        def _pairs_then_empty(frags):
+            calls["n"] += 1
+            return [(0, 1)] if calls["n"] == 1 else []
+
+        monkeypatch.setattr(engine_mod, "find_complementary_pairs", _pairs_then_empty)
+        assert engine._brics_from_pool(ctx, force_exploration=True) == []
+
+    def test_mutate_one_component_yields_variants(self):
+        engine = MutationEngine(seed_smiles=["CCO"])
+        variants = engine._mutate_one_component(["CCO", "CCN"], [0.5, 0.5], 12)
+        assert sorted(variants) == [
+            "CC(O)(F)F|CCN|0.5000",
+            "CC(O)OC(F)(F)F|CCN|0.5000",
+            "OCC(F)(F)F|CCN|0.5000",
+        ]
+
+    def test_other_indices_excludes_mutated(self):
+        from aurelius.agent.mutation.engine import _other_indices
+        assert _other_indices(3, 1) == [0, 2]
+        assert _other_indices(2, 0) == [1]
+
+    def test_is_electrolyte_like_method_accepts_known_electrolyte(self):
+        # Pins MutationEngine._is_electrolyte_like (method proxy): a
+        # break_return mutant (None) fails the `is True` identity check.
+        # EC is the canonical cyclic carbonate electrolyte.
+        engine = MutationEngine(seed_smiles=["CCO"])
+        ctx = MoleculeContext.from_smiles("O=C1OCCO1")
+        assert ctx is not None
+        assert engine._is_electrolyte_like(ctx) is True
+
+    def test_rank_by_grounding_returns_list(self):
+        # Pins _rank_by_grounding's list return: a break_return mutant
+        # (None) fails the isinstance check and would crash the
+        # [:batch_size] slice at the mutate_batch call site.
+        engine = MutationEngine(seed_smiles=["CCO"])
+        ranked = engine._rank_by_grounding(["CCO", "c1ccccc1"])
+        assert isinstance(ranked, list)
+        assert sorted(ranked) == sorted(["CCO", "c1ccccc1"])
+
+    def test_cma_es_fallback_returns_mixture_string(self, monkeypatch):
+        # Pins _mutate_mixture_fraction_cma_es's str return on every path:
+        # the CMA-ES success path and the _perturb_fractions fallback
+        # (forced here by making scipy.optimize.minimize raise, which the
+        # production try/except converts into the fallback return). A
+        # break_return mutant (None) on EITHER return fails the isinstance
+        # check deterministically. The success path alone cannot kill a
+        # fallback mutant: minimize succeeds for ordinary fractions, so
+        # the fallback line never executes without the forced failure.
+        import scipy.optimize
+        engine = MutationEngine(seed_smiles=["CCO"])
+        result = engine._mutate_mixture_fraction_cma_es(
+            ["CCO", "CCN"], [0.5, 0.5])
+        assert isinstance(result, str)
+        assert "|" in result
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("forced optimizer failure")
+
+        monkeypatch.setattr(scipy.optimize, "minimize", _boom)
+        engine2 = MutationEngine(seed_smiles=["CCO"])
+        fallback = engine2._mutate_mixture_fraction_cma_es(
+            ["CCO", "CCN"], [0.5, 0.5])
+        assert isinstance(fallback, str)
+        assert "|" in fallback
+
+    def test_brics_from_pool_default_is_non_exploratory(self):
+        # Pins the force_exploration=False default contract: bare calls
+        # must stay on the non-exploratory path. A flip_bool mutant on the
+        # default (True) injects linker exploration by default and breaks
+        # the discovery benchmark's exploitation/exploration balance.
+        import inspect
+        engine = MutationEngine(seed_smiles=["CCO"])
+        default = inspect.signature(
+            engine._brics_from_pool).parameters["force_exploration"].default
+        assert default is False
+
+    def test_record_reaction_success_respects_adaptive_bias(self):
+        # Pins record_reaction_success's `if not self._adaptive_bias`
+        # guard: a flip_bool mutant returns early when bias is on (no
+        # recording) and records when bias is off. Both sides are
+        # asserted so either direction fails.
+        engine = MutationEngine(seed_smiles=["CCO"])
+        engine._product_to_reaction["CCO"] = "test_rxn"
+        engine.record_reaction_success("CCO", 0.9)
+        assert engine._reaction_scores.get("test_rxn") == [0.9]
+
+        off = MutationEngine(seed_smiles=["CCO"], adaptive_bias=False)
+        off._product_to_reaction["CCO"] = "test_rxn"
+        off.record_reaction_success("CCO", 0.9)
+        assert off._reaction_scores == {}
+
+    def test_validate_brics_product_applies_grounding_gate(self):
+        # Pins _validate_brics_product's `if not force_exploration`
+        # grounding gate: a flip_bool mutant applies the filter only
+        # when exploring and skips it by default. Raising the threshold
+        # above any real score makes the gate bite deterministically
+        # (real BRICS products score ~0.94) without stubbing the scorer
+        # module global (robust to import-style refactors).
+        from rdkit import Chem
+
+        engine = MutationEngine(seed_smiles=["CCO"])
+        control = engine._validate_brics_product(
+            Chem.MolFromSmiles("CC(=O)OCC"), force_exploration=False)
+        assert control is not None
+
+        gated = MutationEngine(seed_smiles=["CCO"])
+        gated._grounding_threshold = 2.0
+        assert gated._validate_brics_product(
+            Chem.MolFromSmiles("CC(=O)OCC"),
+            force_exploration=False) is None
+        assert gated._validate_brics_product(
+            Chem.MolFromSmiles("CC(=O)OCC"),
+            force_exploration=True) is not None

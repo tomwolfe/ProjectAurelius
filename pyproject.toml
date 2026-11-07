@@ -66,6 +66,13 @@ ignore = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Hermetic imports: resolve `aurelius` from this repo's src/ (same idiom as
+# benchmarks/benchmark_unified.py and scripts/export_aurelius_to_qed.py, which
+# both sys.path-insert their own src). Without this, `import aurelius` falls
+# through to the globally installed editable copy, so clean-room runs measure
+# the working tree instead of the frozen room (and concurrent working-tree
+# writes corrupt the measurement).
+pythonpath = ["src"]
 addopts = "--cov=src/aurelius --cov-report=term-missing -v"
 markers = [
     "slow: marks tests as slow (skipped in fast CI runs)",

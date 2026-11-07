@@ -57,6 +57,16 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _other_indices(n: int, idx: int) -> list[int]:
+    """Indices of an n-component mixture excluding the mutated one.
+
+    Shared by fraction perturbation and single-component novelty gating so
+    the exclusion rule has one definition (and one unit test) instead of
+    two inline comprehensions that can drift apart.
+    """
+    return [k for k in range(n) if k != idx]
+
+
 def _mixture_proxy_targets(
     components: list[str],
 ) -> list[MoleculeContext] | None:
@@ -177,7 +187,7 @@ class MutationEngine:
             tier0_path = files("aurelius.data") / "tier0_seed_smiles.json"
             with open(str(tier0_path)) as f:
                 seed_smiles = json.load(f)
-        pool = list(set(seed_smiles))
+        pool = sorted(set(seed_smiles))
         contexts = []
         fps = []
         for smi in pool:
@@ -280,7 +290,11 @@ class MutationEngine:
         return len(self._commercial_fps)
 
     def known_smiles(self) -> list[str]:
-        return list(self._known_smiles)
+        # Sorted (not set order): set iteration depends on PYTHONHASHSEED,
+        # which made the discovery benchmark nondeterministic across
+        # processes. The caller shuffles with a seeded RNG anyway, so
+        # sorting only fixes the input order, not the science.
+        return sorted(self._known_smiles)
 
     def add_to_db(self, smiles: str) -> None:
         ctx = self._get_ctx(smiles)
@@ -364,7 +378,7 @@ class MutationEngine:
                             results.append(p_smi)
             except Exception:
                 logger.debug("SMARTS reaction '%s' failed for %s", name, ctx.smiles)
-        return list(set(results))
+        return sorted(set(results))
 
     def record_reaction_success(self, smiles: str, score: float) -> None:
         if not self._adaptive_bias:
@@ -493,7 +507,7 @@ class MutationEngine:
                 return generated
 
         generated = self._build_from_pairs(all_frags, valid_pairs, force_exploration=force_exploration)
-        return list(set(generated))
+        return sorted(set(generated))
 
     # ------------------------------------------------------------------
     # Public mutation API
@@ -612,7 +626,7 @@ class MutationEngine:
                 self._apply_brics_budgeted(smiles, brics_budget, force_exploration, ctx)
             )
 
-        result_list = list(candidates)
+        result_list = sorted(candidates)
         if len(result_list) > batch_size:
             # Rank by combined grounding score, keep top batch_size.
             # This biases candidate selection toward synthesizable molecules.
@@ -639,7 +653,7 @@ class MutationEngine:
             )
             for variants in results:
                 all_variants.extend(variants)
-        return list(set(all_variants))
+        return sorted(set(all_variants))
 
     def _mutate_single(self, smi: str, batch_size: int = 50, force_exploration: bool = False) -> list[str]:
         """Wrapper for joblib parallelism — mutates a single SMILES."""
@@ -693,7 +707,7 @@ class MutationEngine:
         idx = int(self._rng.integers(0, n))
         delta = (self._rng.random() - 0.5) * 0.20
         fracs_new[idx] = max(0.1, min(0.9, fracs_new[idx] + delta))
-        others = [k for k in range(n) if k != idx]
+        others = _other_indices(n, idx)
         others_total = sum(fracs_new[k] for k in others)
         if others_total > 0.0:
             scale = (1.0 - fracs_new[idx]) / others_total
@@ -813,7 +827,7 @@ class MutationEngine:
         for new_smi in mutated[:3]:
             tan = max(
                 self._component_tanimoto(new_smi, components[k])
-                for k in range(n) if k != idx
+                for k in _other_indices(n, idx)
             )
             if tan <= 0.80:
                 new_components = list(components)
@@ -834,7 +848,7 @@ class MutationEngine:
             variants = self._mutate_one_component(components, fracs, batch_size)
         else:
             variants = [self._mutate_mixture_fraction_cma_es(components, fracs)]
-        return list(set(variants))
+        return sorted(set(variants))
 
     def _mutate_mixture(
         self, smi_a: str, smi_b: str, frac: float, batch_size: int = 10
@@ -866,7 +880,7 @@ class MutationEngine:
             new_frac = max(0.1, min(0.9, frac + delta))
             variants.append(format_mixture_smiles(smi_a, smi_b, new_frac))
 
-        return list(set(variants))
+        return sorted(set(variants))
 
     def _mutate_ternary_mixture(
         self,

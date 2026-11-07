@@ -48,6 +48,15 @@ electron-accepting structural features is used. It is fitted on the same clean
 experimental set and reports a distinct ``method`` so the two paths can never
 be silently confused. The old TOM LUMO is *not* used as a fallback: at ρ = 0.34
 against a 0.31 permutation bar it carries essentially no ranking information.
+
+Export-pinned constants (verified by scripts/export_aurelius_to_qed.py, which
+reconstructs and asserts every one of them before emitting the QED export):
+EA affine calibration ``_EA_CALIBRATION = (0.6590, -2.9176)``, Born constant
+``_BORN_CONSTANT_EV_ANGSTROM = 13.598``, the 1.4 A cavity floor, the ALPB
+dielectric table, and the canonical stereo-SMILES cache-key scheme. The
+export also pins behavioral contracts (cavity monotonicity, solvent lookup,
+structural-ridge reporting, cache flush semantics, unavailable path) so
+mutants in this module fail the export command closed.
 """
 
 from __future__ import annotations

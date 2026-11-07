@@ -35,6 +35,14 @@ GPR is preferred over kernel ridge because:
 Molecules with fingerprints far from every calibration molecule get a residual
 near zero (GPR posterior mean → prior mean ≈ 0), so out-of-domain predictions
 degrade gracefully back to the base model (LPM for HOMO, TOM for LUMO).
+
+Determinism contract (pinned by TestMutationKillPins in
+tests/test_delta_correction.py): the GPR is seeded (random_state=42), the RBF
+length-scale is bounded to (0.5, 5.0) with warm-start threading through
+FeedbackController refits, and the fitted scale is recoverable via
+_extract_length_scale (its get_params fallback included). The LOO MAE and the
+corrected CCO probe values are pinned exactly so single-operator mutants in
+the LOO formula or the OOD damping cannot survive.
 """
 
 from __future__ import annotations
