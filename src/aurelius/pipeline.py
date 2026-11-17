@@ -109,10 +109,10 @@ def _extract_ea(tier2_result: dict[str, Any] | None) -> float | None:
     missing measurement as a bad one.
     """
     if not tier2_result:
-        return None
+        return
     proxy = tier2_result.get("reduction_stability_proxy")
     if not isinstance(proxy, dict):
-        return None
+        return
     value = proxy.get("ea_eV")
     return float(value) if isinstance(value, (int, float)) else None
 
@@ -124,11 +124,14 @@ def _extract_ea(tier2_result: dict[str, Any] | None) -> float | None:
 # LUMO axis (lumo_eV) is not used as a scoring objective — it was replaced by
 # the ΔSCF electron affinity axis (reduction_stability_reward) per ADR-2026-08-10.
 # The constant SCORE_WEIGHT_LUMO (0.23) now drives the validated EA axis.
-_SCORE_WEIGHT_REDUCTION_STABILITY: float = 0.305  # was 0.23 (SCORE_WEIGHT_LUMO) + 0.075
+# Phase 1 (aurelius-global-closure): donor number removed from scoring
+# (no silent de-rate, ρ ≈ 0.19); freed 0.05 split to reduction (+0.025)
+# and dielectric (+0.025).
+_SCORE_WEIGHT_REDUCTION_STABILITY: float = 0.33  # was 0.23 (SCORE_WEIGHT_LUMO) + 0.075 + 0.025
 _SCORE_WEIGHT_HOMO: float = 0.17
-_SCORE_WEIGHT_DIELECTRIC: float = 0.245  # was 0.17 + 0.075
+_SCORE_WEIGHT_DIELECTRIC: float = 0.27  # was 0.17 + 0.075 + 0.025
 _SCORE_WEIGHT_VISCOSITY: float = 0.14
-_SCORE_WEIGHT_LI_SOLVATION: float = 0.05  # de-rated from 0.20
+_SCORE_WEIGHT_LI_SOLVATION: float = 0.0  # removed from scoring (was de-rated 0.05)
 _SCORE_WEIGHT_SA: float = 0.01
 
 _OBJECTIVES: list[Objective] = [
@@ -149,10 +152,9 @@ _OBJECTIVES: list[Objective] = [
     Objective("viscosity_penalty", "viscosity_proxy", _SCORE_WEIGHT_VISCOSITY,
               lambda v: _sigmoid(v, VISCOSITY_THRESHOLD, 2.0, False),
               failure_reason_template="viscosity_proxy={value:.3f} (poor ion mobility)"),
-    # Donor-number axis ρ ≈ 0.19; de-rated to exploratory.
-    Objective("li_solvation_reward", "li_solvation_proxy", _SCORE_WEIGHT_LI_SOLVATION,
-              lambda v: _gaussian(v, LI_SOLVATION_TARGET, 1.0),
-              failure_reason_template="li_solvation_proxy={value:.3f} (poor Li+ binding)"),
+    # Donor-number axis removed from scoring (Phase 1: ρ ≈ 0.19, no
+    # silent de-rate). predict_li_solvation_proxy stays available as a
+    # transparency-only proxy via aurelius.scoring.oracle.gc.
     Objective("sa_penalty", "sa_score", _SCORE_WEIGHT_SA,
               lambda v: _sigmoid(v, SA_THRESHOLD, 2.0, False),
               failure_reason_template="SA score={value:.2f} (hard to synthesize)"),
@@ -509,6 +511,11 @@ class AureliusPipeline:
         total_score *= 100.0
 
         total_score = self._apply_penalties(total_score, lumo_eV, ctx, grounding)
+        # Depth-1 is a directly purchasable precursor, not a designed
+        # discovery: demote so precursors cannot dominate the novel top-10
+        # (integrity gate requires min retrosynthetic depth > 1).
+        if synthesis_depth == 1:
+            total_score *= 0.5
         total_score = float(np.clip(total_score, 0.0, 100.0))
 
         if quantum_confidence == "tom_low":

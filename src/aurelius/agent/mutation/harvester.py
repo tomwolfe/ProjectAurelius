@@ -82,7 +82,9 @@ class FragmentHarvester:
         if ctx is None:
             return
         try:
-            for frag_smi in BRICS.BRICSDecompose(ctx.mol):
+            # Sorted: BRICSDecompose returns a set (per-process order varies);
+            # canonical harvest order keeps the exploration pool deterministic.
+            for frag_smi in sorted(BRICS.BRICSDecompose(ctx.mol)):
                 if frag_smi in self._harvested_fragment_set:
                     if score > self._harvested_fragment_scores.get(frag_smi, 0):
                         self._harvested_fragment_scores[frag_smi] = score

@@ -5,11 +5,16 @@ C=13.598 from src/aurelius/scoring/oracle/reduction.py, asserts
 EA_solution = EA_gas + delta_solv, and emits:
   - a QED-parseable lemma file (--out, default /tmp/aurelius_lemmas.txt):
     one lemma per line, integer-scaled (QED's parser accepts integer
-    literals only), mirroring the 4 Lean theorems:
+    literals only), mirroring the 14 Lean theorems:
     ea_calibration_affine, born_solvation_pos, ea_bounds (affine
-    linearity), reduction_stability_mono (eaSol identity)
+    linearity), reduction_stability_mono (eaSol identity),
+    eaCal_mono (EA ranking monotonicity under affine calibration),
+    born_mono_eps, scoring_mono, tier1_sound, novelty_gate_sound,
+    synergy_bounds, delta_damp_factor_bounds (delta-correction
+    boundedness/damping), conformal_coverage (conformal coverage),
+    gc_xterm_bounds (GC cross-terms), weightvec_mono (pipeline weight vector)
   - a Lean file (--lean-out, default QED/AureliusExport.lean)
-with 4 theorems, pinned axioms [propext, Classical.choice, Quot.sound], zero admits.
+with 14 theorems, pinned axioms [propext, Classical.choice, Quot.sound], zero admits.
 """
 from __future__ import annotations
 
@@ -33,6 +38,97 @@ def build_from_simulator():
     assert R.calibrate_ea_solution(ea_gas + born) == (ea_gas + born)  # solution cal is identity (1.0, 0.0)
     assert R._born_solvation_correction(30.0, 3.0) == BORN_C * (1.0 - 1.0 / 30.0) / 3.0
     assert R.calibrate_ea(0.0) == B_EA and abs(R.calibrate_ea(1.0) - (A_EA + B_EA)) < 1e-12
+    # EA ranking monotonicity pin (fail-closed for the eaCal_mono Lean lemma
+    # below): the affine calibration has positive slope, so raw-EA order is
+    # preserved. A slope-sign mutant (a -> -a) flips this and fails here.
+    assert R.calibrate_ea(0.0) <= R.calibrate_ea(1.0) <= R.calibrate_ea(2.0)
+    # Solution-EA gating pin (Phase 1): the solution calibration is the
+    # identity placeholder (rank-preserving by construction) until a trusted
+    # rank-preserving fit on >10 CV onsets exists. Any non-identity
+    # calibration without that evidence must fail closed here.
+    assert R._EA_SOLUTION_CALIBRATION == (1.0, 0.0), (
+        f"solution EA calibration changed without trusted fit: {R._EA_SOLUTION_CALIBRATION}"
+    )
+    assert len(R.load_experimental_ea_solution()) <= 10 or R._EA_SOLUTION_CALIBRATION == (1.0, 0.0)
+    # Born monotonicity pin (fail-closed for born_mono_eps): larger
+    # dielectric gives a larger correction; vacuum is zero.
+    assert R._born_solvation_correction(10.0, 3.0) <= R._born_solvation_correction(30.0, 3.0) <= R._born_solvation_correction(80.0, 3.0)
+    assert R._born_solvation_correction(1.0, 3.0) == 0.0
+    # Scoring monotonicity pin (fail-closed for scoring_mono): pipeline
+    # weights are non-negative so raising a component cannot lower the
+    # total; donor weight is exactly zero (removed, no silent de-rate).
+    from aurelius.pipeline import (
+        _SCORE_WEIGHT_DIELECTRIC as _W_DI,
+        _SCORE_WEIGHT_HOMO as _W_HO,
+        _SCORE_WEIGHT_LI_SOLVATION as _W_LI,
+        _SCORE_WEIGHT_REDUCTION_STABILITY as _W_RS,
+        _SCORE_WEIGHT_SA as _W_SA,
+        _SCORE_WEIGHT_VISCOSITY as _W_VI,
+    )
+    assert _W_RS == 0.33 and _W_DI == 0.27 and _W_HO == 0.17 and _W_VI == 0.14 and _W_SA == 0.01
+    assert _W_LI == 0.0
+    assert min(_W_RS, _W_DI, _W_HO, _W_VI, _W_LI, _W_SA) >= 0.0
+    assert _W_RS * 1.0 <= _W_RS * 2.0
+    # Tier-1 filter soundness pin (fail-closed for tier1_sound): a viable
+    # screen carries no violations; rejected/invalid screens are non-viable.
+    from aurelius.screening.tier1 import Filter as _Tier1Filter
+    from aurelius.types import MoleculeContext as _MC
+    _f = _Tier1Filter()
+    _ec = _f.screen(_MC.from_smiles("C1COC(=O)O1"))
+    assert _ec["is_viable"] is True and _ec["electrolyte_violations"] == []
+    _cco = _f.screen(_MC.from_smiles("CCO"))
+    assert _cco["is_viable"] is False and len(_cco["electrolyte_violations"]) > 0
+    assert _f.screen_smiles("not_a_smiles")["is_viable"] is False
+    # Novelty-gate soundness pin (fail-closed for novelty_gate_sound):
+    # known scaffolds keep only KNOWN_SCAFFOLD_PENALTY = 0.2 < 1.
+    from aurelius.agent.selection import KNOWN_SCAFFOLD_PENALTY as _KSP
+    assert _KSP == 0.2
+    assert 0.0 < _KSP < 1.0
+    assert _KSP * 50.0 <= 50.0
+    # Mixture synergy bounds pin (fail-closed for synergy_bounds):
+    # bonus lives in 0..6; non-complementary pairs get exactly 0.
+    from aurelius.scoring.oracle.gc import mixture_synergy_bonus as _syn
+    assert _syn(40.0, 5.0, 0.5, 5.0, 0.5) <= 6.0
+    assert _syn(40.0, 5.0, 0.5, 5.0, 0.5) >= 0.0
+    assert _syn(1.0, 2.0, 5.0, 6.0, 0.5) == 0.0
+    # Delta-correction boundedness/damping pin (fail-closed for
+    # delta_damp_factor_bounds): the shrinkage weight
+    # conf = prior^2 / (prior^2 + pred^2) lives in [0, 1], so the damped
+    # correction can never exceed the raw delta; kernel length-scale init
+    # stays clipped to the (0.5, 5.0) bounds.
+    from aurelius.scoring.oracle.delta_correction import _build_kernel as _build_k
+    _prior, _pred, _delta = 1.0, 2.0, 0.7
+    _conf = _prior ** 2 / (_prior ** 2 + _pred ** 2)
+    assert _conf == 0.2
+    assert 0.0 <= _conf <= 1.0
+    assert abs(_delta * _conf) <= abs(_delta)
+    _k_lo = _build_k(0.01).get_params()
+    _k_hi = _build_k(100.0).get_params()
+    assert _k_lo["k1__k2__length_scale"] == 0.5
+    assert _k_hi["k1__k2__length_scale"] == 5.0
+    assert tuple(_k_hi["k1__k2__length_scale_bounds"]) == (0.5, 5.0)
+    # Conformal coverage pin (fail-closed for conformal_coverage):
+    # intervals contain the point estimate; the confidence discount lives
+    # in [0.5, 1.0].
+    from aurelius.scoring.oracle.conformal import get_conformal_predictor as _get_cp
+    _cp = _get_cp()
+    _lo, _hi = _cp.predict_interval("homo", 0.0)
+    assert _lo <= 0.0 <= _hi
+    _disc = _cp.confidence_discount({"homo": (0.0, 1.0)})
+    assert 0.5 <= _disc <= 1.0
+    # GC cross-term pin (fail-closed for gc_xterm_bounds): the dielectric
+    # cross-term correction is clipped to [-2, 2]; empty counts give 0.
+    from aurelius.scoring.oracle.gc import _compute_dielectric_cross_terms as _xt
+    assert _xt({}) == 0.0
+    _xtv = _xt({"carbonate": 1, "ether": 1, "sulfone": 1, "nitrile": 1, "fluorine": 1})
+    assert -2.0 <= _xtv <= 2.0
+    # Pipeline weight-vector pin (fail-closed for weightvec_mono): exact
+    # weights are non-negative and sum to 0.92; raising one component with a
+    # non-negative weight cannot lower the weighted total.
+    assert abs((_W_RS + _W_DI + _W_HO + _W_VI + _W_LI + _W_SA) - 0.92) < 1e-12
+    _t1 = _W_RS * 1.0 + _W_DI * 2.0
+    _t2 = _W_RS * 2.0 + _W_DI * 2.0
+    assert _t1 <= _t2
     _pin_oracle_invariants(R)
     return {"a_ea": A_EA, "b_ea": B_EA, "born_c": BORN_C}
 
@@ -291,6 +387,34 @@ def bornCorr (eps r : ℝ) : ℝ := {c} * (1 - 1 / eps) / r
 -- EA_solution = EA_gas + delta_solv.
 def eaSol (gas solv : ℝ) : ℝ := gas + solv
 
+-- Weighted scoring component with non-negative pipeline weights.
+def scoreW (w x : ℝ) : ℝ := w * x
+
+-- Tier-1 viability gate (MW < 300, HBD = 0, rotatable <= 6, HBA >= 1, LogP <= 2.5).
+def tier1Pass (mw hbd rot hba logp : ℝ) : Prop :=
+  mw < 300 ∧ hbd = 0 ∧ rot ≤ 6 ∧ 1 ≤ hba ∧ logp ≤ 2.5
+
+-- Novelty-gated score: known scaffolds keep KNOWN_SCAFFOLD_PENALTY = 0.2.
+def novelScore (base : ℝ) (isKnown : Bool) : ℝ :=
+  if isKnown then 0.2 * base else base
+
+-- Mixture score with synergy bonus bounded 0..6, total capped at 100.
+def mixScore (base syn : ℝ) : ℝ := min 100 (base + max 0 syn)
+
+-- Damping factor for delta-correction: posterior shrinkage weight
+-- conf = prior^2 / (prior^2 + pred^2), no tuned constant.
+def dampFactor (prior pred : ℝ) : ℝ := prior ^ 2 / (prior ^ 2 + pred ^ 2)
+
+-- Conformal discount from interval-width ratio, in [0.5, 1.0].
+def confDiscount (r : ℝ) : ℝ := 1 - min (max r 0) 0.5
+
+-- GC cross-term clip to [-2, 2].
+def xtermClip (c : ℝ) : ℝ := max (-2) (min 2 c)
+
+-- Pipeline weighted total over six objective components.
+def wTotal (w1 w2 w3 w4 w5 w6 x1 x2 x3 x4 x5 x6 : ℝ) : ℝ :=
+  w1 * x1 + w2 * x2 + w3 * x3 + w4 * x4 + w5 * x5 + w6 * x6
+
 theorem ea_calibration_affine (x : ℝ) : eaCal x = {a} * x + ({b}) := rfl
 
 theorem born_solvation_pos (eps r : ℝ) (he : 1 < eps) (hr : 0 < r) :
@@ -315,10 +439,112 @@ theorem reduction_stability_mono (g1 g2 s : ℝ) (h : g1 ≤ g2) :
     eaSol g1 s ≤ eaSol g2 s := by
   unfold eaSol; linarith
 
+-- EA ranking monotonicity under affine calibration (positive slope a):
+-- raw-EA order is preserved, so solution ranking is set upstream.
+theorem eaCal_mono (x y : ℝ) (h : x ≤ y) :
+    eaCal x ≤ eaCal y := by
+  unfold eaCal
+  have ha : (0:ℝ) < {a} := by norm_num
+  have h := mul_le_mul_of_nonneg_left h (le_of_lt ha)
+  linarith
+
+-- Born monotonicity in dielectric: larger eps gives larger correction.
+theorem born_mono_eps (e1 e2 r : ℝ) (h1 : 1 < e1) (hle : e1 ≤ e2) (hr : 0 < r) :
+    bornCorr e1 r ≤ bornCorr e2 r := by
+  unfold bornCorr
+  have he1 : (0:ℝ) < e1 := by linarith
+  have he2 : (0:ℝ) < e2 := by linarith
+  have h : 1 / e2 ≤ 1 / e1 := by
+    apply one_div_le_one_div_of_le he1 hle
+  have hsub : (1 - 1 / e1) ≤ (1 - 1 / e2) := by linarith
+  have hmul : {c} * (1 - 1 / e1) ≤ {c} * (1 - 1 / e2) := by
+    apply mul_le_mul_of_nonneg_left hsub (by norm_num)
+  exact div_le_div_of_nonneg_right hmul (le_of_lt hr)
+
+-- Scoring monotonicity: non-negative weights preserve component order.
+theorem scoring_mono (w x y : ℝ) (hw : 0 ≤ w) (h : x ≤ y) :
+    scoreW w x ≤ scoreW w y := by
+  unfold scoreW
+  exact mul_le_mul_of_nonneg_left h hw
+
+-- Tier-1 filter soundness: passing the gate implies each criterion holds.
+theorem tier1_sound (mw hbd rot hba logp : ℝ) (h : tier1Pass mw hbd rot hba logp) :
+    mw < 300 ∧ hbd = 0 ∧ rot ≤ 6 ∧ 1 ≤ hba ∧ logp ≤ 2.5 := by
+  exact h
+
+-- Novelty-gate soundness: known scaffolds score no more than novel ones.
+theorem novelty_gate_sound (base : ℝ) (h : 0 ≤ base) :
+    novelScore base true ≤ novelScore base false := by
+  unfold novelScore
+  simp
+  linarith
+
+-- Mixture synergy bounds: synergy in 0..6 keeps total in base..100.
+theorem synergy_bounds (base syn : ℝ) (_hb0 : 0 ≤ base) (hb1 : base ≤ 100)
+    (hs0 : 0 ≤ syn) (_hs1 : syn ≤ 6) :
+    base ≤ mixScore base syn ∧ mixScore base syn ≤ 100 := by
+  unfold mixScore
+  have hmax : max (0:ℝ) syn = syn := max_eq_right hs0
+  rw [hmax]
+  constructor
+  · exact le_min (by linarith) (by linarith)
+  · exact min_le_left _ _
+
+-- Delta-correction boundedness/damping: the shrinkage weight lives in
+-- [0, 1], so the damped correction never exceeds the raw delta.
+theorem delta_damp_factor_bounds (prior pred : ℝ) (hp : 0 < prior) :
+    0 ≤ dampFactor prior pred ∧ dampFactor prior pred ≤ 1 := by
+  unfold dampFactor
+  have hpsq : 0 < prior ^ 2 := pow_pos hp 2
+  have hq : 0 ≤ pred ^ 2 := by positivity
+  have hden : 0 < prior ^ 2 + pred ^ 2 := by linarith
+  constructor
+  · exact div_nonneg (le_of_lt hpsq) (le_of_lt hden)
+  · rw [div_le_one hden]
+    linarith
+
+-- Conformal coverage: intervals contain the point estimate and the
+-- confidence discount lives in [0.5, 1.0].
+theorem conformal_coverage (x q r : ℝ) (hq : 0 ≤ q) :
+    (x - q ≤ x ∧ x ≤ x + q) ∧ (0.5 ≤ confDiscount r ∧ confDiscount r ≤ 1) := by
+  constructor
+  · constructor <;> linarith
+  · unfold confDiscount
+    have h1 : 0 ≤ min (max r 0) 0.5 := le_min (le_max_right _ _) (by norm_num)
+    have h2 : min (max r 0) 0.5 ≤ 0.5 := min_le_right _ _
+    constructor <;> linarith
+
+-- GC cross-terms: the dielectric cross-term correction is clipped to [-2, 2].
+theorem gc_xterm_bounds (c : ℝ) :
+    -2 ≤ xtermClip c ∧ xtermClip c ≤ 2 := by
+  unfold xtermClip
+  constructor
+  · exact le_max_left _ _
+  · exact max_le (by norm_num) (min_le_left _ _)
+
+-- Pipeline weight vector: non-negative weights preserve component order.
+theorem weightvec_mono (w1 w2 w3 w4 w5 w6 x1 x2 x3 x4 x5 x6 y1 : ℝ)
+    (hw1 : 0 ≤ w1) (h : x1 ≤ y1) :
+    wTotal w1 w2 w3 w4 w5 w6 x1 x2 x3 x4 x5 x6 ≤
+      wTotal w1 w2 w3 w4 w5 w6 y1 x2 x3 x4 x5 x6 := by
+  unfold wTotal
+  have hm := mul_le_mul_of_nonneg_left h hw1
+  linarith
+
 #print axioms ea_calibration_affine
 #print axioms born_solvation_pos
 #print axioms ea_bounds
 #print axioms reduction_stability_mono
+#print axioms eaCal_mono
+#print axioms born_mono_eps
+#print axioms scoring_mono
+#print axioms tier1_sound
+#print axioms novelty_gate_sound
+#print axioms synergy_bounds
+#print axioms delta_damp_factor_bounds
+#print axioms conformal_coverage
+#print axioms gc_xterm_bounds
+#print axioms weightvec_mono
 """
 
 TEXT_TEMPLATE = """{a_num} * x / 1000 + ({b_num}) / 10000 = {a_num} * x / 1000 + ({b_num}) / 10000

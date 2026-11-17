@@ -185,6 +185,10 @@ class LoopState:
     def clear(self) -> None:
         self.batch_means.clear()
         self._all_scores.clear()
+        # Scaffold history must reset too: sequential benchmark seeds share
+        # one state file, and inherited scaffolds corrupt stagnation and
+        # saturation detection for later seeds (order-dependent measurement).
+        self.scaffolds_per_batch.clear()
         self.generations = 0
         self.seed_pool_size = 0
         self.total_screened = 0

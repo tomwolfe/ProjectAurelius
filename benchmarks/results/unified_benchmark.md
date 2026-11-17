@@ -1,7 +1,7 @@
 # Unified Benchmark Report
 
-**Status**: ❌ FAIL
-**Generated**: 2026-08-14 15:58:10
+**Status**: ✅ PASS
+**Generated**: 2026-11-14 05:10:14
 
 ## Tolerances
 ### Orbital
@@ -9,12 +9,18 @@
 - `lpm_nist_mae_max`: 0.45
 - `lpm_unseen_dft_rho_min`: 0.35
 - `tom_leakage_gap_max`: 0.45
+- `tom_lumo_unseen_rho_min`: 0.05
+- `tom_lumo_unseen_mae_max`: 1.2
+- `high_hetero_homo_rho_min`: 0.6
+- `high_hetero_homo_mae_max`: 0.65
 
 ### Dielectric
 - `kf_mae_max`: 5.0
 - `kf_rho_min`: 0.9
 - `commercial_mae_max`: 3.0
 - `commercial_rho_min`: 0.95
+- `max_err_max`: 50.0
+- `p95_err_max`: 15.0
 
 ### Viscosity
 - `rho_min`: 0.5
@@ -30,23 +36,27 @@
 - `novel_scaffold_min`: 0.8
 - `score_gap_min`: 0.0
 
+### Integrity
+- `trivial_smiles`: ['O', 'C#N']
+- `min_retrosynthetic_depth`: 1
+
 ## Results
 ### Orbital (Leakage-Aware)
 #### All (n=72)
-- TOM: ρ=+0.2044, MAE=1.3132 eV
+- TOM: ρ=+0.2044, MAE=1.3117 eV
 - LPM: ρ=+0.5561, MAE=0.3855 eV
 
 #### Seen (n=27)
-- TOM: ρ=+0.5422, MAE=0.5163 eV
+- TOM: ρ=+0.5422, MAE=0.5143 eV
 - LPM: ρ=+0.8487, MAE=0.2483 eV
 
 #### Unseen (n=45)
-- TOM: ρ=+0.1700, MAE=1.7913 eV
+- TOM: ρ=+0.1700, MAE=1.7901 eV
 - LPM: ρ=+0.4319, MAE=0.4678 eV
 
 #### Experimental IPs (NIST, no leakage)
-- LPM: ρ=+0.9399, MAE=0.3135 eV, 0.007s
-- TOM: ρ=+0.2556, MAE=3.7847 eV, 0.037s
+- LPM: ρ=+0.9399, MAE=0.3135 eV, 0.005s
+- TOM: ρ=+0.2557, MAE=3.7823 eV, 0.021s
 - Span: 8.48 eV, 81 distinct values
 
 ### Dielectric (Kirkwood-Fröhlich)
@@ -55,23 +65,23 @@
 
 ### Bulk Properties (External Benchmark)
 - Dielectric: ρ=+0.6651, MAE=6.7748, n=99
-- Viscosity: ρ=+0.5513, MAE=1.4139, n=98
+- Viscosity: ρ=+0.5624, MAE=1.4695, n=98
 - Donor_Number: ρ=+0.1885, MAE=18.6259, n=33
 
 ### Oracle vs ML Baseline (ECFP4+RF)
-- HOMO: Oracle ρ=+0.1096, RF ρ=+0.3872 ± 0.3172, gap=-0.2776 ⚠️
-- LUMO: Oracle ρ=+0.2911, RF ρ=+0.2947 ± 0.2352, gap=-0.0035 ✅
+- HOMO: Oracle ρ=+0.5680, RF ρ=+0.3872 ± 0.3172, gap=+0.1808 ✅
+- LUMO: Oracle ρ=+0.2744, RF ρ=+0.2947 ± 0.2352, gap=-0.0203 ✅
 - Dielectric: Oracle ρ=+0.6417, RF ρ=+0.6331 ± 0.1392, gap=+0.0085 ✅
-- Viscosity: Oracle ρ=+0.6330, RF ρ=+0.4207 ± 0.2293, gap=+0.2123 ✅
+- Viscosity: Oracle ρ=+0.6359, RF ρ=+0.4207 ± 0.2293, gap=+0.2152 ✅
 - Donor Number: Oracle ρ=+0.2993, RF ρ=+0.3726 ± 0.3684, gap=-0.0733 ⚠️
 
 ### Discovery Metrics
-- Rediscovery rate (seeded-exact recovery): 68.8% (33/48 knowns recovered in the screened pool; target ≥50%)
-- Rediscovery coverage rate (Gap 4 transparency, top 25%): 18.8%
-- Novel scaffold ratio: 60.0% (target ≥80%)
-- Known mean score: 72.27
-- Top mean score: 100.00
-- Score gap: +27.72
+- Rediscovery rate (seeded-exact recovery, GATING): 70.6% (36/51 knowns recovered in the screened pool; target >=50%)
+- Rediscovery exact-match rate (gating number): 70.6% (36/51 exact SMILES)
+- Rediscovery coverage rate (transparency-only, top 25%): 9.0% (does not gate)
+- Novel scaffold ratio: 100.0% (target ≥80%)
+- Known mean score: 47.94
+- Top mean score: 84.47
+- Score gap: +36.53
 
-## ❌ CI Failures
-- Novel scaffold ratio=0.600 < 0.8
+## ✅ All Tolerances Met

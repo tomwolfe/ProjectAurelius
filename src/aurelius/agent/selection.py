@@ -393,7 +393,7 @@ def tournament_select(
 def _murcko_scaffold_smiles(ctx: MoleculeContext) -> str | None:
     """Compute Murcko scaffold SMILES for a MoleculeContext."""
     if ctx is None:
-        return None
+        return
     try:
         from rdkit.Chem.Scaffolds import MurckoScaffold
         scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
@@ -417,7 +417,7 @@ def _scaffold_specific_or_self(ctx: MoleculeContext) -> str | None:
     Acyclic molecules are identified by their canonical SMILES instead.
     """
     if ctx is None or ctx.mol is None:
-        return None
+        return
     try:
         from rdkit.Chem.Scaffolds import MurckoScaffold
         scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=ctx.mol)
@@ -465,7 +465,8 @@ minimisation internally; ``"max"`` objectives are negated before comparison.
 #
 # Physical groupings (ADR-2026-08-07-05):
 #   1. ionic_transport        = dielectric × 0.4 + (1/viscosity) × 0.4 + li_solvation × 0.2
-#   2. electronic_stability   = homo × 0.3 + lumo × 0.3 + gap × 0.4
+#   2. electronic_stability   = homo × 1.0 (LPM HOMO only; TOM-family LUMO
+#       gated out - unseen ρ ≈ 0.07-0.09, fail-closed, see weights below)
 #   3. synthetic_accessibility = synthesis_depth × -0.5 (min) + grounding × 0.5 (max)
 #   4. chemical_complexity    = sa_score × -0.5 (min) + novelty × 0.5 (max)
 _COMPOSITE_WEIGHTS: dict[str, dict[str, float]] = {
@@ -475,9 +476,14 @@ _COMPOSITE_WEIGHTS: dict[str, dict[str, float]] = {
         "li_solvation_proxy": 0.2,
     },
     "electronic_stability": {
-        "homo_eV": 0.3,
-        "lumo_eV": 0.3,
-        "gap_eV": 0.4,
+        # TOM-family LUMO gated out of ranking (fail-closed): raw TOM LUMO
+        # unseen-DFT ρ ≈ 0.09 and Δ-corrected LUMO unseen ρ ≈ 0.07, both far
+        # below the 0.30 aspirational bar, so LUMO (and the LUMO-derived gap)
+        # carry no ranking weight. Electronic stability ranks on LPM HOMO
+        # (NIST ρ ≈ 0.94) only until a validated LUMO predictor exists.
+        "homo_eV": 1.0,
+        "lumo_eV": 0.0,
+        "gap_eV": 0.0,
     },
     "synthetic_accessibility": {
         "synthesis_depth": 0.5,
@@ -504,11 +510,13 @@ def build_npga2_composite_objectives(
        dielectric constant and η is the viscosity. Li+ solvation modulates
        the effective charge-carrier density.
 
-    2. ``electronic_stability`` — HOMO energy (max, reductive stability),
-       LUMO energy (max, oxidative stability), and HOMO-LUMO gap (max).
-       Physical justification: electrolyte stability window = LUMO − HOMO.
-       Maximising both frontier orbital energies widens the electrochemical
-       stability window; the gap captures conjugation strength.
+    2. ``electronic_stability`` — HOMO energy (max, LPM HOMO only).
+       TOM-family LUMO (and the LUMO-derived gap) are gated out of ranking
+       fail-closed: raw TOM LUMO unseen-DFT ρ ≈ 0.09 and Δ-corrected LUMO
+       unseen ρ ≈ 0.07, far below the 0.30 aspirational bar.
+       Physical justification: reductive stability tracks the trustworthy
+       LPM HOMO signal (NIST ρ ≈ 0.94); ranking on a ~random LUMO would
+       inject noise into Pareto selection.
 
     3. ``synthetic_accessibility`` — synthesis depth (min) and
        combined grounding score (max).
@@ -827,52 +835,85 @@ def _crowding_distance(
     adjusted = objectives[front_indices].copy().astype(np.float32)
 
     if device == "mlx":
-        import mlx.core as mx
-
-        # MLX-accelerated crowding distance: compute sorted indices and spans
-        # on MLX, then accumulate distances on numpy (the accumulation loop is
-        # the dominant cost and numpy is well-optimized for typical batch sizes).
-        adj_mlx = mx.array(adjusted)
-
-        # Apply sign flip for minimization objectives
-        for j in range(adjusted.shape[1]):
-            if not maximise[j]:
-                adj_mlx[:, j] = -adj_mlx[:, j]
-
-        n_obj = adjusted.shape[1]
-        span_diffs: list[tuple[Any, Any]] = []
-        for j in range(n_obj):
-            obj_vals = adj_mlx[:, j]
-            sorted_idx = mx.argsort(obj_vals)
-            obj_sorted = adj_mlx[sorted_idx, j]
-            span = float(obj_sorted[-1] - obj_sorted[0])
-            if span > 0:
-                # Compute neighbor differences for interior points (1 to n-2)
-                k = mx.arange(1, n - 1)  # interior point indices in sorted order
-                # Neighbors in sorted order
-                km1 = mx.maximum(k - 1, mx.zeros_like(k))
-                kp1 = mx.minimum(k + 1, mx.full((), n - 1, dtype=mx.int32))
-                left_vals = mx.take(obj_sorted, km1)
-                right_vals = mx.take(obj_sorted, kp1)
-                diffs = (right_vals - left_vals) / span
-                span_diffs.append((sorted_idx, diffs))
-            else:
-                # Zero span: no contribution
-                idx = mx.arange(n, dtype=mx.int32)
-                span_diffs.append((idx, mx.zeros(n - 2, dtype=mx.float32)))
-
-        # Accumulate on numpy
-        distances = np.full(n, float("inf"), dtype=np.float32)
-        for _j, (sorted_idx, diffs) in enumerate(span_diffs):
-            s_idx = np.array(sorted_idx)
-            for k in range(n - 2):
-                distances[int(s_idx[k + 1])] += float(diffs[k])
-
-        return distances
+        return _crowding_distance_mlx(front_indices, adjusted, maximise, n)
 
     # Default: numpy implementation (fast enough for typical batch sizes 200-500;
     # 0.2ms for n=100, 3 objectives on M5 Pro)
     return _crowding_distance_numpy(front_indices, objectives, maximise)
+
+
+def _crowding_distance_mlx(
+    front_indices: list[int],
+    adjusted: np.ndarray,
+    maximise: np.ndarray,
+    n: int,
+) -> np.ndarray:
+    """MLX-accelerated crowding distance for a single NSGA-II front.
+
+    Computes sorted indices and spans on MLX, then accumulates neighbor
+    differences on numpy (the accumulation loop is the dominant cost and
+    numpy is well-optimized for typical batch sizes 200-500).
+
+    Args:
+        front_indices: Indices into the current Pareto front (unused except
+            for length documentation; ``adjusted`` is already gathered).
+        adjusted: Objective values for the front, shape (n, n_objectives).
+        maximise: Boolean array indicating whether each objective is maximized.
+        n: Number of individuals in the front (``len(front_indices)``).
+
+    Returns:
+        Crowding distance array where ``inf`` denotes boundary individuals.
+    """
+    import mlx.core as mx
+
+    # Apply sign flip for minimization objectives
+    adj_mlx = mx.array(adjusted)
+    for j in range(adjusted.shape[1]):
+        if not maximise[j]:
+            adj_mlx[:, j] = -adj_mlx[:, j]
+
+    n_obj = adjusted.shape[1]
+    span_diffs: list[tuple[Any, Any]] = []
+    for j in range(n_obj):
+        obj_vals = adj_mlx[:, j]
+        sorted_idx = mx.argsort(obj_vals)
+        obj_sorted = adj_mlx[sorted_idx, j]
+        span = float(obj_sorted[-1] - obj_sorted[0])
+        if span > 0:
+            # Compute neighbor differences for interior points (1 to n-2)
+            k = mx.arange(1, n - 1)  # interior point indices in sorted order
+            # Neighbors in sorted order
+            km1 = mx.maximum(k - 1, mx.zeros_like(k))
+            kp1 = mx.minimum(k + 1, mx.full((), n - 1, dtype=mx.int32))
+            left_vals = mx.take(obj_sorted, km1)
+            right_vals = mx.take(obj_sorted, kp1)
+            diffs = (right_vals - left_vals) / span
+            span_diffs.append((sorted_idx, diffs))
+        else:
+            # Zero span: no contribution (empty diffs so this
+            # objective does not mark any boundary).
+            idx = mx.arange(n, dtype=mx.int32)
+            span_diffs.append((idx, mx.zeros(0, dtype=mx.float32)))
+
+    # Accumulate on numpy from zero so interior contributions are
+    # load-bearing: starting from inf would absorb every finite
+    # increment (inf + x == inf) and hide arithmetic mutations.
+    distances = np.zeros(n, dtype=np.float32)
+    bounded: list[Any] = []
+    for _j, (sorted_idx, diffs) in enumerate(span_diffs):
+        s_idx = np.array(sorted_idx)
+        if np.array(diffs).size == 0:
+            continue
+        bounded.append(s_idx)
+        for k in range(n - 2):
+            distances[int(s_idx[k + 1])] += float(diffs[k])
+
+    if not bounded:
+        return np.full(n, float("inf"), dtype=np.float32)
+    for s_idx in bounded:
+        distances[int(s_idx[0])] = float("inf")
+        distances[int(s_idx[-1])] = float("inf")
+    return distances
 
 
 def _crowding_distance_numpy(
@@ -893,7 +934,11 @@ def _crowding_distance_numpy(
             adjusted[:, j] = -adjusted[:, j]
 
     n_obj = adjusted.shape[1]
-    distances = np.full(n, float("inf"), dtype=np.float32)
+    # Start from zero so interior contributions are load-bearing:
+    # starting from inf would absorb every finite increment
+    # (inf + x == inf) and hide arithmetic mutations.
+    distances = np.zeros(n, dtype=np.float32)
+    bounded = False
 
     # Vectorized crowding distance calculation
     for j in range(n_obj):
@@ -902,13 +947,18 @@ def _crowding_distance_numpy(
         span = obj_vals[sorted_local[-1]] - obj_vals[sorted_local[0]]
         if span == 0:
             continue
+        bounded = True
 
         # Interior points: accumulate normalized differences
         for k in range(1, n - 1):
             distances[sorted_local[k]] += (
                 obj_vals[sorted_local[k + 1]] - obj_vals[sorted_local[k - 1]]
             ) / span
+        distances[sorted_local[0]] = float("inf")
+        distances[sorted_local[-1]] = float("inf")
 
+    if not bounded:
+        return np.full(n, float("inf"), dtype=np.float32)
     return distances
 
 

@@ -4,50 +4,78 @@
       "tom": {
         "n": 72,
         "spearman_rho": 0.20438154762722485,
-        "mae": 1.3132134013705783
+        "mae": 1.3116693596045177
       },
       "lpm": {
         "n": 72,
         "spearman_rho": 0.5561061997466832,
         "mae": 0.38546086292966564
+      },
+      "tom_lumo": {
+        "n": 72,
+        "spearman_rho": 0.21150899731090486,
+        "mae": 0.9046550284088072
       }
     },
     "seen": {
       "tom": {
         "n": 27,
         "spearman_rho": 0.5421606223316706,
-        "mae": 0.5163257704840766
+        "mae": 0.5143036188902679
       },
       "lpm": {
         "n": 27,
         "spearman_rho": 0.8486833403109245,
         "mae": 0.24830967415547991
+      },
+      "tom_lumo": {
+        "n": 27,
+        "spearman_rho": 0.35920763815156553,
+        "mae": 0.972271078162723
       }
     },
     "unseen": {
       "tom": {
         "n": 45,
         "spearman_rho": 0.17004700180008686,
-        "mae": 1.7913459799024793
+        "mae": 1.7900888040330674
       },
       "lpm": {
         "n": 45,
         "spearman_rho": 0.4319189473363715,
         "mae": 0.46775157619417695
+      },
+      "tom_lumo": {
+        "n": 45,
+        "spearman_rho": 0.0862756362006578,
+        "mae": 0.8640853985564576
       }
+    },
+    "high_hetero": {
+      "lpm": {
+        "n": 37,
+        "spearman_rho": 0.6533032459697123,
+        "mae": 0.4844192663358267
+      },
+      "tom": {
+        "n": 37,
+        "spearman_rho": 0.12354269982975785,
+        "mae": 2.0669491355483602
+      },
+      "n": 37
     },
     "experimental_ip": {
       "lpm": {
         "n": 88,
         "spearman_rho": 0.93991951111468,
         "mae": 0.31350594119269815,
-        "seconds": 0.0069
+        "seconds": 0.0048
       },
       "tom": {
         "n": 88,
-        "spearman_rho": 0.2555759990788422,
-        "mae": 3.7846883658929302,
-        "seconds": 0.0368
+        "spearman_rho": 0.2556668718507726,
+        "mae": 3.7823144754496485,
+        "seconds": 0.0215
       },
       "n": 88,
       "span_eV": 8.48,
@@ -59,7 +87,9 @@
       "n": 55,
       "spearman_rho": 0.9339634554812198,
       "mae": 3.2583742807884852,
-      "seconds": 0.0102
+      "seconds": 0.0072,
+      "max_err": 43.0976,
+      "p95_err": 12.4903
     },
     "commercial": {
       "n": 10,
@@ -75,8 +105,8 @@
     },
     "viscosity": {
       "n": 98,
-      "spearman_rho": 0.5513395679775673,
-      "mae": 1.413897150411706
+      "spearman_rho": 0.5624029609947085,
+      "mae": 1.469531235862212
     },
     "donor_number": {
       "n": 33,
@@ -85,39 +115,167 @@
     }
   },
   "discovery": {
+    "seeds_tested": [
+      42,
+      123,
+      7,
+      2024,
+      99
+    ],
+    "per_seed_results": [
+      {
+        "rediscovery_mode": "seeded_exact",
+        "rediscovery_rate": 0.7059,
+        "rediscovery_exact_rate": 0.7059,
+        "rediscovery_coverage_frac": 0.25,
+        "rediscovery_coverage_rate": 0.098,
+        "rediscovery_coverage_note": "transparency-only: score-space top-25% coverage inverts as the search improves; seeded-exact is the gating number",
+        "rediscovery_top_n": 37,
+        "rediscovery_pool_size": 145,
+        "novel_scaffold_ratio": 1.0,
+        "known_mean_score": 47.94,
+        "top_mean_score": 83.45,
+        "score_gap": 35.51,
+        "n_known": 51,
+        "n_rediscovered": 36,
+        "n_rediscovered_exact": 36,
+        "n_top_scaffolds": 31,
+        "n_novel_scaffolds": 31,
+        "n_duplicates_top50": 0,
+        "trivial_hits_top50": [],
+        "min_retrosynthetic_depth_top10": 2,
+        "seed": 42
+      },
+      {
+        "rediscovery_mode": "seeded_exact",
+        "rediscovery_rate": 0.7059,
+        "rediscovery_exact_rate": 0.7059,
+        "rediscovery_coverage_frac": 0.25,
+        "rediscovery_coverage_rate": 0.098,
+        "rediscovery_coverage_note": "transparency-only: score-space top-25% coverage inverts as the search improves; seeded-exact is the gating number",
+        "rediscovery_top_n": 37,
+        "rediscovery_pool_size": 146,
+        "novel_scaffold_ratio": 1.0,
+        "known_mean_score": 47.94,
+        "top_mean_score": 84.3,
+        "score_gap": 36.36,
+        "n_known": 51,
+        "n_rediscovered": 36,
+        "n_rediscovered_exact": 36,
+        "n_top_scaffolds": 31,
+        "n_novel_scaffolds": 31,
+        "n_duplicates_top50": 0,
+        "trivial_hits_top50": [],
+        "min_retrosynthetic_depth_top10": 2,
+        "seed": 123
+      },
+      {
+        "rediscovery_mode": "seeded_exact",
+        "rediscovery_rate": 0.7059,
+        "rediscovery_exact_rate": 0.7059,
+        "rediscovery_coverage_frac": 0.25,
+        "rediscovery_coverage_rate": 0.098,
+        "rediscovery_coverage_note": "transparency-only: score-space top-25% coverage inverts as the search improves; seeded-exact is the gating number",
+        "rediscovery_top_n": 37,
+        "rediscovery_pool_size": 146,
+        "novel_scaffold_ratio": 1.0,
+        "known_mean_score": 47.94,
+        "top_mean_score": 84.32,
+        "score_gap": 36.38,
+        "n_known": 51,
+        "n_rediscovered": 36,
+        "n_rediscovered_exact": 36,
+        "n_top_scaffolds": 31,
+        "n_novel_scaffolds": 31,
+        "n_duplicates_top50": 0,
+        "trivial_hits_top50": [],
+        "min_retrosynthetic_depth_top10": 2,
+        "seed": 7
+      },
+      {
+        "rediscovery_mode": "seeded_exact",
+        "rediscovery_rate": 0.7059,
+        "rediscovery_exact_rate": 0.7059,
+        "rediscovery_coverage_frac": 0.25,
+        "rediscovery_coverage_rate": 0.098,
+        "rediscovery_coverage_note": "transparency-only: score-space top-25% coverage inverts as the search improves; seeded-exact is the gating number",
+        "rediscovery_top_n": 37,
+        "rediscovery_pool_size": 146,
+        "novel_scaffold_ratio": 1.0,
+        "known_mean_score": 47.94,
+        "top_mean_score": 84.24,
+        "score_gap": 36.3,
+        "n_known": 51,
+        "n_rediscovered": 36,
+        "n_rediscovered_exact": 36,
+        "n_top_scaffolds": 31,
+        "n_novel_scaffolds": 31,
+        "n_duplicates_top50": 0,
+        "trivial_hits_top50": [],
+        "min_retrosynthetic_depth_top10": 2,
+        "seed": 2024
+      },
+      {
+        "rediscovery_mode": "seeded_exact",
+        "rediscovery_rate": 0.7059,
+        "rediscovery_exact_rate": 0.7059,
+        "rediscovery_coverage_frac": 0.25,
+        "rediscovery_coverage_rate": 0.0588,
+        "rediscovery_coverage_note": "transparency-only: score-space top-25% coverage inverts as the search improves; seeded-exact is the gating number",
+        "rediscovery_top_n": 37,
+        "rediscovery_pool_size": 146,
+        "novel_scaffold_ratio": 1.0,
+        "known_mean_score": 47.94,
+        "top_mean_score": 86.03,
+        "score_gap": 38.09,
+        "n_known": 51,
+        "n_rediscovered": 36,
+        "n_rediscovered_exact": 36,
+        "n_top_scaffolds": 31,
+        "n_novel_scaffolds": 31,
+        "n_duplicates_top50": 0,
+        "trivial_hits_top50": [],
+        "min_retrosynthetic_depth_top10": 2,
+        "seed": 99
+      }
+    ],
+    "novel_scaffold_ratio": 1.0,
+    "min_novel_scaffold_seed": 42,
     "rediscovery_mode": "seeded_exact",
-    "rediscovery_rate": 0.6875,
-    "rediscovery_exact_rate": 0.6875,
+    "rediscovery_rate": 0.7059,
+    "rediscovery_exact_rate": 0.7059,
     "rediscovery_coverage_frac": 0.25,
-    "rediscovery_coverage_rate": 0.1875,
-    "rediscovery_top_n": 202,
-    "rediscovery_pool_size": 805,
-    "novel_scaffold_ratio": 0.6,
-    "known_mean_score": 72.27,
-    "top_mean_score": 100.0,
-    "score_gap": 27.72,
-    "n_known": 48,
-    "n_rediscovered": 33,
-    "n_rediscovered_exact": 33,
-    "n_top_scaffolds": 10,
-    "n_novel_scaffolds": 6
+    "rediscovery_coverage_rate": 0.0902,
+    "rediscovery_top_n": 37,
+    "rediscovery_pool_size": 146,
+    "n_rediscovered": 36,
+    "n_rediscovered_exact": 36,
+    "known_mean_score": 47.94,
+    "top_mean_score": 84.47,
+    "rediscovery_coverage_note": "transparency-only: score-space top-25% coverage inverts as the search improves; seeded-exact is the gating number",
+    "score_gap": 36.53,
+    "n_known": 51,
+    "multi_seed": true,
+    "n_duplicates_top50": 0,
+    "trivial_hits_top50": [],
+    "min_retrosynthetic_depth_top10": 2
   },
   "ml_baseline": {
     "HOMO": {
-      "oracle_rho": 0.1096,
-      "oracle_p": 0.3596,
+      "oracle_rho": 0.568,
+      "oracle_p": 0.0,
       "rf_rho": 0.3872,
       "rf_std": 0.3172,
-      "gap": -0.2776,
+      "gap": 0.1808,
       "n_valid": 72,
-      "oracle_wins": false
+      "oracle_wins": true
     },
     "LUMO": {
-      "oracle_rho": 0.2911,
-      "oracle_p": 0.0131,
+      "oracle_rho": 0.2744,
+      "oracle_p": 0.0197,
       "rf_rho": 0.2947,
       "rf_std": 0.2352,
-      "gap": -0.0035,
+      "gap": -0.0203,
       "n_valid": 72,
       "oracle_wins": true
     },
@@ -131,11 +289,11 @@
       "oracle_wins": true
     },
     "Viscosity": {
-      "oracle_rho": 0.633,
+      "oracle_rho": 0.6359,
       "oracle_p": 0.0,
       "rf_rho": 0.4207,
       "rf_std": 0.2293,
-      "gap": 0.2123,
+      "gap": 0.2152,
       "n_valid": 69,
       "oracle_wins": true
     },
@@ -150,8 +308,8 @@
     }
   },
   "mixtures": {
-    "tested": 7,
-    "valid": 7,
+    "tested": 10,
+    "valid": 10,
     "properties": {
       "dielectric_proxy": [
         42.3271,
@@ -160,16 +318,22 @@
         79.5088,
         20.0014,
         60.0899,
-        66.8027
+        66.8027,
+        54.5397,
+        20.0881,
+        20.2481
       ],
       "viscosity_proxy": [
-        0.8593,
-        0.9336,
-        1.9531,
-        2.2921,
-        1.1033,
-        1.9462,
-        1.6139
+        0.7826,
+        0.8841,
+        2.0092,
+        2.3,
+        0.9593,
+        1.9255,
+        1.58,
+        1.3639,
+        0.6165,
+        0.5457
       ],
       "li_solvation_proxy": [
         2.5778,
@@ -178,25 +342,34 @@
         2.6438,
         2.096,
         2.8818,
-        2.5172
+        2.5172,
+        2.5538,
+        2.0679,
+        2.0399
       ],
       "homo_eV": [
-        -7.8094,
-        -7.7175,
-        -7.711,
-        -7.604,
-        -8.322,
-        -7.5385,
-        -8.2012
+        -7.6914,
+        -7.6417,
+        -7.6098,
+        -7.7386,
+        -7.6761,
+        -7.5796,
+        -7.6891,
+        -7.7802,
+        -7.7607,
+        -7.8105
       ],
       "lumo_eV": [
-        -0.0651,
-        -0.0328,
-        -0.0948,
-        -0.163,
-        0.0369,
-        0.1316,
-        -0.0115
+        -0.1083,
+        -0.0794,
+        -0.135,
+        -0.1818,
+        -0.0259,
+        0.0913,
+        -0.081,
+        -0.2337,
+        0.0017,
+        -0.0273
       ],
       "synergy_bonus": [
         6.0,
@@ -205,6 +378,9 @@
         0.0,
         6.0,
         0.0,
+        6.0,
+        6.0,
+        6.0,
         6.0
       ]
     }

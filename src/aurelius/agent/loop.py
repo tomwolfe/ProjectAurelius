@@ -201,7 +201,7 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
     """
     output_dir = None
 
-    engine = MutationEngine()
+    engine = MutationEngine(seed=agent_cfg.seed)
     random.seed(agent_cfg.seed)
     state = LoopState(output_dir=output_dir)
 
@@ -237,6 +237,7 @@ def run_screening(agent_cfg: AgentConfig) -> dict[str, Any]:
         xtb_single_point=agent_cfg.xtb_single_point,
         mixture_mutation_rate=agent_cfg.mixture_mutation_rate,
         mixture_seed_from_known=agent_cfg.mixture_seed_from_known,
+        seed=agent_cfg.seed,
     )
 
     # W6: Initialise experimental feedback controller for on-line oracle refinement
@@ -328,6 +329,7 @@ class DiscoveryLoop:
         mixture_mutation_rate: float = 0.35,
         mixture_seed_from_known: bool = True,
         seed_knowns: bool = False,
+        seed: int = 42,
     ) -> None:
         self.pipeline = pipeline
         self.engine = engine
@@ -342,6 +344,8 @@ class DiscoveryLoop:
         self.mixture_mutation_rate = max(0.0, min(1.0, mixture_mutation_rate))
         self.mixture_seed_from_known = mixture_seed_from_known
         self.seed_knowns = seed_knowns
+        self.seed = seed
+        self._rng = random.Random(seed)
         self.feedback_controller: FeedbackController | None = None
 
         self.all_results: list[ScreeningResult] = []
@@ -459,13 +463,19 @@ class DiscoveryLoop:
         existing = set(self.engine.seed_pool)
         unused = [s for s in all_seeds if s not in existing]
         if unused:
-            selected = random.sample(unused, min(5, len(unused)))
+            selected = self._rng.sample(unused, min(5, len(unused)))
             self.engine.seed_pool.extend(selected)
             log.info("  Injected %d fresh tier0 seed SMILES into seed pool.", len(selected))
 
     def _generate_candidates(self, generation: int, force_exploration: bool = False) -> list[str]:
         top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
-        single_candidates = list(self.engine.mutate_batch(top_seeds, self.batch_size * 3, force_exploration=force_exploration))
+        # Per-molecule budget equals the evaluation batch size so the budget
+        # binds: the seed-governed reaction/pair order then decides which
+        # products fill it, letting different benchmark seeds explore
+        # complementary subspaces (multi-seed restarts diverge). An
+        # over-generous multiple never binds, which collapses every seed to
+        # the same deterministic enumeration.
+        single_candidates = list(self.engine.mutate_batch(top_seeds, self.batch_size, force_exploration=force_exploration))
 
         # ADR-2026-08-08-03: Mixture fraction driven by mixture_mutation_rate.
         # Target: mixture candidates = rate * single_candidates, clamped to
@@ -506,14 +516,24 @@ class DiscoveryLoop:
         # philosophy tests (which measure mutation-novelty yield) are unaffected.
         if self.seed_knowns and generation == 1:
             all_candidates.extend(self.engine.known_smiles())
-        random.shuffle(all_candidates)
+        self._rng.shuffle(all_candidates)
         return all_candidates
 
     def _top_seeds_from_results(self) -> list[str]:
         scored = [(r.total_score, r.smiles) for r in self.all_results if r.total_score > 0]
         scored.sort(key=lambda x: -x[0])
         n = max(5, len(scored) // 5)
-        return [s for _, s in scored[:n]]
+        # Elite plus seed-sampled rest: the top half exploits, while the
+        # loop RNG samples the remainder from the ranked pool so different
+        # benchmark seeds expand different parents (multi-seed restarts
+        # diverge instead of collapsing to one deterministic trajectory).
+        elite_n = max(2, n // 2)
+        parents = [s for _, s in scored[:elite_n]]
+        rest = [s for _, s in scored[elite_n:]]
+        need = n - len(parents)
+        if need > 0 and rest:
+            parents += self._rng.sample(rest, min(need, len(rest)))
+        return parents
 
     def _filter_candidates(
         self,
@@ -553,16 +573,16 @@ class DiscoveryLoop:
         """
         parsed = parse_mixture_smiles(mixture_smi)
         if parsed is None:
-            return None
+            return
         smi_a, smi_b, frac = parsed
         ctx_a = MoleculeContext.from_smiles(smi_a)
         ctx_b = MoleculeContext.from_smiles(smi_b)
         if ctx_a is None or ctx_b is None:
-            return None
+            return
         if not ctx_a.is_valid_electrolyte_mol():
-            return None
+            return
         if not ctx_b.is_valid_electrolyte_mol():
-            return None
+            return
         ctx_a.smiles = mixture_smi
         return ctx_a
 
@@ -571,7 +591,7 @@ class DiscoveryLoop:
         fp = ctx.get_ecfp4()
         seed_fps = getattr(self.engine, "seed_fingerprints", None)
         if not isinstance(seed_fps, list) or not seed_fps:
-            return None
+            return
         from rdkit.DataStructs import BulkTanimotoSimilarity
         sims = BulkTanimotoSimilarity(fp, seed_fps)
         return 1.0 - max(sims) if sims else None
@@ -836,6 +856,7 @@ class DiscoveryLoop:
                 contexts, composite_scores, objectives,
                 batch_size=self.batch_size,
                 confidences=confidences,
+                rng_seed=self.seed,
             )
             selected_scores = [smi_to_score[c.smiles] for c in selected]
             return selected, selected_scores
@@ -866,6 +887,7 @@ class DiscoveryLoop:
             synergy_bonus=synergy_bonus,
             is_mixture=is_mixture,
             grounding=obj_scores.get("combined_grounding_score"),
+            rng_seed=self.seed,
         )
         smi_to_score = {ctx.smiles: sc for ctx, sc in zip(contexts, scores, strict=True)}
         selected_scores = [smi_to_score[c.smiles] for c in selected]
@@ -1038,25 +1060,25 @@ class DiscoveryLoop:
             result = self.pipeline.screen_molecule(ctx)
         except (ImportError, ValueError, RuntimeError, TypeError) as e:
             log.warning("Pipeline error for %s: %s", ctx.smiles, e)
-            return None
+            return
         return result if result is not None else None
 
     def _screen_mixture(self, ctx: MoleculeContext) -> dict[str, Any] | None:
         parsed = parse_mixture_smiles(ctx.smiles)
         if parsed is None:
-            return None
+            return
         smi_a, smi_b, frac = parsed
         ctx_a = MoleculeContext.from_smiles(smi_a)
         ctx_b = MoleculeContext.from_smiles(smi_b)
         if ctx_a is None or ctx_b is None:
-            return None
+            return
         try:
             mix = self.pipeline.screen_mixture(ctx_a, ctx_b, frac)
         except (ImportError, ValueError, RuntimeError, TypeError) as e:
             log.warning("Pipeline error for mixture %s: %s", ctx.smiles, e)
-            return None
+            return
         if mix is None:
-            return None
+            return
         score = mix.get("score", {})
         mixture_props = mix.get("mixture_properties", {})
         return {
@@ -1340,7 +1362,7 @@ class DiscoveryLoop:
 
         if not has_xtb():
             log.debug("xTB not available; cannot escalate %s", ctx.smiles)
-            return None
+            return
 
         try:
             from aurelius.pipeline import AureliusPipeline
@@ -1350,4 +1372,4 @@ class DiscoveryLoop:
             return result
         except Exception as exc:
             log.debug("xTB evaluation failed for %s: %s", ctx.smiles, exc)
-            return None
+            return

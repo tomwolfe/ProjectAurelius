@@ -435,10 +435,15 @@ def _precursor_coverage(frag_smiles: list[str]) -> float:
     if not frag_smiles:
         return 0.0
 
+    # Canonical order: BRICSDecompose returns a set, whose iteration order
+    # varies per process (PYTHONHASHSEED). The weighted float accumulation
+    # below is order-sensitive at the 1-ulp level, and that noise amplifies
+    # through adaptive-bias reaction ranking into divergent trajectories.
+    # Sorting makes coverage bit-deterministic for identical inputs.
     total_weight = 0.0
     weighted_coverage = 0.0
 
-    for frag_smi in frag_smiles:
+    for frag_smi in sorted(frag_smiles):
         core_smi = _strip_brics_dummies(frag_smi)
         if core_smi is None:
             continue

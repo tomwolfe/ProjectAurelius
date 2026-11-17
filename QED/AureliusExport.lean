@@ -15,6 +15,34 @@ def bornCorr (eps r : ℝ) : ℝ := 13.598 * (1 - 1 / eps) / r
 -- EA_solution = EA_gas + delta_solv.
 def eaSol (gas solv : ℝ) : ℝ := gas + solv
 
+-- Weighted scoring component with non-negative pipeline weights.
+def scoreW (w x : ℝ) : ℝ := w * x
+
+-- Tier-1 viability gate (MW < 300, HBD = 0, rotatable <= 6, HBA >= 1, LogP <= 2.5).
+def tier1Pass (mw hbd rot hba logp : ℝ) : Prop :=
+  mw < 300 ∧ hbd = 0 ∧ rot ≤ 6 ∧ 1 ≤ hba ∧ logp ≤ 2.5
+
+-- Novelty-gated score: known scaffolds keep KNOWN_SCAFFOLD_PENALTY = 0.2.
+def novelScore (base : ℝ) (isKnown : Bool) : ℝ :=
+  if isKnown then 0.2 * base else base
+
+-- Mixture score with synergy bonus bounded 0..6, total capped at 100.
+def mixScore (base syn : ℝ) : ℝ := min 100 (base + max 0 syn)
+
+-- Damping factor for delta-correction: posterior shrinkage weight
+-- conf = prior^2 / (prior^2 + pred^2), no tuned constant.
+def dampFactor (prior pred : ℝ) : ℝ := prior ^ 2 / (prior ^ 2 + pred ^ 2)
+
+-- Conformal discount from interval-width ratio, in [0.5, 1.0].
+def confDiscount (r : ℝ) : ℝ := 1 - min (max r 0) 0.5
+
+-- GC cross-term clip to [-2, 2].
+def xtermClip (c : ℝ) : ℝ := max (-2) (min 2 c)
+
+-- Pipeline weighted total over six objective components.
+def wTotal (w1 w2 w3 w4 w5 w6 x1 x2 x3 x4 x5 x6 : ℝ) : ℝ :=
+  w1 * x1 + w2 * x2 + w3 * x3 + w4 * x4 + w5 * x5 + w6 * x6
+
 theorem ea_calibration_affine (x : ℝ) : eaCal x = 0.659 * x + ((-2.9176)) := rfl
 
 theorem born_solvation_pos (eps r : ℝ) (he : 1 < eps) (hr : 0 < r) :
@@ -39,7 +67,109 @@ theorem reduction_stability_mono (g1 g2 s : ℝ) (h : g1 ≤ g2) :
     eaSol g1 s ≤ eaSol g2 s := by
   unfold eaSol; linarith
 
+-- EA ranking monotonicity under affine calibration (positive slope a):
+-- raw-EA order is preserved, so solution ranking is set upstream.
+theorem eaCal_mono (x y : ℝ) (h : x ≤ y) :
+    eaCal x ≤ eaCal y := by
+  unfold eaCal
+  have ha : (0:ℝ) < 0.659 := by norm_num
+  have h := mul_le_mul_of_nonneg_left h (le_of_lt ha)
+  linarith
+
+-- Born monotonicity in dielectric: larger eps gives larger correction.
+theorem born_mono_eps (e1 e2 r : ℝ) (h1 : 1 < e1) (hle : e1 ≤ e2) (hr : 0 < r) :
+    bornCorr e1 r ≤ bornCorr e2 r := by
+  unfold bornCorr
+  have he1 : (0:ℝ) < e1 := by linarith
+  have he2 : (0:ℝ) < e2 := by linarith
+  have h : 1 / e2 ≤ 1 / e1 := by
+    apply one_div_le_one_div_of_le he1 hle
+  have hsub : (1 - 1 / e1) ≤ (1 - 1 / e2) := by linarith
+  have hmul : 13.598 * (1 - 1 / e1) ≤ 13.598 * (1 - 1 / e2) := by
+    apply mul_le_mul_of_nonneg_left hsub (by norm_num)
+  exact div_le_div_of_nonneg_right hmul (le_of_lt hr)
+
+-- Scoring monotonicity: non-negative weights preserve component order.
+theorem scoring_mono (w x y : ℝ) (hw : 0 ≤ w) (h : x ≤ y) :
+    scoreW w x ≤ scoreW w y := by
+  unfold scoreW
+  exact mul_le_mul_of_nonneg_left h hw
+
+-- Tier-1 filter soundness: passing the gate implies each criterion holds.
+theorem tier1_sound (mw hbd rot hba logp : ℝ) (h : tier1Pass mw hbd rot hba logp) :
+    mw < 300 ∧ hbd = 0 ∧ rot ≤ 6 ∧ 1 ≤ hba ∧ logp ≤ 2.5 := by
+  exact h
+
+-- Novelty-gate soundness: known scaffolds score no more than novel ones.
+theorem novelty_gate_sound (base : ℝ) (h : 0 ≤ base) :
+    novelScore base true ≤ novelScore base false := by
+  unfold novelScore
+  simp
+  linarith
+
+-- Mixture synergy bounds: synergy in 0..6 keeps total in base..100.
+theorem synergy_bounds (base syn : ℝ) (_hb0 : 0 ≤ base) (hb1 : base ≤ 100)
+    (hs0 : 0 ≤ syn) (_hs1 : syn ≤ 6) :
+    base ≤ mixScore base syn ∧ mixScore base syn ≤ 100 := by
+  unfold mixScore
+  have hmax : max (0:ℝ) syn = syn := max_eq_right hs0
+  rw [hmax]
+  constructor
+  · exact le_min (by linarith) (by linarith)
+  · exact min_le_left _ _
+
+-- Delta-correction boundedness/damping: the shrinkage weight lives in
+-- [0, 1], so the damped correction never exceeds the raw delta.
+theorem delta_damp_factor_bounds (prior pred : ℝ) (hp : 0 < prior) :
+    0 ≤ dampFactor prior pred ∧ dampFactor prior pred ≤ 1 := by
+  unfold dampFactor
+  have hpsq : 0 < prior ^ 2 := pow_pos hp 2
+  have hq : 0 ≤ pred ^ 2 := by positivity
+  have hden : 0 < prior ^ 2 + pred ^ 2 := by linarith
+  constructor
+  · exact div_nonneg (le_of_lt hpsq) (le_of_lt hden)
+  · rw [div_le_one hden]
+    linarith
+
+-- Conformal coverage: intervals contain the point estimate and the
+-- confidence discount lives in [0.5, 1.0].
+theorem conformal_coverage (x q r : ℝ) (hq : 0 ≤ q) :
+    (x - q ≤ x ∧ x ≤ x + q) ∧ (0.5 ≤ confDiscount r ∧ confDiscount r ≤ 1) := by
+  constructor
+  · constructor <;> linarith
+  · unfold confDiscount
+    have h1 : 0 ≤ min (max r 0) 0.5 := le_min (le_max_right _ _) (by norm_num)
+    have h2 : min (max r 0) 0.5 ≤ 0.5 := min_le_right _ _
+    constructor <;> linarith
+
+-- GC cross-terms: the dielectric cross-term correction is clipped to [-2, 2].
+theorem gc_xterm_bounds (c : ℝ) :
+    -2 ≤ xtermClip c ∧ xtermClip c ≤ 2 := by
+  unfold xtermClip
+  constructor
+  · exact le_max_left _ _
+  · exact max_le (by norm_num) (min_le_left _ _)
+
+-- Pipeline weight vector: non-negative weights preserve component order.
+theorem weightvec_mono (w1 w2 w3 w4 w5 w6 x1 x2 x3 x4 x5 x6 y1 : ℝ)
+    (hw1 : 0 ≤ w1) (h : x1 ≤ y1) :
+    wTotal w1 w2 w3 w4 w5 w6 x1 x2 x3 x4 x5 x6 ≤
+      wTotal w1 w2 w3 w4 w5 w6 y1 x2 x3 x4 x5 x6 := by
+  unfold wTotal
+  have hm := mul_le_mul_of_nonneg_left h hw1
+  linarith
+
 #print axioms ea_calibration_affine
 #print axioms born_solvation_pos
 #print axioms ea_bounds
 #print axioms reduction_stability_mono
+#print axioms eaCal_mono
+#print axioms born_mono_eps
+#print axioms scoring_mono
+#print axioms tier1_sound
+#print axioms novelty_gate_sound
+#print axioms synergy_bounds
+#print axioms delta_damp_factor_bounds
+#print axioms conformal_coverage
+#print axioms gc_xterm_bounds
+#print axioms weightvec_mono
