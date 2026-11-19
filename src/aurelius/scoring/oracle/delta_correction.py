@@ -407,7 +407,7 @@ class DeltaCorrection:
         array of shape ``(n_mols,)``. std arrays are None when ``return_std=False``.
 
         On Apple Silicon with MLX available, the GPR matrix operations run on
-        the GPU. Otherwise falls back to sklearn per-molecule prediction.
+        the GPU. Otherwise falls back to a single batched sklearn predict.
         """
         from aurelius.utils.device import get_device
 
@@ -428,22 +428,21 @@ class DeltaCorrection:
             )
             return d_homo, d_lumo, std_homo, std_lumo
 
-        # CPU fallback: per-molecule sklearn prediction
-        d_homo = np.zeros(n, dtype=np.float32)
-        d_lumo = np.zeros(n, dtype=np.float32)
-        std_homo = np.zeros(n, dtype=np.float32) if return_std else None
-        std_lumo = np.zeros(n, dtype=np.float32) if return_std else None
-        for i, mol in enumerate(mols):
-            if return_std:
-                dh, dl, sh, sl = self.predict_deltas_with_uncertainty(mol)
-                d_homo[i] = dh
-                d_lumo[i] = dl
-                std_homo[i] = sh  # type: ignore[index]
-                std_lumo[i] = sl  # type: ignore[index]
-            else:
-                dh, dl = self.predict_deltas(mol)
-                d_homo[i] = dh
-                d_lumo[i] = dl
+        # CPU fallback: single batched sklearn GPR predict over stacked ECFP4
+        # matrix - one predict call per model - instead of per-molecule loop.
+        X = np.stack([_ecfp4_vector(mol) for mol in mols])
+        if return_std:
+            d_homo_f64, std_homo_f64 = self._homo_model.predict(X, return_std=True)
+            d_lumo_f64, std_lumo_f64 = self._lumo_model.predict(X, return_std=True)
+            d_homo = np.asarray(d_homo_f64, dtype=np.float32)
+            d_lumo = np.asarray(d_lumo_f64, dtype=np.float32)
+            std_homo = np.asarray(std_homo_f64, dtype=np.float32)
+            std_lumo = np.asarray(std_lumo_f64, dtype=np.float32)
+        else:
+            d_homo = np.asarray(self._homo_model.predict(X), dtype=np.float32)
+            d_lumo = np.asarray(self._lumo_model.predict(X), dtype=np.float32)
+            std_homo = None
+            std_lumo = None
         return d_homo, d_lumo, std_homo, std_lumo
 
     def predict_deltas_with_uncertainty(
