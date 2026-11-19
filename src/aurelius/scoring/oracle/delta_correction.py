@@ -359,6 +359,15 @@ class DeltaCorrection:
         self._prior_std_homo = float(np.std(self._y_homo)) or 1.0
         self._prior_std_lumo = float(np.std(self._y_lumo)) or 1.0
 
+    @property
+    def calib_smiles_list(self) -> list[str]:
+        """Canonical SMILES of the HOMO training entries (post outlier-drop).
+
+        Acquisition novelty must be measured against what this model has
+        actually seen, not the oracle's global calibration file.
+        """
+        return list(self._calib_smiles)
+
     @staticmethod
     def _build_features_targets(
         base_entries: list[dict[str, float]],

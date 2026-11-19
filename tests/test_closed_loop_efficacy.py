@@ -233,6 +233,41 @@ class TestAcquisitionIsNotRedundant:
     Redundant batches have correlated residuals and waste lab budget.
     """
 
+    def test_poison_guard_fires_and_absorbs(self):
+        """Poisoned labels must reach the guard and be caught (non-vacuous).
+
+        Injecting +10 eV outliers into 30% of ingested labels must (a)
+        trigger the outlier-drop guard (fewer training entries than
+        supplied) and (b) leave held-out MAE within tolerance of the clean
+        refit. If the guard stopped firing, poisoned labels would corrupt
+        the model and (b) would fail — the test cannot pass vacuously.
+        """
+        from benchmarks.benchmark_closed_loop import _split_scaffold_disjoint
+
+        entries = _load_entries()
+        holdout, seed_calib, unmeasured = _split_scaffold_disjoint(entries, 0)
+        ingested = unmeasured[:20]
+        clean_model = _fit(seed_calib + ingested)
+        _, mae_clean = _holdout_metrics(clean_model, holdout)
+
+        poisoned = [
+            {**e, "homo_eV": e["homo_eV"] + 10.0} if i % 3 == 0 else e
+            for i, e in enumerate(ingested)
+        ]
+        guarded_model = _fit(seed_calib + poisoned)
+        _, mae_guarded = _holdout_metrics(guarded_model, holdout)
+
+        n_supplied = len(seed_calib) + len(poisoned)
+        n_kept = len(guarded_model.calib_smiles_list)
+        assert n_kept < n_supplied, (
+            f"outlier guard must fire on poisoned refit set "
+            f"(kept {n_kept}/{n_supplied})"
+        )
+        assert mae_guarded - mae_clean < 0.05, (
+            f"guard must absorb poison: guarded MAE {mae_guarded:.4f} vs "
+            f"clean {mae_clean:.4f}"
+        )
+
     def test_suggested_batch_targets_uncertain_regions(self):
         """Batch EI targets regions of high epistemic uncertainty.
 

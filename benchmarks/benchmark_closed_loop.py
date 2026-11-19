@@ -148,6 +148,59 @@ def _split(
     return holdout, pool[:n_seed], pool[n_seed:]
 
 
+def _scaffold_key(smiles: str) -> str:
+    """Murcko scaffold group key for scaffold-disjoint splitting.
+
+    Molecules whose scaffold extraction fails fall back to their own
+    canonical SMILES (each its own singleton group).
+    """
+    try:
+        from rdkit.Chem.Scaffolds import MurckoScaffold
+
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is not None:
+            scaf = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+            if scaf:
+                return scaf
+    except Exception:
+        pass
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        return Chem.MolToSmiles(mol) if mol is not None else smiles
+    except Exception:
+        return smiles
+
+
+def _split_scaffold_disjoint(
+    entries: list[dict[str, float]], seed: int, holdout_fraction: float = 0.5,
+    n_seed: int = SEED_SIZE,
+) -> tuple[list[dict[str, float]], list[dict[str, float]], list[dict[str, float]]]:
+    """Partition into (holdout, seed_calibration, unmeasured_pool) by scaffold.
+
+    Whole Murcko-scaffold groups go to exactly one partition, so no scaffold
+    in the holdout appears in training — the honest estimate of generalisation
+    to novel chemistry. Groups are shuffled with ``seed`` and dealt into the
+    holdout until ``holdout_fraction`` is reached; the remainder is split into
+    seed calibration (first ``n_seed``) and the acquisition pool.
+    """
+    groups: dict[str, list[int]] = {}
+    for i, e in enumerate(entries):
+        groups.setdefault(_scaffold_key(e["smiles"]), []).append(i)
+    ordered = list(groups.values())
+    random.Random(seed).shuffle(ordered)
+    n_hold = int(holdout_fraction * len(entries))
+    hold_idx: list[int] = []
+    rest_idx: list[int] = []
+    for g in ordered:
+        if len(hold_idx) < n_hold:
+            hold_idx.extend(g)
+        else:
+            rest_idx.extend(g)
+    holdout = [entries[i] for i in hold_idx]
+    rest = [entries[i] for i in rest_idx]
+    return holdout, rest[:n_seed], rest[n_seed:]
+
+
 def _fit(entries: list[dict[str, float]]) -> DeltaCorrection:
     """Fit a Δ-correction model on an explicit calibration set."""
     smiles = [
@@ -732,7 +785,8 @@ def _batch_redundancy(entries: list[dict[str, float]]) -> float:
 
 
 def _permutation_control(
-    entries: list[dict[str, float]], seeds: tuple[int, ...], budget: int
+    entries: list[dict[str, float]], seeds: tuple[int, ...], budget: int,
+    scaffold_disjoint: bool = True,
 ) -> dict[str, object]:
     """Check that the gain needs *correct* labels, not merely more points.
 
@@ -740,12 +794,17 @@ def _permutation_control(
     are wrong, so a bare "MAE went down" does not prove learning. This keeps
     the ingested molecules and the label distribution fixed and destroys only
     the molecule-to-label pairing. If correct labels do not beat shuffled
-    ones, the loop is recalibrating rather than learning.
+    ones, the loop is recalibrating rather than learning. The holdout is
+    scaffold-disjoint by default, matching the acquisition gate.
     """
     rows: list[dict[str, float]] = []
     for seed in seeds:
-        holdout, seed_calib, unmeasured = _split(entries, seed)
-        ingested = unmeasured[:budget]
+        if scaffold_disjoint:
+            holdout, seed_calib, unmeasured = _split_scaffold_disjoint(entries, seed)
+        else:
+            holdout, seed_calib, unmeasured = _split(entries, seed)
+        eff = max(1, min(budget, len(unmeasured)))
+        ingested = unmeasured[:eff]
         real = _evaluate(_fit(seed_calib + ingested), holdout)["mae_eV"]
 
         labels = [(e["homo_eV"], e["lumo_eV"]) for e in ingested]
@@ -812,42 +871,70 @@ def _permutation_control_ea(
 
 
 def _acquisition_comparison(
-    entries: list[dict[str, float]], seeds: tuple[int, ...], budget: int
+    entries: list[dict[str, float]], seeds: tuple[int, ...], budget: int,
+    scaffold_disjoint: bool = True,
 ) -> dict[str, object]:
-    """Compare suggester vs random acquisition across several random splits.
+    """Compare suggester vs random vs random_top_k across scaffold splits.
 
-    One split is not evidence: the sign of the gap flips between seeds. This
-    reports the per-seed deltas and their spread so the honest conclusion
-    ("indistinguishable from random at this budget") is visible rather than
-    an artefact of whichever split happened to be chosen.
+    The holdout is scaffold-disjoint (whole Murcko groups held out), so the
+    deltas measure generalisation to novel chemistry, not interpolation.
+    random_top_k is the honest exploitation baseline: a 2x random draw ranked
+    by the current (base) model's predicted HOMO, top-budget kept. One split
+    is not evidence: per-seed deltas and their spread are reported, and the
+    verdict requires p < 0.05 on BOTH delta-MAE and delta-rho against BOTH
+    baselines.
     """
     rows: list[dict[str, float]] = []
     for seed in seeds:
-        holdout, seed_calib, unmeasured = _split(entries, seed)
+        if scaffold_disjoint:
+            holdout, seed_calib, unmeasured = _split_scaffold_disjoint(entries, seed)
+        else:
+            holdout, seed_calib, unmeasured = _split(entries, seed)
+        # Fail-closed budget cap: scaffold splits can leave a pool smaller
+        # than the nominal budget; cap per seed (recorded) rather than crash
+        # or silently sample with replacement.
+        eff_budget = max(1, min(budget, len(unmeasured)))
         base = _evaluate(_fit(seed_calib), holdout)
         # Pass the refit DeltaCorrection so the suggester's BALD + batch_ei
         # terms target epistemic uncertainty in the current model.
         refit = _fit(seed_calib)
-        picks = _acquire_suggester(unmeasured, budget, delta_correction=refit)
+        picks = _acquire_suggester(unmeasured, eff_budget, delta_correction=refit)
         sug = _evaluate(_fit(seed_calib + picks), holdout)
-        rnd_picks = random.Random(seed).sample(unmeasured, budget)
+        rnd_picks = random.Random(seed).sample(unmeasured, eff_budget)
         rnd = _evaluate(_fit(seed_calib + rnd_picks), holdout)
+        # random_top_k: 2x random draw ranked by base-model predicted HOMO.
+        rtk_pool = random.Random(seed + 7919).sample(
+            unmeasured, min(2 * eff_budget, len(unmeasured)))
+        try:
+            _mols = [Chem.MolFromSmiles(e["smiles"]) for e in rtk_pool]
+            _homo_pred, _ = refit.predict_corrected_batch(_mols)
+            rtk_order = sorted(range(len(rtk_pool)), key=lambda i: -_homo_pred[i])[:eff_budget]
+        except Exception:
+            rtk_order = list(range(min(eff_budget, len(rtk_pool))))
+        rtk_picks = [rtk_pool[i] for i in rtk_order]
+        rtk = _evaluate(_fit(seed_calib + rtk_picks), holdout)
         # Top-k enrichment: fraction of true top-k molecules picked
-        top_k = min(budget, max(5, len(unmeasured) // 5))
+        top_k = min(eff_budget, max(5, len(unmeasured) // 5))
         tke_sug = _top_k_enrichment(picks, unmeasured, top_k)
         tke_rnd = _top_k_enrichment(rnd_picks, unmeasured, top_k)
+        tke_rtk = _top_k_enrichment(rtk_picks, unmeasured, top_k)
 
         rows.append(
             {
                 "seed": seed,
+                "eff_budget": eff_budget,
                 "suggester_delta_mae": sug["mae_eV"] - base["mae_eV"],
                 "random_delta_mae": rnd["mae_eV"] - base["mae_eV"],
+                "random_top_k_delta_mae": rtk["mae_eV"] - base["mae_eV"],
                 "edge": (rnd["mae_eV"] - base["mae_eV"]) - (sug["mae_eV"] - base["mae_eV"]),
+                "edge_vs_rtk": (rtk["mae_eV"] - base["mae_eV"]) - (sug["mae_eV"] - base["mae_eV"]),
                 # Ranking is what the EA consumes; MAE alone can improve while
                 # the ordering the search depends on gets no better.
                 "suggester_delta_rho": sug["spearman_rho"] - base["spearman_rho"],
                 "random_delta_rho": rnd["spearman_rho"] - base["spearman_rho"],
+                "random_top_k_delta_rho": rtk["spearman_rho"] - base["spearman_rho"],
                 "rho_edge": sug["spearman_rho"] - rnd["spearman_rho"],
+                "rho_edge_vs_rtk": sug["spearman_rho"] - rtk["spearman_rho"],
                 "suggester_redundancy": _batch_redundancy(picks),
                 "random_redundancy": _batch_redundancy(rnd_picks),
                 "suggester_topk_enrichment": tke_sug,
@@ -857,6 +944,8 @@ def _acquisition_comparison(
 
     edges = np.array([r["edge"] for r in rows])
     rho_edges = np.array([r["rho_edge"] for r in rows])
+    edges_rtk = np.array([r["edge_vs_rtk"] for r in rows])
+    rho_edges_rtk = np.array([r["rho_edge_vs_rtk"] for r in rows])
     tke_edges = np.array(
         [
             r["suggester_topk_enrichment"] - r["random_topk_enrichment"]
@@ -880,25 +969,63 @@ def _acquisition_comparison(
     mae_d = float(edges.mean() / edges.std()) if edges.std() > 0 else 0.0
     rho_d = float(rho_edges.mean() / rho_edges.std()) if rho_edges.std() > 0 else 0.0
     tke_d = float(tke_edges.mean() / tke_edges.std()) if tke_edges.std() > 0 else 0.0
+    # Mission gate: p < 0.05 on BOTH delta-MAE and delta-rho against BOTH
+    # baselines. Wilcoxon (one-sided, greater) is the paired decision test;
+    # the t-test p-values are reported alongside for transparency.
+    def _wtest(x: np.ndarray) -> float | None:
+        w = (wilcoxon(x, alternative="greater")
+             if len(x) > 1 and np.any(x != 0.0) else None)
+        return float(w.pvalue) if w is not None else None
+
+    def _ttest(x: np.ndarray) -> float | None:
+        t = ttest_1samp(x, 0.0) if len(x) > 1 else None
+        return float(t.pvalue) if t is not None else None
+
+    gate = {
+        "mae_vs_random_p": _wtest(edges),
+        "rho_vs_random_p": _wtest(rho_edges),
+        "mae_vs_rtk_p": _wtest(edges_rtk),
+        "rho_vs_rtk_p": _wtest(rho_edges_rtk),
+    }
+    gate["pass"] = all(
+        (v is not None and v < 0.05) for v in gate.values()
+        if isinstance(v, float)
+    ) and all(isinstance(v, float) for v in gate.values())
     return {
         "budget": budget,
+        "scaffold_disjoint": scaffold_disjoint,
+        "eff_budget_min": min(r["eff_budget"] for r in rows) if rows else budget,
         "rows": rows,
         "mean_edge": float(edges.mean()),
         "std_edge": float(edges.std()),
         "suggester_wins": int((edges > 0).sum()),
+        "mean_edge_vs_rtk": float(edges_rtk.mean()),
+        "std_edge_vs_rtk": float(edges_rtk.std()),
+        "suggester_wins_vs_rtk": int((edges_rtk > 0).sum()),
         "mean_rho_edge": float(rho_edges.mean()),
         "std_rho_edge": float(rho_edges.std()),
         "suggester_rho_wins": int((rho_edges > 0).sum()),
+        "mean_rho_edge_vs_rtk": float(rho_edges_rtk.mean()),
+        "std_rho_edge_vs_rtk": float(rho_edges_rtk.std()),
+        "suggester_rho_wins_vs_rtk": int((rho_edges_rtk > 0).sum()),
         "rho_edge_p_value": float(rho_t.pvalue) if rho_t is not None else None,
         "mae_edge_p_value": float(mae_t.pvalue) if mae_t is not None else None,
+        "rho_edge_vs_rtk_p_value": _ttest(rho_edges_rtk),
+        "mae_edge_vs_rtk_p_value": _ttest(edges_rtk),
+        "gate": gate,
+        "n_seeds": len(rows),
         "mae_cohens_d": mae_d,
         "rho_cohens_d": rho_d,
-        "mean_tke_edge": float(tke_edges.mean()),
+        # Same reduction the efficacy test pins (sum/len in row order):
+        # np.mean can differ by 1 ulp, which is not a statistical difference.
+        "mean_tke_edge": float(sum(
+            r["suggester_topk_enrichment"] - r["random_topk_enrichment"]
+            for r in rows
+        ) / len(rows)) if rows else 0.0,
         "std_tke_edge": float(tke_edges.std()),
         "suggester_tke_wins": int((tke_edges > 0).sum()),
         "tke_p_value": float(tke_w.pvalue) if tke_w is not None else None,
         "tke_cohens_d": tke_d,
-        "n_seeds": len(rows),
         "mean_suggester_redundancy": float(
             np.mean([r["suggester_redundancy"] for r in rows])
         ),
@@ -911,7 +1038,7 @@ def _acquisition_comparison(
         "mean_random_topk_enrichment": float(
             np.mean([r["random_topk_enrichment"] for r in rows])
         ),
-        "topk_k": min(budget, max(5, len(unmeasured) // 5)) if rows else budget,
+        "topk_k": min(min(r["eff_budget"] for r in rows), max(5, len(unmeasured) // 5)) if rows else budget,
     }
 
 
@@ -1196,8 +1323,8 @@ def main() -> int:
     parser.add_argument(
         "--splits",
         type=int,
-        default=10,
-        help="Number of frozen random splits (default: 10)",
+        default=20,
+        help="Number of frozen splits (default: 20; Phase 4 gate needs the power: n=10 is underpowered for the paired Wilcoxon at these effect sizes)",
     )
     args = parser.parse_args()
 
@@ -1359,11 +1486,34 @@ def main() -> int:
                 f"top-k {acq_b.get('tke_cohens_d', 0.):+.2f} "
                 f"(|d|<0.2 trivial, 0.2-0.5 small, 0.5-0.8 medium, >0.8 large)"
             )
+            _gate = acq_b.get("gate") or {}
+            print(
+                f"    MISSION GATE (scaffold-disjoint, p<0.05 vs random AND "
+                f"random_top_k, dMAE AND drho): "
+                + ", ".join(
+                    f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}"
+                    for k, v in _gate.items()
+                )
+            )
 
-        # Verdict uses the largest budget. The decision-relevant metric — top-k
-        # enrichment ("which molecules would be made") — is tested with a paired
-        # Wilcoxon signed-rank across frozen splits, which is the statistically
-        # honest way to claim acquisition beats random.
+        # Mission gate (Phase 4): the verdict is the fail-closed gate —
+        # p < 0.05 on BOTH delta-MAE and delta-rho against BOTH baselines
+        # on the scaffold-disjoint holdout. The decision-relevant top-k
+        # enrichment is reported alongside for transparency.
+        _gate = acq.get("gate") or {}
+        if _gate.get("pass"):
+            verdict = (
+                "MISSION GATE PASS: suggester beats random AND random_top_k "
+                "on delta-MAE and delta-rho (all p<0.05, scaffold-disjoint)."
+            )
+        else:
+            verdict = (
+                "MISSION GATE FAIL: " +
+                ", ".join(
+                    f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}"
+                    for k, v in _gate.items()
+                )
+            )
         rho_p = acq.get("rho_edge_p_value")
         rho_significant = rho_p is not None and rho_p < 0.05 and acq["mean_rho_edge"] > 0
         majority = acq["suggester_rho_wins"] > acq["n_seeds"] / 2
@@ -1373,7 +1523,9 @@ def main() -> int:
         tke_significant = (
             tke_p is not None and tke_p < 0.05 and acq["mean_tke_edge"] > 0
         )
-        if rho_significant or tke_significant:
+        if not _gate.get("pass"):
+            pass  # Mission verdict stands as FAIL; detail follows.
+        elif rho_significant or tke_significant:
             parts = []
             if rho_significant:
                 parts.append(
@@ -1384,16 +1536,13 @@ def main() -> int:
                     f"DECISION metric (top-k enrichment {tke_sug:.2f} vs "
                     f"{tke_rnd:.2f}, paired Wilcoxon p={tke_p:.4f})"
                 )
-            verdict = (
-                "suggester improves " + " and ".join(parts) +
+            verdict += (
+                " Detail: suggester improves " + " and ".join(parts) +
                 " — acquisition adds real, statistically-supported value."
             )
         elif majority:
-            verdict = ("suggester beats random on a majority of splits, but the "
-                       "spread overlaps zero: directionally better, not proven.")
-        else:
-            verdict = ("indistinguishable from random at this budget "
-                       "(sign of the edge flips across splits).")
+            verdict += (" Detail: suggester also beats random on a majority "
+                        "of splits for ranking/top-k.")
         if tke_sug > tke_rnd * 1.2:
             verdict += (
                 f" Top-k enrichment favors suggester ({tke_sug:.2f} vs "

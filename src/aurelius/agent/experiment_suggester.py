@@ -687,6 +687,39 @@ def _max_tanimoto_to_calibration(fp: Any, calibration_fps: list[Any]) -> float:
     return float(max(DataStructs.BulkTanimotoSimilarity(fp, calibration_fps)))
 
 
+def _model_training_fingerprints(delta_correction: Any) -> list[Any] | None:
+    """Fingerprints of the molecules a refit model actually trained on.
+
+    Root-cause fix (Phase 4): acquisition novelty was measured against the
+    oracle's *global* calibration file, which includes holdout-like chemistry
+    the refit model never saw. Novelty pushed picks away from the holdout
+    distribution — actively worse than random for model improvement. When a
+    refit ``DeltaCorrection`` is supplied, its own training SMILES are the
+    correct reference: explore relative to what the model knows. Returns
+    None when unavailable so callers fall back to the global set.
+    """
+    try:
+        train_smiles = list(getattr(delta_correction, "calib_smiles_list", None) or [])
+        if not train_smiles:
+            return None
+        fps: list[Any] = []
+        seen: set[str] = set()
+        for smi in train_smiles:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                continue
+            canonical = Chem.MolToSmiles(mol)
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            ctx = MoleculeContext.from_smiles(canonical)
+            if ctx is not None:
+                fps.append(ctx.get_ecfp4())
+        return fps or None
+    except Exception:
+        return None
+
+
 def _load_calibration_fingerprints() -> list[Any]:
     """Morgan fingerprints of every molecule the oracle has been calibrated on."""
     from aurelius.scoring.oracle.conformal import (
@@ -1058,7 +1091,12 @@ def suggest_experiments(
         raise ValueError(f"Unknown properties: {sorted(unknown)}")
 
     predictor = get_conformal_predictor()
-    calibration_fps = _load_calibration_fingerprints()
+    # Novelty reference: the refit model's own training set when available
+    # (explore relative to what the model knows), else the global set.
+    calibration_fps = (
+        _model_training_fingerprints(delta_correction)
+        or _load_calibration_fingerprints()
+    )
     biases = _bias_magnitudes(controller)
 
     # Pool expansion: a small pool cannot support diversity-based acquisition.
