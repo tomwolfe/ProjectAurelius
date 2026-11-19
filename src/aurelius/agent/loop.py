@@ -359,6 +359,10 @@ class DiscoveryLoop:
         self._xtb_sp_calls = 0
         self._xtb_sp_hits = 0
         self._xtb_sp_orca_eligible = 0
+        # TASK 5 SPEED: cache Tier-0 prefilter and xTB pipeline - init once,
+        # reuse across generations instead of per-molecule/per-generation init.
+        self.tier0_prefilter = Tier0Prefilter()
+        self._xtb_pipeline: Any = None
 
     @property
     def xtb_sp_report(self) -> dict[str, Any]:
@@ -814,7 +818,6 @@ class DiscoveryLoop:
 
     def _apply_tier0_filter(self, valid_contexts: list[MoleculeContext]) -> list[MoleculeContext]:
         """Apply Tier-0 prefiltering to already-built candidate contexts."""
-        self.tier0_prefilter = Tier0Prefilter()
         filtered_contexts, _ = self.tier0_prefilter.filter(valid_contexts)
         return filtered_contexts
 
@@ -906,6 +909,32 @@ class DiscoveryLoop:
         k = max(1, int(len(ordered) * EVOLUTION_RELATIVE_FRACTION))
         return ordered[k - 1]
 
+    def _partition_seed_pool_for_truncation(
+        self, pool: list[str], score_by_smi: dict[str, float]
+    ) -> tuple[list[str], list[str]]:
+        """Split pool into discoveries plus score-ranked remainder."""
+        discoveries = [smi for smi in pool if score_by_smi.get(smi, 0.0) >= DISCOVERY_THRESHOLD]
+        discovery_set = set(discoveries)
+        rest = sorted((s for s in pool if s not in discovery_set),
+                      key=lambda s: -score_by_smi.get(s, 0.0))
+        return discoveries, rest
+
+    def _fill_truncation_keep(self, discoveries: list[str], rest: list[str]) -> set[str]:
+        """Fill keep-set with discoveries then top remainder up to cap."""
+        keep: list[str] = list(discoveries)
+        for smi in rest:
+            if len(keep) >= SEED_POOL_MAX_SIZE:
+                break
+            keep.append(smi)
+        return set(keep[:SEED_POOL_MAX_SIZE])
+
+    def _enforce_truncation_cap(self, score_by_smi: dict[str, float]) -> None:
+        """If discoveries alone exceed cap, keep top discoveries by score."""
+        if len(self.engine.seed_pool) > SEED_POOL_MAX_SIZE:
+            self.engine.seed_pool = sorted(
+                self.engine.seed_pool, key=lambda s: -score_by_smi.get(s, 0.0)
+            )[:SEED_POOL_MAX_SIZE]
+
     def _truncate_seed_pool_archive(self) -> None:
         """Cap seed pool score-aware: keep Pareto + novel-scaffold archive.
 
@@ -921,23 +950,11 @@ class DiscoveryLoop:
             return
         scored = self._score_seed_pool()
         score_by_smi = {smi: sc for sc, smi in scored}
-        discoveries = [smi for smi in pool if score_by_smi.get(smi, 0.0) >= DISCOVERY_THRESHOLD]
-        rest = sorted((s for s in pool if s not in set(discoveries)),
-                      key=lambda s: -score_by_smi.get(s, 0.0))
-        keep: list[str] = list(discoveries)
-        for smi in rest:
-            if len(keep) >= SEED_POOL_MAX_SIZE:
-                break
-            keep.append(smi)
-        # Preserve original pool order for determinism among equal scores
-        order = {smi: i for i, smi in enumerate(pool)}
-        keep_set = set(keep[:SEED_POOL_MAX_SIZE])
+        discoveries, rest = self._partition_seed_pool_for_truncation(pool, score_by_smi)
+        keep_set = self._fill_truncation_keep(discoveries, rest)
         self.engine.seed_pool = [smi for smi in pool if smi in keep_set]
         # If discoveries alone exceed cap (unlikely), keep top discoveries
-        if len(self.engine.seed_pool) > SEED_POOL_MAX_SIZE:
-            self.engine.seed_pool = sorted(
-                self.engine.seed_pool, key=lambda s: -score_by_smi.get(s, 0.0)
-            )[:SEED_POOL_MAX_SIZE]
+        self._enforce_truncation_cap(score_by_smi)
         self.state.seed_pool_size = len(self.engine.seed_pool)
 
     def _evolve_seed_pool(self, batch_contexts: list[MoleculeContext], batch_scores: list[float]) -> None:
@@ -1423,10 +1440,10 @@ class DiscoveryLoop:
             return
 
         try:
-            from aurelius.pipeline import AureliusPipeline
-            xtb_pipeline = AureliusPipeline(use_real_models=True)
-            xtb_pipeline.initialize()
-            result = xtb_pipeline.screen_molecule(ctx)
+            if self._xtb_pipeline is None:
+                self._xtb_pipeline = AureliusPipeline(use_real_models=True)
+                self._xtb_pipeline.initialize()
+            result = self._xtb_pipeline.screen_molecule(ctx)
             return result
         except Exception as exc:
             log.debug("xTB evaluation failed for %s: %s", ctx.smiles, exc)
