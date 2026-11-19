@@ -1,0 +1,40 @@
+{
+  "task": "TASK 1 SPEED BASELINE",
+  "seed": 42,
+  "n_generations": 3,
+  "batch_size": 24,
+  "wall_seconds": 9.165,
+  "pipeline_init_seconds": 0.005,
+  "per_generation": [
+    {
+      "generation": 1,
+      "n_evaluated": 23,
+      "best": 100.0,
+      "record_overhead_s": 0.0076
+    },
+    {
+      "generation": 2,
+      "n_evaluated": 24,
+      "best": 100.0,
+      "record_overhead_s": 0.0089
+    },
+    {
+      "generation": 3,
+      "n_evaluated": 24,
+      "best": 100.0,
+      "record_overhead_s": 0.0217
+    }
+  ],
+  "n_screened": 141,
+  "throughput_mols_per_sec": 15.3847,
+  "best_score": 100.0,
+  "xtb_calls": 0,
+  "xtb_cache_hits": 0,
+  "xtb_cache_hit_rate": 1.0,
+  "xtb_escalations": 0,
+  "gpr_models_fitted_at_start": 2,
+  "gpr_refits_during_run": 0,
+  "tier0_prefilter_inits": 3,
+  "note": "Baseline before any optimization. Do not optimize without this baseline.",
+  "throughput_target": "3-5x throughput on same seed (42) with scores identical within tolerance 1e-6; speed that changes scores is a different oracle and is rejected."
+}

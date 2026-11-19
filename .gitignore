@@ -78,3 +78,4 @@ run_summary.json
 xtb_cache.json
 src/xtb_cache.json
 .orchestrate/
+.tether/
