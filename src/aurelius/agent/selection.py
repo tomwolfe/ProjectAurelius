@@ -565,11 +565,10 @@ def build_npga2_composite_objectives(
     homo = np.asarray(scores_dict["homo_eV"], dtype=float)
     lumo = np.asarray(scores_dict["lumo_eV"], dtype=float)
     gap = lumo - homo
-    electronic_stability = (
-        w["electronic_stability"]["homo_eV"] * homo
-        + w["electronic_stability"]["lumo_eV"] * lumo
-        + w["electronic_stability"]["gap_eV"] * gap
-    )
+    _w_es = w["electronic_stability"]
+    if _w_es["lumo_eV"] != 0.0 or _w_es["gap_eV"] != 0.0:
+        raise ValueError("TOM LUMO gated out of ranking: reopened weight")
+    electronic_stability = _w_es["homo_eV"] * homo
 
     # Synthetic accessibility: minimize synthesis_depth (negate), maximize grounding
     sd = np.asarray(scores_dict["synthesis_depth"], dtype=float)

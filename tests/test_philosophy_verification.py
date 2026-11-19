@@ -1279,10 +1279,13 @@ class TestEngineMutationKillPins:
         # Pins _rank_by_grounding's list return: a break_return mutant
         # (None) fails the isinstance check and would crash the
         # [:batch_size] slice at the mutate_batch call site.
+        # The descending-order assertion kills the reverse=True flip_bool
+        # mutant (ascending sort): CCO grounds at ~0.93, benzene at ~0.62.
         engine = MutationEngine(seed_smiles=["CCO"])
         ranked = engine._rank_by_grounding(["CCO", "c1ccccc1"])
         assert isinstance(ranked, list)
         assert sorted(ranked) == sorted(["CCO", "c1ccccc1"])
+        assert ranked == ["CCO", "c1ccccc1"]
 
     def test_cma_es_fallback_returns_mixture_string(self, monkeypatch):
         # Pins _mutate_mixture_fraction_cma_es's str return on every path:
@@ -1358,3 +1361,77 @@ class TestEngineMutationKillPins:
         assert gated._validate_brics_product(
             Chem.MolFromSmiles("CC(=O)OCC"),
             force_exploration=True) is not None
+
+
+class TestMutationKillPinsV7:
+    """Root-cause pins for the six surviving mutants (kill rate 36/42).
+
+    Each pin is an exact-value or branch-both-sides assertion so the
+    corresponding single-operator mutant fails the gate.
+    """
+
+    def test_mutate_mixture_n_branch_both_sides(self):
+        # Pins engine.py:938 `< 0.60`: a negate_compare mutant (>=)
+        # swaps the 60/40 branch split. Both sides are stubbed and the
+        # RNG draw is controlled so either direction fails under mutation.
+        from types import SimpleNamespace
+
+        engine = MutationEngine(seed_smiles=["CCO"])
+        engine._mutate_one_component = lambda comps, fracs, batch_size=10: ["ONE"]  # noqa: E731
+        engine._mutate_mixture_fraction_cma_es = lambda comps, fracs: "CMA"  # noqa: E731
+        engine._rng = SimpleNamespace(random=lambda: 0.0)
+        assert engine._mutate_mixture_n(["CCO", "CCN"], [0.5, 0.5]) == ["ONE"]
+        engine._rng = SimpleNamespace(random=lambda: 0.9)
+        assert engine._mutate_mixture_n(["CCO", "CCN"], [0.5, 0.5]) == ["CMA"]
+
+    def test_dielectric_cross_term_requires_both_fragments(self):
+        # Pins gc.py:477 first `> 0`: a negate_compare mutant (<=) never
+        # fires when both fragments are present. Carbonate+ether boost 0.8.
+        from aurelius.scoring.oracle.gc import _compute_dielectric_cross_terms
+
+        assert _compute_dielectric_cross_terms(
+            {"carbonate": 1, "ether": 1}) == 0.8
+        assert _compute_dielectric_cross_terms({"carbonate": 1}) == 0.0
+        assert _compute_dielectric_cross_terms({}) == 0.0
+
+    def test_mixture_synergy_interaction_exact(self):
+        # Pins gc.py:1446 `d1 - d2`: an arithmetic mutant (d1 + d2)
+        # inflates the Margules interaction by 0.25 at 50:50.
+        from aurelius.scoring.oracle.gc import mixture_synergy_bonus
+
+        got = mixture_synergy_bonus(d1=8.0, v1=2.5, d2=2.0, v2=0.5, frac1=0.5)
+        assert abs(got - 2.966640786499874) < 1e-9
+
+    def test_viscosity_nonideal_complement_exact(self):
+        # Pins gc.py:1672 `1.0 - frac1`: an arithmetic mutant (+)
+        # breaks the fraction complement (f2 0.5 vs 1.5).
+        from aurelius.scoring.oracle.gc import predict_mixture_viscosity_nonideal
+
+        got = predict_mixture_viscosity_nonideal(1.9, 0.4, 0.5)
+        assert abs(got - 0.9878559189895475) < 1e-9
+
+    def test_electronic_stability_homo_only_fail_closed(self):
+        # Pins the TOM LUMO gate-out: ranking flows from LPM HOMO only.
+        # Reopening a gated weight must raise (fail-closed negative control).
+        from aurelius.agent import selection as sel_mod
+        from aurelius.agent.selection import build_npga2_composite_objectives
+
+        sd = {
+            "dielectric_proxy": [10.0], "viscosity_proxy": [2.0],
+            "li_solvation_proxy": [1.0], "homo_eV": [-4.0],
+            "lumo_eV": [4.0], "synthesis_depth": [2.0],
+            "combined_grounding_score": [0.8], "sa_score": [2.0],
+            "novelty_to_seed": [0.5],
+        }
+        assert build_npga2_composite_objectives(sd)["electronic_stability"] == [-4.0]
+        saved = dict(sel_mod._COMPOSITE_WEIGHTS["electronic_stability"])
+        try:
+            sel_mod._COMPOSITE_WEIGHTS["electronic_stability"]["lumo_eV"] = 1.0
+            try:
+                build_npga2_composite_objectives(sd)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("reopened LUMO weight must raise fail-closed")
+        finally:
+            sel_mod._COMPOSITE_WEIGHTS["electronic_stability"].update(saved)
