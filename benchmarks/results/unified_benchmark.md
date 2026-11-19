@@ -1,7 +1,7 @@
 # Unified Benchmark Report
 
 **Status**: ✅ PASS
-**Generated**: 2026-11-18 23:01:43
+**Generated**: 2026-11-19 01:55:19
 
 ## Tolerances
 ### Orbital
@@ -56,7 +56,7 @@
 
 #### Experimental IPs (NIST, no leakage)
 - LPM: ρ=+0.9399, MAE=0.3135 eV, 0.005s
-- TOM: ρ=+0.2557, MAE=3.7823 eV, 0.022s
+- TOM: ρ=+0.2557, MAE=3.7823 eV, 0.021s
 - Span: 8.48 eV, 81 distinct values
 
 ### Dielectric (Kirkwood-Fröhlich)
