@@ -356,7 +356,7 @@ def _harvest_fragments(candidates: list[str]) -> list[str]:
         if mol is None:
             continue
         try:
-            for frag in BRICS.BRICSDecompose(mol):
+            for frag in sorted(BRICS.BRICSDecompose(mol)):
                 core = _strip_brics_dummy_atoms(frag)
                 if core is None or core in seen:
                     continue
@@ -477,7 +477,7 @@ def _harvest_labeled_fragments(top_candidates: list[str]) -> list[str]:
         if mol is None:
             continue
         try:
-            for frag in BRICS.BRICSDecompose(mol):
+            for frag in sorted(BRICS.BRICSDecompose(mol)):
                 if not _has_brics_dummy(frag):
                     continue
                 core = _strip_brics_dummy_atoms(frag)
@@ -512,7 +512,7 @@ def _count_fragmentable_bonds(smi: str) -> int:
     if mol is None:
         return 0
     try:
-        frags = BRICS.BRICSDecompose(mol)
+        frags = sorted(BRICS.BRICSDecompose(mol))
     except Exception:
         return 0
     return len(frags)

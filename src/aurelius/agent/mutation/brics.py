@@ -104,7 +104,7 @@ def _cached_coverage(smiles: str) -> float:
     if mol is None:
         return 0.5
     try:
-        frags = list(BRICS.BRICSDecompose(mol))
+        frags = sorted(BRICS.BRICSDecompose(mol))
     except Exception:
         return 0.5
     if not frags:
@@ -233,9 +233,9 @@ def _is_known_bb_precursor(mol: Chem.Mol) -> bool:
 def _decompose_brics_fragments(frag_smiles: list[str]) -> list[str]:
     """Decompose each BRICS fragment SMILES into sub-fragment SMILES."""
     next_fragments: list[str] = []
-    for frag in frag_smiles:
+    for frag in sorted(frag_smiles):
         try:
-            decomposed = list(BRICS.BRICSDecompose(frag))
+            decomposed = sorted(BRICS.BRICSDecompose(frag))
             next_fragments.extend(decomposed)
         except Exception:
             next_fragments.append(frag)
@@ -271,8 +271,10 @@ def _cached_retrosynthetic_depth(smiles: str) -> int:
         return 5  # Maximum depth for invalid molecules
 
     # Get initial BRICS decomposition
+    # Sorted: BRICSDecompose returns a set whose iteration order varies
+    # per process (PYTHONHASHSEED); canonical order keeps depth deterministic.
     try:
-        fragments = list(BRICS.BRICSDecompose(mol))
+        fragments = sorted(BRICS.BRICSDecompose(mol))
     except Exception:
         return 5  # Maximum depth for decomposition failures
 

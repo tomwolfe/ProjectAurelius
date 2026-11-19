@@ -370,7 +370,7 @@ def synthesizability_complexity(ctx: Any) -> float:
     # Number of unique BRICS fragments, normalised by log(molecule size).
     try:
         from rdkit.Chem import BRICS
-        fragments = list(BRICS.BRICSDecompose(mol))
+        fragments = sorted(BRICS.BRICSDecompose(mol))
         n_frags = len(fragments)
     except Exception:
         n_frags = 1

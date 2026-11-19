@@ -323,7 +323,7 @@ def _decompose_fragments(frag_smiles: list[str]) -> list[str]:
                 continue
             decomposed = BRICS.BRICSDecompose(frag_mol)
             if decomposed is not None:
-                for subfrag in decomposed:
+                for subfrag in sorted(decomposed):
                     subfrag_smi = Chem.MolToSmiles(subfrag) if subfrag else None
                     if subfrag_smi:
                         next_fragments.append(subfrag_smi)
@@ -508,11 +508,13 @@ def _cached_retrosynthetic_depth(smiles: str) -> int:
                     return 1
 
     # Get initial BRICS decomposition
+    # Sorted: BRICSDecompose returns a set whose iteration order varies
+    # per process (PYTHONHASHSEED); canonical order keeps depth deterministic.
     try:
         fragments = BRICS.BRICSDecompose(mol)
         if fragments is None:
             return 5
-        fragments = list(fragments)
+        fragments = sorted(fragments)
     except Exception:
         return 5  # Maximum depth for decomposition failures
 
@@ -584,8 +586,9 @@ def continuous_synthesizability_score(mol: Chem.Mol) -> float:
     direct_score = min(direct_match / 0.85, 1.0) if direct_match > 0 else 0.0
 
     # Component 2: Fragment coverage after one BRICS decomposition (weight 0.35)
+    # Sorted: BRICSDecompose returns a set; canonical order for determinism.
     try:
-        fragments = list(BRICS.BRICSDecompose(mol))
+        fragments = sorted(BRICS.BRICSDecompose(mol))
     except Exception:
         fragments = []
     frag_coverage = _precursor_coverage(fragments) if fragments else 0.0
