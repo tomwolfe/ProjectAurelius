@@ -192,6 +192,19 @@ VIABILITY_THRESHOLD: float = 50.0
 DISCOVERY_THRESHOLD: float = 65.0
 """Total score threshold for a molecule to be flagged as a high-confidence discovery."""
 
+EVOLUTION_RELATIVE_FRACTION: float = 0.10
+"""Top fraction of each generation that drives seed-pool evolution.
+
+Absolute DISCOVERY_THRESHOLD (65.0) is the discovery *claim* bar and never
+fires on low-score regimes (EA top mean ~22.5). Evolution uses this relative
+bar (top decile) so _evolve_seed_pool / _rotate_seed_pool fire every
+generation regardless of absolute scale. Never weaken DISCOVERY_THRESHOLD
+to fix evolution; fix the evolution gate instead."""
+
+SEED_POOL_MAX_SIZE: int = 200
+"""Cap for the seed pool. Truncation is score-aware (Pareto + novel-scaffold
+archive), never recency-only last-200."""
+
 # ---------------------------------------------------------------------------
 # F/P/S Correction Layer — Inductive Shifts for Elements Absent from QM9
 # ---------------------------------------------------------------------------

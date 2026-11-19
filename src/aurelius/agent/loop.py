@@ -42,7 +42,7 @@ from aurelius.agent.selection import (
     tournament_select,
 )
 from aurelius.agent.state import LoopState
-from aurelius.constants import DISCOVERY_THRESHOLD
+from aurelius.constants import DISCOVERY_THRESHOLD, EVOLUTION_RELATIVE_FRACTION, SEED_POOL_MAX_SIZE
 from aurelius.pipeline import AureliusPipeline
 from aurelius.scoring.oracle.delta_correction import get_delta_correction
 from aurelius.scoring.oracle.quantum import has_xtb
@@ -893,10 +893,67 @@ class DiscoveryLoop:
         selected_scores = [smi_to_score[c.smiles] for c in selected]
         return selected, selected_scores
 
+    def _relative_evolution_bar(self, batch_scores: list[float]) -> float:
+        """Relative evolution bar: top-decile cutoff of the current batch.
+
+        Absolute DISCOVERY_THRESHOLD (65.0) is kept for discovery claims.
+        Evolution fires on this relative bar so the seed pool evolves even
+        when absolute scores never reach 65 (EA regime best ~21).
+        """
+        if not batch_scores:
+            return float("inf")
+        ordered = sorted(batch_scores, reverse=True)
+        k = max(1, int(len(ordered) * EVOLUTION_RELATIVE_FRACTION))
+        return ordered[k - 1]
+
+    def _truncate_seed_pool_archive(self) -> None:
+        """Cap seed pool score-aware: keep Pareto + novel-scaffold archive.
+
+        Never truncate to last-200 recency only. Keeps all absolute
+        discoveries (>= DISCOVERY_THRESHOLD), then top by score to fill
+        SEED_POOL_MAX_SIZE. Novel scaffolds are protected because rotation
+        re-injects them and evolution adds top-decile candidates; recency
+        alone would drop early Pareto members.
+        """
+        pool = self.engine.seed_pool
+        if len(pool) <= SEED_POOL_MAX_SIZE:
+            self.state.seed_pool_size = len(pool)
+            return
+        scored = self._score_seed_pool()
+        score_by_smi = {smi: sc for sc, smi in scored}
+        discoveries = [smi for smi in pool if score_by_smi.get(smi, 0.0) >= DISCOVERY_THRESHOLD]
+        rest = sorted((s for s in pool if s not in set(discoveries)),
+                      key=lambda s: -score_by_smi.get(s, 0.0))
+        keep: list[str] = list(discoveries)
+        for smi in rest:
+            if len(keep) >= SEED_POOL_MAX_SIZE:
+                break
+            keep.append(smi)
+        # Preserve original pool order for determinism among equal scores
+        order = {smi: i for i, smi in enumerate(pool)}
+        keep_set = set(keep[:SEED_POOL_MAX_SIZE])
+        self.engine.seed_pool = [smi for smi in pool if smi in keep_set]
+        # If discoveries alone exceed cap (unlikely), keep top discoveries
+        if len(self.engine.seed_pool) > SEED_POOL_MAX_SIZE:
+            self.engine.seed_pool = sorted(
+                self.engine.seed_pool, key=lambda s: -score_by_smi.get(s, 0.0)
+            )[:SEED_POOL_MAX_SIZE]
+        self.state.seed_pool_size = len(self.engine.seed_pool)
+
     def _evolve_seed_pool(self, batch_contexts: list[MoleculeContext], batch_scores: list[float]) -> None:
-        """Feed high-scoring molecules back into the seed pool."""
+        """Feed high-scoring molecules back into the seed pool.
+
+        Absolute bar (>= DISCOVERY_THRESHOLD) marks discovery claims.
+        Relative bar (top decile of this batch) drives evolution so the pool
+        moves even when absolute scores stay low.
+        """
+        relative_bar = self._relative_evolution_bar(batch_scores)
         for ctx, sc in zip(batch_contexts, batch_scores, strict=False):
-            if sc < 65.0 or is_mixture_smiles(ctx.smiles):
+            if is_mixture_smiles(ctx.smiles):
+                continue
+            is_absolute = sc >= DISCOVERY_THRESHOLD
+            is_relative = sc >= relative_bar
+            if not (is_absolute or is_relative):
                 continue
             smi = ctx.smiles
             existing = set(self.engine.seed_pool)
@@ -904,9 +961,7 @@ class DiscoveryLoop:
                 self.engine.seed_pool.append(smi)
                 existing.add(smi)
             self.engine.harvest_fragments(smi, score=sc)
-        if len(self.engine.seed_pool) > 200:
-            self.engine.seed_pool = self.engine.seed_pool[-200:]
-        self.state.seed_pool_size = len(self.engine.seed_pool)
+        self._truncate_seed_pool_archive()
 
     def _rotate_seed_pool(self, generation: int) -> None:
         """Seed rotation: every 3 generations, replace bottom 20% of seed pool with top novel-scaffold candidates.
@@ -940,8 +995,8 @@ class DiscoveryLoop:
         new_pool = [smi for smi in self.engine.seed_pool if smi not in to_remove]
         new_pool.extend([smi for _, smi, _ in top_novel])
 
-        self.engine.seed_pool = new_pool[-200:]
-        self.state.seed_pool_size = len(self.engine.seed_pool)
+        self.engine.seed_pool = new_pool
+        self._truncate_seed_pool_archive()
 
         log.info(
             "  Generation %d: Seed rotation replaced %d molecules with novel scaffolds %s",
@@ -968,14 +1023,17 @@ class DiscoveryLoop:
     def _find_novel_scaffold_candidates(
         self, existing_pool: set[str], known_scaffolds: set[str]
     ) -> list[tuple[float, str, str]]:
-        """Return scored novel-scaffold candidates from current results, sorted by descending score."""
+        """Return scored novel-scaffold candidates from current results, sorted by descending score.
+
+        No absolute 65.0 gate: rotation uses the relative ranking so novel
+        scaffolds are found even in low-score regimes. Discovery claims
+        still require DISCOVERY_THRESHOLD elsewhere.
+        """
         if MurckoScaffold is None:
             return []
         novel_candidates = []
         for r in self.all_results:
             if r.smiles in existing_pool:
-                continue
-            if r.total_score < 65.0:
                 continue
             if is_mixture_smiles(r.smiles):
                 continue
