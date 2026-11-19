@@ -3,36 +3,36 @@
   "seed": 42,
   "n_generations": 3,
   "batch_size": 24,
-  "wall_seconds": 9.541,
+  "wall_seconds": 8.745,
   "pipeline_init_seconds": 0.004,
   "per_generation": [
     {
       "generation": 1,
       "n_evaluated": 23,
       "best": 100.0,
-      "record_overhead_s": 0.0083
+      "record_overhead_s": 0.0082
     },
     {
       "generation": 2,
       "n_evaluated": 24,
       "best": 100.0,
-      "record_overhead_s": 0.0106
+      "record_overhead_s": 0.01
     },
     {
       "generation": 3,
       "n_evaluated": 12,
       "best": 99.92,
-      "record_overhead_s": 0.0051
+      "record_overhead_s": 0.0049
     },
     {
       "generation": 3,
       "n_evaluated": 24,
       "best": 100.0,
-      "record_overhead_s": 0.0174
+      "record_overhead_s": 0.0173
     }
   ],
   "n_screened": 129,
-  "throughput_mols_per_sec": 13.5209,
+  "throughput_mols_per_sec": 14.752,
   "best_score": 100.0,
   "xtb_calls": 0,
   "xtb_cache_hits": 0,
@@ -43,34 +43,34 @@
   "tier0_prefilter_inits": 1,
   "stage_profile": {
     "generate": {
-      "total_s": 0.3803,
+      "total_s": 0.3797,
       "calls": 3,
-      "mean_s_per_call": 0.1268,
-      "share": 0.0399
+      "mean_s_per_call": 0.1266,
+      "share": 0.0434
     },
     "filter": {
-      "total_s": 0.0058,
+      "total_s": 0.0057,
       "calls": 4,
-      "mean_s_per_call": 0.0015,
-      "share": 0.0006
+      "mean_s_per_call": 0.0014,
+      "share": 0.0007
     },
     "evaluate": {
-      "total_s": 8.7147,
+      "total_s": 7.9491,
       "calls": 4,
-      "mean_s_per_call": 2.1787,
-      "share": 0.9134
+      "mean_s_per_call": 1.9873,
+      "share": 0.909
     },
     "select": {
-      "total_s": 0.1468,
+      "total_s": 0.1367,
       "calls": 4,
-      "mean_s_per_call": 0.0367,
-      "share": 0.0154
+      "mean_s_per_call": 0.0342,
+      "share": 0.0156
     },
     "record": {
-      "total_s": 0.0414,
+      "total_s": 0.0405,
       "calls": 4,
-      "mean_s_per_call": 0.0104,
-      "share": 0.0043
+      "mean_s_per_call": 0.0101,
+      "share": 0.0046
     }
   },
   "note": "Baseline before any optimization. Do not optimize without this baseline.",
