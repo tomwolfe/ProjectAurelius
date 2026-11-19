@@ -1,0 +1,31 @@
+{
+ "pool_size": 146,
+ "budget": 20,
+ "seeds": [
+  42,
+  123,
+  7,
+  2024,
+  99
+ ],
+ "arms": {
+  "tournament": {
+   "top_mean": 96.371,
+   "top_mean_min": 93.513,
+   "novelty_mean": 1.0,
+   "novelty_min": 1.0
+  },
+  "nsga2": {
+   "top_mean": 85.723,
+   "top_mean_min": 85.723,
+   "novelty_mean": 1.0,
+   "novelty_min": 1.0
+  },
+  "random_top_k": {
+   "top_mean": 91.38,
+   "top_mean_min": 87.711,
+   "novelty_mean": 1.0,
+   "novelty_min": 1.0
+  }
+ }
+}

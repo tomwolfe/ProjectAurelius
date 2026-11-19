@@ -346,6 +346,15 @@ class DiscoveryLoop:
         self.seed_knowns = seed_knowns
         self.seed = seed
         self._rng = random.Random(seed)
+        # Iterated-local-search basin state (Phase 3: aurelius-global-closure).
+        # _basin_best tracks the best score seen; consecutive generations
+        # without improvement increment _basin_stall, which triggers a
+        # basin-hop perturb-and-accept step. Plain attributes (not LoopState
+        # fields) so checkpoint schema is unchanged.
+        self._basin_best: float = 0.0
+        self._basin_stall: int = 0
+        # Incumbent SMILES for iterated local search (best seen so far).
+        self._basin_center: str | None = None
         self.feedback_controller: FeedbackController | None = None
 
         self.all_results: list[ScreeningResult] = []
@@ -390,6 +399,12 @@ class DiscoveryLoop:
             if force_exploration:
                 log.info("Generation %d: Scaffold stagnation detected — pivoting to BRICS-only exploration.", generation)
                 self._inject_tier0_seeds()
+            if self._basin_stall >= 1 and generation >= 2:
+                # Iterated local search: perturb the incumbent basin best
+                # through the normal mutate/filter/evaluate path (BRICS
+                # guard, novelty gate, grounding penalty all enforced
+                # downstream) and accept the basin only on improvement.
+                self._basin_hop(generation)
             candidates = self._generate_candidates(generation, force_exploration=force_exploration)
             valid_contexts, invalid_count = self._filter_candidates(candidates)
 
@@ -470,6 +485,39 @@ class DiscoveryLoop:
             selected = self._rng.sample(unused, min(5, len(unused)))
             self.engine.seed_pool.extend(selected)
             log.info("  Injected %d fresh tier0 seed SMILES into seed pool.", len(selected))
+
+    def _basin_hop(self, generation: int) -> None:
+        """One iterated-local-search step from the incumbent basin center.
+
+        Perturbs the best molecule seen so far with BRICS-only exploration
+        (``force_exploration=True`` keeps the BRICS guard), then runs the
+        standard filter/evaluate/record path so the novelty gate, grounding
+        penalty, and Pareto + novel-scaffold archive all still apply. The
+        basin center moves only on strict improvement (accept-if-better);
+        otherwise the hop results still enrich the archive and the stall
+        counter (updated in ``_record_results``) keeps growing.
+        """
+        if not self.all_results:
+            return
+        center = self._basin_center
+        if center is None:
+            return
+        try:
+            perturbed = self.engine.mutate(center, self.batch_size, force_exploration=True)
+        except Exception:
+            return
+        if not perturbed:
+            return
+        valid_contexts, _invalid = self._filter_candidates(perturbed)
+        if not valid_contexts:
+            return
+        batch_contexts, batch_scores = self._evaluate_and_select(valid_contexts)
+        if not batch_contexts:
+            return
+        batch_contexts, batch_scores = self._xtb_single_point_gate(batch_contexts, batch_scores)
+        self._record_results(batch_contexts, batch_scores, generation)
+        if batch_scores and max(batch_scores) > self._basin_best:
+            log.info("  Generation %d: basin hop accepted (best %.1f).", generation, max(batch_scores))
 
     def _generate_candidates(self, generation: int, force_exploration: bool = False) -> list[str]:
         top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
@@ -1102,6 +1150,18 @@ class DiscoveryLoop:
         batch_viable = sum(1 for s in batch_scores if s >= DISCOVERY_THRESHOLD)
         self._evolve_seed_pool(batch_contexts, batch_scores)
         self._rotate_seed_pool(generation)
+        # Basin-hop stall accounting: strict improvement moves the basin
+        # center and clears the stall; anything else deepens it. The hop
+        # trigger in execute() reads _basin_stall.
+        if batch_scores:
+            _best_idx = max(range(len(batch_scores)), key=lambda i: batch_scores[i])
+            if batch_scores[_best_idx] > self._basin_best:
+                self._basin_best = float(batch_scores[_best_idx])
+                self._basin_center = batch_contexts[_best_idx].smiles
+                self._basin_stall = 0
+            else:
+                self._basin_stall += 1
+        self._record_scaffolds(batch_contexts)
         self._record_scaffolds(batch_contexts)
         self.state.record_batch(batch_scores, batch_viable)
 
@@ -1448,3 +1508,88 @@ class DiscoveryLoop:
         except Exception as exc:
             log.debug("xTB evaluation failed for %s: %s", ctx.smiles, exc)
             return
+
+
+def multi_seed_restart_search(
+    seeds: tuple[int, ...] | list[int] = (42, 123, 7, 2024, 99),
+    n_generations: int = 5,
+    batch_size: int = 50,
+    seed_smiles: list[str] | None = None,
+    max_wall_time: float = 120.0,
+) -> dict[str, Any]:
+    """Independent multi-seed restarts with a merged Pareto + novel archive.
+
+    Each seed runs a fresh ``DiscoveryLoop`` (fresh engine, state, and
+    pipeline) so restarts explore complementary subspaces instead of one
+    trajectory. The merged archive dedupes by canonical SMILES keeping the
+    best score, protecting Pareto members and novel scaffolds — never a
+    last-N recency truncation. Gating uses the MINIMUM best-score across
+    seeds (``min_best``), not the mean, matching the discovery benchmark.
+
+    Args:
+        seeds: Benchmark seeds; each gets an independent restart.
+        n_generations: Generations per restart.
+        batch_size: Evaluation batch size per restart.
+        seed_smiles: Initial seed SMILES (defaults to the benchmark panel).
+        max_wall_time: Wall-clock cap per restart in seconds.
+
+    Returns:
+        Dict with per-seed summaries, the merged archive, ``min_best``,
+        and ``mean_best`` (reported for transparency only; the gate is
+        the minimum).
+    """
+    from aurelius.agent.mutation import MutationEngine
+    from aurelius.agent.state import LoopState
+    from aurelius.pipeline import AureliusPipeline
+
+    from rdkit import Chem
+
+    panel = seed_smiles or ['COC(=O)OC', 'C1COCCO1', 'CS(=O)(=O)C', 'CC#N', 'C1CCOC1']
+    per_seed: list[dict[str, Any]] = []
+    merged: dict[str, float] = {}
+
+    def _canon(smi: str) -> str:
+        try:
+            mol = Chem.MolFromSmiles(smi)
+            return Chem.MolToSmiles(mol) if mol is not None else smi
+        except Exception:
+            return smi
+
+    for seed in seeds:
+        engine = MutationEngine(seed_smiles=list(panel), seed=seed)
+        state = LoopState(path=f'/tmp/restart_state_{seed}.json')
+        state.clear()
+        pipeline = AureliusPipeline()
+        pipeline.initialize()
+        loop = DiscoveryLoop(
+            pipeline=pipeline, engine=engine, state=state,
+            max_generations=n_generations, batch_size=batch_size,
+            max_wall_time=max_wall_time, seed_knowns=False, seed=seed,
+        )
+        result = loop.execute()
+        best = 0.0
+        for r in result.get('all_results', []):
+            try:
+                sc = float(r.total_score)
+            except Exception:
+                continue
+            if sc > best:
+                best = sc
+            key = _canon(r.smiles)
+            if key not in merged or sc > merged[key]:
+                merged[key] = sc
+        per_seed.append({
+            'seed': seed,
+            'best': round(best, 4),
+            'n_screened': len(result.get('all_results', [])),
+        })
+    archive = sorted(merged.items(), key=lambda kv: -kv[1])
+    bests = [p['best'] for p in per_seed] or [0.0]
+    return {
+        'seeds': list(seeds),
+        'per_seed': per_seed,
+        'merged_archive': [{'smiles': smi, 'score': round(sc, 4)} for smi, sc in archive],
+        'merged_size': len(archive),
+        'min_best': round(min(bests), 4),
+        'mean_best': round(float(sum(bests) / len(bests)), 4),
+    }
