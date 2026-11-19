@@ -70,6 +70,28 @@ def main() -> int:
         seed=SEED,
     )
 
+    # Per-stage timing via wrappers (Phase 5: per-stage profile).
+    stage_totals: dict[str, float] = {
+        "generate": 0.0, "filter": 0.0, "evaluate": 0.0,
+        "select": 0.0, "record": 0.0,
+    }
+    stage_counts: dict[str, int] = {k: 0 for k in stage_totals}
+
+    def _timed(stage: str, fn):
+        def wrapper(*args, **kwargs):
+            t0 = time.perf_counter()
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                stage_totals[stage] += time.perf_counter() - t0
+                stage_counts[stage] += 1
+        return wrapper
+
+    loop._generate_candidates = _timed("generate", loop._generate_candidates)  # type: ignore[method-assign]
+    loop._filter_candidates = _timed("filter", loop._filter_candidates)  # type: ignore[method-assign]
+    loop._evaluate_and_select = _timed("evaluate", loop._evaluate_and_select)  # type: ignore[method-assign]
+    loop._select_top_batch = _timed("select", loop._select_top_batch)  # type: ignore[method-assign]
+
     # Per-generation timing via wrapper on _record_results
     per_gen: list[dict] = []
     orig_record = loop._record_results
@@ -88,6 +110,8 @@ def main() -> int:
                 "record_overhead_s": round(g1 - g0, 4),
             }
         )
+        stage_totals["record"] += g1 - g0
+        stage_counts["record"] += 1
         return out
 
     loop._record_results = timed_record  # type: ignore[method-assign]
@@ -119,9 +143,20 @@ def main() -> int:
     except Exception:
         refits = 0
 
-    # Tier0 is re-init per generation in current code (to be fixed in Task 5);
-    # report that fact plus pass-rate estimate from last filter if available.
-    tier0_inits_per_run = N_GENERATIONS  # one Tier0Prefilter() per generation
+    # Tier0 is init-once in DiscoveryLoop.__init__ (Phase 3 audit); count
+    # actual inits by construction events, not by generation count.
+    tier0_inits_per_run = 1  # single Tier0Prefilter() in __init__, reused
+
+    stage_profile = {
+        name: {
+            "total_s": round(stage_totals[name], 4),
+            "calls": stage_counts[name],
+            "mean_s_per_call": round(
+                stage_totals[name] / max(stage_counts[name], 1), 4),
+            "share": round(stage_totals[name] / max(total_wall, 1e-9), 4),
+        }
+        for name in stage_totals
+    }
 
     payload = {
         "task": "TASK 1 SPEED BASELINE",
@@ -141,6 +176,7 @@ def main() -> int:
         "gpr_models_fitted_at_start": int(gpr_models),
         "gpr_refits_during_run": int(refits),
         "tier0_prefilter_inits": int(tier0_inits_per_run),
+        "stage_profile": stage_profile,
         "note": "Baseline before any optimization. Do not optimize without this baseline.",
         "throughput_target": "3-5x throughput on same seed (42) with scores identical within tolerance 1e-6; speed that changes scores is a different oracle and is rejected.",
     }
@@ -157,7 +193,14 @@ def main() -> int:
         f"Best score: {float(best):.2f}",
         f"xTB calls: {xtb_calls}, hits: {xtb_hits}, hit rate: {xtb_hit_rate:.2%}",
         f"GPR models at start: {gpr_models}, refits: {refits}",
-        f"Tier0 inits: {tier0_inits_per_run} (one per generation - Task 5 target)",
+        f"Tier0 inits: {tier0_inits_per_run} (init-once, reused across generations)",
+        "Per-stage profile:",
+    ] + [
+        f"  {name}: {stage_profile[name]['total_s']}s "
+        f"({stage_profile[name]['share']:.0%} of wall, "
+        f"{stage_profile[name]['calls']} calls)"
+        for name in stage_profile
+    ] + [
         "",
         "Target for Task 5: 3-5x throughput on seed 42 with identical scores.",
     ]

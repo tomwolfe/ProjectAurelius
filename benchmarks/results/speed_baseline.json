@@ -3,30 +3,36 @@
   "seed": 42,
   "n_generations": 3,
   "batch_size": 24,
-  "wall_seconds": 8.657,
+  "wall_seconds": 9.541,
   "pipeline_init_seconds": 0.004,
   "per_generation": [
     {
       "generation": 1,
       "n_evaluated": 23,
       "best": 100.0,
-      "record_overhead_s": 0.0082
+      "record_overhead_s": 0.0083
     },
     {
       "generation": 2,
       "n_evaluated": 24,
       "best": 100.0,
-      "record_overhead_s": 0.0099
+      "record_overhead_s": 0.0106
+    },
+    {
+      "generation": 3,
+      "n_evaluated": 12,
+      "best": 99.92,
+      "record_overhead_s": 0.0051
     },
     {
       "generation": 3,
       "n_evaluated": 24,
       "best": 100.0,
-      "record_overhead_s": 0.0216
+      "record_overhead_s": 0.0174
     }
   ],
-  "n_screened": 141,
-  "throughput_mols_per_sec": 16.2866,
+  "n_screened": 129,
+  "throughput_mols_per_sec": 13.5209,
   "best_score": 100.0,
   "xtb_calls": 0,
   "xtb_cache_hits": 0,
@@ -34,7 +40,39 @@
   "xtb_escalations": 0,
   "gpr_models_fitted_at_start": 2,
   "gpr_refits_during_run": 0,
-  "tier0_prefilter_inits": 3,
+  "tier0_prefilter_inits": 1,
+  "stage_profile": {
+    "generate": {
+      "total_s": 0.3803,
+      "calls": 3,
+      "mean_s_per_call": 0.1268,
+      "share": 0.0399
+    },
+    "filter": {
+      "total_s": 0.0058,
+      "calls": 4,
+      "mean_s_per_call": 0.0015,
+      "share": 0.0006
+    },
+    "evaluate": {
+      "total_s": 8.7147,
+      "calls": 4,
+      "mean_s_per_call": 2.1787,
+      "share": 0.9134
+    },
+    "select": {
+      "total_s": 0.1468,
+      "calls": 4,
+      "mean_s_per_call": 0.0367,
+      "share": 0.0154
+    },
+    "record": {
+      "total_s": 0.0414,
+      "calls": 4,
+      "mean_s_per_call": 0.0104,
+      "share": 0.0043
+    }
+  },
   "note": "Baseline before any optimization. Do not optimize without this baseline.",
   "throughput_target": "3-5x throughput on same seed (42) with scores identical within tolerance 1e-6; speed that changes scores is a different oracle and is rejected."
 }
