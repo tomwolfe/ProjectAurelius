@@ -104,31 +104,8 @@ def _get_xtb_binary_path() -> str | None:
     return _XTB_BINARY_PATH
 
 
-_XYZ_CACHE: dict[str, str] = {}
-_XYZ_CACHE_MAX = 20000
-
-
 def _generate_xyz(mol: Chem.Mol) -> str:
-    """Generate an XYZ string from a molecule with a 3D conformer.
-
-    Results are memoised by canonical SMILES: embedding is deterministic
-    (ETKDG randomSeed is pinned), so repeated evaluations of the same molecule
-    across batches return bit-identical geometries without re-embedding.
-    """
-    cache_key: str | None = None
-    with contextlib.suppress(Exception):
-        cache_key = Chem.MolToSmiles(mol)
-    if cache_key is not None:
-        cached = _XYZ_CACHE.get(cache_key)
-        if cached is not None:
-            return cached
-    xyz = _generate_xyz_uncached(mol)
-    if cache_key is not None and xyz and len(_XYZ_CACHE) < _XYZ_CACHE_MAX:
-        _XYZ_CACHE[cache_key] = xyz
-    return xyz
-
-
-def _generate_xyz_uncached(mol: Chem.Mol) -> str:
+    """Generate an XYZ string from a molecule with a 3D conformer."""
     from rdkit.Chem import AllChem
 
     mol = Chem.RWMol(mol)
