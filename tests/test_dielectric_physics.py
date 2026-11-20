@@ -369,3 +369,32 @@ def test_verified_set_mae_does_not_regress() -> None:
 
     mae = float(np.mean(errors))
     assert mae < 3.4, f"verified-set dielectric MAE {mae:.3f} regressed (was 3.258)"
+
+
+def test_phosphonate_uses_phosphoryl_dipole() -> None:
+    """Phosphonates (C-P(=O)(O)(O)) carry the same P=O dipole as phosphates.
+
+    Mutation pin: without the phosphonate_group entry the P=O dipole is
+    missed entirely (only two OX2, so neither the phosphate nor the ether
+    SMARTS match) and the prediction collapses to ~4.4 against a true 28.3.
+    Trialkyl phosphates must keep matching phosphate_group exactly once and
+    phosphonate_group zero times (no double-hit from the new pattern).
+    """
+    from rdkit import Chem
+
+    phosphonate = MoleculeContext.from_smiles("CP(=O)(OC(C(F)F))OC")
+    assert phosphonate is not None
+    groups = _count_dipole_groups(phosphonate.mol)
+    assert groups.get("phosphonate_group", 0) == 1
+    assert groups.get("phosphate_group", 0) == 0
+    eps = predict_dielectric_constant(phosphonate)
+    # Improved from 4.4 (dipole missed) toward true 28.3; still under, which
+    # is documented honestly rather than fitted.
+    assert 8.0 < eps < 20.0
+
+    for smiles in ("COP(=O)(OC)OC", "CCOP(=O)(OCC)OCC"):
+        ctx = MoleculeContext.from_smiles(smiles)
+        assert ctx is not None
+        groups = _count_dipole_groups(ctx.mol)
+        assert groups.get("phosphate_group", 0) == 1
+        assert groups.get("phosphonate_group", 0) == 0
