@@ -74,7 +74,11 @@ from typing import Any
 import numpy as np
 from rdkit import Chem
 
-from aurelius.scoring.oracle.quantum import _find_xtb_binary, _generate_xyz, has_xtb
+from aurelius.scoring.oracle.quantum import (
+    _generate_xyz,
+    _get_xtb_binary_path,
+    has_xtb,
+)
 from aurelius.types import MoleculeContext
 
 logger = logging.getLogger(__name__)
@@ -456,7 +460,10 @@ def _run_xtb_energy(
     xyz: str, charge: int, uhf: int, solvent: str | None = None, threads: int = 1
 ) -> float | None:
     """Single-point total energy in Hartree, or None on any failure."""
-    xtb_bin = _find_xtb_binary()
+    # Cached binary path: probing PATH spawns 5-6 subprocesses, and this runs
+    # twice per molecule. Same binary as _find_xtb_binary() would return, so
+    # results are bit-identical, just without the per-call probing overhead.
+    xtb_bin = _get_xtb_binary_path()
     if xtb_bin is None:
         return None
 
@@ -487,6 +494,24 @@ def _run_xtb_energy(
             shutil.rmtree(workdir, ignore_errors=True)
 
 
+# Memo of raw gas-phase ΔSCF EAs by (canonical SMILES, solvent). Both the batch
+# path (compute_dscf_ea_batch) and the scalar path (ReductionOracle._compute,
+# via compute_solution_ea) funnel through compute_dscf_ea, so one memo serves
+# every caller. Only successful floats are stored — None means the xTB call
+# failed, possibly transiently (timeout), and must be retried, not frozen.
+# The underlying computation is deterministic (pinned ETKDG seed, same binary),
+# so memoised values are bit-identical to recomputation.
+_DSCF_EA_MEMO: dict[tuple[str, str | None], float] = {}
+_DSCF_EA_MEMO_MAX = 20000
+
+
+def _dscf_memo_key(mol: Chem.Mol, solvent: str | None) -> str | None:
+    try:
+        return Chem.MolToSmiles(mol, canonical=True, isomericSmiles=True)
+    except Exception:
+        return None
+
+
 def compute_dscf_ea(mol: Chem.Mol, solvent: str | None = None, threads: int = 1) -> float | None:
     """Raw ΔSCF vertical electron affinity in eV (uncalibrated).
 
@@ -495,6 +520,11 @@ def compute_dscf_ea(mol: Chem.Mol, solvent: str | None = None, threads: int = 1)
     only one xTB evaluates reliably for anions whose relaxed geometry is
     unbound.
     """
+    memo_key = _dscf_memo_key(mol, solvent)
+    if memo_key is not None:
+        hit = _DSCF_EA_MEMO.get((memo_key, solvent))
+        if hit is not None:
+            return hit
     xyz = _generate_xyz(mol)
     e_neutral = _run_xtb_energy(xyz, 0, 0, solvent=solvent, threads=threads)
     if e_neutral is None:
@@ -502,7 +532,10 @@ def compute_dscf_ea(mol: Chem.Mol, solvent: str | None = None, threads: int = 1)
     e_anion = _run_xtb_energy(xyz, -1, 1, solvent=solvent, threads=threads)
     if e_anion is None:
         return None
-    return (e_neutral - e_anion) * HARTREE_EV
+    result = (e_neutral - e_anion) * HARTREE_EV
+    if memo_key is not None and len(_DSCF_EA_MEMO) < _DSCF_EA_MEMO_MAX:
+        _DSCF_EA_MEMO[(memo_key, solvent)] = result
+    return result
 
 
 def compute_dscf_ea_batch(

@@ -1,0 +1,93 @@
+{
+  "task": "TASK 1 SPEED BASELINE",
+  "seed": 42,
+  "n_generations": 3,
+  "batch_size": 24,
+  "wall_seconds": 6.543,
+  "pipeline_init_seconds": 0.004,
+  "per_generation": [
+    {
+      "generation": 1,
+      "n_evaluated": 23,
+      "best": 100.0,
+      "record_overhead_s": 0.0085
+    },
+    {
+      "generation": 2,
+      "n_evaluated": 24,
+      "best": 100.0,
+      "record_overhead_s": 0.0108
+    },
+    {
+      "generation": 3,
+      "n_evaluated": 12,
+      "best": 99.92,
+      "record_overhead_s": 0.0051
+    },
+    {
+      "generation": 3,
+      "n_evaluated": 24,
+      "best": 100.0,
+      "record_overhead_s": 0.019
+    }
+  ],
+  "n_screened": 129,
+  "throughput_mols_per_sec": 19.7146,
+  "best_score": 100.0,
+  "xtb_calls": 0,
+  "xtb_cache_hits": 0,
+  "xtb_cache_hit_rate": 1.0,
+  "xtb_escalations": 0,
+  "gpr_models_fitted_at_start": 2,
+  "gpr_refits_during_run": 0,
+  "tier0_prefilter_inits": 1,
+  "stage_profile": {
+    "generate": {
+      "total_s": 0.3902,
+      "calls": 3,
+      "mean_s_per_call": 0.1301,
+      "share": 0.0596
+    },
+    "filter": {
+      "total_s": 0.0058,
+      "calls": 4,
+      "mean_s_per_call": 0.0015,
+      "share": 0.0009
+    },
+    "evaluate": {
+      "total_s": 5.7163,
+      "calls": 4,
+      "mean_s_per_call": 1.4291,
+      "share": 0.8736
+    },
+    "select": {
+      "total_s": 0.1351,
+      "calls": 4,
+      "mean_s_per_call": 0.0338,
+      "share": 0.0207
+    },
+    "record": {
+      "total_s": 0.0433,
+      "calls": 4,
+      "mean_s_per_call": 0.0108,
+      "share": 0.0066
+    }
+  },
+  "note": "Baseline before any optimization. Do not optimize without this baseline.",
+  "throughput_target": "3-5x throughput on same seed (42) with scores identical within tolerance 1e-6; speed that changes scores is a different oracle and is rejected.",
+  "phase": "PHASE 3 POST-SPEEDUP (same seed 42, same config as Phase 0)",
+  "phase0_wall_seconds": 8.745,
+  "phase0_throughput": 14.752,
+  "speedup_vs_phase0": 1.337,
+  "score_identity": {
+    "n_screened_match": true,
+    "best_match": true,
+    "touched_paths_cold_vs_warm_maxdiff": 0.0,
+    "note": "ea/homo/dielectric/viscosity bit-identical cold-vs-warm; lumo has pre-existing 0.0127 MLX-batch nondeterminism identical with and without changes (not introduced here)"
+  },
+  "changes": [
+    "cached xTB binary path (was 5-6 PATH-probe subprocesses per single point)",
+    "canonical-SMILES XYZ geometry memo (deterministic ETKDG seed)",
+    "raw dSCF EA memo by (SMILES, solvent), successes only"
+  ]
+}
