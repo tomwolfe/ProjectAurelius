@@ -996,3 +996,72 @@ class TestAcquisitionBeatsRandomTopK:
             f"mean TKE edge {sum(edges) / len(edges):.3f} not above 0.1 "
             f"(edges {[round(e, 3) for e in edges]})"
         )
+
+
+class TestSingleAxisEIOrientation:
+    """Single-property EI must target the decision (high) end, not the minimum.
+
+    Mutation pin: flipping ``minimise`` to True inside the membership branch
+    of ``_collect_raw_suggestions`` survived the suite because no test isolated
+    the EI orientation from the other acquisition terms. These tests pin it
+    directly: with a fixed interval, higher predictions must carry strictly
+    greater EI under membership=True.
+    """
+
+    def _stub_predictor(self):
+        class _Stub:
+            _reference_spread = {"homo": 2.0}
+
+            def predict_interval(self, prop, point, mol=None):
+                return (point - 0.5, point + 0.5)
+
+        return _Stub()
+
+    def _evaluated(self, smiles_to_homo):
+        from aurelius.agent.experiment_suggester import _collect_raw_suggestions  # noqa: F401
+        evaluated = []
+        for smi, homo in smiles_to_homo:
+            ctx = MoleculeContext.from_smiles(smi)
+            assert ctx is not None
+            evaluated.append(
+                (ctx, {"homo": homo}, 0.5, 0.9, "within domain")
+            )
+        return evaluated
+
+    def test_membership_ei_increases_with_prediction(self):
+        from aurelius.agent.experiment_suggester import _collect_raw_suggestions
+
+        smiles_to_homo = [("CCO", -7.5), ("CCC", -6.5)]
+        evaluated = self._evaluated(smiles_to_homo)
+        all_predictions = [{"homo": h} for _, h in smiles_to_homo]
+        per_prop_uncertainty = {
+            Chem.MolToSmiles(ctx.mol): {"homo": 0.25} for ctx, *_ in evaluated
+        }
+        _, ei_values = _collect_raw_suggestions(
+            evaluated, all_predictions, ["homo"], self._stub_predictor(),
+            {}, per_prop_uncertainty, {}, {}, dict(DEFAULT_WEIGHTS),
+            {"homo": -7.0}, membership=True,
+        )
+        assert len(ei_values) == 2
+        # Higher prediction must carry strictly greater EI toward the max
+        # incumbent; minimise=True would reverse this ordering.
+        assert ei_values[1] > ei_values[0], (
+            f"single-axis EI not monotone in prediction: {ei_values}"
+        )
+
+    def test_expand_pool_adds_novel_products_when_available(self):
+        """expand_candidate_pool must return genuinely new molecules when the
+        harvest yields them (mutation pin: early-return on ``if novel``)."""
+        pool = [
+            "COC(=O)OC", "O=C1OCCO1", "CC#N", "COCCOC",
+            "CC(=O)OC(C)=O", "O=S1(=O)CCCC1",
+        ]
+        expanded = expand_candidate_pool(pool, target_size=50)
+        original_canonical = {
+            Chem.MolToSmiles(Chem.MolFromSmiles(s)) for s in pool
+        }
+        novel = [s for s in expanded if s not in original_canonical]
+        assert len(novel) > 0, (
+            "expansion produced no novel molecules although BRICS harvesting "
+            "yields recombination products for this pool"
+        )
