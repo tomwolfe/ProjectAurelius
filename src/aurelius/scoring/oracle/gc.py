@@ -593,6 +593,12 @@ _GROUP_DIPOLES: list[tuple[str, float]] = [
     ("amide_group", 3.82),
     ("nitro_group", 3.56),
     ("phosphate_group", 3.10),
+    # Same P=O bond dipole as phosphate: phosphonates (C-P(=O)(O)(O)) carry the
+    # identical phosphoryl bond but match neither the trialkyl-phosphate SMARTS
+    # (three OX2) nor the ether SMARTS (P is not carbon). Without this entry
+    # the P=O dipole was missed entirely (e.g. eps 4.4 vs 28.3). Coverage, not
+    # a retune: the 3.10 value is the shared P=O bond dipole.
+    ("phosphonate_group", 3.10),
     ("ketone_group", 2.88),
     ("aromatic_nitrogen", 2.20),
     ("ester_group", 1.78),
@@ -623,6 +629,10 @@ _DIPOLE_SMARTS: dict[str, Chem.Mol] = {
         # Matches both the neutral and charge-separated nitro representations.
         "nitro_group": "[$([NX3](=O)=O),$([NX3+](=O)[O-])]",
         "phosphate_group": "[PX4](=O)([OX2])([OX2])[OX2]",
+        # Phosphonate: C-P(=O)(O)(O). Same phosphoryl bond, but only two OX2
+        # so the phosphate pattern above never matches; the ether pattern
+        # excludes P-bound O (not carbon). Listed separately for coverage.
+        "phosphonate_group": "[PX4](=O)([#6])([OX2])[OX2]",
         "aromatic_nitrogen": "[nX2]",
         "ketone_group": "[#6][CX3](=O)[#6]",
         # True dialkyl ether only. ``!$(O[CX3]=[OX1])`` excludes the ester and

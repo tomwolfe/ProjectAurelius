@@ -157,6 +157,13 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "bald": 0.0,
     "pareto_ucb": 0.0,
     "batch_ei": 0.15,
+    # Pass-3 EI blend weight. The 0.05 EI blend in _build_suggestions_from_raw
+    # lives outside the weighted sum, so a weights override that zeroes every
+    # term above would still leave EI moving the ranking — the same silent-
+    # incompleteness defect TestInformationGainRanking guards against. Routing
+    # the blend through the weights keeps single-term arms truly single-term;
+    # the default 0.05 preserves existing behaviour for all other callers.
+    "expected_improvement": 0.05,
 }
 
 # ADR-2026-08-12-003: the closed-loop benchmark showed that the EA greedy
@@ -997,8 +1004,18 @@ def _collect_raw_suggestions(
                 batch_ei_score=batch_ei, membership=membership,
             )
             prop_values = [p[prop] for _, p, *_ in evaluated]
-            minimise = prop in ("homo", "lumo")
-            incumbent = min(prop_values) if minimise else max(prop_values)
+            if membership:
+                # Single-axis decision shortlist: the membership term ranks
+                # P(y > threshold), monotone increasing in the prediction, so
+                # EI must target the same (high) end. minimise=True here would
+                # measure improvement toward the pool minimum, pulling the
+                # blended ranking toward the opposite end from the decision
+                # metric (ADR-2026-08-15-001).
+                incumbent = max(prop_values)
+                minimise = False
+            else:
+                minimise = prop in ("homo", "lumo")
+                incumbent = min(prop_values) if minimise else max(prop_values)
             ei = expected_improvement(point, interval, incumbent, minimise=minimise)
             ei_values.append(ei)
             raw_suggestions.append(
@@ -1011,8 +1028,14 @@ def _build_suggestions_from_raw(
     raw_suggestions: list[_RawSuggestion],
     ei_values: list[float],
     ei_max: float,
+    ei_weight: float = 0.05,
 ) -> list[ExperimentSuggestion]:
-    """Pass 3: turn scored pairs into ExperimentSuggestion objects with EI blending."""
+    """Pass 3: turn scored pairs into ExperimentSuggestion objects with EI blending.
+
+    ``ei_weight`` is the Pass-3 EI blend weight, taken from the caller's
+    weights (``expected_improvement``) so a weights override can zero it like
+    any other term. Defaults to 0.05, preserving historical behaviour.
+    """
     suggestions: list[ExperimentSuggestion] = []
     for (score, components, interval, smiles, point, prop, doa_reason), ei in zip(
         raw_suggestions, ei_values, strict=True
@@ -1026,7 +1049,10 @@ def _build_suggestions_from_raw(
         # HOMO molecules). Reduce it so the membership-based expected_impact
         # term — which is monotone in the predicted value — dominates the
         # final ranking instead of being pulled toward the wrong end.
-        blended = 0.95 * score + 0.05 * ei_norm
+        # ``ei_weight`` comes from the weights dict, so an explicit override
+        # that zeroes every term also zeroes this blend (same philosophy as
+        # the TestInformationGainRanking zeroing-completeness gate).
+        blended = (1.0 - ei_weight) * score + ei_weight * ei_norm
         canonical_property = MEASURABLE_PROPERTIES[prop]
         units = _UNITS[canonical_property]
         rationale = _build_rationale(prop, components, interval, units)
@@ -1045,6 +1071,26 @@ def _build_suggestions_from_raw(
             )
         )
     return suggestions
+
+
+def _elite_predictions_for_diversification(
+    evaluated: list[_Evaluated], wanted: list[str]
+) -> dict[str, dict[str, float]] | None:
+    """Build the elite-predictions map for property-space diversification.
+
+    Single-property calls are a decision shortlist (ADR-2026-08-15-001): the
+    batch must concentrate on the predicted top-k, so property-space spreading
+    is disabled there (None -> the distance term returns 1.0 and reorders
+    nothing). Split out of ``suggest_experiments`` to keep that function's
+    cyclomatic complexity within budget.
+    """
+    if len(wanted) <= 1:
+        return None
+    all_pred_by_smiles: dict[str, dict[str, float]] = {}
+    for ctx, predictions, *_ in evaluated:
+        smi = Chem.MolToSmiles(ctx.mol)
+        all_pred_by_smiles[smi] = predictions
+    return all_pred_by_smiles
 
 
 def suggest_experiments(
@@ -1155,16 +1201,14 @@ def suggest_experiments(
     )
 
     ei_max = max(ei_values) if ei_values else 1.0
-    suggestions = _build_suggestions_from_raw(raw_suggestions, ei_values, ei_max)
+    suggestions = _build_suggestions_from_raw(
+        raw_suggestions, ei_values, ei_max,
+        ei_weight=active_weights.get("expected_improvement", 0.05),
+    )
 
-    # Build elite predictions map for property-space diversification in _diversify.
-    # Use the full pool of evaluated candidate predictions so the batch can span
-    # diverse regions of property space, not collapse onto one chemically coherent
-    # but predictably similar region.
-    all_pred_by_smiles: dict[str, dict[str, float]] = {}
-    for ctx, predictions, *_ in evaluated:
-        smi = Chem.MolToSmiles(ctx.mol)
-        all_pred_by_smiles[smi] = predictions
+    # Property-space diversification map (None for single-property decision
+    # shortlists: the batch must concentrate on the predicted top-k).
+    all_pred_by_smiles = _elite_predictions_for_diversification(evaluated, wanted)
 
     suggestions.sort(key=lambda s: (-s.priority_score, s.smiles, s.property_to_measure))
     # ADR-2026-08-15-001: for a single-property call the batch is a decision
