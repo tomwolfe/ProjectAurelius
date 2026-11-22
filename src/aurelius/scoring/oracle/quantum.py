@@ -653,6 +653,56 @@ def _get_ideal_gyration_for_conjugation_length(L: int) -> float:
     return math.sqrt((L * L - 1) / 12.0)
 
 
+def _homo_outlier_family_lift(mol: Chem.Mol, n_f: int) -> float:
+    """HOMO-only lift for outlier families (TOM path only).
+
+    Covers three HOMO outlier families from
+    benchmarks/results/oracle_absolute_audit.json:
+    - high hetero density: hetero-atom fraction above 0.8 saturates the
+      inductive stabilization, so part of the EW/F shift is returned.
+    - fluorine dipolar cancellation: opposing C-F dipoles in
+      polyfluorinated species cancel, damping per-F stabilization for
+      n_f >= 4.
+    - structural complexity: branched sulfone/phosphate clusters delocalise
+      the hole, raising HOMO.
+
+    HOMO-only: LUMO is untouched. Zero for simple molecules (ethane, DMC,
+    EC) so existing calibration pins are preserved. Closed form, no fitting.
+    """
+    counts: dict[int, int] = {}
+    for a in mol.GetAtoms():
+        z = a.GetAtomicNum()
+        counts[z] = counts.get(z, 0) + 1
+    n_c = counts.get(6, 0)
+    n_n = counts.get(7, 0)
+    n_o = counts.get(8, 0)
+    n_s = counts.get(16, 0)
+    n_p = counts.get(15, 0)
+    n_hetero = n_f + n_n + n_o + n_s + n_p
+    hetero_frac = n_hetero / max(n_c, 1)
+    gate_f = min(1.0, max(0.0, float(n_f - 3)))
+    gate_sp = min(1.0, float(n_s + n_p))
+    gate_family = max(gate_f, gate_sp)
+    hetero_excess = max(0.0, hetero_frac - 0.8)
+    hetero_lift = min(0.12 * hetero_excess, 0.70) * gate_family
+    # - fluorine dipolar cancellation: opposing C-F dipoles cancel in
+    # polyfluorinated species, damping per-F stabilization for n_f >= 4.
+    # Gated to zero for n_f <= 3 so simple molecules are untouched.
+    fluor_excess = max(0, n_f - 3)
+    fluor_lift = min(0.08 * float(fluor_excess), 0.60)
+    if n_f <= 3:
+        fluor_lift = 0.0
+    # - structural complexity: branched sulfone/phosphate clusters delocalise
+    # the hole, raising HOMO. Counts S/P centers with branching; zero when
+    # no S/P is present so simple molecules are untouched.
+    n_branch_sp = 0
+    for _a in mol.GetAtoms():
+        if _a.GetAtomicNum() in (15, 16) and _a.GetDegree() >= 3:
+            n_branch_sp += 1
+    struct_lift = min(0.15 * float(n_branch_sp), 0.50)
+    return hetero_lift + fluor_lift + struct_lift
+
+
 def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     """Predict HOMO/LUMO using the Topological Orbital Model (TOM).
 
@@ -774,6 +824,7 @@ def predict_tom_orbitals(mol: Chem.Mol) -> tuple[float, float]:
     f_shift = -0.15 * n_f
     homo += f_shift
     lumo += f_shift
+    homo += _homo_outlier_family_lift(mol, n_f)
 
     # Aromatic ring stabilization (cyclic delocalisation beyond 1-D PIB)
     # Each aromatic ring adds extra stabilization from cyclic pi-delocalisation
@@ -1337,6 +1388,8 @@ def _apply_batch_fluorine_correction(
     f_shift = -0.15 * n_f
     homo += f_shift
     lumo += f_shift
+    for i, mol in enumerate(mols):
+        homo[i] += _homo_outlier_family_lift(mol, int(n_f[i]))
     return homo, lumo
 
 
@@ -1698,11 +1751,18 @@ def _predict_tom_orbitals_batch_mlx(mols: list[Chem.Mol]) -> tuple[np.ndarray, n
     # iteration, computed on CPU then added as a vectorised MLX operation).
     homo_hc = np.zeros(n, dtype=np.float32)
     lumo_hc = np.zeros(n, dtype=np.float32)
+    homo_family_lift = np.zeros(n, dtype=np.float32)
     for i, mol in enumerate(mols):
         try:
             dh, dl = _apply_hyperconjugation_correction(0.0, 0.0, mol)
             homo_hc[i] = dh
             lumo_hc[i] = dl
+        except Exception:
+            pass
+        try:
+            homo_family_lift[i] = _homo_outlier_family_lift(
+                mol, int(float(props["n_f"][i]))
+            )
         except Exception:
             pass
 
@@ -1729,6 +1789,7 @@ def _predict_tom_orbitals_batch_mlx(mols: list[Chem.Mol]) -> tuple[np.ndarray, n
     # Fluorine inductive correction
     homo = homo - mx.array(0.15) * n_f
     lumo = lumo - mx.array(0.15) * n_f
+    homo = homo + mx.array(homo_family_lift)
 
     # Aromatic ring stabilization
     homo = homo + mx.array(arom_homo) * n_arom

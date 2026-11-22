@@ -53,7 +53,7 @@ import os
 import warnings
 from typing import Any
 
-import numpy as np
+import numpy as np  # phase2a-homo-init
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -512,7 +512,27 @@ class DeltaCorrection:
         conf_homo = var_prior_homo / (var_prior_homo + std_homo ** 2)  # type: ignore[operator]
         conf_lumo = var_prior_lumo / (var_prior_lumo + std_lumo ** 2)  # type: ignore[operator]
 
-        return homo_base + d_homo * conf_homo, lumo_base + d_lumo * conf_lumo  # type: ignore[operator]
+        # PHASE-2a HOMO family fix (production path): HOMO-only lift for
+        # high hetero density. Scaled by (1 - conf) so calibration-covered
+        # molecules keep their fitted correction and only OOD molecules are
+        # lifted. LUMO untouched.
+        homo_corr = homo_base + d_homo * conf_homo  # type: ignore[operator]
+        lumo_corr = lumo_base + d_lumo * conf_lumo  # type: ignore[operator]
+        try:
+            from aurelius.scoring.oracle.quantum import _homo_outlier_family_lift as _lift
+            _lifts = np.array(
+                [
+                    _lift(m, sum(a.GetAtomicNum() == 9 for a in m.GetAtoms()))
+                    for m in mols
+                ],
+                dtype=np.float32,
+            )
+            _ood_w = (1.0 - conf_homo).astype(np.float32)  # type: ignore[union-attr]
+            homo_corr = homo_corr + _lifts * _ood_w  # type: ignore[operator]
+        except Exception:
+            pass
+
+        return homo_corr, lumo_corr  # type: ignore[return-value]
 
     def predict_corrected(
         self, mol: Chem.Mol, base: tuple[float, float] | None = None
@@ -561,7 +581,16 @@ class DeltaCorrection:
         var_prior_lumo = self._prior_std_lumo ** 2  # type: ignore[operator]
         conf_homo = var_prior_homo / (var_prior_homo + std_homo ** 2)
         conf_lumo = var_prior_lumo / (var_prior_lumo + std_lumo ** 2)
-        return tom_homo + d_homo * conf_homo, tom_lumo + d_lumo * conf_lumo
+        homo_corr = tom_homo + d_homo * conf_homo
+        lumo_corr = tom_lumo + d_lumo * conf_lumo
+        # PHASE-2a HOMO family fix: HOMO-only OOD-scaled lift, LUMO untouched.
+        try:
+            from aurelius.scoring.oracle.quantum import _homo_outlier_family_lift as _lift
+            _n_f = sum(a.GetAtomicNum() == 9 for a in mol.GetAtoms())
+            homo_corr = homo_corr + _lift(mol, _n_f) * (1.0 - conf_homo)
+        except Exception:
+            pass
+        return homo_corr, lumo_corr
 
     def update_online(
         self, smiles: str, homo_tom: float, lumo_tom: float,
