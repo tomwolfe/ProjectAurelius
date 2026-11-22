@@ -184,41 +184,173 @@ def _load_known_scaffolds(data_path: str) -> set[str]:
 
 def _run_strategy_for_seed(candidate_smiles: list[str], n_eval: int, strategy: str, rng: random.Random, known_scaffolds: set[str]) -> dict:
     """Run one strategy evaluation for one seed, returning per-strategy metrics."""
+    # The random arms need the full-pool score table to sample from. The EA
+    # arm scores lazily inside its own budget instead (honest accounting:
+    # every oracle call it makes counts toward n_eval, no uncounted
+    # full-pool pre-score).
     all_scores: dict[str, float] = {}
-    for smi in candidate_smiles:
-        sc = _screen_molecule_score(smi)
-        if sc > 0:
-            all_scores[smi] = sc
-    n_total = len(all_scores)
+    if strategy != 'ea':
+        for smi in candidate_smiles:
+            sc = _screen_molecule_score(smi)
+            if sc > 0:
+                all_scores[smi] = sc
+        n_total = len(all_scores)
+    else:
+        n_total = len(candidate_smiles)
     if n_total == 0:
         return {'top_n_mean_score': 0.0, 'n_above_65': 0, 'n_above_65_full': 0, 'novelty_ratio': 0.0, 'pairwise_diversity': 0.0, 'n_screened': 0}
     if strategy == 'ea':
-        sorted_by_score = sorted(all_scores.items(), key=lambda x: -x[1])
-        selected: list[tuple[str, float]] = [(smi, sc) for smi, sc in sorted_by_score[:n_eval]]
-        _worst_idx = min(range(len(selected)), key=lambda i: selected[i][1]) if selected else None
-        for smi, _sc in list(selected)[:n_eval]:
-            if '|' not in smi:
-                continue
+        # Real generational EA inside the same total evaluation budget.
+        # Every _screen_molecule_score call below counts toward n_eval (no
+        # pre-scoring of the full pool): stratified init from the shared
+        # pool, then iterate mutate-select generations with the existing
+        # MutationEngine. Budgets 20/40/60 remain the total oracle-evaluation
+        # counts. Uses a forked RNG so the shared rng stream (and the
+        # random / random_top_k arms) is unchanged.
+        #
+        # Sample-efficiency design (all existing machinery, no new operators):
+        # (a) selection pressure: elitist best plus Tanimoto-guarded diverse
+        # parents (same diversity_lambda spirit as tournament_select);
+        # (b) diversity maintenance: the diverse parent always contributes
+        # offspring, so the parent set never collapses to one scaffold;
+        # (c) adaptive schedule: init share grows with budget (explore more
+        # when evals are plentiful), fraction-sweep exploitation is always
+        # first in the offspring queue, and force_exploration is only on
+        # early in large-budget runs.
+        from aurelius.agent.mutation import MutationEngine as _EAEngine
+        _fork = random.Random()
+        try:
+            _fork.setstate(rng.getstate())
+        except Exception:
+            _fork = random.Random(n_eval)
+        _eng_seed = _fork.randint(0, 2 ** 31 - 1)
+        _singletons = [s for s in candidate_smiles if '|' not in s and '.' not in s]
+        _mixtures = [s for s in candidate_smiles if '|' in s]
+        _engine = _EAEngine(seed_smiles=_singletons[:15] or ['COC(=O)OC'], seed=_eng_seed)
+        _evaluated: dict[str, float] = {}
+
+        def _ea_score(smi: str) -> float:
+            sc = _screen_molecule_score(smi)
+            _evaluated[smi] = sc
+            return sc
+
+        def _ea_fp(smi: str):
             try:
-                _parts = smi.rsplit('|', 1)
-                _base, _frac = (_parts[0], float(_parts[1]))
+                _base = smi.split('|')[0].split('.')[0]
+                _mol = Chem.MolFromSmiles(_base)
+                if _mol is None:
+                    return None
+                return AllChem.GetMorganFingerprintAsBitVect(_mol, 2, nBits=2048)
             except Exception:
+                return None
+
+        def _ea_tanimoto(a: str, b: str) -> float:
+            _fa, _fb = _ea_fp(a), _ea_fp(b)
+            if _fa is None or _fb is None:
+                return 0.0
+            try:
+                return float(TanimotoSimilarity(_fa, _fb))
+            except Exception:
+                return 0.0
+
+        def _ea_components(smi: str) -> list[str]:
+            if '|' in smi:
+                try:
+                    return [p for p in smi.split('|')[:2] if p and '.' not in p]
+                except Exception:
+                    return []
+            return [smi.split('.')[0]]
+
+        _pool = list(candidate_smiles)
+        _n_init = min(max(6, n_eval // 3), n_eval, len(_pool))
+        _n_sing = min(len(_singletons), max(2, _n_init // 3))
+        _n_mix = min(len(_mixtures), max(0, _n_init - _n_sing))
+        _init: list[str] = []
+        if _n_sing > 0 and _singletons:
+            _init.extend(_fork.sample(_singletons, min(_n_sing, len(_singletons))))
+        if _n_mix > 0 and _mixtures:
+            _init.extend(_fork.sample(_mixtures, min(_n_mix, len(_mixtures))))
+        while len(_init) < min(_n_init, len(_pool)):
+            _cand = _fork.choice(_pool)
+            if _cand not in _init:
+                _init.append(_cand)
+        for smi in _init:
+            if len(_evaluated) >= n_eval:
+                break
+            if smi in _evaluated:
                 continue
-            for _nf in (0.25, 0.75):
-                if abs(_nf - _frac) >= 1e-09:
+            _ea_score(smi)
+        _FRACS = (0.25, 0.5, 0.75)
+        while len(_evaluated) < n_eval:
+            _ranked = sorted(_evaluated.items(), key=lambda x: -x[1])
+            _parents: list[str] = [_ranked[0][0]] if _ranked else []
+            for _smi, _sc in _ranked[1:]:
+                if len(_parents) >= 3:
+                    break
+                if all(_ea_tanimoto(_smi, _p) < 0.6 for _p in _parents):
+                    _parents.append(_smi)
+            for _smi, _sc in _ranked[1:]:
+                if len(_parents) >= 3:
+                    break
+                if _smi not in _parents:
+                    _parents.append(_smi)
+            _phase = len(_evaluated) / max(n_eval, 1)
+            _explore = (n_eval >= 40 and _phase < 0.5)
+            _offspring: list[str] = []
+            for _p in _parents:
+                if '|' not in _p:
                     continue
-                _nsmi = f'{_base}|{_nf}'
-                if _nsmi in all_scores:
-                    _nsc = all_scores[_nsmi]
-                else:
-                    _nsc = _screen_molecule_score(_nsmi)
-                    if _nsc <= 0:
-                        continue
-                    all_scores[_nsmi] = _nsc
-                if _worst_idx is not None and _should_replace_worst(_nsc, selected[_worst_idx][1]):
-                    selected[_worst_idx] = (_nsmi, _nsc)
-                    _worst_idx = min(range(len(selected)), key=lambda i: selected[i][1])
-        selected.sort(key=lambda x: -x[1])
+                try:
+                    _parts = _p.rsplit('|', 1)
+                    _base_mix, _frac = (_parts[0], float(_parts[1]))
+                    for _nf in _FRACS:
+                        if abs(_nf - _frac) > 1e-09:
+                            _cand = f'{_base_mix}|{_nf}'
+                            if _cand not in _evaluated and _cand not in _offspring:
+                                _offspring.append(_cand)
+                except Exception:
+                    pass
+            if len(_evaluated) + len(_offspring) < n_eval:
+                _comp_pool: list[str] = []
+                for _smi, _sc in _ranked[:6]:
+                    for _c in _ea_components(_smi):
+                        if _c and _c not in _comp_pool:
+                            _comp_pool.append(_c)
+                try:
+                    _recs = _engine.propose_mixture_candidates(_comp_pool[:5], n_mixtures=6)
+                except Exception:
+                    _recs = []
+                for _r in _recs:
+                    if len(_evaluated) + len(_offspring) >= n_eval:
+                        break
+                    if _r not in _evaluated and _r not in _offspring:
+                        _offspring.append(_r)
+            if len(_evaluated) + len(_offspring) < n_eval and len(_parents) > 1:
+                _base_single = _parents[-1].split('|')[0].split('.')[0]
+                try:
+                    _kids = _engine.mutate(_base_single, 8, force_exploration=_explore)
+                except Exception:
+                    _kids = []
+                for _k in _kids[:2]:
+                    if len(_evaluated) + len(_offspring) >= n_eval:
+                        break
+                    if _k not in _evaluated and _k not in _offspring:
+                        _offspring.append(_k)
+            _progress = False
+            for smi in _offspring:
+                if len(_evaluated) >= n_eval:
+                    break
+                if smi in _evaluated:
+                    continue
+                _ea_score(smi)
+                _progress = True
+            if not _progress:
+                _remaining = [s for s in _pool if s not in _evaluated]
+                if not _remaining:
+                    break
+                smi = _fork.choice(_remaining)
+                _ea_score(smi)
+        selected = sorted(_evaluated.items(), key=lambda x: -x[1])
         top_n = min(TOP_N, len(selected))
         top_selected = selected[:top_n]
         top_scores_val = [s for _, s in top_selected]
@@ -227,7 +359,7 @@ def _run_strategy_for_seed(candidate_smiles: list[str], n_eval: int, strategy: s
         n_above_65 = sum((1 for _, s in top_selected if s >= 65.0))
         n_above_65_full = sum((1 for _, s in selected if s >= 65.0))
         diversity = _compute_pairwise_diversity(top_selected)
-        return {'top_n_mean_score': top_mean, 'n_above_65': n_above_65, 'n_above_65_full': n_above_65_full, 'novelty_ratio': novelty, 'pairwise_diversity': diversity, 'n_screened': n_total}
+        return {'top_n_mean_score': top_mean, 'n_above_65': n_above_65, 'n_above_65_full': n_above_65_full, 'novelty_ratio': novelty, 'pairwise_diversity': diversity, 'n_screened': len(selected)}
     elif strategy == 'random':
         pool_smiles = list(all_scores.keys())
         selected_count = min(n_eval, len(pool_smiles))
@@ -352,7 +484,7 @@ def run() -> int:
     print('  VERDICT')
     for v in verdict_parts:
         print(f'    {v}')
-    _gate_budgets = [40, 60]
+    _gate_budgets = [20, 40, 60]
     _gate_failures: list[str] = []
     for _b in _gate_budgets:
         _wr = wilcoxon_results[f'budget_{_b}']
@@ -372,7 +504,7 @@ def run() -> int:
         for _f in _gate_failures:
             print(f'    - {_f}')
     else:
-        print('  EA GATE: PASS (beats random AND random_top_k at 40/60, p<0.05)')
+        print('  EA GATE: PASS (beats random AND random_top_k at 20/40/60, p<0.05)')
     output: dict = {'candidate_count': len(CANDIDATE_SMILES), 'evaluations_per_strategy': budgets, 'total_evaluations': sum(budgets) * len(strategies) * len(seeds), 'strategies compared': strategies, 'seeds': seeds, 'budgets': budgets, 'budget_summary': budget_summary, 'wilcoxon_results': wilcoxon_results, 'cohens_d_results': cohens_d_results}
     output['verdict'] = '; '.join(verdict_parts)
     output['gate_failures'] = _gate_failures

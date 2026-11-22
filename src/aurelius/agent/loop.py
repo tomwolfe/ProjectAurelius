@@ -426,11 +426,14 @@ class DiscoveryLoop:
             if force_exploration:
                 log.info("Generation %d: Scaffold stagnation detected - pivoting to BRICS-only exploration.", generation)
                 self._inject_tier0_seeds()
-            if self._basin_stall >= 1 and generation >= 2:
+            if self._basin_stall >= 3 and generation >= 2:
                 # Iterated local search: perturb the incumbent basin best
                 # through the normal mutate/filter/evaluate path (BRICS
                 # guard, novelty gate, grounding penalty all enforced
                 # downstream) and accept the basin only on improvement.
+                # Sustained-stall gate (>=3 consecutive non-improving
+                # generations): a hop is a rare deliberate escape, not
+                # background noise on every stalled generation.
                 self._basin_hop(generation)
             candidates = self._generate_candidates(generation, force_exploration=force_exploration)
             valid_contexts, invalid_count = self._filter_candidates(candidates)
