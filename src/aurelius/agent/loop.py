@@ -1049,6 +1049,11 @@ class DiscoveryLoop:
         self.engine.seed_pool = [smi for smi in pool if smi in keep_set]
         # If discoveries alone exceed cap (unlikely), keep top discoveries
         self._enforce_truncation_cap(score_by_smi)
+        # Phase 3a invariant - archive persists across generations and is never
+        # a recency-only last-200 slice. Fail closed if absolute discoveries are lost.
+        if len(discoveries) <= SEED_POOL_MAX_SIZE:
+            assert all(smi in self.engine.seed_pool for smi in discoveries), "archive must preserve absolute discoveries"
+        assert len(self.engine.seed_pool) <= SEED_POOL_MAX_SIZE, "seed pool must respect cap"
         self.state.seed_pool_size = len(self.engine.seed_pool)
 
     def _evolve_seed_pool(self, batch_contexts: list[MoleculeContext], batch_scores: list[float]) -> None:
