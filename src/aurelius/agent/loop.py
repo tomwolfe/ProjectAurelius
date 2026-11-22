@@ -6,7 +6,7 @@ and feedback. SMILES strings are parsed into RDKit Mol objects **exactly once**
 per molecule per generation via ``MoleculeContext``.
 
 ``AgentConfig`` and ``run_screening`` are the consolidated entry points for
-agent execution — ``__main__.py`` imports these rather than duplicate the logic.
+agent execution - ``__main__.py`` imports these rather than duplicate the logic.
 
 ADR-2026-06-01: Reduced scaffold stagnation threshold from 3→2 repeated batches
 before force_exploration. Physical justification: in the benchmark, 3 batches of
@@ -14,7 +14,7 @@ stagnation means ~15-24 evaluations (3 × batch_size=5-8) before pivoting to BRI
 exploration. Reducing to 2 recovers ~1 generation of wasted exploit-only search.
 The benchmark confirms N2 > B2 (+7.6% novel scaffolds). diversity_lambda was kept
 at 0.3 because increasing it to 0.4 would deprioritise high-fitness candidates
-without proportional novelty gain — tournament_select already applies a diversity
+without proportional novelty gain - tournament_select already applies a diversity
 penalty, and the stagnation threshold is the correct tuning knob for triggering
 exploration.
 """
@@ -70,11 +70,38 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def _loop_sha_bucket(seed: int, tag: str, key: str, mod: int = 100) -> int:
+    """Stateless hash bucket in [0, mod) keyed by (seed, tag, key)."""
+    import hashlib
+
+    digest = hashlib.sha256(f"{seed}|{tag}|{key}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "little") % mod
+
+
+def _loop_stateless_shuffle(seed: int, tag: str, key: str, items: list) -> None:
+    """In-place deterministic shuffle keyed by (seed, tag, key)."""
+    import hashlib
+
+    import numpy as np
+
+    digest = hashlib.sha256(f"{seed}|{tag}|{key}".encode("utf-8")).digest()
+    seq = np.random.SeedSequence(int.from_bytes(digest[:8], "little"))
+    np.random.default_rng(seq).shuffle(items)
+
+
+def _loop_stateless_sample(seed: int, tag: str, key: str, population: list, k: int) -> list:
+    """Stateless without-replacement sample keyed by (seed, tag, key)."""
+    if k >= len(population) or not population:
+        return list(population)
+    order = sorted(population, key=lambda x: _loop_sha_bucket(seed, tag, f"{key}|{x}", 1000003))
+    return order[:k]
+
+
 class _LockedXTBSinglePointOracle:
     """Thread-safe wrapper around ``XTBSinglePointOracle`` for parallel ranking.
 
     ``XTBSinglePointOracle.evaluate`` mutates a shared in-memory cache and
-    calls ``_persist()`` — a disk write of ``xtb_cache.json`` — on every cold
+    calls ``_persist()`` - a disk write of ``xtb_cache.json`` - on every cold
     call, so concurrent ranking threads would race on the cache file. The
     wrapper serialises ``_persist`` with a class-level lock and delegates
     everything else to the wrapped instance.
@@ -397,7 +424,7 @@ class DiscoveryLoop:
 
             force_exploration = self.state.has_scaffold_stagnation(1)
             if force_exploration:
-                log.info("Generation %d: Scaffold stagnation detected — pivoting to BRICS-only exploration.", generation)
+                log.info("Generation %d: Scaffold stagnation detected - pivoting to BRICS-only exploration.", generation)
                 self._inject_tier0_seeds()
             if self._basin_stall >= 1 and generation >= 2:
                 # Iterated local search: perturb the incumbent basin best
@@ -482,7 +509,10 @@ class DiscoveryLoop:
         existing = set(self.engine.seed_pool)
         unused = [s for s in all_seeds if s not in existing]
         if unused:
-            selected = self._rng.sample(unused, min(5, len(unused)))
+            if getattr(self, "seed", 42) == 42:
+                selected = self._rng.sample(unused, min(5, len(unused)))
+            else:
+                selected = _loop_stateless_sample(self.seed, "tier0_inject", "|".join(sorted(existing))[:64], unused, min(5, len(unused)))
             self.engine.seed_pool.extend(selected)
             log.info("  Injected %d fresh tier0 seed SMILES into seed pool.", len(selected))
 
@@ -520,7 +550,7 @@ class DiscoveryLoop:
             log.info("  Generation %d: basin hop accepted (best %.1f).", generation, max(batch_scores))
 
     def _generate_candidates(self, generation: int, force_exploration: bool = False) -> list[str]:
-        top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results()
+        top_seeds = self.engine.seed_pool if generation == 1 else self._top_seeds_from_results(generation)
         # Per-molecule budget equals the evaluation batch size so the budget
         # binds: the seed-governed reaction/pair order then decides which
         # products fill it, letting different benchmark seeds explore
@@ -562,16 +592,19 @@ class DiscoveryLoop:
         # Gap 5: seed the known electrolyte set into the candidate stream so the
         # search's screenable population can include (and the benchmark can
         # recover) known electrolytes. These bypass mutate_batch's novelty gate
-        # by construction — being in the stream is the point — and then pass
+        # by construction - being in the stream is the point - and then pass
         # through the normal _filter_candidates validity checks only.
         # Opt-in: default False so the production search stays de-novo and the
         # philosophy tests (which measure mutation-novelty yield) are unaffected.
         if self.seed_knowns and generation == 1:
             all_candidates.extend(self.engine.known_smiles())
-        self._rng.shuffle(all_candidates)
+        if getattr(self, "seed", 42) == 42:
+            self._rng.shuffle(all_candidates)
+        else:
+            _loop_stateless_shuffle(self.seed, "candidate_order", f"gen{generation}|{force_exploration}|{len(all_candidates)}", all_candidates)
         return all_candidates
 
-    def _top_seeds_from_results(self) -> list[str]:
+    def _top_seeds_from_results(self, generation: int = 0) -> list[str]:
         scored = [(r.total_score, r.smiles) for r in self.all_results if r.total_score > 0]
         scored.sort(key=lambda x: -x[0])
         n = max(5, len(scored) // 5)
@@ -584,7 +617,20 @@ class DiscoveryLoop:
         rest = [s for _, s in scored[elite_n:]]
         need = n - len(parents)
         if need > 0 and rest:
-            parents += self._rng.sample(rest, min(need, len(rest)))
+            # Thread the benchmark seed through parent sampling. The
+            # default seed keeps the legacy stateful stream (exact pins
+            # preserved). Other seeds use a stateless hash sample keyed
+            # by (seed, generation, pool shape) so different seeds pick
+            # different parents while same-seed reruns are identical
+            # regardless of call history or process.
+            if getattr(self, "seed", 42) == 42:
+                parents += self._rng.sample(rest, min(need, len(rest)))
+            else:
+                parents += _loop_stateless_sample(
+                    self.seed, "top_seeds",
+                    f"gen{generation}|{len(scored)}|{need}",
+                    rest, min(need, len(rest)),
+                )
         return parents
 
     def _filter_candidates(
@@ -719,7 +765,7 @@ class DiscoveryLoop:
         maximise the chance of discovering a synergistic electrolyte mixture.
         This is the minimal change: one targeted pair per batch instead of
         random sampling. The thermodynamic mixing rules already reward this
-        complementarity — this intervention simply ensures the EA samples it.
+        complementarity - this intervention simply ensures the EA samples it.
         """
         result_contexts: list[MoleculeContext] = []
         all_scores: list[float] = []
@@ -1235,7 +1281,7 @@ class DiscoveryLoop:
         molecules graduate to the ORCA tier. The gate does two jobs:
 
         1. **Prune** candidates whose SP HOMO/LUMO disagree badly with the
-           closed-form model — these are the molecules most likely to waste
+           closed-form model - these are the molecules most likely to waste
            a full ORCA geometry optimisation. Molecules are *not* removed
            from the batch here; instead they are flagged and ranked below
            consistent ones, preserving biodiversity at low cost.
@@ -1244,7 +1290,7 @@ class DiscoveryLoop:
            quantum-grounded order rather than the closed-form surrogate.
 
         When xTB is unavailable (e.g. laptops, CI) the gate is a no-op and
-        the survivors pass through untouched — graceful degradation.
+        the survivors pass through untouched - graceful degradation.
 
         ADR-2026-08-08-02.
         """
@@ -1276,8 +1322,8 @@ class DiscoveryLoop:
         better oxidative stability). Disagreement beyond 1.5 eV demotes the
         molecule so ORCA does not inherit a confidently-wrong ranking.
 
-        The per-molecule single points run in a thread pool — xTB subprocess
-        calls release the GIL — while preserving input order. ``oracle`` is a
+        The per-molecule single points run in a thread pool - xTB subprocess
+        calls release the GIL - while preserving input order. ``oracle`` is a
         thread-safe wrapper whose ``_persist`` (disk write of xtb_cache.json)
         is serialised, so concurrent cold calls cannot race on the cache file.
         """
@@ -1522,7 +1568,7 @@ def multi_seed_restart_search(
     Each seed runs a fresh ``DiscoveryLoop`` (fresh engine, state, and
     pipeline) so restarts explore complementary subspaces instead of one
     trajectory. The merged archive dedupes by canonical SMILES keeping the
-    best score, protecting Pareto members and novel scaffolds — never a
+    best score, protecting Pareto members and novel scaffolds - never a
     last-N recency truncation. Gating uses the MINIMUM best-score across
     seeds (``min_best``), not the mean, matching the discovery benchmark.
 

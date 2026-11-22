@@ -7,7 +7,7 @@ Direct, interpretable selection strategy:
 3. Apply a Tanimoto-based diversity penalty to prevent batch collapse.
 
 This approach is simple, fast, and works naturally for both cheap (TOM+GC)
-and expensive (xTB) oracles — just adjust ``batch_size``.
+and expensive (xTB) oracles - just adjust ``batch_size``.
 
 Acceleration: batch Tanimoto similarity uses vectorized numpy (CPU) or
 MPS/MLX (Apple GPU) for large candidate sets, avoiding per-pair RDKit
@@ -57,13 +57,55 @@ KNOWN_SCAFFOLD_PENALTY = 0.2
 
 Novel scaffolds keep full selection weight; known-scaffold candidates are
 demoted so the EA is pushed toward genuinely novel chemistry and the top-50
-screened results reach >= 80% novel scaffolds (Gap 3). Mixtures are exempt —
+screened results reach >= 80% novel scaffolds (Gap 3). Mixtures are exempt -
 their novelty is the combination, not the component scaffold.
 
 Decreased from 0.3 (Gap 3: ADR-2026-08-14-001) so that known-scaffold
 candidates keep only 20% of their score instead of 30%, further suppressing
 scaffold stagnation and pushing the novel scaffold ratio past the 80%
 threshold."""
+
+
+def _sel_sha_bucket(seed: int, tag: str, key: str, mod: int = 100) -> int:
+    """Stateless hash bucket in [0, mod) keyed by (seed, tag, key)."""
+    import hashlib
+
+    digest = hashlib.sha256(f"{seed}|{tag}|{key}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "little") % mod
+
+
+def _sel_stateless_sample(seed: int, tag: str, key: str, population: list, k: int) -> list:
+    """Stateless without-replacement sample keyed by (seed, tag, key)."""
+    if k >= len(population) or not population:
+        return list(population)
+    order = sorted(population, key=lambda x: _sel_sha_bucket(seed, tag, f"{key}|{x}", 1000003))
+    return order[:k]
+
+
+def _sel_stateless_jitter(seed: int, tag: str, key: str, n: int) -> Any:
+    """Stateless tie-break jitter in [-1e-9, 1e-9] keyed by (seed, tag, key)."""
+    vals = []
+    for i in range(n):
+        b = _sel_sha_bucket(seed, tag, f"{key}|{i}", 2000001)
+        vals.append(b / 2000000.0 * 2e-9 - 1e-9)
+    return np.asarray(vals, dtype=float)
+
+
+def _tournament_legacy_rng(rng_seed: int) -> Any:
+    """Legacy tournament RNG for seed 42, else None (stateless path)."""
+    if int(rng_seed) == 42:
+        return random.Random(rng_seed)
+    return None
+
+
+def _draw_tournament(pool: list, k: int, legacy_rng: Any, seed: int, round_idx: int, n: int) -> list:
+    """Draw one tournament, legacy stream on seed 42 else stateless hash."""
+    if legacy_rng is not None:
+        return legacy_rng.sample(pool, min(k, len(pool)))
+    return _sel_stateless_sample(
+        seed, "tournament", f"round{round_idx}|n{n}|k{min(k, len(pool))}",
+        pool, min(k, len(pool)),
+    )
 
 
 def _fp_to_numpy(fp: Any, n_bits: int = 2048) -> np.ndarray:
@@ -131,7 +173,7 @@ def _grounding_weight(grounding: list[float] | None, i: int) -> float:
     properties, so grounding must apply selection pressure during evolution
     rather than only filtering survivors afterwards. A linear multiplier keeps
     the signal interpretable and monotonic, and the 0.5 ceiling means a
-    completely ungrounded candidate is halved but never hard-rejected — a
+    completely ungrounded candidate is halved but never hard-rejected - a
     genuinely novel scaffold can still win on outstanding physics.
     """
     if not grounding or i >= len(grounding):
@@ -243,7 +285,7 @@ def _scaffold_novelty_penalties(
 
     Candidates whose Murcko scaffold is absent from ``known_electrolytes.json``
     keep multiplier 1.0 (full weight); known-scaffold candidates are demoted.
-    Mixture candidates are exempt — their novelty is the combination, not the
+    Mixture candidates are exempt - their novelty is the combination, not the
     component scaffold (Gap 3).
     """
     known_scafs = _known_scaffolds()
@@ -335,14 +377,15 @@ def tournament_select(
     if n <= batch_size:
         return list(contexts)
 
-    rng = random.Random(rng_seed)
+    _seed = int(rng_seed)
+    _legacy_rng = _tournament_legacy_rng(rng_seed)
     fps_list = [ctx.get_ecfp4() for ctx in contexts]
 
     # Pre-compute pairwise similarity matrix with batch Tanimoto
     sim_matrix = batch_tanimoto(fps_list)
 
     # Pre-compute Murcko scaffolds for all candidates (specific scaffold, or
-    # canonical SMILES for acyclic molecules — see ``_scaffold_specific_or_self``)
+    # canonical SMILES for acyclic molecules - see ``_scaffold_specific_or_self``)
     scaffold_map: dict[int, str | None] = {}
     for i, ctx in enumerate(contexts):
         scaffold_map[i] = _scaffold_specific_or_self(ctx)
@@ -356,12 +399,12 @@ def tournament_select(
     used_indices: set[int] = set()
     scaffold_counts: dict[str | None, int] = {}
 
-    for _ in range(min(batch_size, n)):
+    for _round in range(min(batch_size, n)):
         pool = [i for i in range(n) if i not in used_indices]
         if not pool:
             break
 
-        tournament = rng.sample(pool, min(tournament_size, len(pool)))
+        tournament = _draw_tournament(pool, tournament_size, _legacy_rng, _seed, _round, n)
         best_idx, best_score = _best_in_tournament(
             tournament, scores, fps_list, selected_fps,
             diversity_lambda, confidences, sim_matrix=sim_matrix,
@@ -504,13 +547,13 @@ def build_npga2_composite_objectives(
     Consolidates the high-dimensional objective space into four physically
     meaningful composite scores, each combining related properties:
 
-    1. ``ionic_transport`` — dielectric permittivity (max),
+    1. ``ionic_transport`` - dielectric permittivity (max),
        inverse viscosity (max), and Li+ solvation energy (max).
        Physical justification: ionic conductivity σ ∝ ε/η where ε is the
        dielectric constant and η is the viscosity. Li+ solvation modulates
        the effective charge-carrier density.
 
-    2. ``electronic_stability`` — HOMO energy (max, LPM HOMO only).
+    2. ``electronic_stability`` - HOMO energy (max, LPM HOMO only).
        TOM-family LUMO (and the LUMO-derived gap) are gated out of ranking
        fail-closed: raw TOM LUMO unseen-DFT ρ ≈ 0.09 and Δ-corrected LUMO
        unseen ρ ≈ 0.07, far below the 0.30 aspirational bar.
@@ -518,12 +561,12 @@ def build_npga2_composite_objectives(
        LPM HOMO signal (NIST ρ ≈ 0.94); ranking on a ~random LUMO would
        inject noise into Pareto selection.
 
-    3. ``synthetic_accessibility`` — synthesis depth (min) and
+    3. ``synthetic_accessibility`` - synthesis depth (min) and
        combined grounding score (max).
        Physical justification: molecules synthesised in fewer steps with
        better quantum-domain grounding are more reproducible and trustworthy.
 
-    4. ``chemical_complexity`` — synthetic accessibility score (min,
+    4. ``chemical_complexity`` - synthetic accessibility score (min,
        easier to make) and novelty to seed (max).
        Physical justification: balancing synthetic tractability against
        novelty avoids rediscovering known compounds while remaining
@@ -1086,7 +1129,7 @@ def _rank_nsga2_fronts(
             )
             # Boundary candidates have infinite crowding distance; a boundary
             # member of an over-cap family would produce inf * 0 = NaN, which
-            # must not corrupt the ranking — collapse it to 0 so the family
+            # must not corrupt the ranking - collapse it to 0 so the family
             # penalty still demotes it to the bottom of its front.
             cd = crowding[local_idx] * pen[local_idx] * novelty_mult
             ranked.append((f_idx, float(np.nan_to_num(cd, nan=0.0)), global_idx))
@@ -1231,9 +1274,16 @@ def nsga2_select(
     )
 
     # Sort: lower front index first; within front, higher crowding distance first.
-    rng = np.random.default_rng(rng_seed)
-    # Add tiny jitter to break ties deterministically.
-    jitter = rng.uniform(-1e-9, 1e-9, size=len(ranked))
+    # Thread the benchmark seed through tie-breaks. The default seed keeps
+    # the legacy default_rng stream (exact pins preserved). Other seeds use
+    # a stateless hash jitter keyed by seed so different seeds break ties
+    # differently while same-seed reruns stay bit-identical across processes.
+    if int(rng_seed) == 42:
+        rng = np.random.default_rng(rng_seed)
+        # Add tiny jitter to break ties deterministically.
+        jitter = rng.uniform(-1e-9, 1e-9, size=len(ranked))
+    else:
+        jitter = _sel_stateless_jitter(int(rng_seed), "nsga2_jitter", f"n{len(ranked)}", len(ranked))
     ranked.sort(key=lambda r: (r[0], -r[1] - jitter[r[2]]))
 
     selected_indices = [r[2] for r in ranked[:batch_size]]

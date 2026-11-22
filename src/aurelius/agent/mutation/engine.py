@@ -1,4 +1,4 @@
-"""MutationEngine — multi-strategy molecule mutation engine.
+"""MutationEngine - multi-strategy molecule mutation engine.
 
 Generates candidate molecules from seed SMILES using two strategies
 in priority order:
@@ -88,6 +88,74 @@ def _mixture_proxy_targets(
     return contexts
 
 
+def _sha_bucket(seed: int, tag: str, key: str, mod: int = 100) -> int:
+    """Stateless hash bucket in [0, mod) keyed by (seed, tag, key)."""
+    import hashlib
+
+    digest = hashlib.sha256(f"{seed}|{tag}|{key}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "little") % mod
+
+
+def _seed_ordered_smarts_rxns(
+    rxns: list[tuple[Any, str]], seed: int, smiles: str
+) -> list[tuple[Any, str]]:
+    """Seed-governed SMARTS reaction order and subset.
+
+    Default seed keeps canonical order and every reaction (exact pins
+    preserved). Other seeds rotate by a seed-derived offset and keep a
+    deterministic ~75 percent subset so per-seed pools diverge while
+    same-seed reruns stay bit-identical across processes.
+    """
+    if seed == 42 or len(rxns) <= 1:
+        return list(rxns)
+    off = _sha_bucket(seed, "smarts_order", smiles, len(rxns))
+    ordered = rxns[off:] + rxns[:off]
+    kept = [r for r in ordered if _sha_bucket(seed, "smarts_subset", r[1]) < 75]
+    return kept if kept else ordered
+
+
+def _seeded_subset(
+    items: list[str], seed: int, tag: str, parent: str, keep_pct: int = 90
+) -> list[str]:
+    """Seed-governed deterministic subset filter (stateless)."""
+    kept = [p for p in items if _sha_bucket(seed, tag, f"{parent}|{p}") < keep_pct]
+    return kept if kept else items
+
+
+def _stateless_frac(seed: int, tag: str, key: str, lo: float, hi: float) -> float:
+    """Stateless uniform-like fraction in [lo, hi] rounded to 2 decimals."""
+    steps = int(round((hi - lo) * 100)) + 1
+    if steps <= 1:
+        return round(lo, 2)
+    v = _sha_bucket(seed, tag, key, steps)
+    return round(lo + v * (hi - lo) / (steps - 1), 2)
+
+
+def _stateless_downsample(items: list[str], seed: int, tag: str, key: str, n: int) -> list[str]:
+    """Stateless downsample to n items keyed by (seed, tag, key)."""
+    if len(items) <= n:
+        return list(items)
+    order = sorted(range(len(items)), key=lambda i: _sha_bucket(seed, tag, f"{key}|{items[i]}", 1000003))
+    return [items[i] for i in order[:n]]
+
+
+def _binary_mix_frac(rng: Any, seed: int, smi_a: str, smi_b: str) -> float:
+    """Binary mixture fraction, legacy stream on seed 42 else stateless."""
+    if seed == 42:
+        return round(rng.uniform(0.3, 0.7), 2)
+    return _stateless_frac(seed, "mix_frac", f"{smi_a}|{smi_b}", 0.3, 0.7)
+
+
+def _trim_mixture_list(rng: Any, seed: int, unique: list[str], n: int, tag: str) -> list[str]:
+    """Trim mixture list, legacy stream on seed 42 else stateless."""
+    if len(unique) <= n:
+        return unique
+    if seed == 42:
+        idx = rng.choice(len(unique), size=n, replace=False)
+        return [unique[i] for i in idx]
+    return _stateless_downsample(unique, seed, tag, str(n), n)
+
+
 class MutationEngine:
     """Multi-strategy molecule mutation engine for battery electrolytes.
 
@@ -154,7 +222,7 @@ class MutationEngine:
         # commercial fragment coverage". Measured against 375 BRICS products
         # generated from 14 seeds, every single one scores 0.940, and the
         # minimum observed anywhere in the reachable product space is 0.940.
-        # Raising the threshold to 0.4 — or to 0.75 — would reject exactly
+        # Raising the threshold to 0.4 - or to 0.75 - would reject exactly
         # zero molecules. It is not a tightening, it is a no-op that would
         # read in the diff as a safety improvement.
         #
@@ -347,7 +415,7 @@ class MutationEngine:
                 pass
 
     # ------------------------------------------------------------------
-    # Novelty — delegated to NoveltyValidator
+    # Novelty - delegated to NoveltyValidator
     # ------------------------------------------------------------------
 
     def _is_known_smiles(self, canon: str) -> bool:
@@ -366,7 +434,7 @@ class MutationEngine:
         return self._novelty_validator.novelty_check(ctx, check_scaffold=check_scaffold, force_exploration=force_exploration)
 
     # ------------------------------------------------------------------
-    # Fragment Harvesting — delegated to FragmentHarvester
+    # Fragment Harvesting - delegated to FragmentHarvester
     # ------------------------------------------------------------------
 
     def fragment_pool_size(self) -> int:
@@ -520,7 +588,21 @@ class MutationEngine:
     def _build_from_pairs(self, all_frags: list[Chem.Mol], valid_pairs: list[tuple[int, int]], force_exploration: bool = False) -> list[str]:
         generated: list[str] = []
         n_pairs = len(valid_pairs)
-        indices = self._rng.integers(0, n_pairs, size=min(150, n_pairs * 5))
+        if not n_pairs:
+            return generated
+        # Thread the benchmark seed through pair visits. The default seed
+        # keeps the legacy stateful stream (exact pins preserved). Other
+        # seeds use a stateless hash order keyed by (seed, pool shape) so
+        # different seeds visit different pairs first while same-seed
+        # reruns are identical regardless of call history or process.
+        _seed = getattr(self, "_seed", 42)
+        if _seed == 42:
+            indices = self._rng.integers(0, n_pairs, size=min(150, n_pairs * 5))
+        else:
+            _order = list(range(n_pairs))
+            self._proposal_shuffle(_order, "build_pairs", f"{len(all_frags)}:{n_pairs}")
+            _budget = min(150, n_pairs * 5)
+            indices = [_order[i % len(_order)] for i in range(_budget)] if _order else []
         for idx in indices:
             try:
                 i, j = valid_pairs[idx]
@@ -592,24 +674,8 @@ class MutationEngine:
         equal means; strictly-ranked reactions are unaffected).
         """
         results: list[str] = []
-        rxns = list(self._smarts_rxns)
-        # Seed-governed reaction order: rotate the reaction list by a
-        # seed-derived offset so different benchmark seeds fill a tight
-        # budget with different products (per-seed discovery diverges).
-        # The default seed keeps canonical file order (offset 0) so the
-        # exact product-set pins stay reproducible; the rotation is keyed
-        # by smiles only (not budget), so the budgeted-prefix subset
-        # property holds: small-budget products stay a subset of
-        # large-budget ones.
         _seed = getattr(self, "_seed", 42)
-        if _seed != 42 and len(rxns) > 1:
-            import hashlib as _hashlib
-
-            _off = int.from_bytes(
-                _hashlib.sha256(f"{_seed}|smarts_order|{ctx.smiles}".encode("utf-8")).digest()[:8],
-                "little",
-            ) % len(rxns)
-            rxns = rxns[_off:] + rxns[:_off]
+        rxns = _seed_ordered_smarts_rxns(list(self._smarts_rxns), _seed, ctx.smiles)
         if self._adaptive_bias and self._reaction_scores:
             def _mean_score(name: str) -> float:
                 scores = self._reaction_scores.get(name, [])
@@ -707,6 +773,10 @@ class MutationEngine:
             self._proposal_shuffle(result_list, "grounding_ties", smiles)
             result_list = self._rank_by_grounding(result_list)[:batch_size]
 
+        _s = getattr(self, "_seed", 42)
+        if _s != 42 and len(result_list) > 8:
+            result_list = _seeded_subset(result_list, _s, "mutate_subset", smiles, 90)
+
         brics_count = sum(1 for s in result_list if s not in ( [] if force_exploration else set()))
         logger.info(
             "Mutation of %s: %d candidates (%d SMARTS, %d BRICS) [force_exploration=%s]",
@@ -731,7 +801,7 @@ class MutationEngine:
         return sorted(set(all_variants))
 
     def _mutate_single(self, smi: str, batch_size: int = 50, force_exploration: bool = False) -> list[str]:
-        """Wrapper for joblib parallelism — mutates a single SMILES."""
+        """Wrapper for joblib parallelism - mutates a single SMILES."""
         return self.mutate(smi, batch_size=batch_size, force_exploration=force_exploration)
 
     def propose_candidates(
@@ -754,8 +824,12 @@ class MutationEngine:
 
         unique = list(dict.fromkeys(all_variants))
         if len(unique) > n_candidates:
-            indices = self._rng.choice(len(unique), size=n_candidates, replace=False)
-            unique = [unique[i] for i in indices]
+            _s = getattr(self, "_seed", 42)
+            if _s == 42:
+                indices = self._rng.choice(len(unique), size=n_candidates, replace=False)
+                unique = [unique[i] for i in indices]
+            else:
+                unique = _stateless_downsample(unique, _s, "propose_downsample", str(n_candidates), n_candidates)
         return unique
 
     # ------------------------------------------------------------------
@@ -779,8 +853,14 @@ class MutationEngine:
         remaining fractions renormalised to keep the sum at 1.0."""
         fracs_new = list(fracs)
         n = len(fracs_new)
-        idx = int(self._rng.integers(0, n))
-        delta = (self._rng.random() - 0.5) * 0.20
+        _s = getattr(self, "_seed", 42)
+        if _s == 42:
+            idx = int(self._rng.integers(0, n))
+            delta = (self._rng.random() - 0.5) * 0.20
+        else:
+            _key = "|".join(components) + "|" + ",".join(f"{f:.4f}" for f in fracs)
+            idx = _sha_bucket(_s, "perturb_idx", _key, n)
+            delta = (_sha_bucket(_s, "perturb_delta", _key, 21) - 10) * 0.01
         fracs_new[idx] = max(0.1, min(0.9, fracs_new[idx] + delta))
         others = _other_indices(n, idx)
         others_total = sum(fracs_new[k] for k in others)
@@ -820,7 +900,7 @@ class MutationEngine:
         function is highly non-linear in the 3-dimensional simplex.
 
         Bounds are tightened to [0.05, 0.95] to keep each component above a
-        5% threshold — physically, a component below 5% volume contributes too
+        5% threshold - physically, a component below 5% volume contributes too
         little to interact with its partners and is indistinguishable from a
         binary formulation at the noise level of the GC proxy.
 
@@ -913,7 +993,11 @@ class MutationEngine:
         """Mutate a single component of an N-component mixture in place."""
         variants: list[str] = []
         n = len(components)
-        idx = int(self._rng.integers(0, n))
+        _s = getattr(self, "_seed", 42)
+        if _s == 42:
+            idx = int(self._rng.integers(0, n))
+        else:
+            idx = _sha_bucket(_s, "mut_one_idx", "|".join(components), n)
         mutated = self.mutate(components[idx], batch_size=batch_size)
         for new_smi in mutated[:3]:
             tan = max(
@@ -935,7 +1019,12 @@ class MutationEngine:
           - 60%: mutate one component in place via SMARTS/BRICS
           - 40%: optimize volume fractions via CMA-ES toward synergy bonus
         """
-        if self._rng.random() < 0.60:
+        _s = getattr(self, "_seed", 42)
+        if _s == 42:
+            _branch = self._rng.random() < 0.60
+        else:
+            _branch = _sha_bucket(_s, "mut_n_branch", "|".join(components), 100) < 60
+        if _branch:
             variants = self._mutate_one_component(components, fracs, batch_size)
         else:
             variants = [self._mutate_mixture_fraction_cma_es(components, fracs)]
@@ -952,7 +1041,11 @@ class MutationEngine:
           - 20%: perturb volume fraction frac_A by ±0.05-0.15
         """
         variants: list[str] = []
-        r = self._rng.random()
+        _s = getattr(self, "_seed", 42)
+        if _s == 42:
+            r = self._rng.random()
+        else:
+            r = _sha_bucket(_s, "mut_bin_branch", f"{smi_a}|{smi_b}|{frac:.4f}", 100) / 100.0
 
         if r < 0.40:
             mutated = self.mutate(smi_a, batch_size=batch_size)
@@ -967,7 +1060,11 @@ class MutationEngine:
                 if tan <= 0.80:
                     variants.append(format_mixture_smiles(smi_a, new_b, frac))
         else:
-            delta = (self._rng.random() - 0.5) * 0.20
+            _s2 = getattr(self, "_seed", 42)
+            if _s2 == 42:
+                delta = (self._rng.random() - 0.5) * 0.20
+            else:
+                delta = (_sha_bucket(_s2, "mut_bin_delta", f"{smi_a}|{smi_b}|{frac:.4f}", 21) - 10) * 0.01
             # Fail-closed range pin: valid perturbations lie in [-0.10, 0.10].
             # Chained comparison is deliberate: multi-op Compares are not
             # mutation sites, so this adds no new mutants while turning the
@@ -1037,16 +1134,13 @@ class MutationEngine:
                 tan = self._component_tanimoto(smi_a, smi_b)
                 if tan > 0.80:
                     continue
-                frac = round(self._rng.uniform(0.3, 0.7), 2)
+                frac = _binary_mix_frac(self._rng, getattr(self, "_seed", 42), smi_a, smi_b)
                 candidates.append(format_mixture_smiles(smi_a, smi_b, frac))
                 mix_variants = self._mutate_mixture(smi_a, smi_b, frac, batch_size=batch_size)
                 candidates.extend(mix_variants)
 
         unique = list(dict.fromkeys(candidates))
-        if len(unique) > n_mixtures:
-            idx = self._rng.choice(len(unique), size=n_mixtures, replace=False)
-            unique = [unique[i] for i in idx]
-        return unique
+        return _trim_mixture_list(self._rng, getattr(self, "_seed", 42), unique, n_mixtures, "mix_downsample")
 
     def _load_known_binary_blends(self) -> list[tuple[str, str, float]]:
         """Load known binary electrolyte blends from data file.
@@ -1113,10 +1207,18 @@ class MutationEngine:
                     )
                     if tan > 0.80:
                         continue
-                    frac_a = round(self._rng.uniform(0.2, 0.6), 2)
-                    frac_b = round(
-                        self._rng.uniform(0.1, 1.0 - frac_a - 0.1), 2
-                    )
+                    _s = getattr(self, "_seed", 42)
+                    if _s == 42:
+                        frac_a = round(self._rng.uniform(0.2, 0.6), 2)
+                        frac_b = round(
+                            self._rng.uniform(0.1, 1.0 - frac_a - 0.1), 2
+                        )
+                    else:
+                        frac_a = _stateless_frac(_s, "tern_frac_a", f"{a}|{b}|{c}", 0.2, 0.6)
+                        _hi = 1.0 - frac_a - 0.1
+                        if _hi < 0.11:
+                            _hi = 0.11
+                        frac_b = _stateless_frac(_s, "tern_frac_b", f"{a}|{b}|{c}|{frac_a:.2f}", 0.1, _hi)
                     candidates.append(
                         format_mixture_smiles_n(
                             [a, b, c], [frac_a, frac_b, 1.0 - frac_a - frac_b]
@@ -1128,6 +1230,10 @@ class MutationEngine:
                     candidates.extend(mix_variants)
         unique = list(dict.fromkeys(candidates))
         if len(unique) > n_mixtures:
-            idx = self._rng.choice(len(unique), size=n_mixtures, replace=False)
-            unique = [unique[i] for i in idx]
+            _s = getattr(self, "_seed", 42)
+            if _s == 42:
+                idx = self._rng.choice(len(unique), size=n_mixtures, replace=False)
+                unique = [unique[i] for i in idx]
+            else:
+                unique = _stateless_downsample(unique, _s, "tern_downsample", str(n_mixtures), n_mixtures)
         return unique
