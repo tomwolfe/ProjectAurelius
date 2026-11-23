@@ -800,10 +800,6 @@ class MutationEngine:
                 all_variants.extend(variants)
         return sorted(set(all_variants))
 
-    def _mutate_single(self, smi: str, batch_size: int = 50, force_exploration: bool = False) -> list[str]:
-        """Wrapper for joblib parallelism - mutates a single SMILES."""
-        return self.mutate(smi, batch_size=batch_size, force_exploration=force_exploration)
-
     def propose_candidates(
         self,
         n_candidates: int = 1000,

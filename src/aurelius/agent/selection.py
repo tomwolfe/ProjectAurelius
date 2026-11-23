@@ -485,8 +485,6 @@ def compute_pairwise_diversity(contexts: list[MoleculeContext]) -> float:
     n = sim_matrix.shape[0]
     # Mean of upper triangle (excluding diagonal)
     upper_indices = np.triu_indices(n, k=1)
-    if len(upper_indices[0]) == 0:
-        return 0.0
     mean_sim = float(np.mean(sim_matrix[upper_indices]))
     return float(1.0 - mean_sim)
 
@@ -689,7 +687,7 @@ def _compute_dominance_vectorized(adjusted: np.ndarray) -> tuple[list[set[int]],
         i_dominates = mx.logical_and(i_better, i_strictly)  # shape: (n_pop, n_pop)
         j_dominates = mx.logical_and(j_better, j_strictly)  # shape: (n_pop, n_pop)
 
-        i_mask = mx.triu(mx.ones((n_pop, n_pop), dtype=bool), k=1)  # type: ignore[arg-type]
+        i_mask = mx.triu(mx.ones((n_pop, n_pop), dtype=mx.bool_), k=1)  # type: ignore[arg-type]
         j_mask = mx.logical_not(i_mask)
 
         i_final = mx.logical_and(i_dominates, i_mask)
@@ -748,8 +746,7 @@ def _compute_dominance_mlx(adjusted: np.ndarray, n_pop: int) -> tuple[list[set[i
     """
     import mlx.core as mx
 
-    from aurelius.utils.device import get_device
-    from aurelius.utils.tensor import to_device
+    from aurelius.utils.device import get_device, to_device
 
     device = get_device()
     adjusted_mlx = to_device(adjusted, device)
@@ -761,7 +758,7 @@ def _compute_dominance_mlx(adjusted: np.ndarray, n_pop: int) -> tuple[list[set[i
     i_better = mx.all(diff_matrix <= 0, axis=2)
     i_strictly = mx.any(diff_matrix < 0, axis=2)
 
-    i_final = mx.logical_and(mx.logical_and(i_better, i_strictly), mx.triu(mx.ones((n_pop, n_pop), dtype=bool), k=1))  # type: ignore[arg-type]
+    i_final = mx.logical_and(mx.logical_and(i_better, i_strictly), mx.triu(mx.ones((n_pop, n_pop), dtype=mx.bool_), k=1))  # type: ignore[arg-type]
 
     i_final_np = np.array(i_final)
 
@@ -807,10 +804,14 @@ def _non_dominated_sort(
             adjusted[:, j] = -adjusted[:, j]
 
     try:
-        dominates, dominated_count = _compute_dominance_mlx(adjusted, n_pop)
+        _mlx_result = _compute_dominance_mlx(adjusted, n_pop)
     except Exception:
         from aurelius.agent.selection import _compute_dominance_python
         dominates, dominated_count = _compute_dominance_python(adjusted)
+    else:
+        if _mlx_result is None:
+            raise TypeError("_compute_dominance_mlx returned None (fail-closed)")
+        dominates, dominated_count = _mlx_result
 
     return _build_fronts(dominates, dominated_count, n_pop)
 

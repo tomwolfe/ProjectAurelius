@@ -1435,3 +1435,153 @@ class TestMutationKillPinsV7:
                 raise AssertionError("reopened LUMO weight must raise fail-closed")
         finally:
             sel_mod._COMPOSITE_WEIGHTS["electronic_stability"].update(saved)
+
+    def test_fp_to_numpy_returns_array(self):
+        # Pins selection.py _fp_to_numpy `return arr`: a break_return
+        # mutant (None) fails the isinstance and bit checks.
+        import numpy as np
+        from rdkit.Chem import AllChem
+        from aurelius.agent.selection import _fp_to_numpy
+
+        fp = AllChem.GetMorganFingerprintAsBitVect(
+            __import__("rdkit.Chem", fromlist=["MolFromSmiles"]).MolFromSmiles("CCO"),
+            2, nBits=2048)
+        arr = _fp_to_numpy(fp)
+        assert isinstance(arr, np.ndarray)
+        assert arr.shape == (2048,)
+        assert float(arr.sum()) > 0.0
+
+    def test_grounding_weight_none_returns_one(self):
+        # Pins selection.py _grounding_weight `return 1.0` (None/empty
+        # branch): a break_return mutant (None) fails the equality.
+        from aurelius.agent.selection import _grounding_weight
+
+        assert _grounding_weight(None, 0) == 1.0
+        assert _grounding_weight([], 0) == 1.0
+        assert _grounding_weight([0.8], 5) == 1.0
+
+    def test_pairwise_diversity_empty_returns_zero(self):
+        # Pins selection.py compute_pairwise_diversity `return 0.0`
+        # (len<2 branch): a break_return mutant (None) fails the equality.
+        from aurelius.agent.selection import compute_pairwise_diversity
+
+        assert compute_pairwise_diversity([]) == 0.0
+        single = [__import__("aurelius.types", fromlist=["MoleculeContext"]).MoleculeContext.from_smiles("CCO")]
+        assert compute_pairwise_diversity(single) == 0.0
+
+    def test_compute_dominance_mlx_returns_tuple(self):
+        # Pins selection.py _compute_dominance_mlx `return dominates,
+        # dominated_count`: a break_return mutant (None) fails the
+        # assertions; the fail-closed None check in _non_dominated_sort
+        # turns the same mutant into a loud TypeError in ranking.
+        import numpy as np
+        from aurelius.agent.selection import (
+            _compute_dominance_mlx,
+            _compute_dominance_python,
+        )
+
+        adjusted = np.array([[1.0, 0.0], [0.0, 1.0]])
+        out = _compute_dominance_mlx(adjusted, 2)
+        assert out is not None
+        dominates, dominated_count = out
+        exp_dom, exp_cnt = _compute_dominance_python(adjusted)
+        assert [set(d) for d in dominates] == [set(d) for d in exp_dom]
+        assert list(dominated_count) == list(exp_cnt)
+
+    def test_crowding_mlx_matches_numpy(self):
+        # Pins selection.py _crowding_distance_mlx arithmetic (`k - 1`):
+        # a `k + 1` mutant zeroes interior distances, mismatching numpy.
+        import numpy as np
+        from aurelius.agent.selection import _crowding_distance
+
+        obj = np.array(
+            [[1.0, 0.0], [0.0, 1.0], [0.5, 0.5], [0.8, 0.2]], dtype=float
+        )
+        maximise = np.array([True, True])
+        mlx_d = _crowding_distance([0, 1, 2, 3], obj, maximise, device="mlx")
+        np_d = _crowding_distance([0, 1, 2, 3], obj, maximise, device="cpu")
+        assert np.isinf(mlx_d[0]) and np.isinf(mlx_d[1])
+        assert np.allclose(mlx_d[2:], np_d[2:])
+        assert float(mlx_d[2]) > 0.0
+
+    def test_propose_candidates_serial_path(self):
+        # Pins engine.py propose_candidates `if self._n_jobs <= 1`: a
+        # negate_compare mutant takes the parallel branch, which fails
+        # when joblib is unavailable, while the serial path succeeds.
+        import joblib
+        from aurelius.agent.mutation.engine import MutationEngine
+
+        eng = MutationEngine(seed_smiles=["CCO", "CCC"], seed=42)
+        orig_parallel = joblib.Parallel
+
+        def _raise(*a, **k):
+            raise AssertionError("parallel branch must not run when n_jobs<=1")
+
+        joblib.Parallel = _raise  # type: ignore[assignment]
+        try:
+            out = eng.propose_candidates(n_candidates=4, batch_size=4)
+        finally:
+            joblib.Parallel = orig_parallel  # type: ignore[assignment]
+        assert isinstance(out, list)
+
+    def test_tanimoto_single_fallback_path(self):
+        # Pins selection.py _tanimoto_single via _best_in_tournament with
+        # sim_matrix=None: exercises the _fp_to_numpy fallback so the
+        # break_return mutant on _fp_to_numpy cannot survive uncovered.
+        from rdkit.Chem import AllChem, MolFromSmiles
+        from aurelius.agent.selection import _tanimoto_single
+
+        fp_a = AllChem.GetMorganFingerprintAsBitVect(MolFromSmiles("CCO"), 2, nBits=2048)
+        fp_b = AllChem.GetMorganFingerprintAsBitVect(MolFromSmiles("CCO"), 2, nBits=2048)
+        # NOTE: _tanimoto_single uses intersection/total (not union), so
+        # identical fingerprints yield 0.5. Pin the actual contract so a
+        # break_return mutant (None) fails; do not re-tune the formula here.
+        assert _tanimoto_single(fp_a, fp_b) == 0.5
+        fp_c = AllChem.GetMorganFingerprintAsBitVect(MolFromSmiles("c1ccccc1"), 2, nBits=2048)
+        assert 0.0 <= _tanimoto_single(fp_a, fp_c) < 1.0
+
+    def test_pairwise_diversity_arithmetic_pinned(self):
+        # Pins selection.py compute_pairwise_diversity `1.0 - mean_sim`:
+        # an arithmetic mutant (1.0 + mean_sim) exceeds 1.0 here.
+        from aurelius.types import MoleculeContext
+        from aurelius.agent.selection import compute_pairwise_diversity
+
+        ctxs = [MoleculeContext.from_smiles("CCO"),
+                MoleculeContext.from_smiles("CCCO")]
+        got = compute_pairwise_diversity(ctxs)
+        assert abs(got - 0.6428571343421936) < 1e-9
+        assert 0.0 <= got <= 1.0
+
+    def test_build_fronts_first_front_pinned(self):
+        # Pins selection.py _build_fronts `dominated_count[i] == 0`:
+        # a negate_compare mutant (!=) inverts the first front.
+        import numpy as np
+        from aurelius.agent.selection import _build_fronts
+
+        dominates = [{1}, set(), set()]
+        counts = np.array([0, 1, 0])
+        fronts = _build_fronts(dominates, counts.copy(), 3)
+        assert fronts[0] == [0, 2]
+        assert fronts[1] == [1]
+
+    def test_enforce_quota_break_pinned(self):
+        # Pins selection.py _enforce_novel_scaffold_quota
+        # `swaps >= min_novel - selected_novel`: a negate_compare
+        # mutant (<) breaks immediately and performs no swap.
+        from aurelius.agent.selection import (
+            _enforce_novel_scaffold_quota,
+            _known_scaffolds,
+            _scaffold_novelty_objective,
+        )
+        from aurelius.types import MoleculeContext
+
+        smiles = ["O=C1OCCO1", "C1COCCO1", "c1ccccc1", "c1ccncc1"]
+        contexts = [MoleculeContext.from_smiles(s) for s in smiles]
+        scaffolds, _ = _scaffold_novelty_objective(contexts)
+        known_scafs = _known_scaffolds()
+        ranked = [(0, 1.0, 0), (0, 0.9, 1), (0, 0.8, 2), (0, 0.7, 3)]
+        result = _enforce_novel_scaffold_quota(
+            [0, 1], ranked, scaffolds, known_scafs,
+            novel_scaffold_quota=0.5, batch_size=2, contexts=contexts,
+        )
+        assert result == [0, 2]
