@@ -998,3 +998,38 @@ class TestMutationKillPins899942:
         eng._rng = _Rng()
         out = eng._mutate_mixture("CCO", "CCC", 0.5)
         assert (out == ["CCO|CCC|0.5500"]) == _t
+
+
+class TestMutationKillPinsV6Recovery:
+    """Root-cause pins for the three surviving mutants (kill rate 9/12).
+
+    - benchmark_unified.py _coverage_rediscovery negate_compare
+      (score >= boundary vs < boundary). Pin builds a pool where the
+      top-N boundary splits knowns asymmetrically (1 above, 2 below),
+      so flipping the comparison inverts the rate 1/3 vs 2/3.
+    - benchmark_unified.py _upper_triangle_pairs arithmetic
+      (i + 1 vs i - 1). Pin asserts the exact pair list and count:
+      the mutant adds self-pairs and negative indices.
+    """
+
+    def test_coverage_boundary_direction(self):
+        import benchmarks.benchmark_unified as B
+
+        known = {"A": 100.0, "B": 50.0, "C": 1.0}
+        discovered = [(90.0, "x"), (80.0, "y")]
+        out = B._coverage_rediscovery(known, discovered, 0.25)
+        # pool sorted: 100(T) 90(F) 80(F) 50(T) 1(T); top_n=2 -> boundary 90
+        assert out["rediscovery_top_n"] == 2
+        assert out["n_rediscovered"] == 1
+        assert out["rediscovery_rate"] == round(1 / 3, 4)
+
+    def test_upper_triangle_pairs_exact(self):
+        import benchmarks.benchmark_unified as B
+
+        assert B._upper_triangle_pairs(3) == [(0, 1), (0, 2), (1, 2)]
+        assert B._upper_triangle_pairs(1) == []
+        assert B._upper_triangle_pairs(0) == []
+        got = B._upper_triangle_pairs(5)
+        assert len(got) == 10
+        assert all(i < j for (i, j) in got)
+        assert len({tuple(sorted(p)) for p in got}) == len(got)
