@@ -808,8 +808,14 @@ def main() -> int:
             print(f'    - {f}')
     if args.json:
         write_json_report(results, Path(args.json))
+    else:
+        # In-gate default: always refresh the canonical results JSON so the
+        # evidence collector never reads a stale file predating this code.
+        write_json_report(results, RESULTS_DIR / "unified_benchmark.json")
     if args.md:
         write_md_report(results, Path(args.md))
+    else:
+        write_md_report(results, RESULTS_DIR / "unified_benchmark.md")
     return 0 if pass_fail else 1
 if __name__ == '__main__':
     raise SystemExit(main())
