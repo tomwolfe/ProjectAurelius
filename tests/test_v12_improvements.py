@@ -1033,3 +1033,26 @@ class TestMutationKillPinsV6Recovery:
         assert len(got) == 10
         assert all(i < j for (i, j) in got)
         assert len({tuple(sorted(p)) for p in got}) == len(got)
+
+    def test_load_result_returns_normalized_dict(self, tmp_path):
+        """Pin pipeline.py load_result break_return (return result vs None).
+
+        The method must return the dict with total_score and sub-scores
+        copied to top level; a break_return mutant returning None would
+        silently poison every downstream consumer.
+        """
+        import json as _json
+        from aurelius.pipeline import AureliusPipeline
+
+        pipe = AureliusPipeline.__new__(AureliusPipeline)
+        payload = {"score": {"total_score": 21.5, "sa_score": 3.0,
+                             "synthesis_depth": 2},
+                   "smiles": "CCO"}
+        path = tmp_path / "res.json"
+        path.write_text(_json.dumps(payload))
+        out = pipe.load_result(str(path))
+        assert isinstance(out, dict)
+        assert out["total_score"] == 21.5
+        assert out["sa_score"] == 3.0
+        assert out["synthesis_depth"] == 2
+        assert out["smiles"] == "CCO"

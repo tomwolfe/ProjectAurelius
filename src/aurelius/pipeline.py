@@ -562,14 +562,18 @@ class AureliusPipeline:
         ctx: MoleculeContext | None,
         grounding: float = 1.0,
     ) -> float:
+        # TOM LUMO gated out of ranking (fail-closed): raw unseen rho ~0.09
+        # and Delta-corrected rho ~0.07 both miss the 0.30/0.60 aspirational
+        # bar, so the untrusted LUMO value must not affect total_score.
+        # The Al-corrosion structural check stays available via
+        # _check_al_corrosion_risk but is not triggered on LUMO here.
+        _ = lumo_eV
         al_corrosion_penalty = 1.0
         if ctx is None:
             return total_score
         total_score *= AureliusPipeline._check_hydrolytic_instability(ctx.mol)
         total_score *= AureliusPipeline._check_hypofluorite_instability(ctx.mol)
         total_score *= AureliusPipeline._check_building_block_grounding(grounding)
-        if lumo_eV > AL_CORROSION_LUMO_THRESHOLD:
-            al_corrosion_penalty = AureliusPipeline._check_al_corrosion_risk(ctx.mol)
         total_score *= al_corrosion_penalty
         return total_score
 
